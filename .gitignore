@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+trajectories/
+training_data/
+tasks*.jsonl
+.env
