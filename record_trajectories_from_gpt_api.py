@@ -180,7 +180,7 @@ def actions_to_dicts(actions):
 
 def send_screenshot(client, response, call_id, b64_screenshot):
     return client.responses.create(
-        model="gpt-5.4",
+        model="gpt-5.4-mini",
         previous_response_id=response.id,
         tools=[{"type": "computer"}],
         input=[{
@@ -225,7 +225,7 @@ async def record_single_task(client, task, output_dir, max_steps, viewport_width
 
         try:
             response = client.responses.create(
-                model="gpt-5.4",
+                model="gpt-5.4-mini",
                 tools=[{"type": "computer"}],
                 input=[{
                     "role": "user",

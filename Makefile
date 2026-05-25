@@ -1,4 +1,5 @@
-.PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training
+.PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
+       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-status
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -12,6 +13,9 @@ VAL_SPLIT     ?= 0.1
 EPOCHS        ?=
 LR            ?=
 BATCH_SIZE    ?=
+PIPELINE_BUDGET ?= 30
+PIPELINE_WORKERS ?= 5
+PIPELINE_LIMIT ?=
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -70,3 +74,40 @@ clean-training: ## Remove converted training data
 
 clean: clean-trajectories clean-training ## Remove all generated data
 	rm -f $(TASKS_FILE)
+
+# ---------- Repo Pipeline (QA repo trajectory generation) ----------
+
+setup-pipeline: ## Install pipeline dependencies
+	pip install -r requirements-pipeline.txt
+	playwright install chromium
+
+build-sandbox: ## Build Docker sandbox image for pipeline
+	docker build -t repo-pipeline-sandbox:latest -f docker/Dockerfile.sandbox docker/
+
+test-sandbox: build-sandbox ## Test sandbox container lifecycle
+	python -m repo_pipeline.sandbox --test
+
+pipeline-discover: ## Stage 1: Discover QA repos on GitHub
+	@test -n "$$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN not set" && exit 1)
+	python -m repo_pipeline.orchestrator --stage 1
+
+pipeline-filter: ## Stage 2: Filter repos by metadata
+	python -m repo_pipeline.orchestrator --stage 2
+
+pipeline-score: ## Stage 3: Shallow score repos with Claude
+	python -m repo_pipeline.orchestrator --stage 3 \
+		--workers $(PIPELINE_WORKERS) \
+		--budget $(PIPELINE_BUDGET) \
+		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
+
+pipeline-overnight: ## Run stages 3-6 overnight with Telegram notification
+	python -m repo_pipeline.orchestrator --overnight \
+		--workers $(PIPELINE_WORKERS) \
+		--budget $(PIPELINE_BUDGET) \
+		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
+
+pipeline-status: ## Show pipeline registry stats
+	python -m repo_pipeline.orchestrator --status
+
+test-notifier: ## Test Telegram bot notification
+	python -m repo_pipeline.notifier --test

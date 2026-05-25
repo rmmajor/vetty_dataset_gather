@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: repo-pipeline-sandbox:latest
+    mem_limit: 4g
+    cpus: 2
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g
+    volumes:
+      - sandbox_workspace:/workspace
+    networks:
+      - sandbox_net
+
+networks:
+  sandbox_net:
+    driver: bridge
+    internal: true
+
+volumes:
+  sandbox_workspace:

@@ -140,7 +140,10 @@ def convert_trajectories(input_dir, output_dir, val_split):
     skipped_failed = 0
     skipped_empty = 0
 
-    trajectory_dirs = sorted(input_path.glob("task_*/"))
+    trajectory_dirs = sorted(
+        d for d in input_path.glob("**/task_*")
+        if d.is_dir() and (d / "trajectory.json").exists()
+    )
     print(f"Found {len(trajectory_dirs)} trajectory directories")
 
     for traj_dir in trajectory_dirs:
