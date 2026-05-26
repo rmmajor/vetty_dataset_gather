@@ -90,10 +90,11 @@ async def run_stage(
     limit: int = None,
     workers: int = 5,
     budget_remaining: float = None,
+    star_floor: int = 5,
 ) -> dict:
     if stage == 1:
         from repo_pipeline.stage1_discover import run_discovery
-        return run_discovery(registry, github_token)
+        return run_discovery(registry, github_token, star_floor=star_floor)
 
     elif stage == 2:
         from repo_pipeline.stage2_filter import run_filter
@@ -237,6 +238,7 @@ async def async_main(args):
                     limit=args.limit,
                     workers=args.workers,
                     budget_remaining=budget_remaining,
+                    star_floor=args.star_floor,
                 )
                 logger.info(f"Stage {stage} result: {result}")
 
@@ -272,6 +274,7 @@ Examples:
     parser.add_argument("--status", action="store_true", help="Print registry stats and exit")
     parser.add_argument("--limit", type=int, default=None, help="Max repos per stage in this run")
     parser.add_argument("--workers", type=int, default=5, help="Parallel workers for LLM stages (default: 5)")
+    parser.add_argument("--star-floor", type=int, default=5, help="Stage 1: exhaustively scrape repos down to this star count (default: 5)")
     parser.add_argument("--budget", type=float, default=50.0, help="Max total LLM budget for this run in USD (default: 50.0)")
     parser.add_argument("--data-dir", type=str, default="pipeline_data/", help="Pipeline data directory")
     parser.add_argument("--traj-dir", type=str, default="trajectories/", help="Trajectory output directory")

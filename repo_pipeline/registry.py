@@ -104,7 +104,7 @@ class RepoRegistry:
         is_demo = self._check_is_demo(repo_data.get("source_query", ""))
 
         try:
-            self.conn.execute(
+            cursor = self.conn.execute(
                 """INSERT OR IGNORE INTO repos
                    (full_name, html_url, stars, last_pushed, size_kb, language,
                     archived, fork, parent_repo, description, topics, default_branch,
@@ -131,7 +131,10 @@ class RepoRegistry:
                 ),
             )
             self.conn.commit()
-            return self.conn.total_changes > 0
+            # rowcount is per-statement (1 if inserted, 0 if the full_name already
+            # existed and INSERT OR IGNORE skipped it). conn.total_changes is cumulative
+            # across the connection and would report True forever after the first insert.
+            return cursor.rowcount > 0
         except sqlite3.IntegrityError:
             return False
 
