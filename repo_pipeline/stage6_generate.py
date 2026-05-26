@@ -6,6 +6,7 @@ from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
+from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import setup_repo_instrumentation
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, build_sandbox_mcp_server
@@ -17,9 +18,9 @@ logger = logging.getLogger(__name__)
 GENERATE_BUDGET_USD = float(os.environ.get("STAGE6_BUDGET_USD", "1.50"))
 INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.05"))
 
-GENERATE_PROMPT = """You are performing full trajectory generation for the Playwright test repository '{repo_name}' cloned at /workspace/repo.
+GENERATE_PROMPT = """You are performing full trajectory generation for the browser-test repository '{repo_name}' cloned at /workspace/repo.
 
-Framework: {framework_language}
+Framework: {framework}
 
 The instrumentation has already been injected.
 
@@ -28,8 +29,7 @@ Run every shell command through the `exec` tool — there is no local shell, `ex
 Your tasks:
 
 1. **Run the FULL test suite** with instrumentation, passing the env vars inline in the SAME `exec` command. The container has NO display, so always launch the browser under `xvfb-run -a` (required for headless=False repos, harmless otherwise):
-   - Python: `cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a python3 -m pytest --timeout=120 -v 2>&1 | tail -50`
-   - JS/TS: `cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a npx playwright test --reporter=list 2>&1 | tail -50`
+   `{test_command}`
 
 2. **Check results**:
    - List all directories in /workspace/results/
@@ -54,7 +54,7 @@ Your tasks:
 Output ONLY the JSON at the end.
 """
 
-INSTRUCTION_PROMPT = """Given this Playwright test code and the sequence of actions recorded, write a natural language instruction (1-2 sentences) describing what task this test performs from a user's perspective.
+INSTRUCTION_PROMPT = """Given this browser test code and the sequence of actions recorded, write a natural language instruction (1-2 sentences) describing what task this test performs from a user's perspective.
 
 Test name: {test_name}
 Actions taken: {action_summary}
@@ -82,10 +82,10 @@ async def generate_for_repo(
         except (json.JSONDecodeError, TypeError):
             pass
 
-    framework_language = deep_analysis.get("framework_language", "typescript")
+    profile = resolve_profile(deep_analysis.get("test_framework"), deep_analysis.get("framework_language"))
     test_name_prefix = repo_name.replace("/", "_")
 
-    sandbox = DockerSandbox()
+    sandbox = DockerSandbox(image=profile.sandbox_image, platform=profile.sandbox_platform)
 
     try:
         sandbox.start(repo_name)
@@ -95,12 +95,12 @@ async def generate_for_repo(
             registry.reject(repo_name, stage=6, reason=f"clone failed: {stderr[:200]}")
             return
 
-        setup_repo_instrumentation(sandbox, framework_language)
+        setup_repo_instrumentation(sandbox, profile)
 
         prompt = GENERATE_PROMPT.format(
             repo_name=repo_name,
-            framework_language=framework_language,
-            test_name_prefix=test_name_prefix,
+            framework=profile.name,
+            test_command=profile.test_command_suite.format(repo_name=repo_name, test_name_prefix=test_name_prefix),
         )
 
         mcp_server, sandbox_tools = build_sandbox_mcp_server(sandbox)
@@ -110,7 +110,7 @@ async def generate_for_repo(
             prompt=prompt,
             options=ClaudeAgentOptions(
                 model="claude-sonnet-4-20250514",
-                max_turns=20,
+                max_turns=35,
                 max_budget_usd=GENERATE_BUDGET_USD,
                 permission_mode="bypassPermissions",
                 mcp_servers={"sandbox": mcp_server},

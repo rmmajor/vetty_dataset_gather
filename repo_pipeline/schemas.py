@@ -89,6 +89,7 @@ class DeepAnalysis(BaseModel):
     action_types: list[str] = Field(default_factory=list)
     is_self_contained: bool = False
     has_docker_compose: bool = False
+    test_framework: Optional[str] = None
     playwright_version: Optional[str] = None
     framework_language: Optional[str] = None
     deps_install_success: bool = False

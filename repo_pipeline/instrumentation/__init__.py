@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
 
+from repo_pipeline.frameworks import FrameworkProfile
+
 logger = logging.getLogger(__name__)
 
 INSTRUMENTATION_DIR = Path(__file__).parent
@@ -10,34 +12,33 @@ RESULTS_DIR = "/workspace/results"
 INJECT_MARKER = "# --- injected trajectory instrumentation ---"
 
 
-def setup_repo_instrumentation(sandbox, framework_language: str):
-    """Install dependencies and inject Playwright instrumentation into the cloned
+def setup_repo_instrumentation(sandbox, profile: FrameworkProfile):
+    """Install dependencies and inject the framework's instrumentation into the cloned
     repo so that running its tests captures trajectories to /workspace/results.
 
-    Shared by stage 5 (trial) and stage 6 (generate).
+    Driven entirely by `profile` (see repo_pipeline.frameworks). Shared by stage 5
+    (trial) and stage 6 (generate).
     """
-    if framework_language == "python":
-        sandbox.exec_command(f"cd {REPO_DIR} && pip3 install -r requirements.txt --break-system-packages 2>&1 || true", timeout=300)
-        sandbox.exec_command(f"cd {REPO_DIR} && pip3 install pytest-playwright pytest-timeout --break-system-packages 2>&1", timeout=120)
-        # Repos pin their own Playwright version; fetch the matching browser so it
-        # doesn't mismatch the one baked into the base image.
-        sandbox.exec_command(f"cd {REPO_DIR} && python3 -m playwright install chromium 2>&1 || true", timeout=300)
-        _inject_python_conftest(sandbox)
-    else:
-        sandbox.exec_command(f"cd {REPO_DIR} && npm install 2>&1 || true", timeout=300)
-        sandbox.exec_command(f"cd {REPO_DIR} && npx playwright install chromium 2>&1 || true", timeout=120)
-        fixture_content = INSTRUMENTATION_DIR.joinpath("pw_ts_fixture.ts").read_text()
+    for command in profile.install_commands:
+        sandbox.exec_command(command.format(repo_dir=REPO_DIR), timeout=300)
+
+    if profile.injection_kind == "python_conftest":
+        _inject_python_conftest(sandbox, profile.instrumentation_filename)
+    elif profile.injection_kind == "ts_fixture":
+        fixture_content = INSTRUMENTATION_DIR.joinpath(profile.instrumentation_filename).read_text()
         sandbox.write_file(f"{REPO_DIR}/instrumented-fixture.ts", fixture_content)
+    else:
+        raise ValueError(f"Unknown injection_kind: {profile.injection_kind}")
 
     sandbox.exec_command(f"mkdir -p {RESULTS_DIR}")
 
 
-def _inject_python_conftest(sandbox):
+def _inject_python_conftest(sandbox, conftest_filename: str):
     """Make the instrumentation load under pytest. pytest only auto-discovers files
     named exactly conftest.py, so append the instrumentation to the repo's top-level
     conftest.py (preserving its own fixtures), or create one if none exists.
     """
-    conftest_content = INSTRUMENTATION_DIR.joinpath("pw_python_conftest.py").read_text()
+    conftest_content = INSTRUMENTATION_DIR.joinpath(conftest_filename).read_text()
 
     existing_conftests = sandbox.list_files("conftest.py", REPO_DIR)
     if existing_conftests:

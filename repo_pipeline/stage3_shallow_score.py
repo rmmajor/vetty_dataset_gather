@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 SCORE_THRESHOLD = 7
 SCORE_BUDGET_USD = float(os.environ.get("STAGE3_BUDGET_USD", "0.15"))
 
-SCORING_PROMPT = """You are evaluating a GitHub repository for its suitability as a source of Playwright browser test trajectories. We need trajectories from PRODUCTION apps with complex UIs — not demos, tutorials, or practice repos.
+SCORING_PROMPT = """You are evaluating a GitHub repository for its suitability as a source of browser test trajectories (Playwright or Selenium). We need trajectories from PRODUCTION apps with complex UIs — not demos, tutorials, or practice repos.
 
 Repository: {repo_name}
 URL: {repo_url}
@@ -73,7 +73,7 @@ Score this repository on each dimension from 1-5:
    - 3: Needs some setup but straightforward
    - 1: Requires external paid services, proprietary backends
 
-7. FRAMEWORK_CLARITY (1-5): Standard Playwright project structure? Clear config, proper imports, organized test files?
+7. FRAMEWORK_CLARITY (1-5): Standard Playwright or Selenium project structure? Clear config, proper imports, organized test files?
 
 Respond with ONLY a JSON object (no markdown, no explanation):
 {{"production_complexity": N, "ui_difficulty": N, "interaction_richness": N, "test_count": N, "multi_page_flows": N, "runnability": N, "framework_clarity": N}}

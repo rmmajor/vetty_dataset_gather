@@ -81,8 +81,11 @@ setup-pipeline: ## Install pipeline dependencies
 	pip install -r requirements-pipeline.txt
 	playwright install chromium
 
-build-sandbox: ## Build Docker sandbox image for pipeline
+build-sandbox: ## Build Docker sandbox image (Playwright, arch-native)
 	docker build -t repo-pipeline-sandbox:latest -f docker/Dockerfile.sandbox docker/
+
+build-sandbox-selenium: ## Build Selenium sandbox image (linux/amd64; needed for Selenium repos)
+	docker build --platform=linux/amd64 -t repo-pipeline-sandbox-selenium:latest -f docker/Dockerfile.sandbox-selenium docker/
 
 test-sandbox: build-sandbox ## Test sandbox container lifecycle
 	python -m repo_pipeline.sandbox --test
