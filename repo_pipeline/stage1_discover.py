@@ -19,6 +19,14 @@ GITHUB_EPOCH = date(2008, 1, 1)
 DEFAULT_STAR_FLOOR = 5
 
 SEARCH_QUERIES = [
+    # ---- Broad supersets ----
+    # These intentionally omit narrowing terms/star filters: the windowing engine
+    # partitions them (stars buckets + created-date splits) to capture EVERY >=5-star
+    # repo per language. They're the real yield; the narrower queries below mostly dedupe.
+    "playwright language:TypeScript",
+    "playwright language:JavaScript",
+    "playwright language:Python",
+
     # ---- Real product test suites (large projects using Playwright for CI) ----
     "playwright e2e test language:TypeScript stars:>500",
     "playwright e2e test language:TypeScript stars:100..500",
@@ -167,6 +175,13 @@ SEARCH_QUERIES = [
 # non-Python Selenium repos would just be rejected at stage 4. Framework detection
 # (Playwright vs Selenium) happens later in stage 4.
 SELENIUM_SEARCH_QUERIES = [
+    # ---- Broad supersets ----
+    # Windowing partitions these to capture every >=5-star Python Selenium repo;
+    # the narrower queries below then mostly dedupe.
+    "selenium language:Python",
+    "selenium webdriver language:Python",
+    "pytest selenium language:Python",
+
     # ---- Real product test suites (Python star tiers) ----
     "selenium e2e test language:Python stars:>500",
     "selenium e2e test language:Python stars:100..500",
@@ -421,6 +436,19 @@ def iter_windows(github_client, base_query: str, star_floor: int = DEFAULT_STAR_
             yield base_query
         else:
             yield from _created_windows(github_client, base_query, GITHUB_EPOCH, today)
+        return
+
+    # Most queries match well under the cap once the star floor is applied. Probe the
+    # combined floor query once: if it fits, a single window covers it — avoiding a probe
+    # per star bucket (the dominant source of search requests, hence rate-limit sleeps).
+    # `{base} stars:>=floor` is exactly the union of the per-bucket queries, so coverage
+    # is identical; we only fall back to bucket + date splitting when it exceeds the cap.
+    floor_query = f"{base_query} stars:>={star_floor}"
+    floor_total = _search_total(github_client, floor_query)
+    if floor_total == 0:
+        return
+    if floor_total < PER_QUERY_CAP:
+        yield floor_query
         return
 
     for fragment in _star_bucket_fragments(star_floor):
