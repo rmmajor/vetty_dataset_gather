@@ -4,3 +4,7 @@ trajectories/
 training_data/
 tasks*.jsonl
 .env
+pipeline_data/
+*.db
+.venv*/
+videos/

@@ -1,0 +1,11 @@
+FROM mcr.microsoft.com/playwright:v1.50.0-noble
+
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip python3-venv git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install playwright pytest pytest-playwright --break-system-packages
+
+WORKDIR /workspace
+
+# Container runs as non-root user "pwuser" from the base image
