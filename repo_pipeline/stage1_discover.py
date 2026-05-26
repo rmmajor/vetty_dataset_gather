@@ -1,11 +1,22 @@
 import logging
 import time
+from datetime import date, timedelta
 
 from github import Github, GithubException, RateLimitExceededException
 
 from repo_pipeline.registry import RepoRegistry
 
 logger = logging.getLogger(__name__)
+
+# GitHub's Search API returns at most 1000 results per query, so a broad query (sorted by
+# stars) only ever surfaces its top 1000 and the long tail is invisible. To scrape a query
+# exhaustively we partition it into sub-queries that each return <1000 results: first by
+# `stars:` buckets (down to a floor), then — for any bucket still over the cap — recursively
+# by `created:` date (immutable, arbitrarily splittable). See iter_windows().
+PER_QUERY_CAP = 1000
+STAR_THRESHOLDS = [5, 10, 20, 50, 100, 200, 500, 1000]
+GITHUB_EPOCH = date(2008, 1, 1)
+DEFAULT_STAR_FLOOR = 5
 
 SEARCH_QUERIES = [
     # ---- Real product test suites (large projects using Playwright for CI) ----
@@ -235,48 +246,142 @@ def extract_repo_data(repo, source_query):
     }
 
 
-def run_discovery(registry: RepoRegistry, github_token: str, extra_queries: list[str] = None):
+def _search_total(github_client, query: str) -> int:
+    """Match count for a query (one search request). NOTE: PyGithub's `.totalCount` is
+    clamped to the 1000-result ceiling — a query with 1,415 true matches reports 1000.
+    That's exactly what we need: a reported count of `PER_QUERY_CAP` means "at least the
+    cap, so this window must be split further", while anything below it is the true,
+    fully-retrievable count. Callers therefore split when `>= PER_QUERY_CAP`."""
+    wait_for_rate_limit(github_client)
+    return github_client.search_repositories(query=query).totalCount
+
+
+def _star_bucket_fragments(star_floor: int) -> list[str]:
+    """Descending `stars:` range fragments down to star_floor, e.g. floor 5 ->
+    ['stars:>=1000', 'stars:500..999', ..., 'stars:5..9']. High-star buckets first so the
+    most valuable repos are discovered earliest."""
+    thresholds = sorted({t for t in STAR_THRESHOLDS if t > star_floor} | {star_floor})
+    fragments = []
+    for idx, low in enumerate(thresholds):
+        if idx + 1 < len(thresholds):
+            fragments.append(f"stars:{low}..{thresholds[idx + 1] - 1}")
+        else:
+            fragments.append(f"stars:>={low}")
+    fragments.reverse()
+    return fragments
+
+
+def _created_windows(github_client, query: str, low: date, high: date):
+    """Yield `query` augmented with `created:` date sub-windows that each match <=cap
+    repos, recursively bisecting [low, high]. created_at is immutable, so windows are
+    stable across re-runs and any interval can be split until it fits under the cap."""
+    windowed = f"{query} created:{low.isoformat()}..{high.isoformat()}"
+    total = _search_total(github_client, windowed)
+    if total < PER_QUERY_CAP:
+        if total > 0:
+            yield windowed
+        return
+    if low >= high:
+        # A single day over the cap (not expected at sane star floors): take the top 1000.
+        logger.warning(f"Window exceeds cap on a single day ({total}): {windowed}")
+        yield windowed
+        return
+    mid = low + (high - low) // 2
+    yield from _created_windows(github_client, query, low, mid)
+    yield from _created_windows(github_client, query, mid + timedelta(days=1), high)
+
+
+def iter_windows(github_client, base_query: str, star_floor: int = DEFAULT_STAR_FLOOR):
+    """Yield bounded sub-queries of base_query that each match <=cap repos, so paginating
+    all of them covers every match (down to star_floor when base_query doesn't already
+    constrain stars). Queries already under the cap are yielded unchanged after one probe."""
+    today = date.today()
+
+    if "stars:" in base_query:
+        # Query carries its own star constraint (e.g. dependency/topic tiers) — only split
+        # by date if it still reaches the cap.
+        if _search_total(github_client, base_query) < PER_QUERY_CAP:
+            yield base_query
+        else:
+            yield from _created_windows(github_client, base_query, GITHUB_EPOCH, today)
+        return
+
+    for fragment in _star_bucket_fragments(star_floor):
+        sub = f"{base_query} {fragment}"
+        total = _search_total(github_client, sub)
+        if total == 0:
+            continue
+        if total < PER_QUERY_CAP:
+            yield sub
+        else:
+            yield from _created_windows(github_client, sub, GITHUB_EPOCH, today)
+
+
+def _paginate_window(github_client, registry, window_query: str, source_query: str) -> tuple[int, int]:
+    """Page through one bounded window, recording every repo. Returns (found, new).
+    source_query is the original base query (not the windowed form) so the registry's
+    query-priority heuristic and framework attribution stay meaningful."""
+    found = 0
+    new = 0
+    wait_for_rate_limit(github_client)
+    try:
+        results = github_client.search_repositories(query=window_query, sort="stars", order="desc")
+        page_count = 0
+        for repo in results:
+            if page_count >= PER_QUERY_CAP:
+                break
+            found += 1
+            if registry.add_candidate(extract_repo_data(repo, source_query)):
+                new += 1
+            page_count += 1
+            if page_count % 100 == 0:
+                wait_for_rate_limit(github_client)
+    except RateLimitExceededException:
+        logger.warning(f"Rate limited on window: {window_query}, waiting...")
+        wait_for_rate_limit(github_client)
+    except GithubException as e:
+        logger.warning(f"GitHub API error on window '{window_query}': {e}")
+        if e.status != 422:
+            time.sleep(5)
+    except Exception as e:
+        logger.error(f"Unexpected error on window '{window_query}': {e}")
+    return found, new
+
+
+def run_discovery(
+    registry: RepoRegistry,
+    github_token: str,
+    extra_queries: list[str] = None,
+    star_floor: int = DEFAULT_STAR_FLOOR,
+):
     github_client = Github(github_token, per_page=100)
     queries = SEARCH_QUERIES + (extra_queries or [])
 
     total_found = 0
     total_new = 0
 
-    for i, query_str in enumerate(queries):
-        logger.info(f"[{i + 1}/{len(queries)}] Searching: {query_str}")
-        wait_for_rate_limit(github_client)
+    for i, base_query in enumerate(queries):
+        logger.info(f"[{i + 1}/{len(queries)}] Base query: {base_query}")
 
         try:
-            results = github_client.search_repositories(query=query_str, sort="stars", order="desc")
-            page_count = 0
-
-            for repo in results:
-                if page_count >= 1000:
-                    break
-
-                total_found += 1
-                repo_data = extract_repo_data(repo, query_str)
-                was_new = registry.add_candidate(repo_data)
-                if was_new:
-                    total_new += 1
-                    logger.debug(f"  NEW: {repo.full_name} ({repo.stargazers_count} stars)")
-
-                page_count += 1
-
-                if page_count % 100 == 0:
-                    wait_for_rate_limit(github_client)
-
+            windows = list(iter_windows(github_client, base_query, star_floor))
         except RateLimitExceededException:
-            logger.warning(f"Rate limited on query: {query_str}, waiting...")
             wait_for_rate_limit(github_client)
-        except GithubException as e:
-            logger.warning(f"GitHub API error on query '{query_str}': {e}")
-            if e.status == 422:
+            try:
+                windows = list(iter_windows(github_client, base_query, star_floor))
+            except Exception as e:
+                logger.warning(f"Windowing failed for '{base_query}': {e}")
                 continue
-            time.sleep(5)
         except Exception as e:
-            logger.error(f"Unexpected error on query '{query_str}': {e}")
+            logger.warning(f"Windowing error for '{base_query}': {e}")
             continue
+
+        logger.info(f"  partitioned into {len(windows)} window(s) (cap {PER_QUERY_CAP}/query, star floor {star_floor})")
+
+        for window_query in windows:
+            found, new = _paginate_window(github_client, registry, window_query, base_query)
+            total_found += found
+            total_new += new
 
         if (i + 1) % 5 == 0:
             stats = registry.get_stats()
