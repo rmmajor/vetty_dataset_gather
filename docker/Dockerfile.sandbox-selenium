@@ -1,0 +1,46 @@
+# Selenium sandbox image.
+#
+# Separate from Dockerfile.sandbox (the Playwright image) because Selenium needs a real
+# Chrome + a matching chromedriver, and Google only publishes those for linux64
+# (x86_64) — there is no linux-arm64 build, and Ubuntu's chromium package is a snap stub
+# that cannot run in a container. So this image is ALWAYS built for linux/amd64
+# (`docker build --platform=linux/amd64 ...`, see `make build-sandbox-selenium`); it runs
+# natively on x86_64 hosts and under emulation on Apple Silicon. The default Playwright
+# image stays arch-native so the Playwright path is not emulated.
+#
+# Chrome and chromedriver come from the same Chrome-for-Testing Stable manifest, so the
+# pair is always version-matched and Selenium Manager reuses the on-PATH driver instead
+# of downloading one at test time.
+FROM --platform=linux/amd64 mcr.microsoft.com/playwright:v1.50.0-noble
+
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip python3-venv git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install selenium pytest pytest-timeout --break-system-packages
+
+RUN apt-get update && apt-get install -y wget unzip jq ca-certificates \
+    && CFT_JSON=$(wget -qO- https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json) \
+    && CHROME_URL=$(echo "$CFT_JSON" | jq -r '.channels.Stable.downloads.chrome[] | select(.platform=="linux64") | .url') \
+    && CD_URL=$(echo "$CFT_JSON" | jq -r '.channels.Stable.downloads.chromedriver[] | select(.platform=="linux64") | .url') \
+    && wget -q "$CHROME_URL" -O /tmp/chrome.zip \
+    && wget -q "$CD_URL" -O /tmp/chromedriver.zip \
+    && unzip -q /tmp/chrome.zip -d /opt \
+    && unzip -q /tmp/chromedriver.zip -d /opt \
+    && ln -sf /opt/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+    && rm /tmp/chrome.zip /tmp/chromedriver.zip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Expose Chrome as a wrapper that always injects the flags needed to launch inside the
+# locked-down sandbox (non-root, cap_drop=ALL, small /dev/shm). Most Selenium repos call
+# webdriver.Chrome() without --no-sandbox, so without this Chrome crashes with
+# "session not created: Chrome instance exited". Injecting at the binary level fixes
+# every repo without editing its code. chromedriver finds this via PATH / standard names.
+RUN printf '#!/bin/sh\nexec /opt/chrome-linux64/chrome --no-sandbox --disable-dev-shm-usage --disable-gpu "$@"\n' > /usr/local/bin/chrome \
+    && chmod +x /usr/local/bin/chrome \
+    && cp /usr/local/bin/chrome /usr/bin/google-chrome \
+    && cp /usr/local/bin/chrome /usr/bin/google-chrome-stable
+
+WORKDIR /workspace
+
+# Container runs as non-root user "pwuser" from the base image

@@ -5,6 +5,7 @@ import os
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
+from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import setup_repo_instrumentation
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, build_sandbox_mcp_server
@@ -14,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 TRIAL_BUDGET_USD = float(os.environ.get("STAGE5_BUDGET_USD", "1.00"))
 
-TRIAL_RUN_PROMPT = """You are setting up and running a Playwright test trial in a Docker container. The repository '{repo_name}' is cloned at /workspace/repo.
+TRIAL_RUN_PROMPT = """You are setting up and running a browser-test trial in a Docker container. The repository '{repo_name}' is cloned at /workspace/repo.
 
-Framework: {framework_language}
+Framework: {framework}
 
 Run every shell command through the `exec` tool — there is no local shell, `exec` runs inside the container. Each `exec` call is a fresh shell, so environment variables do NOT persist between calls: put any `VAR=value` assignments on the same line as the command that needs them.
 
@@ -24,13 +25,12 @@ Your tasks:
 
 1. **Inject instrumentation**:
    - The instrumentation file has already been placed at the correct location.
-   - For Python repos: A conftest.py has been placed in the test directory.
-   - For JS/TS repos: A fixture file has been placed. You need to modify playwright.config.ts to set the viewport to 1280x720.
+   - {setup_note}
 
 2. **Run ONE test file** as a proof of concept, passing the trajectory env vars inline in the SAME `exec` command. The container has NO display, so always launch the browser under `xvfb-run -a` (this is required for repos that use headless=False, and harmless otherwise):
    - Pick the test file that looks most promising (diverse actions, multiple test cases).
-   - Python: `cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a python3 -m pytest <test_file> -v --timeout=60 2>&1 | head -100`
-   - JS/TS: `cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a npx playwright test <test_file> --reporter=list 2>&1 | head -100`
+   - Replace <test_file> with that file and run:
+     `{test_command}`
 
 3. **Check results**:
    - Look in /workspace/results/ for generated trajectory directories
@@ -74,10 +74,10 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
         except (json.JSONDecodeError, TypeError):
             pass
 
-    framework_language = deep_analysis.get("framework_language", "typescript")
+    profile = resolve_profile(deep_analysis.get("test_framework"), deep_analysis.get("framework_language"))
     test_name_prefix = repo_name.replace("/", "_")
 
-    sandbox = DockerSandbox()
+    sandbox = DockerSandbox(image=profile.sandbox_image, platform=profile.sandbox_platform)
 
     try:
         sandbox.start(repo_name)
@@ -87,12 +87,13 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
             registry.reject(repo_name, stage=5, reason=f"clone failed: {stderr[:200]}")
             return
 
-        setup_repo_instrumentation(sandbox, framework_language)
+        setup_repo_instrumentation(sandbox, profile)
 
         prompt = TRIAL_RUN_PROMPT.format(
             repo_name=repo_name,
-            framework_language=framework_language,
-            test_name_prefix=test_name_prefix,
+            framework=profile.name,
+            setup_note=profile.setup_note,
+            test_command=profile.test_command_single.format(repo_name=repo_name, test_name_prefix=test_name_prefix),
         )
 
         mcp_server, sandbox_tools = build_sandbox_mcp_server(sandbox)
@@ -102,7 +103,7 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
             prompt=prompt,
             options=ClaudeAgentOptions(
                 model="claude-sonnet-4-20250514",
-                max_turns=15,
+                max_turns=20,
                 max_budget_usd=TRIAL_BUDGET_USD,
                 permission_mode="bypassPermissions",
                 mcp_servers={"sandbox": mcp_server},

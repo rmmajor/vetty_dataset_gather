@@ -14,8 +14,11 @@ EXEC_TIMEOUT_SECONDS = 300  # 5 minutes per command
 
 
 class DockerSandbox:
-    def __init__(self, image=DEFAULT_IMAGE):
+    def __init__(self, image=DEFAULT_IMAGE, platform=None):
         self.image = image
+        # Set for images that only exist for a non-host architecture (the Selenium image
+        # is linux/amd64-only); None lets Docker pick the host-native variant.
+        self.platform = platform
         self.client = docker.from_env()
         self.container = None
         self.container_id = None
@@ -26,7 +29,7 @@ class DockerSandbox:
         self.repo_full_name = repo_full_name
         safe_name = repo_full_name.replace("/", "_").replace(".", "_")
 
-        self.container = self.client.containers.create(
+        create_kwargs = dict(
             image=self.image,
             name=f"sandbox_{safe_name}_{int(time.time())}",
             command="sleep infinity",
@@ -39,6 +42,9 @@ class DockerSandbox:
             # /workspace is writable (not read-only for the whole container
             # because we need to clone and install deps)
         )
+        if self.platform:
+            create_kwargs["platform"] = self.platform
+        self.container = self.client.containers.create(**create_kwargs)
         self.container.start()
         self.container_id = self.container.id
         self.start_time = time.time()

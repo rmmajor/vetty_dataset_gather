@@ -150,6 +150,39 @@ SEARCH_QUERIES = [
     '"npx playwright test" filename:.github/workflows',
 ]
 
+# Selenium repos are a second trajectory source. Instrumentation only works for the
+# Python/pytest path, so these queries are biased to language:Python. Framework
+# detection (Playwright vs Selenium) happens later in stage 4.
+SELENIUM_SEARCH_QUERIES = [
+    # ---- General Selenium Python suites ----
+    "selenium pytest e2e test language:Python stars:>50",
+    "selenium pytest e2e test language:Python stars:10..50",
+    "selenium webdriver test language:Python stars:>50",
+    "selenium webdriver test language:Python stars:10..50",
+    "selenium page object model language:Python stars:>20",
+    "selenium ui automation language:Python stars:>20",
+    "pytest selenium browser test language:Python stars:>10",
+
+    # ---- Domain-specific (real business flows) ----
+    "selenium ecommerce checkout test language:Python",
+    "selenium login authentication test language:Python",
+    "selenium form submission test language:Python",
+    "selenium crud test language:Python",
+    "selenium search filter test language:Python",
+
+    # ---- Dependency / config based (code search) ----
+    "selenium filename:requirements.txt language:Python",
+    "pytest-selenium filename:requirements.txt",
+    "selenium webdriver filename:requirements.txt language:Python",
+
+    # ---- Topic-based ----
+    "topic:selenium topic:python",
+    "topic:selenium-webdriver topic:e2e-testing",
+    "topic:selenium-python",
+]
+
+SEARCH_QUERIES = SEARCH_QUERIES + SELENIUM_SEARCH_QUERIES
+
 
 def wait_for_rate_limit(github_client):
     rate_limit = github_client.get_rate_limit()

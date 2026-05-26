@@ -5,6 +5,7 @@ import os
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
+from repo_pipeline.frameworks import all_interactive_actions
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, build_sandbox_mcp_server
 from repo_pipeline.schemas import DeepAnalysis, RepoStatus
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 ANALYZE_BUDGET_USD = float(os.environ.get("STAGE4_BUDGET_USD", "0.75"))
 
-DEEP_ANALYSIS_PROMPT = """You are analyzing the Playwright test repository '{repo_name}' that has been cloned to /workspace/repo inside a Docker container.
+DEEP_ANALYSIS_PROMPT = """You are analyzing the browser-test repository '{repo_name}' that has been cloned to /workspace/repo inside a Docker container. The test suite uses either Playwright or Selenium.
 
 Your goal is to perform a thorough analysis of this repository's test suite to determine if it can produce high-quality browser automation trajectories.
 
@@ -26,13 +27,17 @@ Use the `exec` tool to run shell commands inside the container, and `read`/`ls` 
 
 2. **Count test cases**: Look inside test files for individual test definitions (test(), it(), def test_*).
 
-3. **Parse action types**: Scan test files for Playwright action calls — categorize which of these are used:
-   - click, fill/type, press, selectOption, check/uncheck, dblclick, dragTo/drag_and_drop
-   - page.goto, page.waitFor*, expect assertions
+3. **Parse action types**: Scan test files for UI action calls — categorize which of these are used:
+   - Playwright: click, fill/type, press, selectOption, check/uncheck, dblclick, dragTo/drag_and_drop
+   - Selenium: click, send_keys, clear, submit, Select.select_by_*, ActionChains
+   - navigation (page.goto / driver.get), waits, assertions
 
 4. **Check self-containment**: Is there a docker-compose.yml? A local dev server script (package.json scripts like "dev", "start")? Or do tests hit external URLs?
 
-5. **Identify framework**: Is this Playwright for Python (pytest-playwright) or JS/TS (@playwright/test)? What Playwright version?
+5. **Identify framework**: Which browser-test framework is this? Look at the imports and dependencies:
+   - "selenium" / "webdriver" imports, selenium in requirements.txt → test_framework = "selenium"
+   - "@playwright/test" or "pytest-playwright" / "playwright" → test_framework = "playwright"
+   Also determine the language: Python (pytest), TypeScript, or JavaScript. NOTE: Selenium is only supported for Python — flag a non-Python Selenium repo in notes.
 
 6. **Try installing dependencies**:
    - For JS/TS: run `npm install` in /workspace/repo
@@ -46,9 +51,10 @@ After analysis, output your findings as a JSON object with EXACTLY these fields:
 {{
   "test_file_count": <int>,
   "test_case_count": <int>,
-  "action_types": ["click", "fill", ...],
+  "action_types": ["click", "send_keys", ...],
   "is_self_contained": <bool>,
   "has_docker_compose": <bool>,
+  "test_framework": "<playwright|selenium>",
   "playwright_version": "<version or null>",
   "framework_language": "<python|typescript|javascript>",
   "deps_install_success": <bool>,
@@ -80,8 +86,7 @@ def compute_deep_score(analysis: DeepAnalysis) -> int:
     elif analysis.test_case_count >= 3:
         score += 1
 
-    interactive_actions = {"click", "fill", "type", "press", "selectOption", "select_option", "check", "uncheck", "dblclick", "dragTo", "drag_and_drop"}
-    found_interactive = set(a.lower() for a in analysis.action_types) & {a.lower() for a in interactive_actions}
+    found_interactive = {a.lower() for a in analysis.action_types} & all_interactive_actions()
     score += min(len(found_interactive), 3)
 
     if analysis.deps_install_success:
@@ -128,7 +133,7 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
             prompt=prompt,
             options=ClaudeAgentOptions(
                 model="claude-sonnet-4-20250514",
-                max_turns=15,
+                max_turns=25,
                 max_budget_usd=ANALYZE_BUDGET_USD,
                 permission_mode="bypassPermissions",
                 mcp_servers={"sandbox": mcp_server},
