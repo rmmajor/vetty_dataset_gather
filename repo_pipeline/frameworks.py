@@ -20,28 +20,19 @@ SANDBOX_IMAGE = "repo-pipeline-sandbox:latest"
 SANDBOX_IMAGE_SELENIUM = "repo-pipeline-sandbox-selenium:latest"
 
 # Shared pytest invocation: Selenium-Python and Playwright-Python both run under pytest,
-# so they share the same command shape. {repo_name}/{test_name_prefix} are filled by the
-# stage; <test_file> is a placeholder the agent substitutes for the chosen file.
-_PYTEST_SINGLE = (
+# so they share the same command shape. {repo_name}/{test_name_prefix}/{framework}/
+# {framework_language} are filled by the stage; <test_file> is a placeholder the agent
+# substitutes for the chosen file. FRAMEWORK/FRAMEWORK_LANGUAGE let the in-sandbox recorder
+# self-describe the capture_meta.json it writes.
+_ENV_PREFIX = (
     'cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" '
-    'TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a python3 -m pytest <test_file> '
-    "-v --timeout=60 2>&1 | head -100"
+    'TEST_NAME_PREFIX="{test_name_prefix}" FRAMEWORK="{framework}" '
+    'FRAMEWORK_LANGUAGE="{framework_language}" '
 )
-_PYTEST_SUITE = (
-    'cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" '
-    'TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a python3 -m pytest --timeout=120 '
-    "-v 2>&1 | tail -50"
-)
-_PW_TS_SINGLE = (
-    'cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" '
-    'TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a npx playwright test <test_file> '
-    "--reporter=list 2>&1 | head -100"
-)
-_PW_TS_SUITE = (
-    'cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" '
-    'TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a npx playwright test '
-    "--reporter=list 2>&1 | tail -50"
-)
+_PYTEST_SINGLE = _ENV_PREFIX + "xvfb-run -a python3 -m pytest <test_file> -v --timeout=60 2>&1 | head -100"
+_PYTEST_SUITE = _ENV_PREFIX + "xvfb-run -a python3 -m pytest --timeout=120 -v 2>&1 | tail -50"
+_PW_TS_SINGLE = _ENV_PREFIX + "xvfb-run -a npx playwright test <test_file> --reporter=list 2>&1 | head -100"
+_PW_TS_SUITE = _ENV_PREFIX + "xvfb-run -a npx playwright test --reporter=list 2>&1 | tail -50"
 
 
 @dataclass(frozen=True)

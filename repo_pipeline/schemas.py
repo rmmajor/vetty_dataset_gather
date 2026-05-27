@@ -126,6 +126,11 @@ class TrajectoryStep(BaseModel):
     screenshot: str
     thought: str = ""
     actions: list[dict] = Field(default_factory=list)
+    # Inline, high-value capture fields (additive; train_qwen.py convert ignores unknown
+    # step keys). The full diagnostic record lives in the sibling capture_meta.json.
+    bbox: Optional[dict] = None
+    role: Optional[str] = None
+    name: Optional[str] = None
 
 
 class Trajectory(BaseModel):
@@ -148,6 +153,57 @@ class TrajectoryMetadata(BaseModel):
     viewport: dict = Field(default_factory=lambda: {"width": 1280, "height": 720})
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     source_repo: str = ""
+    # Aggregate / provenance fields, derived after capture (stage 6 for Path B). All optional
+    # so trajectories recorded before this existed still validate.
+    framework: str = ""
+    framework_language: str = ""
+    source_query: str = ""
+    repo_stars: int = 0
+    action_type_histogram: dict = Field(default_factory=dict)
+    element_role_histogram: dict = Field(default_factory=dict)
+    length_bucket: str = ""
+    n_navigations: int = 0
+    valid_bbox_ratio: float = 0.0
+    n_console_errors: int = 0
+    instruction_source: str = ""
+    thought_source: str = ""
+    dedup_hash: str = ""
+    task_type: str = ""
+
+
+class StepCaptureMeta(BaseModel):
+    """Full per-step diagnostic record. Written to capture_meta.json, keyed by step number.
+    Element fields are best-effort and default gracefully when the DOM probe is unavailable
+    (Path A, screenshot-only) or fails."""
+    selector: str = ""
+    tag: Optional[str] = None
+    role: Optional[str] = None
+    name: Optional[str] = None
+    attrs: dict = Field(default_factory=dict)
+    bbox: Optional[dict] = None
+    is_visible: Optional[bool] = None
+    is_enabled: Optional[bool] = None
+    in_viewport: Optional[bool] = None
+    url_before: Optional[str] = None
+    url_after: Optional[str] = None
+    caused_navigation: bool = False
+    dom_changed: Optional[bool] = None
+    error: Optional[str] = None
+    console_errors: int = 0
+    screenshot_sha: str = ""
+    screenshot_width: int = 0
+    screenshot_height: int = 0
+    scroll_position: dict = Field(default_factory=lambda: {"x": 0, "y": 0})
+    dt_ms: int = 0
+    wait_state: Optional[str] = None
+
+
+class CaptureMeta(BaseModel):
+    schema_version: int = 1
+    task_id: str = ""
+    framework: str = ""
+    framework_language: str = ""
+    steps: dict[str, StepCaptureMeta] = Field(default_factory=dict)
 
 
 class CapturedAction(BaseModel):

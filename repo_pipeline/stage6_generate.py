@@ -1,8 +1,10 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
@@ -16,6 +18,7 @@ from repo_pipeline.think_generator import generate_thinks_for_trajectory
 logger = logging.getLogger(__name__)
 
 INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.05"))
+TASK_TYPE_BUDGET_USD = float(os.environ.get("TASK_TYPE_BUDGET_USD", "0.02"))
 SUITE_RUN_TIMEOUT = 480  # seconds; partial capture on timeout is fine for trajectory mining
 
 INSTRUCTION_PROMPT = """Given this browser test code and the sequence of actions recorded, write a natural language instruction (1-2 sentences) describing what task this test performs from a user's perspective.
@@ -25,6 +28,17 @@ Actions taken: {action_summary}
 
 Write ONLY the instruction, as if you're telling someone what to do on a website. Example: "Navigate to the shopping cart, update the quantity to 2, and proceed to checkout."
 """
+
+TASK_TYPES = ["auth", "form-fill", "search", "CRUD", "drag-drop", "nav", "other"]
+
+TASK_TYPE_PROMPT = """Classify this web task into EXACTLY ONE category.
+Categories: auth, form-fill, search, CRUD, drag-drop, nav, other.
+
+Instruction: {instruction}
+Action sequence: {action_types}
+Target elements (role: name): {elements}
+
+Reply with ONLY the single category word."""
 
 
 async def _run(fn, *args):
@@ -69,7 +83,10 @@ async def generate_for_repo(
         # Run the full instrumented test suite directly (no agent — install/wiring/viewport are
         # all handled in code). Whatever the suite executes is captured to /workspace/results;
         # a timeout just yields partial trajectories, which is fine.
-        suite_cmd = profile.test_command_suite.format(repo_name=repo_name, test_name_prefix=test_name_prefix)
+        suite_cmd = profile.test_command_suite.format(
+            repo_name=repo_name, test_name_prefix=test_name_prefix,
+            framework=profile.test_framework, framework_language=profile.language,
+        )
         out, err, code = await _run(sandbox.exec_command, suite_cmd, SUITE_RUN_TIMEOUT)
         logger.info(f"  {repo_name}: suite run exit={code}; {(out or err)[-300:].strip()[:300]}")
 
@@ -84,7 +101,8 @@ async def generate_for_repo(
             return
 
         trajectory_dirs = list(repo_traj_dir.glob("task_*/"))
-        valid_count = 0
+        valid_dirs = []
+        instruction_generated = {}
 
         for traj_dir in trajectory_dirs:
             trajectory_file = traj_dir / "trajectory.json"
@@ -108,15 +126,21 @@ async def generate_for_repo(
                 for step in steps
             )
 
-            if has_valid_coords and screenshots_exist:
-                valid_count += 1
+            if not (has_valid_coords and screenshots_exist):
+                continue
 
-                if not traj.get("instruction"):
-                    instruction = await generate_instruction(traj)
-                    traj["instruction"] = instruction
-                    with open(trajectory_file, "w") as f:
-                        json.dump(traj, f, indent=2)
+            valid_dirs.append(traj_dir)
 
+            if not traj.get("instruction"):
+                instruction = await generate_instruction(traj, _load_capture_meta(traj_dir))
+                traj["instruction"] = instruction
+                instruction_generated[traj_dir] = True
+                with open(trajectory_file, "w") as f:
+                    json.dump(traj, f, indent=2)
+            else:
+                instruction_generated[traj_dir] = False
+
+        valid_count = len(valid_dirs)
         logger.info(f"  {repo_name}: {valid_count} valid trajectories from {len(trajectory_dirs)} total")
 
         if valid_count == 0:
@@ -124,9 +148,13 @@ async def generate_for_repo(
             return
 
         logger.info(f"  Generating think blocks for {repo_name}...")
-        for traj_dir in trajectory_dirs:
-            if (traj_dir / "trajectory.json").exists():
-                await generate_thinks_for_trajectory(traj_dir, workers=5)
+        for traj_dir in valid_dirs:
+            await generate_thinks_for_trajectory(traj_dir, workers=5)
+
+        # Derive trajectory-level metadata from the captured trajectory + capture_meta, now
+        # that instructions and think blocks are filled in.
+        for traj_dir in valid_dirs:
+            await _enrich_metadata(traj_dir, repo, profile, instruction_generated.get(traj_dir, True))
 
         registry.update_status(
             repo_name,
@@ -143,23 +171,37 @@ async def generate_for_repo(
         await _run(sandbox.stop)
 
 
-async def generate_instruction(trajectory: dict) -> str:
+def _element_label(step: dict, step_meta: dict) -> str:
+    """A short 'role "name"' label for a step's target element, when known."""
+    role = step.get("role") or step_meta.get("role")
+    name = step.get("name") or step_meta.get("name")
+    if role and name:
+        return f'{role} "{name[:40]}"'
+    if name:
+        return f'"{name[:40]}"'
+    return role or ""
+
+
+async def generate_instruction(trajectory: dict, capture_meta: dict = None) -> str:
     steps = trajectory.get("steps", [])
     if not steps:
         return "Complete the web browsing task."
 
+    steps_meta = (capture_meta or {}).get("steps", {})
     action_summary = []
     for step in steps[:10]:
+        label = _element_label(step, steps_meta.get(str(step.get("step")), {}))
         for action in step.get("actions", []):
             action_type = action.get("type", "")
             if action_type == "click":
-                action_summary.append(f"click({action.get('x')}, {action.get('y')})")
+                action_summary.append(f"click {label}" if label else f"click({action.get('x')}, {action.get('y')})")
             elif action_type == "type":
-                action_summary.append(f'type("{action.get("text", "")[:30]}")')
+                target = f" into {label}" if label else ""
+                action_summary.append(f'type "{action.get("text", "")[:30]}"{target}')
             elif action_type == "keypress":
                 action_summary.append(f"keypress({action.get('keys', [])})")
             else:
-                action_summary.append(action_type)
+                action_summary.append(f"{action_type} {label}".strip())
 
     test_name = trajectory.get("task_id", "unknown")
     action_str = ", ".join(action_summary[:10])
@@ -187,6 +229,155 @@ async def generate_instruction(trajectory: dict) -> str:
         return f"Complete the web task: {test_name}"
 
     return result_text.strip() or f"Complete the web task: {test_name}"
+
+
+def _load_capture_meta(traj_dir: Path) -> dict:
+    p = traj_dir / "capture_meta.json"
+    if not p.exists():
+        return {}
+    try:
+        with open(p) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _host(url: str) -> str:
+    try:
+        return urlparse(url).netloc or ""
+    except Exception:
+        return ""
+
+
+def _length_bucket(n: int) -> str:
+    if n <= 5:
+        return "short"
+    if n <= 15:
+        return "medium"
+    return "long"
+
+
+def _dedup_hash(steps: list) -> str:
+    parts = []
+    for step in steps:
+        role = step.get("role") or ""
+        for a in step.get("actions", []):
+            parts.append(f"{a.get('type', '')}:{role}")
+    return "sha1:" + hashlib.sha1(";".join(parts).encode()).hexdigest()
+
+
+def _aggregate(steps: list, steps_meta: dict):
+    action_hist, role_hist = {}, {}
+    n_nav = bbox_steps = n_console = 0
+    for step in steps:
+        for a in step.get("actions", []):
+            t = a.get("type", "")
+            action_hist[t] = action_hist.get(t, 0) + 1
+        sm = steps_meta.get(str(step.get("step")), {})
+        role = step.get("role") or sm.get("role")
+        if role:
+            role_hist[role] = role_hist.get(role, 0) + 1
+        if step.get("bbox") or sm.get("bbox"):
+            bbox_steps += 1
+        if sm.get("caused_navigation"):
+            n_nav += 1
+        n_console += sm.get("console_errors", 0) or 0
+    total = len(steps)
+    valid_bbox_ratio = round(bbox_steps / total, 3) if total else 0.0
+    return action_hist, role_hist, n_nav, valid_bbox_ratio, n_console
+
+
+async def classify_task_type(trajectory: dict, capture_meta: dict) -> str:
+    steps = trajectory.get("steps", [])
+    steps_meta = (capture_meta or {}).get("steps", {})
+    action_types, elements = [], []
+    for step in steps[:20]:
+        for a in step.get("actions", []):
+            action_types.append(a.get("type", ""))
+        label = _element_label(step, steps_meta.get(str(step.get("step")), {}))
+        if label:
+            elements.append(label)
+
+    prompt = TASK_TYPE_PROMPT.format(
+        instruction=trajectory.get("instruction", "")[:300],
+        action_types=", ".join(action_types[:30]) or "(none)",
+        elements="; ".join(elements[:15]) or "(none)",
+    )
+
+    result_text = ""
+    try:
+        async for message in query(
+            prompt=prompt,
+            options=ClaudeAgentOptions(
+                model="claude-haiku-4-5-20251001",
+                max_turns=1,
+                max_budget_usd=TASK_TYPE_BUDGET_USD,
+                permission_mode="bypassPermissions",
+            ),
+        ):
+            if isinstance(message, ResultMessage) and message.subtype == "success":
+                result_text = message.result or ""
+    except Exception as e:
+        logger.warning(f"Task-type classification failed: {e}")
+        return "other"
+
+    label = result_text.strip().lower().replace(" ", "-").strip(".")
+    for t in TASK_TYPES:
+        if t.lower() in label:
+            return t
+    return "other"
+
+
+async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_generated: bool):
+    """Fill the trajectory-level aggregate / provenance fields in metadata.json from the
+    captured trajectory + capture_meta. Best-effort: never raise into the generation flow."""
+    try:
+        traj_file = traj_dir / "trajectory.json"
+        meta_file = traj_dir / "metadata.json"
+        if not traj_file.exists():
+            return
+
+        with open(traj_file) as f:
+            traj = json.load(f)
+        capture_meta = _load_capture_meta(traj_dir)
+
+        metadata = {}
+        if meta_file.exists():
+            try:
+                with open(meta_file) as f:
+                    metadata = json.load(f)
+            except Exception:
+                metadata = {}
+
+        steps = traj.get("steps", [])
+        steps_meta = capture_meta.get("steps", {})
+        action_hist, role_hist, n_nav, valid_bbox_ratio, n_console = _aggregate(steps, steps_meta)
+
+        metadata["instruction"] = traj.get("instruction", metadata.get("instruction", ""))
+        metadata["total_steps"] = len(steps)
+        metadata["domain"] = repo.get("domain") or RepoRegistry.classify_domain(
+            repo.get("description"), repo.get("topics")
+        )
+        metadata["website"] = _host(traj.get("start_url", ""))
+        metadata["framework"] = profile.test_framework
+        metadata["framework_language"] = profile.language
+        metadata["source_query"] = repo.get("source_query") or ""
+        metadata["repo_stars"] = repo.get("stars", 0) or 0
+        metadata["action_type_histogram"] = action_hist
+        metadata["element_role_histogram"] = role_hist
+        metadata["length_bucket"] = _length_bucket(len(steps))
+        metadata["n_navigations"] = n_nav
+        metadata["valid_bbox_ratio"] = valid_bbox_ratio
+        metadata["n_console_errors"] = n_console
+        metadata["instruction_source"] = "generated" if instruction_was_generated else "human"
+        metadata["thought_source"] = "generated"
+        metadata["dedup_hash"] = _dedup_hash(steps)
+        metadata["task_type"] = await classify_task_type(traj, capture_meta)
+
+        with open(meta_file, "w") as f:
+            json.dump(metadata, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Metadata enrichment failed for {traj_dir.name}: {e}")
 
 
 async def run_generate(
