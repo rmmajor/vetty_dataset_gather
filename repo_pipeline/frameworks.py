@@ -58,6 +58,7 @@ class FrameworkProfile:
     action_vocabulary: tuple           # method names that count as interactive actions
     sandbox_image: str                 # Docker image used for stages 5/6
     sandbox_platform: str | None       # forced platform (e.g. "linux/amd64") or None for native
+    test_globs: tuple                  # filename globs to locate test files (stage 5 trial)
 
 
 PROFILES: dict[str, FrameworkProfile] = {
@@ -74,6 +75,7 @@ PROFILES: dict[str, FrameworkProfile] = {
         ),
         injection_kind="python_conftest",
         instrumentation_filename="pw_python_conftest.py",
+        test_globs=("test_*.py", "*_test.py"),
         test_command_single=_PYTEST_SINGLE,
         test_command_suite=_PYTEST_SUITE,
         setup_note="A conftest.py with instrumentation has been placed in the test directory; it sets the viewport itself, so no config changes are needed.",
@@ -94,6 +96,7 @@ PROFILES: dict[str, FrameworkProfile] = {
         ),
         injection_kind="ts_fixture",
         instrumentation_filename="pw_ts_fixture.ts",
+        test_globs=("*.spec.ts", "*.test.ts", "*.spec.js", "*.test.js"),
         test_command_single=_PW_TS_SINGLE,
         test_command_suite=_PW_TS_SUITE,
         setup_note="Instrumentation is already fully wired: every test file's `@playwright/test` import has been redirected to /workspace/repo/instrumented-fixture, which overrides the `page` fixture and locks the 1280x720 viewport itself. Do NOT edit imports or playwright.config — just pick a promising test file and run it.",
@@ -115,6 +118,7 @@ PROFILES: dict[str, FrameworkProfile] = {
         ),
         injection_kind="python_conftest",
         instrumentation_filename="selenium_python_conftest.py",
+        test_globs=("test_*.py", "*_test.py"),
         test_command_single=_PYTEST_SINGLE,
         test_command_suite=_PYTEST_SUITE,
         setup_note="A conftest.py with Selenium instrumentation has been placed in the test directory. It locks the viewport to 1280x720 via CDP and captures coordinates from getBoundingClientRect, so no config changes are needed. Chrome and a matching chromedriver are already on PATH in the image.",
