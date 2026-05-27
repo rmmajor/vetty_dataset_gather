@@ -9,50 +9,14 @@ from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import setup_repo_instrumentation
 from repo_pipeline.registry import RepoRegistry
-from repo_pipeline.sandbox import DockerSandbox, build_sandbox_mcp_server
+from repo_pipeline.sandbox import DockerSandbox
 from repo_pipeline.schemas import RepoStatus
 from repo_pipeline.think_generator import generate_thinks_for_trajectory
 
 logger = logging.getLogger(__name__)
 
-GENERATE_BUDGET_USD = float(os.environ.get("STAGE6_BUDGET_USD", "1.50"))
 INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.05"))
-
-GENERATE_PROMPT = """You are performing full trajectory generation for the browser-test repository '{repo_name}' cloned at /workspace/repo.
-
-Framework: {framework}
-
-The instrumentation has already been injected.
-
-Run every shell command through the `exec` tool — there is no local shell, `exec` runs inside the container. Each `exec` call is a fresh shell, so environment variables do NOT persist between calls: put the trajectory env vars inline on the same line as the test command.
-
-Your tasks:
-
-1. **Run the FULL test suite** with instrumentation, passing the env vars inline in the SAME `exec` command. The container has NO display, so always launch the browser under `xvfb-run -a` (required for headless=False repos, harmless otherwise):
-   `{test_command}`
-
-2. **Check results**:
-   - List all directories in /workspace/results/
-   - For each trajectory directory, verify:
-     - trajectory.json exists and has steps
-     - Screenshots (PNG files) exist
-     - Actions have valid coordinates (x,y > 0)
-   - Report any broken trajectories
-
-3. **Generate instructions**: For each valid trajectory, look at the test code and the trajectory data, then write a natural language instruction describing what the test does. Save it by updating the trajectory.json file's "instruction" field.
-
-4. **Report summary** as JSON:
-```json
-{{
-  "total_trajectories": <int>,
-  "valid_trajectories": <int>,
-  "total_steps": <int>,
-  "trajectory_dirs": ["task_xxx", "task_yyy", ...]
-}}
-```
-
-Output ONLY the JSON at the end.
-"""
+SUITE_RUN_TIMEOUT = 480  # seconds; partial capture on timeout is fine for trajectory mining
 
 INSTRUCTION_PROMPT = """Given this browser test code and the sequence of actions recorded, write a natural language instruction (1-2 sentences) describing what task this test performs from a user's perspective.
 
@@ -61,6 +25,11 @@ Actions taken: {action_summary}
 
 Write ONLY the instruction, as if you're telling someone what to do on a website. Example: "Navigate to the shopping cart, update the quantity to 2, and proceed to checkout."
 """
+
+
+async def _run(fn, *args):
+    """Run a blocking DockerSandbox call off the event loop so concurrent workers overlap."""
+    return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
 
 
 async def generate_for_repo(
@@ -88,44 +57,27 @@ async def generate_for_repo(
     sandbox = DockerSandbox(image=profile.sandbox_image, platform=profile.sandbox_platform)
 
     try:
-        sandbox.start(repo_name)
+        await _run(sandbox.start, repo_name)
 
-        stdout, stderr, exit_code = sandbox.clone_repo(repo_name, branch=repo.get("default_branch"))
+        _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
         if exit_code != 0:
             registry.reject(repo_name, stage=6, reason=f"clone failed: {stderr[:200]}")
             return
 
-        setup_repo_instrumentation(sandbox, profile)
+        await _run(setup_repo_instrumentation, sandbox, profile)
 
-        prompt = GENERATE_PROMPT.format(
-            repo_name=repo_name,
-            framework=profile.name,
-            test_command=profile.test_command_suite.format(repo_name=repo_name, test_name_prefix=test_name_prefix),
-        )
-
-        mcp_server, sandbox_tools = build_sandbox_mcp_server(sandbox)
-
-        result_text = ""
-        async for message in query(
-            prompt=prompt,
-            options=ClaudeAgentOptions(
-                model="claude-sonnet-4-20250514",
-                max_turns=35,
-                max_budget_usd=GENERATE_BUDGET_USD,
-                permission_mode="bypassPermissions",
-                mcp_servers={"sandbox": mcp_server},
-                allowed_tools=sandbox_tools,
-                disallowed_tools=["Bash"],
-            ),
-        ):
-            if isinstance(message, ResultMessage) and message.subtype == "success":
-                result_text = message.result or ""
+        # Run the full instrumented test suite directly (no agent — install/wiring/viewport are
+        # all handled in code). Whatever the suite executes is captured to /workspace/results;
+        # a timeout just yields partial trajectories, which is fine.
+        suite_cmd = profile.test_command_suite.format(repo_name=repo_name, test_name_prefix=test_name_prefix)
+        out, err, code = await _run(sandbox.exec_command, suite_cmd, SUITE_RUN_TIMEOUT)
+        logger.info(f"  {repo_name}: suite run exit={code}; {(out or err)[-300:].strip()[:300]}")
 
         repo_traj_dir = trajectory_base_dir / f"repo_{test_name_prefix}"
         repo_traj_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            sandbox.copy_out("/workspace/results", str(repo_traj_dir))
+            await _run(sandbox.copy_out, "/workspace/results", str(repo_traj_dir))
         except Exception as e:
             logger.warning(f"  Failed to copy results for {repo_name}: {e}")
             registry.reject(repo_name, stage=6, reason=f"copy results failed: {str(e)[:200]}")
@@ -188,7 +140,7 @@ async def generate_for_repo(
         logger.error(f"Error generating for {repo_name}: {e}")
         registry.reject(repo_name, stage=6, reason=f"generation error: {str(e)[:200]}")
     finally:
-        sandbox.stop()
+        await _run(sandbox.stop)
 
 
 async def generate_instruction(trajectory: dict) -> str:
@@ -248,17 +200,12 @@ async def run_generate(
     logger.info(f"Generating trajectories for {len(repos)} repos with {workers} workers")
 
     semaphore = asyncio.Semaphore(workers)
-    cost_estimate = 0.0
     total_trajectories = 0
 
     async def process_with_semaphore(repo):
-        nonlocal cost_estimate, total_trajectories
-        if budget_remaining is not None and cost_estimate > budget_remaining:
-            logger.warning("Budget limit reached, stopping")
-            return
+        nonlocal total_trajectories
         async with semaphore:
             await generate_for_repo(registry, repo, trajectory_base_dir)
-            cost_estimate += 0.60
 
         repo_after = registry.get_repo(repo["full_name"])
         if repo_after and repo_after["status"] == RepoStatus.COMPLETED.value:
