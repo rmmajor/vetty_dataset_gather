@@ -16,9 +16,25 @@ THINK_PROMPT = """You are annotating a web browsing trajectory for training data
 Given this screenshot and the action that was taken, write a brief reasoning explanation (1-3 sentences) for WHY this action makes sense.
 
 Action taken: {action_description}
-Previous actions: {previous_actions}
+{target_element}Previous actions: {previous_actions}
 
 Write ONLY the reasoning, no action. Be specific about what you see in the screenshot."""
+
+
+def format_target_element(step: dict, step_meta: dict) -> str:
+    """A 'Target element: ...' prompt line grounded in the captured DOM element, or '' when
+    no element metadata exists (older trajectories) so the prompt renders as before."""
+    role = step.get("role") or step_meta.get("role")
+    name = step.get("name") or step_meta.get("name")
+    if role and name:
+        label = f'{role} labeled "{name}"'
+    elif name:
+        label = f'"{name}"'
+    elif role:
+        label = role
+    else:
+        return ""
+    return f"Target element: {label}\n"
 
 
 def format_action_description(action: dict) -> str:
@@ -74,6 +90,7 @@ async def generate_think_for_step(
     screenshot_path: Path,
     action: dict,
     previous_actions_str: str,
+    target_element: str = "",
 ) -> str:
     if not screenshot_path.exists():
         return ""
@@ -81,6 +98,7 @@ async def generate_think_for_step(
     b64_screenshot = base64.b64encode(screenshot_path.read_bytes()).decode("utf-8")
     text = THINK_PROMPT.format(
         action_description=format_action_description(action),
+        target_element=target_element,
         previous_actions=previous_actions_str,
     )
 
@@ -141,6 +159,16 @@ async def generate_thinks_for_trajectory(
         logger.debug(f"  {trajectory_dir.name}: already has all think blocks, skipping")
         return True
 
+    capture_meta = {}
+    capture_meta_path = trajectory_dir / "capture_meta.json"
+    if capture_meta_path.exists():
+        try:
+            with open(capture_meta_path) as f:
+                capture_meta = json.load(f)
+        except Exception:
+            capture_meta = {}
+    steps_meta = capture_meta.get("steps", {})
+
     semaphore = asyncio.Semaphore(workers)
 
     async def process_step(step):
@@ -153,12 +181,14 @@ async def generate_thinks_for_trajectory(
 
         screenshot_path = trajectory_dir / step["screenshot"]
         previous_str = format_previous_actions(steps, step["step"])
+        target_element = format_target_element(step, steps_meta.get(str(step.get("step")), {}))
 
         async with semaphore:
             thought = await generate_think_for_step(
                 screenshot_path,
                 actions[0],
                 previous_str,
+                target_element,
             )
             step["thought"] = thought
 

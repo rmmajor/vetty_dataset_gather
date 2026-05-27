@@ -97,7 +97,8 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
         for test_file in test_files[:MAX_TRIAL_FILES]:
             rel = test_file.replace(REPO_DIR + "/", "")
             cmd = profile.test_command_single.format(
-                repo_name=repo_name, test_name_prefix=test_name_prefix
+                repo_name=repo_name, test_name_prefix=test_name_prefix,
+                framework=profile.test_framework, framework_language=profile.language,
             ).replace("<test_file>", rel)
             out, err, _ = await _run(sandbox.exec_command, cmd, TEST_RUN_TIMEOUT)
             combined = out + err

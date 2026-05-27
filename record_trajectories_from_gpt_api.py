@@ -1,8 +1,10 @@
 import argparse
 import asyncio
 import base64
+import hashlib
 import json
 import os
+import struct
 import sys
 import time
 from datetime import datetime, timezone
@@ -16,6 +18,23 @@ from tqdm import tqdm
 def parse_viewport(viewport_str):
     width, height = viewport_str.lower().split("x")
     return int(width), int(height)
+
+
+def png_dims(b):
+    try:
+        if len(b) >= 24 and b[:8] == b"\x89PNG\r\n\x1a\n":
+            w, h = struct.unpack(">II", b[16:24])
+            return int(w), int(h)
+    except Exception:
+        pass
+    return 0, 0
+
+
+def safe_page_url(page):
+    try:
+        return page.url
+    except Exception:
+        return None
 
 
 def encode_screenshot_to_base64(screenshot_bytes):
@@ -201,6 +220,9 @@ async def record_single_task(client, task, output_dir, max_steps, viewport_width
     task_dir.mkdir(parents=True, exist_ok=True)
 
     steps = []
+    step_metas = []
+    prev_sha = None
+    last_time = None
     success = True
     error_message = None
 
@@ -289,10 +311,33 @@ async def record_single_task(client, task, output_dir, max_steps, viewport_width
                 "actions": action_dicts,
             })
 
+            # DOM-free capture metadata: GPT's computer tool is screenshot-only, so element
+            # semantics stay null; we still record url/screenshot/timing signals.
+            sha = hashlib.sha256(screenshot_bytes).hexdigest()
+            w, h = png_dims(screenshot_bytes)
+            now = time.monotonic()
+            step_metas.append({
+                "url_before": safe_page_url(page),
+                "url_after": None,
+                "caused_navigation": False,
+                "dom_changed": (sha != prev_sha) if prev_sha else None,
+                "screenshot_sha": sha,
+                "screenshot_width": w,
+                "screenshot_height": h,
+                "dt_ms": int((now - last_time) * 1000) if last_time else 0,
+            })
+            prev_sha = sha
+            last_time = now
+
             tqdm.write(f"  Step {len(steps)}: {[a['type'] for a in action_dicts]}")
 
             await execute_actions(page, actions)
             await asyncio.sleep(1)
+
+            url_after = safe_page_url(page)
+            step_metas[-1]["url_after"] = url_after
+            ub = step_metas[-1]["url_before"]
+            step_metas[-1]["caused_navigation"] = bool(ub and url_after and ub != url_after)
 
             screenshot_bytes = await page.screenshot(type="png")
             b64_screenshot = encode_screenshot_to_base64(screenshot_bytes)
@@ -320,11 +365,30 @@ async def record_single_task(client, task, output_dir, max_steps, viewport_width
     with open(trajectory_path, "w") as f:
         json.dump(trajectory, f, indent=2)
 
+    if step_metas:
+        capture_meta = {
+            "schema_version": 1,
+            "task_id": task_id,
+            "framework": "playwright",
+            "framework_language": "python",
+            "steps": {str(i + 1): m for i, m in enumerate(step_metas)},
+        }
+        with open(task_dir / "capture_meta.json", "w") as f:
+            json.dump(capture_meta, f, indent=2)
+
     save_metadata(task, task_dir, steps, success, viewport_width, viewport_height, error_message)
     return trajectory
 
 
 def save_metadata(task, task_dir, steps, success, viewport_width, viewport_height, error_message=None):
+    action_hist = {}
+    for step in steps:
+        for action in step.get("actions", []):
+            t = action.get("type", "")
+            action_hist[t] = action_hist.get(t, 0) + 1
+    n = len(steps)
+    length_bucket = "short" if n <= 5 else ("medium" if n <= 15 else "long")
+
     metadata = {
         "task_id": task["task_id"],
         "instruction": task["instruction"],
@@ -335,6 +399,13 @@ def save_metadata(task, task_dir, steps, success, viewport_width, viewport_heigh
         "success": success,
         "viewport": {"width": viewport_width, "height": viewport_height},
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        # GPT CUA distillation: instruction comes from the Mind2Web task, reasoning from GPT.
+        "framework": "playwright",
+        "framework_language": "python",
+        "action_type_histogram": action_hist,
+        "length_bucket": length_bucket,
+        "instruction_source": "human",
+        "thought_source": "human",
     }
     if error_message:
         metadata["error"] = error_message
