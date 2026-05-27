@@ -53,7 +53,8 @@ class DockerSandbox:
 
     def _check_timeout(self):
         if self.start_time and (time.time() - self.start_time) > CONTAINER_TIMEOUT_SECONDS:
-            logger.error(f"Container {self.container_id[:12]} exceeded {CONTAINER_TIMEOUT_SECONDS}s timeout")
+            cid = (self.container_id or "unknown")[:12]
+            logger.error(f"Container {cid} exceeded {CONTAINER_TIMEOUT_SECONDS}s timeout")
             self.stop()
             raise TimeoutError(f"Sandbox container exceeded {CONTAINER_TIMEOUT_SECONDS}s timeout")
 
@@ -63,8 +64,12 @@ class DockerSandbox:
             raise RuntimeError("Sandbox container not started")
 
         try:
+            # docker-py's exec_run has no timeout, so enforce it in-container with
+            # coreutils `timeout` (SIGTERM at `timeout`s, SIGKILL 10s later). Without
+            # this a hung command (e.g. a stuck browser) blocks until the 30-min
+            # container timeout. A timed-out command exits 124.
             exec_result = self.container.exec_run(
-                ["bash", "-c", command],
+                ["timeout", "-k", "10", str(timeout), "bash", "-c", command],
                 workdir="/workspace",
                 demux=True,
             )
@@ -130,6 +135,7 @@ class DockerSandbox:
                 logger.warning(f"Failed to remove container: {e}")
             self.container = None
             self.container_id = None
+            self.start_time = None
 
     def clone_repo(self, repo_full_name: str, branch: str = None) -> tuple[str, str, int]:
         branch_flag = f"--branch {branch}" if branch else ""

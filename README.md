@@ -63,13 +63,13 @@ A 6-stage quality funnel — cast the widest net, then reject aggressively:
 | 1. Discover | GitHub API search (50+ queries) | None | $0 |
 | 2. Filter | Stars, recency, size, language | None | $0 |
 | 3. Shallow Score | Claude Sonnet scores repo metadata | Sonnet | ~$0.03 |
-| 4. Deep Analyze | Clone + inspect tests in Docker | Sonnet | ~$0.15 |
+| 4. Deep Analyze | Clone + statically inspect tests in Docker (no install) | Sonnet | ~$0.15 |
 | 5. Trial Run | POC instrumented test in Docker | Sonnet | ~$0.30 |
 | 6. Generate | Full trajectory generation in Docker | Sonnet + Haiku | ~$0.60 |
 
 Stages 1–2 run on-demand. Stages 3–6 run as an overnight cron job with a configurable budget cap. Results are sent via Telegram in the morning.
 
-All repo code runs inside ephemeral Docker containers (stages 4–6). No repo code touches the host.
+All repo code runs inside ephemeral Docker containers (stages 4–6). No repo code touches the host. Dependency install happens at stages 5–6 (each in its own fresh container, in code via `setup_repo_instrumentation`), not at stage 4 — stage 4 is a cheap static triage that only reads files.
 
 ### Setup
 

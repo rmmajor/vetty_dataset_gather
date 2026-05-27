@@ -96,7 +96,7 @@ PROFILES: dict[str, FrameworkProfile] = {
         instrumentation_filename="pw_ts_fixture.ts",
         test_command_single=_PW_TS_SINGLE,
         test_command_suite=_PW_TS_SUITE,
-        setup_note="A fixture file has been placed at /workspace/repo/instrumented-fixture.ts. Modify playwright.config.ts to set the viewport to 1280x720.",
+        setup_note="Instrumentation is already fully wired: every test file's `@playwright/test` import has been redirected to /workspace/repo/instrumented-fixture, which overrides the `page` fixture and locks the 1280x720 viewport itself. Do NOT edit imports or playwright.config — just pick a promising test file and run it.",
         action_vocabulary=(
             "click", "fill", "type", "press", "selectOption", "select_option",
             "check", "uncheck", "dblclick", "dragTo", "drag_and_drop",

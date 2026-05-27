@@ -119,8 +119,8 @@ function getCenter(box: BoundingBox | null): [number, number] {
   return [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)];
 }
 
-export const test = base.extend<{ instrumentedPage: Page }>({
-  instrumentedPage: async ({ page }, use, testInfo) => {
+export const test = base.extend({
+  page: async ({ page }, use, testInfo) => {
     const recorder = new StepRecorder();
     recorder.setTest(testInfo.titlePath.join(' > '));
 
@@ -137,7 +137,7 @@ export const test = base.extend<{ instrumentedPage: Page }>({
     const originalClick = page.click.bind(page);
     page.click = async (selector: string, options?: any) => {
       try {
-        const element = page.locator(selector).first;
+        const element = page.locator(selector).first();
         const box = await element.boundingBox();
         const [cx, cy] = getCenter(box);
         const screenshot = await page.screenshot({ type: 'png' });
@@ -151,7 +151,7 @@ export const test = base.extend<{ instrumentedPage: Page }>({
     const originalFill = page.fill.bind(page);
     page.fill = async (selector: string, value: string, options?: any) => {
       try {
-        const element = page.locator(selector).first;
+        const element = page.locator(selector).first();
         const box = await element.boundingBox();
         const [cx, cy] = getCenter(box);
         const screenshot = await page.screenshot({ type: 'png' });
@@ -173,7 +173,7 @@ export const test = base.extend<{ instrumentedPage: Page }>({
     const originalSelectOption = page.selectOption.bind(page);
     page.selectOption = async (selector: string, values: any, options?: any) => {
       try {
-        const element = page.locator(selector).first;
+        const element = page.locator(selector).first();
         const box = await element.boundingBox();
         const [cx, cy] = getCenter(box);
         const screenshot = await page.screenshot({ type: 'png' });
@@ -185,7 +185,7 @@ export const test = base.extend<{ instrumentedPage: Page }>({
     const originalDblclick = page.dblclick.bind(page);
     page.dblclick = async (selector: string, options?: any) => {
       try {
-        const element = page.locator(selector).first;
+        const element = page.locator(selector).first();
         const box = await element.boundingBox();
         const [cx, cy] = getCenter(box);
         const screenshot = await page.screenshot({ type: 'png' });
@@ -197,7 +197,7 @@ export const test = base.extend<{ instrumentedPage: Page }>({
     const originalCheck = page.check.bind(page);
     page.check = async (selector: string, options?: any) => {
       try {
-        const element = page.locator(selector).first;
+        const element = page.locator(selector).first();
         const box = await element.boundingBox();
         const [cx, cy] = getCenter(box);
         const screenshot = await page.screenshot({ type: 'png' });
@@ -209,7 +209,7 @@ export const test = base.extend<{ instrumentedPage: Page }>({
     const originalUncheck = page.uncheck.bind(page);
     page.uncheck = async (selector: string, options?: any) => {
       try {
-        const element = page.locator(selector).first;
+        const element = page.locator(selector).first();
         const box = await element.boundingBox();
         const [cx, cy] = getCenter(box);
         const screenshot = await page.screenshot({ type: 'png' });
@@ -225,4 +225,7 @@ export const test = base.extend<{ instrumentedPage: Page }>({
   },
 });
 
-export { expect } from '@playwright/test';
+// Re-export everything from @playwright/test so this module is a drop-in superset:
+// redirecting a test's `@playwright/test` import here preserves expect/devices/types,
+// while the `test` above (instrumented page override) shadows the original.
+export * from '@playwright/test';
