@@ -1,8 +1,16 @@
 /**
  * Drop-in Playwright fixture for TypeScript/JavaScript repos.
  *
- * Usage: Import this fixture instead of @playwright/test in test files,
- * or configure playwright.config.ts to use this as a global setup.
+ * Usage: imports of `@playwright/test` in test files are redirected here in code
+ * (see instrumentation/__init__._wire_ts_fixture). This module re-exports everything
+ * from @playwright/test (drop-in superset) and overrides the built-in `page` fixture
+ * so every test is instrumented automatically.
+ *
+ * It captures BOTH calling styles by patching the Locator prototype (modern API:
+ * page.getByRole(...).click(), page.locator(...).fill(), ...) AND the legacy page API
+ * (page.click(selector), page.fill(selector, value), ...). Patching the prototype keeps
+ * locators as real objects so Playwright's expect() still recognises them (a Proxy wrapper
+ * does not).
  *
  * Environment variables:
  *   TRAJECTORY_DIR    — output directory (default: /workspace/results)
@@ -119,109 +127,112 @@ function getCenter(box: BoundingBox | null): [number, number] {
   return [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)];
 }
 
+// The active test's recorder. Set per test in the `page` fixture; the (global) Locator
+// prototype patch records into it. Playwright runs tests serially within a worker process,
+// so a single module-level recorder is safe.
+let currentRecorder: StepRecorder | null = null;
+let locatorPrototypePatched = false;
+
+// Record an action performed on a specific locator: screenshot + center of its bounding box.
+async function recordLocatorAction(loc: Locator, type: string, extra: Record<string, unknown> = {}) {
+  if (!currentRecorder) return;
+  try {
+    if (type === 'keypress') {
+      const screenshot = await loc.page().screenshot({ type: 'png' });
+      currentRecorder.record('keypress', 0, 0, screenshot, extra);
+      return;
+    }
+    const box = await loc.boundingBox();
+    const [cx, cy] = getCenter(box);
+    if (cx === 0 && cy === 0) return; // not visible / no box → skip (training needs real coords)
+    const screenshot = await loc.page().screenshot({ type: 'png' });
+    currentRecorder.record(type, cx, cy, screenshot, extra);
+  } catch {}
+}
+
+// Patch the Locator prototype ONCE so locator-based actions in any test are instrumented.
+// We obtain the prototype from a live locator's constructor (the runtime class isn't a value
+// export of @playwright/test). Mirrors the Python conftest's Locator-class patching.
+function patchLocatorPrototype(sample: Locator) {
+  const proto: any = Object.getPrototypeOf(sample);
+  if (!proto || proto.__trajInstrumented) return;
+  proto.__trajInstrumented = true;
+
+  const patch = (method: string, record: (self: Locator, args: any[]) => Promise<void>) => {
+    const orig = proto[method];
+    if (typeof orig !== 'function') return;
+    proto[method] = async function (this: Locator, ...args: any[]) {
+      await record(this, args);
+      return orig.apply(this, args);
+    };
+  };
+
+  const clickLike: Record<string, string> = {
+    click: 'click', dblclick: 'double_click', tap: 'click',
+    check: 'click', uncheck: 'click', setChecked: 'click', selectOption: 'click',
+  };
+  for (const [m, type] of Object.entries(clickLike)) {
+    patch(m, async (self, args) => recordLocatorAction(self, type, { button: args?.[0]?.button }));
+  }
+  patch('fill', async (self, args) => {
+    await recordLocatorAction(self, 'click');
+    await recordLocatorAction(self, 'type', { value: args[0] });
+  });
+  patch('type', async (self, args) => recordLocatorAction(self, 'type', { value: args[0] }));
+  patch('pressSequentially', async (self, args) => recordLocatorAction(self, 'type', { value: args[0] }));
+  patch('press', async (self, args) => recordLocatorAction(self, 'keypress', { keys: [args[0]] }));
+}
+
 export const test = base.extend({
   page: async ({ page }, use, testInfo) => {
     const recorder = new StepRecorder();
     recorder.setTest(testInfo.titlePath.join(' > '));
+    currentRecorder = recorder;
 
     await page.setViewportSize({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT });
 
-    let startUrl = '';
+    if (!locatorPrototypePatched) {
+      patchLocatorPrototype(page.locator('body'));
+      locatorPrototypePatched = true;
+    }
 
+    let startUrl = '';
     const originalGoto = page.goto.bind(page);
     page.goto = async (url: string, options?: any) => {
       if (!startUrl) startUrl = url;
       return originalGoto(url, options);
     };
 
-    const originalClick = page.click.bind(page);
-    page.click = async (selector: string, options?: any) => {
-      try {
-        const element = page.locator(selector).first();
-        const box = await element.boundingBox();
-        const [cx, cy] = getCenter(box);
-        const screenshot = await page.screenshot({ type: 'png' });
-        recorder.record('click', cx, cy, screenshot, {
-          button: options?.button || 'left',
-        });
-      } catch {}
-      return originalClick(selector, options);
+    // Legacy page-level action API (page.click(selector), page.fill(...), ...) — these go
+    // through the frame channel, not the Locator class, so they need their own patches.
+    const patchPageAction = (method: string, type: string) => {
+      const fn = (page as any)[method];
+      if (typeof fn !== 'function') return;
+      const original = fn.bind(page);
+      (page as any)[method] = async (selector: string, ...rest: any[]) => {
+        await recordLocatorAction(page.locator(selector).first(), type, { button: rest?.[0]?.button });
+        return original(selector, ...rest);
+      };
     };
-
-    const originalFill = page.fill.bind(page);
-    page.fill = async (selector: string, value: string, options?: any) => {
-      try {
-        const element = page.locator(selector).first();
-        const box = await element.boundingBox();
-        const [cx, cy] = getCenter(box);
-        const screenshot = await page.screenshot({ type: 'png' });
-        recorder.record('click', cx, cy, screenshot);
-        recorder.record('type', cx, cy, screenshot, { value });
-      } catch {}
-      return originalFill(selector, value, options);
-    };
-
-    const originalPress = page.press.bind(page);
-    page.press = async (selector: string, key: string, options?: any) => {
-      try {
-        const screenshot = await page.screenshot({ type: 'png' });
-        recorder.record('keypress', 0, 0, screenshot, { keys: [key] });
-      } catch {}
-      return originalPress(selector, key, options);
-    };
-
-    const originalSelectOption = page.selectOption.bind(page);
-    page.selectOption = async (selector: string, values: any, options?: any) => {
-      try {
-        const element = page.locator(selector).first();
-        const box = await element.boundingBox();
-        const [cx, cy] = getCenter(box);
-        const screenshot = await page.screenshot({ type: 'png' });
-        recorder.record('click', cx, cy, screenshot);
-      } catch {}
-      return originalSelectOption(selector, values, options);
-    };
-
-    const originalDblclick = page.dblclick.bind(page);
-    page.dblclick = async (selector: string, options?: any) => {
-      try {
-        const element = page.locator(selector).first();
-        const box = await element.boundingBox();
-        const [cx, cy] = getCenter(box);
-        const screenshot = await page.screenshot({ type: 'png' });
-        recorder.record('double_click', cx, cy, screenshot);
-      } catch {}
-      return originalDblclick(selector, options);
-    };
-
-    const originalCheck = page.check.bind(page);
-    page.check = async (selector: string, options?: any) => {
-      try {
-        const element = page.locator(selector).first();
-        const box = await element.boundingBox();
-        const [cx, cy] = getCenter(box);
-        const screenshot = await page.screenshot({ type: 'png' });
-        recorder.record('click', cx, cy, screenshot);
-      } catch {}
-      return originalCheck(selector, options);
-    };
-
-    const originalUncheck = page.uncheck.bind(page);
-    page.uncheck = async (selector: string, options?: any) => {
-      try {
-        const element = page.locator(selector).first();
-        const box = await element.boundingBox();
-        const [cx, cy] = getCenter(box);
-        const screenshot = await page.screenshot({ type: 'png' });
-        recorder.record('click', cx, cy, screenshot);
-      } catch {}
-      return originalUncheck(selector, options);
-    };
+    patchPageAction('click', 'click');
+    patchPageAction('dblclick', 'double_click');
+    patchPageAction('check', 'click');
+    patchPageAction('uncheck', 'click');
+    patchPageAction('selectOption', 'click');
+    if (typeof page.fill === 'function') {
+      const originalPageFill = page.fill.bind(page);
+      (page as any).fill = async (selector: string, value: string, options?: any) => {
+        await recordLocatorAction(page.locator(selector).first(), 'click');
+        await recordLocatorAction(page.locator(selector).first(), 'type', { value });
+        return originalPageFill(selector, value, options);
+      };
+    }
 
     await use(page);
 
     const success = testInfo.status === 'passed';
     recorder.save(startUrl, success);
+    currentRecorder = null;
   },
 });
 
