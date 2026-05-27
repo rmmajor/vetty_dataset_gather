@@ -150,6 +150,18 @@ SEARCH_QUERIES = [
     "playwright api key management test",
     "playwright audit log test",
 
+    # ---- Real-product domains (diversity: under-covered verticals) ----
+    "playwright fintech banking app test",
+    "playwright healthcare patient portal test",
+    "playwright project management board test",
+    "playwright analytics reporting dashboard test",
+    "playwright real estate listings test",
+    "playwright travel booking flow test",
+    "playwright social feed messaging test",
+    "playwright video streaming app test",
+    "playwright calendar scheduling app test",
+    "playwright file manager test",
+
     # ---- Dependency-based (code search — finds real projects) ----
     '"@playwright/test" filename:package.json',
     "playwright filename:requirements.txt",

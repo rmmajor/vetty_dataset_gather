@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS repos (
     trajectory_count INTEGER DEFAULT 0,
     trajectory_dir   TEXT,
 
-    is_demo         BOOLEAN DEFAULT 0
+    is_demo         BOOLEAN DEFAULT 0,
+    domain          TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_repos_status ON repos(status);
@@ -67,6 +68,15 @@ class RepoRegistry:
 
     DEMO_KEYWORDS = ["demo", "sample", "practice", "example", "boilerplate", "starter", "awesome", "todo"]
 
+    # Keyword → domain classification (first match wins), checked against description + topics.
+    DOMAIN_RULES = [
+        ("ecommerce", ("ecommerce", "e-commerce", "shop", "cart", "checkout", "store", "payment", "shopping")),
+        ("cms_admin", ("cms", "wordpress", "strapi", "headless", "admin panel", "content management")),
+        ("forums_social", ("forum", "social", "discourse", "community", "chat", "messaging")),
+        ("auth", ("auth", "login", "signup", "sign-in", "oauth", "sso", "identity")),
+        ("web_apps", ("dashboard", "crud", "saas", "portal", "management", "booking", "invoice", "analytics")),
+    ]
+
     def _migrate(self):
         columns = {
             row[1]
@@ -77,6 +87,9 @@ class RepoRegistry:
         if "is_demo" not in columns:
             self.conn.execute("ALTER TABLE repos ADD COLUMN is_demo BOOLEAN DEFAULT 0")
             self._backfill_is_demo()
+        if "domain" not in columns:
+            self.conn.execute("ALTER TABLE repos ADD COLUMN domain TEXT")
+            self._backfill_domain()
 
     @staticmethod
     def _check_is_demo(source_query: str) -> bool:
@@ -93,6 +106,27 @@ class RepoRegistry:
                     (row["full_name"],),
                 )
 
+    @staticmethod
+    def classify_domain(description: str, topics=None) -> str:
+        if isinstance(topics, str):
+            try:
+                topics = json.loads(topics)
+            except (json.JSONDecodeError, TypeError):
+                topics = []
+        text = ((description or "") + " " + " ".join(topics or [])).lower()
+        for domain, keywords in RepoRegistry.DOMAIN_RULES:
+            if any(kw in text for kw in keywords):
+                return domain
+        return "other"
+
+    def _backfill_domain(self):
+        rows = self.conn.execute("SELECT full_name, description, topics FROM repos").fetchall()
+        for row in rows:
+            self.conn.execute(
+                "UPDATE repos SET domain = ? WHERE full_name = ?",
+                (self.classify_domain(row["description"], row["topics"]), row["full_name"]),
+            )
+
     def close(self):
         self.conn.close()
 
@@ -103,14 +137,15 @@ class RepoRegistry:
             topics = json.dumps(topics)
 
         is_demo = self._check_is_demo(repo_data.get("source_query", ""))
+        domain = self.classify_domain(repo_data.get("description"), repo_data.get("topics"))
 
         try:
             cursor = self.conn.execute(
                 """INSERT OR IGNORE INTO repos
                    (full_name, html_url, stars, last_pushed, size_kb, language,
                     archived, fork, parent_repo, description, topics, default_branch,
-                    status, current_stage, added_at, updated_at, source_query, is_demo)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+                    status, current_stage, added_at, updated_at, source_query, is_demo, domain)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
                 (
                     repo_data["full_name"],
                     repo_data.get("html_url", ""),
@@ -129,6 +164,7 @@ class RepoRegistry:
                     now,
                     repo_data.get("source_query"),
                     is_demo,
+                    domain,
                 ),
             )
             self.conn.commit()
@@ -176,16 +212,39 @@ class RepoRegistry:
             params.append(language)
 
         if stage >= 4:
-            query += " ORDER BY COALESCE(shallow_total, 0) DESC, stars DESC"
-        else:
-            query += " ORDER BY is_demo ASC, query_priority ASC, stars DESC"
+            # Favor real products (higher production_complexity, stored inside the shallow_scores
+            # JSON) over generic practice repos, then by overall shallow score.
+            query += (
+                " ORDER BY CAST(json_extract(shallow_scores, '$.production_complexity') AS INTEGER) DESC,"
+                " COALESCE(shallow_total, 0) DESC, stars DESC"
+            )
+            if limit:
+                query += " LIMIT ?"
+                params.append(limit)
+            return [dict(row) for row in self.conn.execute(query, params).fetchall()]
 
-        if limit:
-            query += " LIMIT ?"
-            params.append(limit)
+        # Stages <4: order by priority, then balance across domains so scoring sees a varied
+        # spread of repo types instead of top-N of a single one.
+        query += " ORDER BY is_demo ASC, query_priority ASC, stars DESC"
+        rows = [dict(row) for row in self.conn.execute(query, params).fetchall()]
+        if not limit or len(rows) <= limit:
+            return rows
+        return self._round_robin_by_domain(rows, limit)
 
-        rows = self.conn.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+    @staticmethod
+    def _round_robin_by_domain(repos: list[dict], limit: int) -> list[dict]:
+        buckets: dict[str, list[dict]] = {}
+        for repo in repos:  # repos arrive already in priority order; preserve it within each domain
+            buckets.setdefault(repo.get("domain") or "other", []).append(repo)
+        bucket_lists = list(buckets.values())
+        selected: list[dict] = []
+        while len(selected) < limit and any(bucket_lists):
+            for bucket in bucket_lists:
+                if bucket:
+                    selected.append(bucket.pop(0))
+                    if len(selected) >= limit:
+                        break
+        return selected
 
     def update_status(self, full_name: str, status: str, stage: int, **extra_fields):
         now = datetime.now(timezone.utc).isoformat()
@@ -245,30 +304,8 @@ class RepoRegistry:
 
     def get_domain_distribution(self) -> dict:
         rows = self.conn.execute(
-            """SELECT
-                CASE
-                    WHEN lower(description) LIKE '%ecommerce%' OR lower(description) LIKE '%shop%'
-                        OR lower(description) LIKE '%cart%' OR lower(description) LIKE '%checkout%'
-                        THEN 'ecommerce'
-                    WHEN lower(description) LIKE '%cms%' OR lower(description) LIKE '%admin%'
-                        OR lower(description) LIKE '%wordpress%' OR lower(description) LIKE '%strapi%'
-                        THEN 'cms_admin'
-                    WHEN lower(description) LIKE '%forum%' OR lower(description) LIKE '%social%'
-                        OR lower(description) LIKE '%discourse%'
-                        THEN 'forums_social'
-                    WHEN lower(description) LIKE '%auth%' OR lower(description) LIKE '%login%'
-                        OR lower(description) LIKE '%signup%'
-                        THEN 'auth'
-                    WHEN lower(description) LIKE '%dashboard%' OR lower(description) LIKE '%crud%'
-                        OR lower(description) LIKE '%form%'
-                        THEN 'web_apps'
-                    ELSE 'other'
-                END as domain,
-                COUNT(*) as count
-            FROM repos
-            WHERE status NOT LIKE 'rejected_%'
-            GROUP BY domain
-            ORDER BY count DESC"""
+            "SELECT COALESCE(domain, 'other') AS domain, COUNT(*) AS count FROM repos "
+            "WHERE status NOT LIKE 'rejected_%' GROUP BY domain ORDER BY count DESC"
         ).fetchall()
         return {row["domain"]: row["count"] for row in rows}
 

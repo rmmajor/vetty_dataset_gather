@@ -137,7 +137,7 @@ def convert_trajectories(input_dir, output_dir, val_split):
     output_path.mkdir(parents=True, exist_ok=True)
 
     all_examples = []
-    skipped_failed = 0
+    included_from_failed = 0
     skipped_empty = 0
 
     trajectory_dirs = sorted(
@@ -154,9 +154,11 @@ def convert_trajectories(input_dir, output_dir, val_split):
         with open(trajectory_file) as f:
             trajectory = json.load(f)
 
-        if not trajectory.get("success", False):
-            skipped_failed += 1
-            continue
+        # Keep trajectories regardless of the test's pass/fail `success` flag — a test that
+        # performed real actions then failed an assertion still yields a usable trajectory.
+        # convert_trajectory_to_messages drops missing-screenshot steps and empty trajectories.
+        if not trajectory.get("success", True):
+            included_from_failed += 1
 
         example = convert_trajectory_to_messages(trajectory, traj_dir)
         if example is None:
@@ -166,7 +168,7 @@ def convert_trajectories(input_dir, output_dir, val_split):
         all_examples.append(example)
 
     print(f"Converted {len(all_examples)} trajectories")
-    print(f"Skipped {skipped_failed} failed trajectories")
+    print(f"Included {included_from_failed} trajectories from failed tests (success=false, kept for usable steps)")
     print(f"Skipped {skipped_empty} empty/invalid trajectories")
 
     random.shuffle(all_examples)

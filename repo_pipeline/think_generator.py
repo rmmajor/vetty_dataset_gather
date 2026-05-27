@@ -78,34 +78,33 @@ async def generate_think_for_step(
     if not screenshot_path.exists():
         return ""
 
-    screenshot_bytes = screenshot_path.read_bytes()
-    b64_screenshot = base64.b64encode(screenshot_bytes).decode("utf-8")
-
-    action_desc = format_action_description(action)
-
-    prompt = f"""Look at this screenshot image (base64 encoded PNG below) and explain why the following action makes sense.
-
-Screenshot (base64): {b64_screenshot[:100]}... [full image provided]
-
-{THINK_PROMPT.format(
-    action_description=action_desc,
-    previous_actions=previous_actions_str,
-)}"""
-
-    # Use a simpler prompt that works with the Agent SDK
-    simple_prompt = (
-        f"You are annotating a web browsing trajectory. "
-        f"The action taken was: {action_desc}. "
-        f"Previous actions: {previous_actions_str}. "
-        f"Write a brief reasoning explanation (1-3 sentences) for why this action makes sense "
-        f"in the context of web browsing automation. "
-        f"Write ONLY the reasoning, be specific and concise."
+    b64_screenshot = base64.b64encode(screenshot_path.read_bytes()).decode("utf-8")
+    text = THINK_PROMPT.format(
+        action_description=format_action_description(action),
+        previous_actions=previous_actions_str,
     )
+
+    # Send the actual screenshot to Claude (Haiku-4.5 is vision-capable). claude_agent_sdk.query
+    # accepts an AsyncIterable prompt carrying Anthropic image content blocks, so the reasoning is
+    # grounded in what's on screen rather than inferred blindly from coordinates.
+    async def prompt_stream():
+        yield {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": text},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64_screenshot}},
+                ],
+            },
+            "parent_tool_use_id": None,
+            "session_id": "",
+        }
 
     result_text = ""
     try:
         async for message in query(
-            prompt=simple_prompt,
+            prompt=prompt_stream(),
             options=ClaudeAgentOptions(
                 model="claude-haiku-4-5-20251001",
                 max_turns=1,
