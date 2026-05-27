@@ -1,0 +1,16 @@
+# Model specs evaluated by `eval_screenspot.py` / `make eval-screenspot`.
+# Each spec is evaluated on the same ScreenSpot dataset and the results are
+# recorded side by side (eval_results/<label>.json + comparison.json).
+#
+# This default compares grounding before vs after SFT. Add/remove specs freely
+# (any number of models is supported, not just two).
+#
+# Fields: label (required), model (required), adapters (optional LoRA path),
+#         backend (optional, overrides --backend for this spec).
+
+- label: before
+  model: Qwen/Qwen3.5-9B-Base
+
+- label: after
+  model: Qwen/Qwen3.5-9B-Base
+  adapters: ./output

@@ -48,9 +48,18 @@ python -m repo_pipeline.orchestrator --status
 # Convert + train (works on output of either path)
 make convert               # trajectories/ -> training_data/sft_dataset.jsonl
 make train                 # invokes `swift sft` (needs ms-swift on a GPU box)
+
+# Eval grounding before/after SFT (ScreenSpot)
+make install-eval          # eval deps (GPU box)
+make eval-screenspot       # evals every model in eval_models.yaml, writes eval_results/
+make test-eval             # harness smoke test (no model/GPU/network)
 ```
 
-There is no test suite. The only executable checks are `make test-sandbox` (container smoke test) and `make test-notifier` (Telegram bot). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
+There is no test suite. The only executable checks are `make test-sandbox` (container smoke test), `make test-notifier` (Telegram bot), and `make test-eval` (ScreenSpot eval harness smoke test). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
+
+## Evaluation (`eval_screenspot.py`)
+
+ScreenSpot grounding eval: predicted click point vs. target bbox. Mirrors `train_qwen.py`'s style and **imports `SYSTEM_PROMPT` from it** to guarantee train/eval prompt parity. Everything is registry/flag-driven so it works for other models: coordinate spaces (`COORD_SPACES`: `viewport_abs` default matches our 1280x720 training, plus `normalized_1000`/`native_abs`), inference backends (`PREDICTOR_BACKENDS`: `swift` shells out to `swift infer` like training shells out to `swift sft`; `mock` for tests), a configurable output parser (`DEFAULT_PARSE_PATTERNS`, tries `<ref>(x,y)</ref>` first), and a configurable dataset/bbox adapter. Evaluates N model specs from `eval_models.yaml` (default before/after) on one dataset. The `swift infer` flags/result schema and the ScreenSpot-v2 column/bbox conventions are assumptions that must be validated on the GPU box / against the real dataset — they are isolated behind flags and `SwiftPredictor`. Heavy deps (`datasets`) are imported lazily so `make test-eval` needs none.
 
 ## Path B architecture (`repo_pipeline/`)
 

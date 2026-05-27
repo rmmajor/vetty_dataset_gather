@@ -181,6 +181,51 @@ Or use Make:
     make convert
     make train
 
+## Evaluation (ScreenSpot grounding)
+
+`eval_screenspot.py` measures **grounding** — given a screenshot and an instruction,
+the model predicts a click point and we score whether that point lands inside the
+target bounding box. Use it to quantify how much SFT improves grounding by comparing
+the base model (before) against the fine-tuned adapter (after).
+
+Install deps on the GPU box, then run:
+
+    make install-eval
+    make eval-screenspot
+
+`make eval-screenspot` evaluates every model listed in `eval_models.yaml` on the same
+dataset and records the results side by side in `eval_results/` (`<label>.json` per
+model plus `comparison.json`), printing a comparison table (overall accuracy, parse
+rate, and a per-`data_type` / per-`data_source` breakdown). The default
+`eval_models.yaml` compares `before` (base Qwen3.5-9B) vs `after` (base + `./output`
+LoRA adapter); add or remove specs freely — any number of models is supported.
+
+Quick start during development (no model needed):
+
+    make test-eval        # full pipeline self-test on synthetic data, no GPU/network
+
+Inference runs by shelling out to the `swift infer` CLI (same way training shells out
+to `swift sft`), loading the base model and applying the LoRA adapter from `adapters:`.
+
+**Coordinate handling.** The default `viewport_abs` coordinate space matches how this
+model was trained: each eval image is resized to the 1280x720 training viewport,
+absolute pixel coordinates are parsed in that space, then linearly scaled back to the
+original resolution to test against the bounding box. Resizing non-16:9 screenshots to
+1280x720 distorts them — the back-mapping is exact, but model accuracy on distorted
+images is a measurement caveat. The base ("before") model is not instruction-tuned and
+may emit prose rather than coordinates, yielding a low parse rate and near-zero
+accuracy; that is the expected, informative baseline.
+
+**Reusable for other models.** Nothing is hardcoded to this model. Flags select the
+inference backend (`--backend`), coordinate convention (`--coord-space`:
+`viewport_abs` / `normalized_1000` / `native_abs`), output parser
+(`--parse-pattern`, repeatable regexes), bounding-box format
+(`--bbox-format xywh|xyxy`, `--bbox-normalized`), and dataset
+(`--dataset` / `--split`). The default dataset is **ScreenSpot-v2**
+(`os-copilot/ScreenSpot-v2`); the original ScreenSpot and ScreenSpot-Pro are
+selectable via `--dataset` (set `--bbox-format`/`--bbox-normalized` to match the
+chosen mirror's annotation convention).
+
 ## Output Structure
 
     trajectories/
