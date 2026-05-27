@@ -120,11 +120,14 @@ async def run_stage(
         raise ValueError(f"Unknown stage: {stage}")
 
 
+# Per-repo LLM cost estimates used only for --budget pacing (not metered spend).
+# Stages 5-6 are code-driven (no agent): stage 5 runs tests in code (~$0 LLM); stage 6's only LLM
+# cost is Haiku instruction + per-step think (with screenshots). Stages 3-4 still use Sonnet.
 STAGE_COST_ESTIMATES = {
-    3: 0.15,
-    4: 0.75,
-    5: 1.00,
-    6: 1.50,
+    3: 0.15,   # Sonnet shallow scoring
+    4: 0.20,   # Sonnet static deep-analysis
+    5: 0.02,   # code-driven trial — negligible LLM
+    6: 0.30,   # Haiku instruction + per-step think-with-image
 }
 
 
