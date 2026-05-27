@@ -69,6 +69,7 @@ class ShallowScores(BaseModel):
     multi_page_flows: int = Field(ge=1, le=5)
     runnability: int = Field(ge=1, le=5)
     framework_clarity: int = Field(ge=1, le=5)
+    application_vs_library: int = Field(ge=1, le=5)
 
     @property
     def total(self) -> int:
@@ -80,6 +81,7 @@ class ShallowScores(BaseModel):
             + self.multi_page_flows
             + self.runnability
             + self.framework_clarity
+            + self.application_vs_library
         )
 
 

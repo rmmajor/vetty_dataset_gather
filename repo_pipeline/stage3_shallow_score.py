@@ -12,7 +12,6 @@ from repo_pipeline.schemas import RepoStatus, ShallowScores
 
 logger = logging.getLogger(__name__)
 
-SCORE_THRESHOLD = 7
 SCORE_BUDGET_USD = float(os.environ.get("STAGE3_BUDGET_USD", "0.15"))
 
 SCORING_PROMPT = """You are evaluating a GitHub repository for its suitability as a source of browser test trajectories (Playwright or Selenium). We need trajectories from PRODUCTION apps with complex UIs — not demos, tutorials, or practice repos.
@@ -75,8 +74,15 @@ Score this repository on each dimension from 1-5:
 
 7. FRAMEWORK_CLARITY (1-5): Standard Playwright or Selenium project structure? Clear config, proper imports, organized test files?
 
+8. APPLICATION_VS_LIBRARY (1-5): Does the suite drive a real web application's UI, or does it test the repo's OWN library/framework/tool code? This is the most important signal — a library testing itself yields no useful web-UI trajectories.
+   - 1: A testing library/framework/tool whose tests exercise its own code (e.g. Playwright itself, CodeceptJS, SeleniumBase, test reporters, browser-automation libraries, IDE/editor extensions)
+   - 2: A library/SDK with example or integration tests that open a browser only incidentally
+   - 3: A real app's UI tests embedded in a larger monorepo, OR a small standalone app
+   - 4: A standalone web application with a dedicated end-to-end suite driving its pages
+   - 5: A standalone/deployable web app (or tests against a hosted public site) with a rich end-to-end UI suite
+
 Respond with ONLY a JSON object (no markdown, no explanation):
-{{"production_complexity": N, "ui_difficulty": N, "interaction_richness": N, "test_count": N, "multi_page_flows": N, "runnability": N, "framework_clarity": N}}
+{{"production_complexity": N, "ui_difficulty": N, "interaction_richness": N, "test_count": N, "multi_page_flows": N, "runnability": N, "framework_clarity": N, "application_vs_library": N}}
 """
 
 
@@ -194,7 +200,7 @@ async def score_single_repo(repo: dict, context: dict) -> ShallowScores | None:
     async for message in query(
         prompt=prompt,
         options=ClaudeAgentOptions(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_turns=3,
             max_budget_usd=SCORE_BUDGET_USD,
             permission_mode="bypassPermissions",
@@ -261,8 +267,23 @@ async def process_repo(registry: RepoRegistry, repo: dict):
     total = scores.total
     logger.info(f"  {repo_name}: {total}/35 — {scores.model_dump()}")
 
-    if scores.production_complexity <= 1 and total < SCORE_THRESHOLD:
-        registry.reject(repo_name, stage=3, reason=f"demo/tutorial repo ({total}/35)")
+    # Gate on the signals that actually predict usable web-UI trajectories: it's an app not a
+    # library (application_vs_library), it can run in the sandbox (runnability), and tests do more
+    # than navigate+assert (interaction_richness). production_complexity is NOT gated — it conflates
+    # "real app" with "complex app", which wrongly rejects simple-but-ideal apps like SauceDemo.
+    if (
+        scores.application_vs_library < 3
+        or scores.runnability < 3
+        or scores.interaction_richness < 2
+    ):
+        registry.reject(
+            repo_name,
+            stage=3,
+            reason=(
+                f"not a runnable interactive web app (app={scores.application_vs_library}, "
+                f"run={scores.runnability}, interact={scores.interaction_richness})"
+            ),
+        )
         return
 
     registry.update_status(
