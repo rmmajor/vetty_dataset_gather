@@ -16,7 +16,7 @@ ANALYZE_BUDGET_USD = float(os.environ.get("STAGE4_BUDGET_USD", "0.75"))
 
 DEEP_ANALYSIS_PROMPT = """You are analyzing the browser-test repository '{repo_name}' that has been cloned to /workspace/repo inside a Docker container. The test suite uses either Playwright or Selenium.
 
-Your goal is to perform a thorough analysis of this repository's test suite to determine if it can produce high-quality browser automation trajectories.
+Your goal is to perform a STATIC analysis of this repository's test suite — read files only, do NOT install dependencies (installability is verified later in the trial stage) — to determine if it can produce high-quality browser automation trajectories.
 
 Stage 3 shallow scoring gave this repo the following scores (1-5 each):
 {shallow_scores_summary}
@@ -39,12 +39,7 @@ Use the `exec` tool to run shell commands inside the container, and `read`/`ls` 
    - "@playwright/test" or "pytest-playwright" / "playwright" → test_framework = "playwright"
    Also determine the language: Python (pytest), TypeScript, or JavaScript. NOTE: Selenium is only supported for Python — flag a non-Python Selenium repo in notes.
 
-6. **Try installing dependencies**:
-   - For JS/TS: run `npm install` in /workspace/repo
-   - For Python: run `pip3 install -r requirements.txt --break-system-packages` in /workspace/repo
-   Report whether it succeeded.
-
-7. **Estimate trajectory count**: Based on test count and typical actions per test, estimate how many usable trajectories this repo could produce.
+6. **Estimate trajectory count**: Based on test count and typical actions per test, estimate how many usable trajectories this repo could produce.
 
 After analysis, output your findings as a JSON object with EXACTLY these fields:
 ```json
@@ -57,7 +52,6 @@ After analysis, output your findings as a JSON object with EXACTLY these fields:
   "test_framework": "<playwright|selenium>",
   "playwright_version": "<version or null>",
   "framework_language": "<python|typescript|javascript>",
-  "deps_install_success": <bool>,
   "estimated_trajectories": <int>,
   "notes": "<brief notes about anything notable>"
 }}
@@ -88,9 +82,6 @@ def compute_deep_score(analysis: DeepAnalysis) -> int:
 
     found_interactive = {a.lower() for a in analysis.action_types} & all_interactive_actions()
     score += min(len(found_interactive), 3)
-
-    if analysis.deps_install_success:
-        score += 2
 
     if analysis.is_self_contained or analysis.has_docker_compose:
         score += 1
@@ -164,7 +155,7 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
             registry.reject(
                 repo_name,
                 stage=4,
-                reason=f"deep score {deep_score}/{DEEP_SCORE_THRESHOLD} (tests: {analysis.test_case_count}, deps_ok: {analysis.deps_install_success})",
+                reason=f"deep score {deep_score}/{DEEP_SCORE_THRESHOLD} (tests: {analysis.test_case_count}, self_contained: {analysis.is_self_contained})",
             )
 
     except Exception as e:
