@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -166,6 +167,13 @@ class RepoRegistry:
             END as query_priority
             FROM repos WHERE status = ?"""
         params = [required_status.value]
+
+        # Optional language filter (e.g. run only Python repos through a stage) — set via
+        # PIPELINE_LANGUAGE env var, matching the codebase's env-config convention.
+        language = os.environ.get("PIPELINE_LANGUAGE")
+        if language:
+            query += " AND language = ?"
+            params.append(language)
 
         if stage >= 4:
             query += " ORDER BY COALESCE(shallow_total, 0) DESC, stars DESC"
