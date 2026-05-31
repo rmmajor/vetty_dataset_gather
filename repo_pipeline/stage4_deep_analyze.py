@@ -123,7 +123,7 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_turns=25,
                 max_budget_usd=ANALYZE_BUDGET_USD,
                 permission_mode="bypassPermissions",

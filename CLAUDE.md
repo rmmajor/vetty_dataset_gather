@@ -80,7 +80,7 @@ Each stage calls `registry.get_repos_for_stage(N)` (which selects by input statu
 
 ## Claude Agent SDK usage
 
-Path B calls Claude via `claude_agent_sdk.query()` returning `AsyncIterator[Message]`. Standard extraction pattern (used in every stage): iterate, take `message.result` from a `ResultMessage` where `message.subtype == "success"`. Options are `ClaudeAgentOptions(model, max_turns, max_budget_usd, permission_mode="bypassPermissions", allowed_tools, cwd)`. Models in use: `claude-sonnet-4-20250514` for scoring/analysis/trial/generation, `claude-haiku-4-5-20251001` for think blocks and instructions.
+Path B calls Claude via `claude_agent_sdk.query()` returning `AsyncIterator[Message]`. Standard extraction pattern (used in every stage): iterate, take `message.result` from a `ResultMessage` where `message.subtype == "success"`. Options are `ClaudeAgentOptions(model, max_turns, max_budget_usd, permission_mode="bypassPermissions", allowed_tools, cwd)`. Models in use: `claude-sonnet-4-6` for scoring/analysis/trial/generation, `claude-haiku-4-5-20251001` for think blocks and instructions.
 
 ## Budget & concurrency
 
