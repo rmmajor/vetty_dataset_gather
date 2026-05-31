@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from repo_pipeline.registry import RepoRegistry
+from repo_pipeline.schemas import STAGE_TO_REJECTED_STATUS
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,14 @@ def setup_logging(data_dir: Path, verbose: bool = False):
     return log_file
 
 
-def print_status(registry: RepoRegistry):
+def print_status(registry: RepoRegistry, stages: list[int] = None):
+    """Print the pipeline registry status.
+
+    ``stages``: when set (e.g. by --stage N), an extra "current stage" rejection
+    section is printed for each stage in the list, on top of the all-stages
+    aggregate — so a stage-3 run shows both the all-time top reasons and only the
+    reasons added at stage 3.
+    """
     stats = registry.get_stats()
     pending = registry.get_pending_counts()
     domain_dist = registry.get_domain_distribution()
@@ -68,9 +76,21 @@ def print_status(registry: RepoRegistry):
             print(f"  {domain:20s} {count:>6,}")
 
     if rejection_reasons:
-        print("\nTop rejection reasons:")
+        print("\nTop rejection reasons (all stages, all time):")
         for i, (reason, count) in enumerate(rejection_reasons, 1):
             print(f"  {i}. \"{reason}\" ({count:,})")
+
+    if stages:
+        for stage in stages:
+            rejected_status = STAGE_TO_REJECTED_STATUS.get(stage)
+            if rejected_status is None:
+                continue
+            per_stage = registry.get_rejection_reasons(limit=5, status=rejected_status.value)
+            if not per_stage:
+                continue
+            print(f"\nTop rejection reasons (stage {stage} — {rejected_status.value}):")
+            for i, (reason, count) in enumerate(per_stage, 1):
+                print(f"  {i}. \"{reason}\" ({count:,})")
 
     print()
 
@@ -249,7 +269,7 @@ async def async_main(args):
                 cost_per = STAGE_COST_ESTIMATES.get(stage, 0)
                 budget_remaining -= processed * cost_per
 
-            print_status(registry)
+            print_status(registry, stages=stages)
             return
 
         logger.error("Specify --stage, --overnight, or --status")
