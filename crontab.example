@@ -9,3 +9,7 @@
 #   TELEGRAM_CHAT_ID    — Telegram chat ID (for notifications)
 
 0 1 * * * cd /Users/rmajor/unik/maga/dataset_gather && python -m repo_pipeline.orchestrator --overnight --budget 30 >> pipeline_data/run_logs/$(date +\%Y\%m\%d).log 2>&1
+
+# Alternative: keep draining the funnel until 75% of the Claude subscription usage limit is
+# consumed (or the budget / pending repos run out), instead of a single overnight pass:
+# 0 1 * * * cd /Users/rmajor/unik/maga/dataset_gather && python -m repo_pipeline.orchestrator --until-limit 75 --budget 30 >> pipeline_data/run_logs/$(date +\%Y\%m\%d).log 2>&1

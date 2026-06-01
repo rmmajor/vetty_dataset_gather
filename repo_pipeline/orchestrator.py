@@ -8,6 +8,7 @@ from pathlib import Path
 
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.schemas import STAGE_TO_REJECTED_STATUS
+from repo_pipeline.sdk_runner import rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,119 @@ STAGE_COST_ESTIMATES = {
 }
 
 
+async def drain_funnel(
+    registry: RepoRegistry,
+    github_token: str,
+    trajectory_dir: Path,
+    budget: float = 50.0,
+    workers: int = 5,
+    limit: int = None,
+    loop: bool = False,
+):
+    """Run stages 3->6 over pending repos, capping each stage by --budget affordability and
+    stopping when the budget is spent OR the Claude subscription usage limit is reached.
+
+    ``loop=False`` (overnight): one forward pass — each stage feeds the next within the pass.
+    ``loop=True`` (until-limit): repeat passes until the usage limit / budget stops it, or a
+    full pass processes 0 repos (the funnel is drained). The funnel strictly drains because
+    stages 1-2 are not looped, so no new ``filtered`` repos are seeded mid-run.
+
+    Both modes honour ``rate_limit_tracker.limit_reached()``: a hard 429 (or, when a threshold
+    is set, crossing it) stops the run instead of letting repos be rejected.
+    """
+    start_time = time.time()
+    budget_used = 0.0
+    stage_results = {}
+
+    def should_stop() -> bool:
+        if budget_used >= budget:
+            logger.warning(f"Budget exhausted (${budget_used:.2f}/${budget:.2f}), stopping")
+            return True
+        if rate_limit_tracker.limit_reached():
+            util = rate_limit_tracker.max_utilization()
+            util_str = f"{util*100:.0f}%" if util is not None else "hard 429"
+            logger.warning(f"Claude usage limit reached ({util_str}), stopping")
+            return True
+        return False
+
+    while True:
+        pass_processed = 0
+
+        for stage in [3, 4, 5, 6]:
+            if should_stop():
+                break
+
+            remaining_budget = budget - budget_used
+            logger.info(f"--- Stage {stage} --- (budget remaining: ${remaining_budget:.2f})")
+
+            pending = registry.get_pending_counts()
+            pending_count = pending.get(stage, 0)
+            if pending_count == 0:
+                logger.info(f"  No repos pending for stage {stage}, skipping")
+                continue
+
+            cost_per_repo = STAGE_COST_ESTIMATES.get(stage, 0.10)
+            max_affordable = int(remaining_budget / cost_per_repo) if cost_per_repo > 0 else pending_count
+            effective_limit = min(pending_count, max_affordable)
+            if limit:
+                effective_limit = min(effective_limit, limit)
+
+            logger.info(f"  Processing up to {effective_limit} repos (of {pending_count} pending)")
+
+            try:
+                result = await run_stage(
+                    stage,
+                    registry,
+                    github_token,
+                    trajectory_dir,
+                    limit=effective_limit,
+                    workers=workers,
+                    budget_remaining=remaining_budget,
+                )
+                processed = result.get("processed", 0)
+                pass_processed += processed
+                budget_used += processed * cost_per_repo
+
+                # Accumulate processed across passes; keep the latest registry-derived
+                # passed/rejected/trajectories (those are cumulative totals already).
+                prev_processed = stage_results.get(stage, {}).get("processed", 0)
+                stage_results[stage] = {**result, "processed": prev_processed + processed}
+
+            except Exception as e:
+                logger.error(f"  Stage {stage} failed: {e}")
+                stage_results.setdefault(stage, {"processed": 0, "passed": 0, "rejected": 0})
+                stage_results[stage]["error"] = str(e)
+
+        if not loop:
+            break
+        if should_stop():
+            break
+        if pass_processed == 0:
+            logger.info("Funnel drained (a full pass processed 0 repos), stopping")
+            break
+
+    run_duration = time.time() - start_time
+
+    if loop and rate_limit_tracker.threshold < 1.0 and rate_limit_tracker.observed_event_count == 0:
+        logger.warning(
+            f"--until-limit {rate_limit_tracker.threshold * 100:.0f}%% was requested but zero "
+            f"RateLimitEvents were observed; the run effectively used 'until hard 429 / funnel "
+            f"drained' instead. Headless OAuth may not emit rate_limit_event messages."
+        )
+
+    from repo_pipeline.notifier import send_report
+    try:
+        await send_report(
+            registry, run_duration, budget_used, budget, stage_results,
+            rate_limit_info=rate_limit_tracker.latest(),
+        )
+    except Exception as e:
+        logger.error(f"Failed to send Telegram report: {e}")
+
+    logger.info(f"Run complete in {run_duration/3600:.1f}h, budget used: ${budget_used:.2f}/${budget:.2f}")
+    return stage_results
+
+
 async def run_overnight(
     registry: RepoRegistry,
     github_token: str,
@@ -159,61 +273,30 @@ async def run_overnight(
     workers: int = 5,
     limit: int = None,
 ):
-    start_time = time.time()
-    budget_used = 0.0
-    stage_results = {}
+    return await drain_funnel(
+        registry, github_token, trajectory_dir,
+        budget=budget, workers=workers, limit=limit, loop=False,
+    )
 
-    for stage in [3, 4, 5, 6]:
-        if budget_used >= budget:
-            logger.warning(f"Budget exhausted (${budget_used:.2f}/${budget:.2f}), stopping at stage {stage}")
-            break
 
-        remaining_budget = budget - budget_used
-        logger.info(f"--- Stage {stage} --- (budget remaining: ${remaining_budget:.2f})")
-
-        pending = registry.get_pending_counts()
-        pending_count = pending.get(stage, 0)
-        if pending_count == 0:
-            logger.info(f"  No repos pending for stage {stage}, skipping")
-            continue
-
-        cost_per_repo = STAGE_COST_ESTIMATES.get(stage, 0.10)
-        max_affordable = int(remaining_budget / cost_per_repo) if cost_per_repo > 0 else pending_count
-        effective_limit = min(pending_count, max_affordable)
-        if limit:
-            effective_limit = min(effective_limit, limit)
-
-        logger.info(f"  Processing up to {effective_limit} repos (of {pending_count} pending)")
-
-        try:
-            result = await run_stage(
-                stage,
-                registry,
-                github_token,
-                trajectory_dir,
-                limit=effective_limit,
-                workers=workers,
-                budget_remaining=remaining_budget,
-            )
-            stage_results[stage] = result
-
-            processed = result.get("processed", 0)
-            budget_used += processed * cost_per_repo
-
-        except Exception as e:
-            logger.error(f"  Stage {stage} failed: {e}")
-            stage_results[stage] = {"processed": 0, "passed": 0, "rejected": 0, "error": str(e)}
-
-    run_duration = time.time() - start_time
-
-    from repo_pipeline.notifier import send_report
-    try:
-        await send_report(registry, run_duration, budget_used, budget, stage_results)
-    except Exception as e:
-        logger.error(f"Failed to send Telegram report: {e}")
-
-    logger.info(f"Overnight run complete in {run_duration/3600:.1f}h, budget used: ${budget_used:.2f}/${budget:.2f}")
-    return stage_results
+async def run_until_limit(
+    registry: RepoRegistry,
+    github_token: str,
+    trajectory_dir: Path,
+    threshold_pct: float = 100.0,
+    budget: float = 50.0,
+    workers: int = 5,
+    limit: int = None,
+):
+    rate_limit_tracker.threshold = threshold_pct / 100.0
+    logger.info(
+        f"Running until Claude usage reaches {threshold_pct:.0f}% "
+        f"(or budget ${budget:.2f} spent, or funnel drained)"
+    )
+    return await drain_funnel(
+        registry, github_token, trajectory_dir,
+        budget=budget, workers=workers, limit=limit, loop=True,
+    )
 
 
 async def async_main(args):
@@ -230,6 +313,22 @@ async def async_main(args):
     try:
         if args.status:
             print_status(registry)
+            return
+
+        if args.until_limit is not None:
+            pct = args.until_limit
+            if not (0 < pct <= 100):
+                logger.error(f"--until-limit must be in (0, 100], got {pct}")
+                sys.exit(1)
+            await run_until_limit(
+                registry,
+                github_token,
+                trajectory_dir,
+                threshold_pct=pct,
+                budget=args.budget,
+                workers=args.workers,
+                limit=args.limit,
+            )
             return
 
         if args.overnight:
@@ -272,7 +371,7 @@ async def async_main(args):
             print_status(registry, stages=stages)
             return
 
-        logger.error("Specify --stage, --overnight, or --status")
+        logger.error("Specify --stage, --overnight, --until-limit, or --status")
         sys.exit(1)
 
     finally:
@@ -289,11 +388,13 @@ Examples:
   python -m repo_pipeline.orchestrator --stage 2        # Filter repos
   python -m repo_pipeline.orchestrator --stage 3-6      # Run Claude stages
   python -m repo_pipeline.orchestrator --overnight       # Full overnight run
+  python -m repo_pipeline.orchestrator --until-limit 75  # Drain funnel until 75% usage
   python -m repo_pipeline.orchestrator --status          # Print stats
         """,
     )
     parser.add_argument("--stage", type=str, help="Run specific stage(s): N or N-M (e.g., 3 or 3-6)")
     parser.add_argument("--overnight", action="store_true", help="Run stages 3-6 on all pending repos, notify via Telegram")
+    parser.add_argument("--until-limit", type=float, nargs="?", const=100.0, default=None, metavar="PCT", help="Loop stages 3-6 until Claude usage reaches PCT%% of the subscription limit (bare flag = 100). Honors --budget too.")
     parser.add_argument("--status", action="store_true", help="Print registry stats and exit")
     parser.add_argument("--limit", type=int, default=None, help="Max repos per stage in this run")
     parser.add_argument("--workers", type=int, default=5, help="Parallel workers for LLM stages (default: 5)")

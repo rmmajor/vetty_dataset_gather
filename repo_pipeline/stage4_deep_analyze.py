@@ -3,13 +3,14 @@ import json
 import logging
 import os
 
-from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+from claude_agent_sdk import ClaudeAgentOptions
 
 from repo_pipeline.frameworks import all_interactive_actions
 from repo_pipeline.llm_config import MODEL_FOR_REASONING
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, build_sandbox_mcp_server
 from repo_pipeline.schemas import DeepAnalysis, RepoStatus
+from repo_pipeline.sdk_runner import rate_limit_tracker, run_query, UsageLimitReached
 
 logger = logging.getLogger(__name__)
 
@@ -120,10 +121,9 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
 
         mcp_server, sandbox_tools = build_sandbox_mcp_server(sandbox)
 
-        result_text = ""
-        async for message in query(
-            prompt=prompt,
-            options=ClaudeAgentOptions(
+        result_text = await run_query(
+            prompt,
+            ClaudeAgentOptions(
                 model=MODEL_FOR_REASONING,
                 max_turns=25,
                 max_budget_usd=ANALYZE_BUDGET_USD,
@@ -132,9 +132,8 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
                 allowed_tools=sandbox_tools,
                 disallowed_tools=["Bash"],
             ),
-        ):
-            if isinstance(message, ResultMessage) and message.subtype == "success":
-                result_text = message.result or ""
+            label=f"analyze:{repo_name}",
+        )
 
         analysis = parse_analysis_result(result_text)
         if analysis is None:
@@ -159,6 +158,8 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
                 reason=f"deep score {deep_score}/{DEEP_SCORE_THRESHOLD} (tests: {analysis.test_case_count}, self_contained: {analysis.is_self_contained})",
             )
 
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.error(f"Error analyzing {repo_name}: {e}")
         registry.reject(repo_name, stage=4, reason=f"analysis error: {str(e)[:200]}")
@@ -194,11 +195,16 @@ async def run_deep_analyze(
 
     async def process_with_semaphore(repo):
         nonlocal cost_estimate
+        if rate_limit_tracker.limit_reached():
+            return
         if budget_remaining is not None and cost_estimate > budget_remaining:
             logger.warning("Budget limit reached, stopping")
             return
         async with semaphore:
-            await analyze_single_repo(registry, repo)
+            try:
+                await analyze_single_repo(registry, repo)
+            except UsageLimitReached:
+                return
             cost_estimate += 0.20
 
     await asyncio.gather(*[process_with_semaphore(repo) for repo in repos])

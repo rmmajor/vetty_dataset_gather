@@ -8,6 +8,7 @@ from repo_pipeline.instrumentation import REPO_DIR, RESULTS_DIR, setup_repo_inst
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
 from repo_pipeline.schemas import RepoStatus, TrialResults
+from repo_pipeline.sdk_runner import rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,8 @@ async def run_trial(
     semaphore = asyncio.Semaphore(workers)
 
     async def process_with_semaphore(repo):
+        if rate_limit_tracker.limit_reached():
+            return
         async with semaphore:
             await trial_single_repo(registry, repo)
 

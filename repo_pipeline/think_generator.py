@@ -24,9 +24,10 @@ import logging
 import os
 from pathlib import Path
 
-from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+from claude_agent_sdk import ClaudeAgentOptions
 
 from repo_pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
+from repo_pipeline.sdk_runner import rate_limit_tracker, run_query, UsageLimitReached
 
 logger = logging.getLogger(__name__)
 
@@ -197,19 +198,19 @@ async def generate_think_for_step(
             "session_id": "",
         }
 
-    result_text = ""
     try:
-        async for message in query(
-            prompt=prompt_stream(),
-            options=ClaudeAgentOptions(
+        result_text = await run_query(
+            prompt_stream(),
+            ClaudeAgentOptions(
                 model=MODEL_FOR_GROUNDED_GENERATION,
                 max_turns=1,
                 max_budget_usd=THINK_BUDGET_USD,
                 permission_mode="bypassPermissions",
             ),
-        ):
-            if isinstance(message, ResultMessage) and message.subtype == "success":
-                result_text = message.result or ""
+            label="think",
+        )
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.warning(f"Think generation failed: {e}")
         return ""
@@ -324,6 +325,9 @@ async def generate_thinks_for_all(
     processed = 0
 
     for traj_dir in trajectory_dirs:
+        if rate_limit_tracker.limit_reached():
+            logger.warning("Usage limit reached, stopping think generation")
+            break
         if budget_remaining is not None and cost_estimate > budget_remaining:
             logger.warning("Budget limit reached for think generation")
             break
@@ -338,7 +342,11 @@ async def generate_thinks_for_all(
         step_count = len(traj.get("steps", []))
         estimated_cost = step_count * 0.008
 
-        await generate_thinks_for_trajectory(traj_dir)
+        try:
+            await generate_thinks_for_trajectory(traj_dir)
+        except UsageLimitReached:
+            logger.warning("Usage limit reached, stopping think generation")
+            break
         cost_estimate += estimated_cost
         processed += 1
 

@@ -1,5 +1,5 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
-       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-status dashboard
+       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-status dashboard
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -16,6 +16,7 @@ BATCH_SIZE    ?=
 PIPELINE_BUDGET ?= 30
 PIPELINE_WORKERS ?= 5
 PIPELINE_LIMIT ?=
+PIPELINE_LIMIT_PCT ?= 100
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -105,6 +106,12 @@ pipeline-score: ## Stage 3: Shallow score repos with Claude
 
 pipeline-overnight: ## Run stages 3-6 overnight with Telegram notification
 	python -m repo_pipeline.orchestrator --overnight \
+		--workers $(PIPELINE_WORKERS) \
+		--budget $(PIPELINE_BUDGET) \
+		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
+
+pipeline-until-limit: ## Loop stages 3-6 until Claude usage hits PIPELINE_LIMIT_PCT% (default 100)
+	python -m repo_pipeline.orchestrator --until-limit $(PIPELINE_LIMIT_PCT) \
 		--workers $(PIPELINE_WORKERS) \
 		--budget $(PIPELINE_BUDGET) \
 		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))

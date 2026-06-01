@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 
-from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+from claude_agent_sdk import ClaudeAgentOptions
 
 from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import setup_repo_instrumentation
@@ -14,6 +14,7 @@ from repo_pipeline.llm_config import MODEL_FOR_CLASSIFICATION, MODEL_FOR_GROUNDE
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
 from repo_pipeline.schemas import RepoStatus
+from repo_pipeline.sdk_runner import rate_limit_tracker, run_query, UsageLimitReached
 from repo_pipeline.think_generator import generate_thinks_for_trajectory
 
 logger = logging.getLogger(__name__)
@@ -205,6 +206,8 @@ async def generate_for_repo(
             trajectory_dir=str(repo_traj_dir),
         )
 
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.error(f"Error generating for {repo_name}: {e}")
         registry.reject(repo_name, stage=6, reason=f"generation error: {str(e)[:200]}")
@@ -278,19 +281,19 @@ async def generate_instruction(
         action_summary=action_str,
     )
 
-    result_text = ""
     try:
-        async for message in query(
-            prompt=prompt,
-            options=ClaudeAgentOptions(
+        result_text = await run_query(
+            prompt,
+            ClaudeAgentOptions(
                 model=MODEL_FOR_GROUNDED_GENERATION,
                 max_turns=1,
                 max_budget_usd=INSTRUCTION_BUDGET_USD,
                 permission_mode="bypassPermissions",
             ),
-        ):
-            if isinstance(message, ResultMessage) and message.subtype == "success":
-                result_text = message.result or ""
+            label="instruction",
+        )
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.warning(f"Instruction generation failed: {e}")
         return f"Verify the {test_name.replace('_', ' ')} behavior."
@@ -389,19 +392,19 @@ async def classify_task_type(trajectory: dict, capture_meta: dict) -> str:
         elements="; ".join(elements[:15]) or "(none)",
     )
 
-    result_text = ""
     try:
-        async for message in query(
-            prompt=prompt,
-            options=ClaudeAgentOptions(
+        result_text = await run_query(
+            prompt,
+            ClaudeAgentOptions(
                 model=MODEL_FOR_CLASSIFICATION,
                 max_turns=1,
                 max_budget_usd=TASK_TYPE_BUDGET_USD,
                 permission_mode="bypassPermissions",
             ),
-        ):
-            if isinstance(message, ResultMessage) and message.subtype == "success":
-                result_text = message.result or ""
+            label="classify",
+        )
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.warning(f"Task-type classification failed: {e}")
         return "other"
@@ -461,6 +464,8 @@ async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_
 
         with open(meta_file, "w") as f:
             json.dump(metadata, f, indent=2)
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.warning(f"Metadata enrichment failed for {traj_dir.name}: {e}")
 
@@ -480,8 +485,13 @@ async def run_generate(
 
     async def process_with_semaphore(repo):
         nonlocal total_trajectories
+        if rate_limit_tracker.limit_reached():
+            return
         async with semaphore:
-            await generate_for_repo(registry, repo, trajectory_base_dir)
+            try:
+                await generate_for_repo(registry, repo, trajectory_base_dir)
+            except UsageLimitReached:
+                return
 
         repo_after = registry.get_repo(repo["full_name"])
         if repo_after and repo_after["status"] == RepoStatus.COMPLETED.value:
