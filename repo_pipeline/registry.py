@@ -309,15 +309,23 @@ class RepoRegistry:
         ).fetchall()
         return {row["domain"]: row["count"] for row in rows}
 
-    def get_rejection_reasons(self, limit=10) -> list[tuple[str, int]]:
+    def get_rejection_reasons(self, limit=10, status: str = None) -> list[tuple[str, int]]:
+        """Top rejection reasons, aggregated across all stages by default.
+
+        Pass ``status`` (e.g. ``RepoStatus.REJECTED_SCORE.value``) to restrict to one
+        stage's rejection bucket — used by --stage runs to show what just got rejected
+        at that stage instead of the all-time, all-stages aggregate.
+        """
+        where = "filter_reason IS NOT NULL AND filter_reason != ''"
+        params: list = []
+        if status:
+            where += " AND status = ?"
+            params.append(status)
+        params.append(limit)
         rows = self.conn.execute(
-            """SELECT filter_reason, COUNT(*) as count
-               FROM repos
-               WHERE filter_reason IS NOT NULL AND filter_reason != ''
-               GROUP BY filter_reason
-               ORDER BY count DESC
-               LIMIT ?""",
-            (limit,),
+            f"SELECT filter_reason, COUNT(*) as count FROM repos WHERE {where} "
+            f"GROUP BY filter_reason ORDER BY count DESC LIMIT ?",
+            params,
         ).fetchall()
         return [(row["filter_reason"], row["count"]) for row in rows]
 
