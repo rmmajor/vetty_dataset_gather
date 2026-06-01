@@ -76,11 +76,11 @@ Each stage calls `registry.get_repos_for_stage(N)` (which selects by input statu
 
 **Instrumentation** (`instrumentation/`): `capture.py`'s `ActionRecorder` is the shared writer producing the trajectory format; `pw_python_conftest.py` (pytest-playwright) and `pw_ts_fixture.ts` (@playwright/test) hook Playwright actions to capture a screenshot + bounding-box center coordinate per action. These files are written into the cloned repo inside the sandbox by stages 5/6.
 
-**Think/instruction generation** (`think_generator.py`, `stage6_generate.py`): Claude fills the empty `thought` fields and the `instruction` after capture — instrumentation records coords/screenshots only.
+**Think/instruction generation** (`think_generator.py`, `stage6_generate.py`): Claude fills the empty `thought` fields and the `instruction` after capture — instrumentation records coords/screenshots only. Both generators are *intent-anchored*: the thought prompt receives the trajectory's goal + the screenshot + the history of prior thoughts; the instruction prompt receives the test function source (cached by instrumentation as `test_source.txt`) + the repo description. Outputs are trusted as written — no regex post-filters discard or retry the model's response. To regenerate over already-recorded trajectories, run `python -m repo_pipeline.regenerate_supervision --dry-run --sample N trajectories/` first to review old-vs-new in a Markdown report, then drop `--dry-run` to bulk-write.
 
 ## Claude Agent SDK usage
 
-Path B calls Claude via `claude_agent_sdk.query()` returning `AsyncIterator[Message]`. Standard extraction pattern (used in every stage): iterate, take `message.result` from a `ResultMessage` where `message.subtype == "success"`. Options are `ClaudeAgentOptions(model, max_turns, max_budget_usd, permission_mode="bypassPermissions", allowed_tools, cwd)`. Models in use: `claude-sonnet-4-6` for scoring/analysis/trial/generation, `claude-haiku-4-5-20251001` for think blocks and instructions.
+Path B calls Claude via `claude_agent_sdk.query()` returning `AsyncIterator[Message]`. Standard extraction pattern (used in every stage): iterate, take `message.result` from a `ResultMessage` where `message.subtype == "success"`. Options are `ClaudeAgentOptions(model, max_turns, max_budget_usd, permission_mode="bypassPermissions", allowed_tools, cwd)`. Models: `claude-sonnet-4-6` across the pipeline (analysis, scoring, instruction generation, thought generation, task-type classification). Configured centrally in `repo_pipeline/llm_config.py` — every call site imports a named purpose (`MODEL_FOR_REASONING`, `MODEL_FOR_GROUNDED_GENERATION`, `MODEL_FOR_CLASSIFICATION`) rather than a model string.
 
 ## Budget & concurrency
 

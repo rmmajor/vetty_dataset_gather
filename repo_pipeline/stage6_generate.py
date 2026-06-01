@@ -10,6 +10,7 @@ from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
 from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import setup_repo_instrumentation
+from repo_pipeline.llm_config import MODEL_FOR_CLASSIFICATION, MODEL_FOR_GROUNDED_GENERATION
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
 from repo_pipeline.schemas import RepoStatus
@@ -17,17 +18,51 @@ from repo_pipeline.think_generator import generate_thinks_for_trajectory
 
 logger = logging.getLogger(__name__)
 
-INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.05"))
-TASK_TYPE_BUDGET_USD = float(os.environ.get("TASK_TYPE_BUDGET_USD", "0.02"))
+# Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet 4.6 — see
+# memory pathb-e2e-and-sdk-budget-floor). Defaults sit comfortably above that floor; tune
+# down only after verifying a smaller cap doesn't trip `error_max_budget_usd`.
+INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.15"))
+TASK_TYPE_BUDGET_USD = float(os.environ.get("TASK_TYPE_BUDGET_USD", "0.15"))
 SUITE_RUN_TIMEOUT = 480  # seconds; partial capture on timeout is fine for trajectory mining
 
-INSTRUCTION_PROMPT = """Given this browser test code and the sequence of actions recorded, write a natural language instruction (1-2 sentences) describing what task this test performs from a user's perspective.
+INSTRUCTION_PROMPT = """You are reading an automated browser test for a web application.
+Your job is to write a one-sentence INSTRUCTION describing what user-facing scenario the
+test verifies — the goal or intent behind the test, NOT a play-by-play of the recorded
+actions.
 
-Test name: {test_name}
-Actions taken: {action_summary}
+Voice and rules:
+- Phrase the instruction as the user's goal or the tester's stated intent. Examples:
+  "Test the login flow.", "Add an item to the cart and check out.",
+  "Verify the search filter excludes out-of-stock items."
+- Do NOT enumerate clicks, keystrokes, or specific element labels. The instruction must
+  work even if the underlying UI is restyled.
+- The test function NAME and its DOCSTRING are the strongest signals — use them first.
+  The function body is secondary. The recorded action sequence is the weakest signal,
+  used only when the name and source give no intent.
+- Output one sentence, 4-15 words. No quotes, no markdown, no preamble.
 
-Write ONLY the instruction, as if you're telling someone what to do on a website. Example: "Navigate to the shopping cart, update the quantity to 2, and proceed to checkout."
-"""
+Good vs. bad examples:
+- Test `test_login_with_invalid_password`, actions [type 'a@b', type 'wrong', click Sign
+  in] → GOOD: "Test that login fails gracefully with an invalid password."
+  BAD: "Type an email, type a password, click sign in."
+- Test `test_add_to_cart`, actions [click 'iPhone 12', click 'Add to cart', click 'Cart']
+  → GOOD: "Add an item to the cart and verify it appears."
+  BAD: "Click iPhone 12, click Add to cart, click Cart."
+- Test `test_1` (uninformative), actions [type 'banana' into Search, click Search, click
+  first result] → GOOD: "Search for a product and open its details page."
+  BAD: "Type 'banana', click search, click result."
+
+---
+
+Repository: {repo_name} — {repo_description}
+Test function: {test_name}
+
+Test source:
+{test_source}
+
+Recorded actions (disambiguation only): {action_summary}
+
+Write the instruction."""
 
 TASK_TYPES = ["auth", "form-fill", "search", "CRUD", "drag-drop", "nav", "other"]
 
@@ -132,7 +167,13 @@ async def generate_for_repo(
             valid_dirs.append(traj_dir)
 
             if not traj.get("instruction"):
-                instruction = await generate_instruction(traj, _load_capture_meta(traj_dir))
+                test_source = _load_test_source(traj_dir)
+                instruction = await generate_instruction(
+                    traj,
+                    _load_capture_meta(traj_dir),
+                    repo=repo,
+                    test_source=test_source,
+                )
                 traj["instruction"] = instruction
                 instruction_generated[traj_dir] = True
                 with open(trajectory_file, "w") as f:
@@ -182,10 +223,28 @@ def _element_label(step: dict, step_meta: dict) -> str:
     return role or ""
 
 
-async def generate_instruction(trajectory: dict, capture_meta: dict = None) -> str:
+async def generate_instruction(
+    trajectory: dict,
+    capture_meta: dict | None = None,
+    repo: dict | None = None,
+    test_source: str = "",
+) -> str:
+    """Generate an intent-level instruction for one trajectory.
+
+    Inputs in order of signal strength: the test function NAME (`task_id`), the
+    `test_source` (function body + docstring), the `repo` name+description, and finally
+    the recorded action sequence (used only when the upstream signals are uninformative).
+    The prompt is explicit that action enumeration is a failure mode; whatever Sonnet
+    returns is what lands on `trajectory.instruction` — no regex post-filters.
+
+    Falls back to a `task_id`-derived placeholder ONLY on genuine SDK failure (timeout,
+    budget exhaustion). The fallback is a safety net for infrastructure, not for
+    second-guessing the model's content.
+    """
     steps = trajectory.get("steps", [])
+    test_name = trajectory.get("task_id", "unknown")
     if not steps:
-        return "Complete the web browsing task."
+        return f"Verify the {test_name.replace('_', ' ')} behavior."
 
     steps_meta = (capture_meta or {}).get("steps", {})
     action_summary = []
@@ -194,20 +253,28 @@ async def generate_instruction(trajectory: dict, capture_meta: dict = None) -> s
         for action in step.get("actions", []):
             action_type = action.get("type", "")
             if action_type == "click":
-                action_summary.append(f"click {label}" if label else f"click({action.get('x')}, {action.get('y')})")
+                action_summary.append(f"click {label}" if label else "click")
             elif action_type == "type":
                 target = f" into {label}" if label else ""
                 action_summary.append(f'type "{action.get("text", "")[:30]}"{target}')
             elif action_type == "keypress":
-                action_summary.append(f"keypress({action.get('keys', [])})")
+                keys = action.get("keys", []) or []
+                action_summary.append(f"press {'+'.join(keys)}" if keys else "press a key")
             else:
                 action_summary.append(f"{action_type} {label}".strip())
 
-    test_name = trajectory.get("task_id", "unknown")
-    action_str = ", ".join(action_summary[:10])
+    action_str = ", ".join(action_summary[:10]) or "(no actions recorded)"
+
+    repo = repo or {}
+    repo_name = repo.get("full_name") or repo.get("name") or "(repository not identified)"
+    repo_description = (repo.get("description") or "").strip() or "(no description)"
+    test_source_block = test_source.strip() if test_source and test_source.strip() else "(test source unavailable — rely on the test name and actions)"
 
     prompt = INSTRUCTION_PROMPT.format(
+        repo_name=repo_name,
+        repo_description=repo_description,
         test_name=test_name,
+        test_source=test_source_block,
         action_summary=action_str,
     )
 
@@ -216,7 +283,7 @@ async def generate_instruction(trajectory: dict, capture_meta: dict = None) -> s
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
-                model="claude-haiku-4-5-20251001",
+                model=MODEL_FOR_GROUNDED_GENERATION,
                 max_turns=1,
                 max_budget_usd=INSTRUCTION_BUDGET_USD,
                 permission_mode="bypassPermissions",
@@ -226,9 +293,9 @@ async def generate_instruction(trajectory: dict, capture_meta: dict = None) -> s
                 result_text = message.result or ""
     except Exception as e:
         logger.warning(f"Instruction generation failed: {e}")
-        return f"Complete the web task: {test_name}"
+        return f"Verify the {test_name.replace('_', ' ')} behavior."
 
-    return result_text.strip() or f"Complete the web task: {test_name}"
+    return result_text.strip() or f"Verify the {test_name.replace('_', ' ')} behavior."
 
 
 def _load_capture_meta(traj_dir: Path) -> dict:
@@ -240,6 +307,24 @@ def _load_capture_meta(traj_dir: Path) -> dict:
             return json.load(f)
     except Exception:
         return {}
+
+
+def _load_test_source(traj_dir: Path, max_chars: int = 2000) -> str:
+    """Read the cached test function source (written by the instrumentation conftest at
+    recording time) sitting next to trajectory.json. Returns "" for older trajectories
+    that pre-date the capture; the instruction prompt has an explicit fallback path for
+    that case so a missing source is not fatal — just lower signal."""
+    p = traj_dir / "test_source.txt"
+    if not p.exists():
+        return ""
+    try:
+        text = p.read_text()
+    except Exception:
+        return ""
+    text = text.strip()
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n... (truncated)"
+    return text
 
 
 def _host(url: str) -> str:
@@ -309,7 +394,7 @@ async def classify_task_type(trajectory: dict, capture_meta: dict) -> str:
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
-                model="claude-haiku-4-5-20251001",
+                model=MODEL_FOR_CLASSIFICATION,
                 max_turns=1,
                 max_budget_usd=TASK_TYPE_BUDGET_USD,
                 permission_mode="bypassPermissions",

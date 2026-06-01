@@ -18,6 +18,7 @@ Environment variables:
     FRAMEWORK / FRAMEWORK_LANGUAGE — recorded into capture_meta.json
 """
 import hashlib
+import inspect
 import json
 import os
 import struct
@@ -25,6 +26,8 @@ import time
 from pathlib import Path
 
 import pytest
+
+TEST_SOURCE_MAX_CHARS = 2000
 
 TRAJECTORY_DIR = os.environ.get("TRAJECTORY_DIR", "/workspace/results")
 VIEWPORT_WIDTH = 1280
@@ -460,11 +463,34 @@ def _patch_locator_sync(page):
     Locator.press = instrumented_press
 
 
+def _capture_test_source(node, output_dir):
+    """Persist the test function's source (body + docstring) next to the trajectory so the
+    stage-6 instruction generator can infer intent from it instead of just the function name.
+    Best-effort: any failure is swallowed — older trajectories simply have no test_source.txt
+    and the instruction prompt has an explicit fallback for that case."""
+    if not output_dir:
+        return
+    try:
+        func = getattr(node, "function", None)
+        if func is None:
+            return
+        source = inspect.getsource(func)
+    except Exception:
+        return
+    if len(source) > TEST_SOURCE_MAX_CHARS:
+        source = source[:TEST_SOURCE_MAX_CHARS] + "\n... (truncated)"
+    try:
+        (output_dir / "test_source.txt").write_text(source)
+    except Exception:
+        pass
+
+
 @pytest.fixture(autouse=True)
 def _instrument_playwright(request, page):
     """Auto-use fixture that instruments every Playwright page."""
     test_name = request.node.nodeid
     _recorder.set_test(test_name)
+    _capture_test_source(request.node, _recorder.output_dir)
 
     page.set_viewport_size({"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT})
 

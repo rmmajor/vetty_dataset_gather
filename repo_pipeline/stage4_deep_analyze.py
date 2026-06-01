@@ -6,6 +6,7 @@ import os
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
 from repo_pipeline.frameworks import all_interactive_actions
+from repo_pipeline.llm_config import MODEL_FOR_REASONING
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, build_sandbox_mcp_server
 from repo_pipeline.schemas import DeepAnalysis, RepoStatus
@@ -123,7 +124,7 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
-                model="claude-sonnet-4-6",
+                model=MODEL_FOR_REASONING,
                 max_turns=25,
                 max_budget_usd=ANALYZE_BUDGET_USD,
                 permission_mode="bypassPermissions",

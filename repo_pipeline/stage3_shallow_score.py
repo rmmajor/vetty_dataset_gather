@@ -7,6 +7,7 @@ import subprocess
 
 from claude_agent_sdk import ClaudeAgentOptions, AssistantMessage, ResultMessage, query
 
+from repo_pipeline.llm_config import MODEL_FOR_REASONING
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.schemas import RepoStatus, ShallowScores
 
@@ -200,7 +201,7 @@ async def score_single_repo(repo: dict, context: dict) -> ShallowScores | None:
     async for message in query(
         prompt=prompt,
         options=ClaudeAgentOptions(
-            model="claude-sonnet-4-6",
+            model=MODEL_FOR_REASONING,
             max_turns=3,
             max_budget_usd=SCORE_BUDGET_USD,
             permission_mode="bypassPermissions",

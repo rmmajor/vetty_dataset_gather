@@ -1,4 +1,23 @@
-import asyncio
+"""Generate `<think>` blocks for each step in a recorded trajectory.
+
+The goal of these blocks is to teach Qwen3.5 the inner monologue of an agent executing a
+GUI task. Each thought is the agent's first-person, pre-action reasoning toward the task
+goal, grounded in the screenshot it sees. Concretely, for step N the model receives:
+
+- The current screenshot (PNG, vision-grounded).
+- The trajectory's goal (`trajectory.instruction`) and starting URL — passed in the system
+  preamble so the goal is always salient.
+- The thoughts and actions already produced for steps 1..N-1, so the chain stays consistent
+  across steps and the agent voice can refer back to prior progress.
+- A natural-language description of the action it is *about to* perform.
+- A private grounding hint (role/name/bbox of the target) that the prompt explicitly
+  forbids from leaking into the output — these are mechanical details, not part of the
+  agent's monologue.
+
+Generation is sequential within a single trajectory because the prompt for step N depends
+on the (already-written) thought for step N-1. Concurrency happens at the trajectory level
+in the orchestrator, not inside this function.
+"""
 import base64
 import json
 import logging
@@ -7,111 +26,170 @@ from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
+from repo_pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
+
 logger = logging.getLogger(__name__)
 
-THINK_BUDGET_USD = float(os.environ.get("THINK_BUDGET_USD", "0.05"))
+# Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet 4.6 — see
+# memory pathb-e2e-and-sdk-budget-floor). Defaults sit comfortably above that floor; the
+# per-call envelope for one think block is dominated by SDK overhead, not by tokens.
+THINK_BUDGET_USD = float(os.environ.get("THINK_BUDGET_USD", "0.15"))
 
-THINK_PROMPT = """You are annotating a web browsing trajectory for training data.
+THINK_SYSTEM_TEMPLATE = """You are the agent currently executing a task in a web browser.
+Given the current screenshot and the next action you are about to take, write the inner
+monologue (1-3 short sentences) that explains why this action moves you toward the goal.
 
-Given this screenshot and the action that was taken, write a brief reasoning explanation (1-3 sentences) for WHY this action makes sense.
+Voice and format:
+- First person, present tense, as if narrating your own next move.
+- Anchor in what is VISIBLE on the screen — refer to UI elements by their visible text,
+  not by role / selector / bounding box / coordinates.
+- Tie the action to progress toward the goal: WHAT you observe about current progress,
+  then WHY this action is the next step.
+- Never ask for more context. Never say you are an AI. Never narrate as an annotator
+  ("this click makes sense because...").
+- If the action obviously will not work, write the thought as the agent would in the
+  moment — do not editorialize.
 
-Action taken: {action_description}
-{target_element}Previous actions: {previous_actions}
+Goal: {goal}
+Starting URL: {start_url}
 
-Write ONLY the reasoning, no action. Be specific about what you see in the screenshot."""
+Good examples (style only):
+- "The cart still shows 0 items, so I need to add the iPhone first. Clicking 'Add to
+  cart' next to its listing."
+- "The search returned no results for 'wireless mouse'. I'll broaden the query —
+  clicking the search bar to retype 'mouse'."
+- "I'm on the login screen. I'll enter my email first, so I'm clicking the email field."
 
+Bad examples (do NOT produce):
+- "I need more context to write this." (never ask, just write)
+- "This click selects an element with role=button name='Submit'." (never quote selectors)
+- "The action taken makes sense because..." (never narrate as an annotator)
 
-def format_target_element(step: dict, step_meta: dict) -> str:
-    """A 'Target element: ...' prompt line grounded in the captured DOM element, or '' when
-    no element metadata exists (older trajectories) so the prompt renders as before."""
-    role = step.get("role") or step_meta.get("role")
-    name = step.get("name") or step_meta.get("name")
-    if role and name:
-        label = f'{role} labeled "{name}"'
-    elif name:
-        label = f'"{name}"'
-    elif role:
-        label = role
-    else:
-        return ""
-    return f"Target element: {label}\n"
+Output only the thought text. No preamble, no quotes, no markdown, no JSON."""
 
 
-def format_action_description(action: dict) -> str:
+THINK_USER_TEMPLATE = """Steps so far in this trajectory:
+{history_block}
+
+Now about to: {about_to_action}
+(Grounding hint — do not quote in your output: {grounding_hint})
+
+Write the thought."""
+
+
+def render_action_nl(action: dict, role: str = "", name: str = "") -> str:
+    """Render one action as a short English clause for the prompt. Coordinates never enter
+    the prompt — the grounding hint carries the precise target separately."""
     action_type = action.get("type", "unknown")
 
+    if name:
+        target_phrase = f" '{name}'"
+    elif role:
+        target_phrase = f" the {role}"
+    else:
+        target_phrase = ""
+
     if action_type == "click":
-        x, y = action.get("x", 0), action.get("y", 0)
-        button = action.get("button", "left")
-        return f'click({x}, {y}) with {button} button'
-    elif action_type == "double_click":
-        x, y = action.get("x", 0), action.get("y", 0)
-        return f'double_click({x}, {y})'
-    elif action_type == "type":
+        return f"click{target_phrase}" if target_phrase else "click (no labeled target)"
+    if action_type == "double_click":
+        return f"double-click{target_phrase}" if target_phrase else "double-click (no labeled target)"
+    if action_type == "type":
         text = action.get("text", "")
-        display_text = text[:50] + "..." if len(text) > 50 else text
-        return f'type("{display_text}")'
-    elif action_type == "keypress":
-        keys = action.get("keys", [])
-        return f'keypress({"+".join(keys)})'
-    elif action_type == "scroll":
-        x, y = action.get("x", 0), action.get("y", 0)
-        sy = action.get("scroll_y", 0)
-        return f'scroll at ({x}, {y}), scrollY={sy}'
-    elif action_type == "wait":
-        return "wait()"
-    elif action_type == "drag":
-        path = action.get("path", [])
-        if len(path) >= 2:
-            return f'drag from ({path[0]["x"]}, {path[0]["y"]}) to ({path[-1]["x"]}, {path[-1]["y"]})'
-        return "drag()"
+        display = text[:60] + "…" if len(text) > 60 else text
+        into = f" into{target_phrase}" if target_phrase else ""
+        return f"type '{display}'{into}"
+    if action_type == "keypress":
+        keys = action.get("keys", []) or []
+        return f"press {'+'.join(keys)}" if keys else "press a key"
+    if action_type == "scroll":
+        sy = action.get("scroll_y", 0) or 0
+        direction = "down" if sy >= 0 else "up"
+        return f"scroll {direction}"
+    if action_type == "wait":
+        return "wait"
+    if action_type == "drag":
+        return f"drag{target_phrase}" if target_phrase else "drag"
 
-    return f"{action_type}()"
+    return action_type or "act"
 
 
-def format_previous_actions(steps: list[dict], current_step: int) -> str:
-    previous = []
+def render_grounding_hint(role: str, name: str, bbox: dict | None) -> str:
+    """Format role/name/bbox into a single private hint line. The prompt explicitly forbids
+    the model from quoting these strings — they exist only so the model can confirm which
+    on-screen element it is acting on when the screenshot is ambiguous."""
+    parts = []
+    if role:
+        parts.append(f"role={role}")
+    if name:
+        safe_name = name.replace('"', "'")
+        parts.append(f'name="{safe_name}"')
+    if isinstance(bbox, dict) and bbox:
+        coords: list[int] = []
+        for k in ("x", "y", "width", "height"):
+            v = bbox.get(k)
+            if not isinstance(v, (int, float)):
+                coords = []
+                break
+            coords.append(int(v))
+        if coords:
+            parts.append(f"bbox=({coords[0]},{coords[1]},{coords[2]},{coords[3]})")
+    return ", ".join(parts) or "(no grounding metadata)"
+
+
+def render_history(
+    steps: list[dict],
+    current_step_num: int,
+    action_nl_by_step: dict[int, str],
+) -> str:
+    """Build the per-trajectory history block: every step strictly before `current_step_num`,
+    rendered as `N. [thought] → action`. Uses the thoughts already written in memory, so the
+    caller must process steps sequentially in step-number order."""
+    lines = []
     for step in steps:
-        if step["step"] >= current_step:
-            break
-        for action in step.get("actions", []):
-            previous.append(format_action_description(action))
-
-    if not previous:
-        return "(this is the first action)"
-
-    if len(previous) > 5:
-        return "[" + ", ".join(previous[-5:]) + f"] (showing last 5 of {len(previous)})"
-
-    return "[" + ", ".join(previous) + "]"
+        n = step.get("step")
+        if not isinstance(n, int) or n >= current_step_num:
+            continue
+        thought = (step.get("thought") or "").strip() or "(no thought recorded)"
+        action_nl = action_nl_by_step.get(n, "(no action)")
+        lines.append(f"{n}. [{thought}] → {action_nl}")
+    if not lines:
+        return "(this is the first step)"
+    return "\n".join(lines)
 
 
 async def generate_think_for_step(
     screenshot_path: Path,
-    action: dict,
-    previous_actions_str: str,
-    target_element: str = "",
+    goal: str,
+    start_url: str,
+    history_block: str,
+    about_to_action: str,
+    grounding_hint: str,
 ) -> str:
+    """Single SDK call: send (system preamble + per-step user message + screenshot image)
+    and return the model's thought verbatim. No regex post-filters: if the model produces
+    something that doesn't look like a thought, the response is to *tighten the prompt*,
+    not to silently retry. Genuine SDK failures (timeout, budget) return "" — the dashboard's
+    observability metrics surface the gap so a prompt revision can be scheduled."""
     if not screenshot_path.exists():
         return ""
 
     b64_screenshot = base64.b64encode(screenshot_path.read_bytes()).decode("utf-8")
-    text = THINK_PROMPT.format(
-        action_description=format_action_description(action),
-        target_element=target_element,
-        previous_actions=previous_actions_str,
-    )
 
-    # Send the actual screenshot to Claude (Haiku-4.5 is vision-capable). claude_agent_sdk.query
-    # accepts an AsyncIterable prompt carrying Anthropic image content blocks, so the reasoning is
-    # grounded in what's on screen rather than inferred blindly from coordinates.
+    system_text = THINK_SYSTEM_TEMPLATE.format(goal=goal, start_url=start_url)
+    user_text = THINK_USER_TEMPLATE.format(
+        history_block=history_block,
+        about_to_action=about_to_action,
+        grounding_hint=grounding_hint,
+    )
+    combined_text = system_text + "\n\n---\n\n" + user_text
+
     async def prompt_stream():
         yield {
             "type": "user",
             "message": {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": text},
+                    {"type": "text", "text": combined_text},
                     {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64_screenshot}},
                 ],
             },
@@ -124,7 +202,7 @@ async def generate_think_for_step(
         async for message in query(
             prompt=prompt_stream(),
             options=ClaudeAgentOptions(
-                model="claude-haiku-4-5-20251001",
+                model=MODEL_FOR_GROUNDED_GENERATION,
                 max_turns=1,
                 max_budget_usd=THINK_BUDGET_USD,
                 permission_mode="bypassPermissions",
@@ -141,8 +219,16 @@ async def generate_think_for_step(
 
 async def generate_thinks_for_trajectory(
     trajectory_dir: Path,
-    workers: int = 10,
+    workers: int = 1,
 ) -> bool:
+    """Generate a `<think>` block for every step in one trajectory, in step order.
+
+    `workers` is accepted for backwards compatibility with stage 6 call sites but ignored —
+    generation is strictly sequential within a trajectory because each prompt depends on
+    the thoughts already produced for earlier steps. Parallelism, when wanted, happens at
+    the trajectory level in the orchestrator."""
+    del workers
+
     trajectory_path = trajectory_dir / "trajectory.json"
     if not trajectory_path.exists():
         return False
@@ -154,10 +240,12 @@ async def generate_thinks_for_trajectory(
     if not steps:
         return False
 
-    already_has_thinks = all(step.get("thought", "").strip() for step in steps)
-    if already_has_thinks:
+    if all(step.get("thought", "").strip() for step in steps):
         logger.debug(f"  {trajectory_dir.name}: already has all think blocks, skipping")
         return True
+
+    goal = (trajectory.get("instruction") or "").strip() or "(goal not recorded)"
+    start_url = (trajectory.get("start_url") or "").strip() or "(unknown)"
 
     capture_meta = {}
     capture_meta_path = trajectory_dir / "capture_meta.json"
@@ -167,46 +255,68 @@ async def generate_thinks_for_trajectory(
                 capture_meta = json.load(f)
         except Exception:
             capture_meta = {}
-    steps_meta = capture_meta.get("steps", {})
+    steps_meta = capture_meta.get("steps", {}) if isinstance(capture_meta, dict) else {}
 
-    semaphore = asyncio.Semaphore(workers)
+    action_nl_by_step: dict[int, str] = {}
+    grounding_by_step: dict[int, tuple[str, str, dict | None]] = {}
+    for step in steps:
+        n = step.get("step")
+        if not isinstance(n, int):
+            continue
+        actions = step.get("actions", []) or []
+        meta = steps_meta.get(str(n), {}) if isinstance(steps_meta, dict) else {}
+        role = step.get("role") or meta.get("role") or ""
+        name = step.get("name") or meta.get("name") or ""
+        bbox = step.get("bbox") or meta.get("bbox")
+        action_nl_by_step[n] = render_action_nl(actions[0], role=role, name=name) if actions else "(no action)"
+        grounding_by_step[n] = (role, name, bbox)
 
-    async def process_step(step):
-        if step.get("thought", "").strip():
-            return
-
-        actions = step.get("actions", [])
-        if not actions:
-            return
+    ordered_steps = sorted(steps, key=lambda s: s.get("step", 0))
+    for step in ordered_steps:
+        n = step.get("step")
+        if not isinstance(n, int):
+            continue
+        if (step.get("thought") or "").strip():
+            continue
+        if not step.get("actions"):
+            continue
 
         screenshot_path = trajectory_dir / step["screenshot"]
-        previous_str = format_previous_actions(steps, step["step"])
-        target_element = format_target_element(step, steps_meta.get(str(step.get("step")), {}))
+        if not screenshot_path.exists():
+            logger.debug(f"  {trajectory_dir.name}: screenshot missing for step {n}, skipping")
+            continue
 
-        async with semaphore:
-            thought = await generate_think_for_step(
-                screenshot_path,
-                actions[0],
-                previous_str,
-                target_element,
-            )
-            step["thought"] = thought
+        history_block = render_history(steps, n, action_nl_by_step)
+        about_to = action_nl_by_step.get(n, "(no action)")
+        role, name, bbox = grounding_by_step.get(n, ("", "", None))
+        grounding_hint = render_grounding_hint(role, name, bbox)
 
-    await asyncio.gather(*[process_step(step) for step in steps])
+        thought = await generate_think_for_step(
+            screenshot_path=screenshot_path,
+            goal=goal,
+            start_url=start_url,
+            history_block=history_block,
+            about_to_action=about_to,
+            grounding_hint=grounding_hint,
+        )
+        step["thought"] = thought
 
     with open(trajectory_path, "w") as f:
         json.dump(trajectory, f, indent=2)
 
-    filled = sum(1 for s in steps if s.get("thought", "").strip())
+    filled = sum(1 for s in steps if (s.get("thought") or "").strip())
     logger.info(f"  {trajectory_dir.name}: generated {filled}/{len(steps)} think blocks")
     return True
 
 
 async def generate_thinks_for_all(
     trajectories_dir: Path,
-    workers: int = 10,
-    budget_remaining: float = None,
+    workers: int = 1,
+    budget_remaining: float | None = None,
 ):
+    """Walk every `task_*/` subdir under `trajectories_dir` and fill missing thoughts."""
+    del workers
+
     trajectory_dirs = sorted(trajectories_dir.glob("task_*/"))
     logger.info(f"Generating think blocks for {len(trajectory_dirs)} trajectories")
 
@@ -226,9 +336,9 @@ async def generate_thinks_for_all(
             traj = json.load(f)
 
         step_count = len(traj.get("steps", []))
-        estimated_cost = step_count * 0.005
+        estimated_cost = step_count * 0.008
 
-        await generate_thinks_for_trajectory(traj_dir, workers=workers)
+        await generate_thinks_for_trajectory(traj_dir)
         cost_estimate += estimated_cost
         processed += 1
 
