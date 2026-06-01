@@ -28,6 +28,8 @@ import * as crypto from 'crypto';
 const TRAJECTORY_DIR = process.env.TRAJECTORY_DIR || '/workspace/results';
 const VIEWPORT_WIDTH = 1280;
 const VIEWPORT_HEIGHT = 720;
+const TEST_SOURCE_MAX_CHARS = 2000;
+const TEST_SOURCE_MAX_LINES = 60;
 
 // Single-round-trip DOM probe run against the target element. Keep in sync with the
 // equivalent PROBE_JS constants in pw_python_conftest.py and selenium_python_conftest.py.
@@ -384,10 +386,31 @@ function patchLocatorPrototype(sample: Locator) {
   );
 }
 
+function captureTestSource(outputDir: string, testFile: string, testLine: number): void {
+  // Persist a slice of the test file's source (test body + surrounding lines) next to the
+  // trajectory so the stage-6 instruction generator can infer intent from it instead of
+  // just the function name. Best-effort: any failure is swallowed — older trajectories
+  // simply have no test_source.txt and the instruction prompt has an explicit fallback.
+  if (!outputDir || !testFile) return;
+  try {
+    const fileText = fs.readFileSync(testFile, 'utf-8');
+    const lines = fileText.split('\n');
+    const startIdx = Math.max(0, (testLine || 1) - 1);
+    const endIdx = Math.min(lines.length, startIdx + TEST_SOURCE_MAX_LINES);
+    let slice = lines.slice(startIdx, endIdx).join('\n');
+    if (slice.length > TEST_SOURCE_MAX_CHARS) {
+      slice = slice.slice(0, TEST_SOURCE_MAX_CHARS) + '\n... (truncated)';
+    }
+    fs.writeFileSync(path.join(outputDir, 'test_source.txt'), slice);
+  } catch {}
+}
+
+
 export const test = base.extend({
   page: async ({ page }, use, testInfo) => {
     const recorder = new StepRecorder();
     recorder.setTest(testInfo.titlePath.join(' > '));
+    captureTestSource(recorder.outputDir, testInfo.file, testInfo.line);
     currentRecorder = recorder;
 
     await page.setViewportSize({ width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT });

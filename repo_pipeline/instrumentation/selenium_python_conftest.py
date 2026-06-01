@@ -23,6 +23,7 @@ Environment variables:
     FRAMEWORK / FRAMEWORK_LANGUAGE — recorded into capture_meta.json
 """
 import hashlib
+import inspect
 import json
 import os
 import struct
@@ -34,6 +35,7 @@ import pytest
 TRAJECTORY_DIR = os.environ.get("TRAJECTORY_DIR", "/workspace/results")
 VIEWPORT_WIDTH = 1280
 VIEWPORT_HEIGHT = 720
+TEST_SOURCE_MAX_CHARS = 2000
 
 # DOM probe run against the target element via execute_script. Returns bbox too, since
 # Selenium has no boundingBox() method. Keep in sync with PROBE_JS in pw_python_conftest.py.
@@ -446,12 +448,35 @@ _KEYS_BY_VALUE = {}
 _patch_selenium()
 
 
+def _capture_test_source(item, output_dir):
+    """Persist the test function's source (body + docstring) next to the trajectory so the
+    stage-6 instruction generator can infer intent from it instead of just the function name.
+    Best-effort: any failure is swallowed — older trajectories simply have no test_source.txt
+    and the instruction prompt has an explicit fallback for that case."""
+    if not output_dir:
+        return
+    try:
+        func = getattr(item, "function", None) or getattr(item, "obj", None)
+        if func is None:
+            return
+        source = inspect.getsource(func)
+    except Exception:
+        return
+    if len(source) > TEST_SOURCE_MAX_CHARS:
+        source = source[:TEST_SOURCE_MAX_CHARS] + "\n... (truncated)"
+    try:
+        (output_dir / "test_source.txt").write_text(source)
+    except Exception:
+        pass
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item):
     """Reset the recorder for each test before any driver fixtures run."""
     global _start_url
     _start_url = ""
     _recorder.set_test(item.nodeid)
+    _capture_test_source(item, _recorder.output_dir)
 
 
 @pytest.hookimpl(hookwrapper=True)
