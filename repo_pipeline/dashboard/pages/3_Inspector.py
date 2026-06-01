@@ -105,14 +105,8 @@ for row in task_steps.itertuples():
     else:
         img_col.warning(f"Screenshot missing: `{screenshot_path.name}`")
 
-    info_col.markdown("**Action**")
-    action_block = {
-        "action_type": row.action_type,
-        "x": row.x,
-        "y": row.y,
-        "n_actions": row.n_actions,
-    }
-    info_col.code(json.dumps(action_block, indent=2), language="json")
+    info_col.markdown(f"**Action** ({row.n_actions})")
+    info_col.code(json.dumps(row.actions, indent=2, default=str), language="json")
 
     info_col.markdown("**Target element** (from `capture_meta.json` / inline)")
     elem_block = {
