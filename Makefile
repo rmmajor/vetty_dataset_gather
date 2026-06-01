@@ -1,5 +1,5 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
-       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-status
+       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-status dashboard
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -114,3 +114,8 @@ pipeline-status: ## Show pipeline registry stats
 
 test-notifier: ## Test Telegram bot notification
 	python -m repo_pipeline.notifier --test
+
+# ---------- Dashboard ----------
+
+dashboard: ## Launch trajectory SFT-readiness dashboard (Streamlit, localhost:8501)
+	streamlit run repo_pipeline/dashboard/app.py
