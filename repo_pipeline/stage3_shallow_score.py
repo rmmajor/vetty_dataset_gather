@@ -5,11 +5,12 @@ import os
 import re
 import subprocess
 
-from claude_agent_sdk import ClaudeAgentOptions, AssistantMessage, ResultMessage, query
+from claude_agent_sdk import ClaudeAgentOptions
 
 from repo_pipeline.llm_config import MODEL_FOR_REASONING
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.schemas import RepoStatus, ShallowScores
+from repo_pipeline.sdk_runner import rate_limit_tracker, run_query, UsageLimitReached
 
 logger = logging.getLogger(__name__)
 
@@ -196,30 +197,17 @@ async def score_single_repo(repo: dict, context: dict) -> ShallowScores | None:
         sample_tests=context.get("sample_tests", "(not available)")[:4000],
     )
 
-    result_text = ""
-    last_assistant_text = ""
-    async for message in query(
-        prompt=prompt,
-        options=ClaudeAgentOptions(
+    result_text = await run_query(
+        prompt,
+        ClaudeAgentOptions(
             model=MODEL_FOR_REASONING,
             max_turns=3,
             max_budget_usd=SCORE_BUDGET_USD,
             permission_mode="bypassPermissions",
         ),
-    ):
-        if isinstance(message, AssistantMessage) and hasattr(message, "content"):
-            for block in message.content:
-                if hasattr(block, "text"):
-                    last_assistant_text = block.text
-        if isinstance(message, ResultMessage):
-            if message.subtype == "success":
-                result_text = message.result or ""
-            else:
-                logger.warning(f"Scoring for {repo['full_name']} ended with: {message.subtype}")
-
-    if not result_text and last_assistant_text:
-        logger.info(f"Using last assistant text as scoring result for {repo['full_name']}")
-        result_text = last_assistant_text
+        label=f"score:{repo['full_name']}",
+        fallback_to_assistant_text=True,
+    )
 
     try:
         cleaned = result_text.strip()
@@ -256,6 +244,8 @@ async def process_repo(registry: RepoRegistry, repo: dict):
     try:
         context = await fetch_repo_context_via_agent(repo)
         scores = await score_single_repo(repo, context)
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.error(f"Error scoring {repo_name}: {e}")
         registry.reject(repo_name, stage=3, reason=f"scoring error: {str(e)[:200]}")
@@ -313,12 +303,17 @@ async def run_shallow_score(
     async def process_with_semaphore(repo):
         nonlocal passed, rejected, cost_estimate
 
+        if rate_limit_tracker.limit_reached():
+            return
         if budget_remaining is not None and cost_estimate > budget_remaining:
             logger.warning("Budget limit reached, stopping")
             return
 
         async with semaphore:
-            await process_repo(registry, repo)
+            try:
+                await process_repo(registry, repo)
+            except UsageLimitReached:
+                return
             cost_estimate += 0.20  # rough estimate per repo
 
         repo_after = registry.get_repo(repo["full_name"])

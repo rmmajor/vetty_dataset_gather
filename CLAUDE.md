@@ -40,7 +40,8 @@ make record                # needs OPENAI_API_KEY; --resume is on by default
 make pipeline-discover     # stage 1, needs GITHUB_TOKEN
 make pipeline-filter       # stage 2
 make pipeline-score PIPELINE_LIMIT=50 PIPELINE_BUDGET=5   # stage 3, costs money
-make pipeline-overnight PIPELINE_BUDGET=30                # stages 3-6 + Telegram report
+make pipeline-overnight PIPELINE_BUDGET=30                # stages 3-6 once + Telegram report
+make pipeline-until-limit PIPELINE_LIMIT_PCT=75           # loop stages 3-6 until 75% of Claude usage limit
 make pipeline-status
 python -m repo_pipeline.orchestrator --stage 3-6 --limit 10 --budget 5 --workers 5
 python -m repo_pipeline.orchestrator --status
@@ -85,6 +86,8 @@ Path B calls Claude via `claude_agent_sdk.query()` returning `AsyncIterator[Mess
 ## Budget & concurrency
 
 LLM stages run with an `asyncio.Semaphore(workers)`; the orchestrator caps workers per stage (3 for analyze, 2 for trial/generate) since those hold a container each. Cost control is two-layered: `orchestrator.STAGE_COST_ESTIMATES` stops launching new stages once the run budget is spent, and each stage tracks its own `cost_estimate` against `budget_remaining`. `--budget` is a soft cap based on per-repo estimates, not metered spend.
+
+`--overnight` and `--until-limit` both run through `orchestrator.drain_funnel` (the generalized stage-3→6 loop): overnight is one pass, until-limit loops until the usage threshold / budget / drained funnel. Every `query()` goes through `repo_pipeline/sdk_runner.run_query`, which feeds the SDK's `RateLimitEvent` into a process-global `rate_limit_tracker` (per-`rate_limit_type` utilization) and raises `UsageLimitReached` on a hard 429. That exception is re-raised (never caught-and-rejected) at every layer between `run_query` and each stage's `process_with_semaphore`, so hitting the usage limit leaves repos in their input status for the next run instead of rejecting them. `--until-limit PCT` sets `rate_limit_tracker.threshold = PCT/100`; with no usage events observed it degrades to "stop on hard 429".
 
 ## Environment variables
 
