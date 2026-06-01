@@ -249,6 +249,7 @@ def load_corpus(traj_root: Path) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]
                 "screenshot_path": str(task_dir / step.screenshot),
                 "action_type": _step_action_type(step.actions),
                 "n_actions": len(step.actions),
+                "actions": step.actions,
                 "x": x,
                 "y": y,
                 "thought": step.thought or "",
