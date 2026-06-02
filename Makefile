@@ -1,5 +1,5 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
-       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-status dashboard
+       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -104,14 +104,20 @@ pipeline-score: ## Stage 3: Shallow score repos with Claude
 		--budget $(PIPELINE_BUDGET) \
 		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
 
-pipeline-overnight: ## Run stages 3-6 overnight with Telegram notification
+pipeline-overnight: ## Run stages 3-7 overnight with Telegram notification
 	python -m repo_pipeline.orchestrator --overnight \
 		--workers $(PIPELINE_WORKERS) \
 		--budget $(PIPELINE_BUDGET) \
 		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
 
-pipeline-until-limit: ## Loop stages 3-6 until Claude usage hits PIPELINE_LIMIT_PCT% (default 100)
+pipeline-until-limit: ## Loop stages 3-7 until Claude usage hits PIPELINE_LIMIT_PCT% (default 100)
 	python -m repo_pipeline.orchestrator --until-limit $(PIPELINE_LIMIT_PCT) \
+		--workers $(PIPELINE_WORKERS) \
+		--budget $(PIPELINE_BUDGET) \
+		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
+
+pipeline-think: ## Stage 7: fill <think> blocks for captured repos (decoupled from capture)
+	python -m repo_pipeline.orchestrator --stage 7 \
 		--workers $(PIPELINE_WORKERS) \
 		--budget $(PIPELINE_BUDGET) \
 		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))

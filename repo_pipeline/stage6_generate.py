@@ -8,14 +8,16 @@ from urllib.parse import urlparse
 
 from claude_agent_sdk import ClaudeAgentOptions
 
+from repo_pipeline._processing import run_repo
+from repo_pipeline.agent_runner import run_agent
 from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import setup_repo_instrumentation
 from repo_pipeline.llm_config import MODEL_FOR_CLASSIFICATION, MODEL_FOR_GROUNDED_GENERATION
+from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
-from repo_pipeline.schemas import RepoStatus
-from repo_pipeline.sdk_runner import rate_limit_tracker, run_query, UsageLimitReached
-from repo_pipeline.think_generator import generate_thinks_for_trajectory
+from repo_pipeline.schemas import FailureCategory, QualityReject, RepoStatus, RetryableFailure
+from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -82,37 +84,44 @@ async def _run(fn, *args):
     return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
 
 
-async def generate_for_repo(
-    registry: RepoRegistry,
-    repo: dict,
-    trajectory_base_dir: Path,
-):
+def _is_valid_trajectory(traj_dir: Path) -> bool:
+    """A captured trajectory is usable if it has at least one action with real coordinates and
+    every referenced screenshot exists on disk."""
+    trajectory_file = traj_dir / "trajectory.json"
+    if not trajectory_file.exists():
+        return False
+    try:
+        traj = json.loads(trajectory_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    steps = traj.get("steps", [])
+    if not steps:
+        return False
+    has_valid_coords = any(
+        any(a.get("x", 0) > 0 or a.get("y", 0) > 0 for a in step.get("actions", []))
+        for step in steps
+    )
+    screenshots_exist = all((traj_dir / step.get("screenshot", "")).exists() for step in steps)
+    return has_valid_coords and screenshots_exist
+
+
+def _has_valid_trajectories(repo_traj_dir: Path) -> bool:
+    return repo_traj_dir.exists() and any(_is_valid_trajectory(d) for d in repo_traj_dir.glob("task_*/"))
+
+
+async def _capture_suite(rlog, repo: dict, profile, repo_traj_dir: Path, test_name_prefix: str):
+    """Run the instrumented test suite in a sandbox and copy results to repo_traj_dir. Raises
+    RetryableFailure on clone/copy infra errors. NOT idempotent (re-running re-captures from
+    scratch) — generate_for_repo guards this behind a resume check so it is skipped when valid
+    captures already exist on disk."""
     repo_name = repo["full_name"]
-
-    if repo.get("current_stage", 0) >= 6:
-        return
-
-    logger.info(f"Generating trajectories: {repo_name}")
-
-    deep_analysis = {}
-    if repo.get("deep_analysis"):
-        try:
-            deep_analysis = json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    profile = resolve_profile(deep_analysis.get("test_framework"), deep_analysis.get("framework_language"))
-    test_name_prefix = repo_name.replace("/", "_")
-
     sandbox = DockerSandbox(image=profile.sandbox_image, platform=profile.sandbox_platform)
-
     try:
         await _run(sandbox.start, repo_name)
 
         _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
         if exit_code != 0:
-            registry.reject(repo_name, stage=6, reason=f"clone failed: {stderr[:200]}")
-            return
+            raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
 
         await _run(setup_repo_instrumentation, sandbox, profile)
 
@@ -124,95 +133,101 @@ async def generate_for_repo(
             framework=profile.test_framework, framework_language=profile.language,
         )
         out, err, code = await _run(sandbox.exec_command, suite_cmd, SUITE_RUN_TIMEOUT)
-        logger.info(f"  {repo_name}: suite run exit={code}; {(out or err)[-300:].strip()[:300]}")
+        rlog.info(f"suite run exit={code}; {(out or err)[-300:].strip()[:300]}")
 
-        repo_traj_dir = trajectory_base_dir / f"repo_{test_name_prefix}"
         repo_traj_dir.mkdir(parents=True, exist_ok=True)
-
         try:
             await _run(sandbox.copy_out, "/workspace/results", str(repo_traj_dir))
         except Exception as e:
-            logger.warning(f"  Failed to copy results for {repo_name}: {e}")
-            registry.reject(repo_name, stage=6, reason=f"copy results failed: {str(e)[:200]}")
-            return
-
-        trajectory_dirs = list(repo_traj_dir.glob("task_*/"))
-        valid_dirs = []
-        instruction_generated = {}
-
-        for traj_dir in trajectory_dirs:
-            trajectory_file = traj_dir / "trajectory.json"
-            if not trajectory_file.exists():
-                continue
-
-            with open(trajectory_file) as f:
-                traj = json.load(f)
-
-            steps = traj.get("steps", [])
-            if not steps:
-                continue
-
-            has_valid_coords = any(
-                any(a.get("x", 0) > 0 or a.get("y", 0) > 0 for a in step.get("actions", []))
-                for step in steps
-            )
-
-            screenshots_exist = all(
-                (traj_dir / step["screenshot"]).exists()
-                for step in steps
-            )
-
-            if not (has_valid_coords and screenshots_exist):
-                continue
-
-            valid_dirs.append(traj_dir)
-
-            if not traj.get("instruction"):
-                test_source = _load_test_source(traj_dir)
-                instruction = await generate_instruction(
-                    traj,
-                    _load_capture_meta(traj_dir),
-                    repo=repo,
-                    test_source=test_source,
-                )
-                traj["instruction"] = instruction
-                instruction_generated[traj_dir] = True
-                with open(trajectory_file, "w") as f:
-                    json.dump(traj, f, indent=2)
-            else:
-                instruction_generated[traj_dir] = False
-
-        valid_count = len(valid_dirs)
-        logger.info(f"  {repo_name}: {valid_count} valid trajectories from {len(trajectory_dirs)} total")
-
-        if valid_count == 0:
-            registry.reject(repo_name, stage=6, reason="no valid trajectories produced")
-            return
-
-        logger.info(f"  Generating think blocks for {repo_name}...")
-        for traj_dir in valid_dirs:
-            await generate_thinks_for_trajectory(traj_dir, workers=5)
-
-        # Derive trajectory-level metadata from the captured trajectory + capture_meta, now
-        # that instructions and think blocks are filled in.
-        for traj_dir in valid_dirs:
-            await _enrich_metadata(traj_dir, repo, profile, instruction_generated.get(traj_dir, True))
-
-        registry.update_status(
-            repo_name,
-            RepoStatus.COMPLETED.value,
-            stage=6,
-            trajectory_count=valid_count,
-            trajectory_dir=str(repo_traj_dir),
-        )
-
-    except UsageLimitReached:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating for {repo_name}: {e}")
-        registry.reject(repo_name, stage=6, reason=f"generation error: {str(e)[:200]}")
+            raise RetryableFailure(FailureCategory.SANDBOX_ERROR, f"copy results failed: {str(e)[:200]}")
     finally:
         await _run(sandbox.stop)
+
+
+async def generate_for_repo(
+    registry: RepoRegistry,
+    repo: dict,
+    trajectory_base_dir: Path,
+):
+    repo_name = repo["full_name"]
+
+    if repo.get("current_stage", 0) >= 6:
+        return
+
+    rlog = repo_logger(6, repo_name)
+
+    deep_analysis = {}
+    if repo.get("deep_analysis"):
+        try:
+            deep_analysis = json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    profile = resolve_profile(deep_analysis.get("test_framework"), deep_analysis.get("framework_language"))
+    test_name_prefix = repo_name.replace("/", "_")
+    repo_traj_dir = trajectory_base_dir / f"repo_{test_name_prefix}"
+
+    # Resume: a prior run may have captured trajectories but died during instruction/think
+    # generation, leaving the repo stuck before completion. Re-running the suite would re-capture
+    # from scratch — wasteful, and on dynamic/anti-bot sites it loses the good capture. So skip
+    # the suite when valid trajectories already exist and just finish the (idempotent) supervision
+    # + completion steps below.
+    if _has_valid_trajectories(repo_traj_dir):
+        rlog.info(f"resuming: valid trajectories already on disk ({repo_traj_dir.name}), skipping capture")
+    else:
+        rlog.info("generating trajectories")
+        await _capture_suite(rlog, repo, profile, repo_traj_dir, test_name_prefix)
+
+    # ---- Post-capture processing. Idempotent, so it runs identically on a fresh capture or a
+    # resumed one: instructions and think blocks are only generated where missing. ----
+    trajectory_dirs = list(repo_traj_dir.glob("task_*/")) if repo_traj_dir.exists() else []
+    valid_dirs = []
+    instruction_generated = {}
+
+    for traj_dir in trajectory_dirs:
+        trajectory_file = traj_dir / "trajectory.json"
+        if not _is_valid_trajectory(traj_dir):
+            continue
+        with open(trajectory_file) as f:
+            traj = json.load(f)
+        valid_dirs.append(traj_dir)
+
+        if not traj.get("instruction"):
+            test_source = _load_test_source(traj_dir)
+            instruction = await generate_instruction(
+                traj,
+                _load_capture_meta(traj_dir),
+                repo=repo,
+                test_source=test_source,
+                registry=registry,
+            )
+            traj["instruction"] = instruction
+            instruction_generated[traj_dir] = True
+            with open(trajectory_file, "w") as f:
+                json.dump(traj, f, indent=2)
+        else:
+            instruction_generated[traj_dir] = False
+
+    valid_count = len(valid_dirs)
+    rlog.info(f"{valid_count} valid trajectories from {len(trajectory_dirs)} total")
+
+    if valid_count == 0:
+        raise QualityReject(FailureCategory.NO_CAPTURE, "no valid trajectories produced")
+
+    # Think blocks are NOT generated here — that is the separate, resumable stage 7 (think). Keeping
+    # the per-step think generation out of capture means a think-gen stall can never block or fail a
+    # capture: trajectories + instructions + metadata land, and the repo is marked `captured`.
+    for traj_dir in valid_dirs:
+        await _enrich_metadata(traj_dir, repo, profile, instruction_generated.get(traj_dir, True), registry=registry)
+
+    registry.update_status(
+        repo_name,
+        RepoStatus.CAPTURED.value,
+        stage=6,
+        trajectory_count=valid_count,
+        trajectory_dir=str(repo_traj_dir),
+    )
+    return valid_count
 
 
 def _element_label(step: dict, step_meta: dict) -> str:
@@ -231,6 +246,7 @@ async def generate_instruction(
     capture_meta: dict | None = None,
     repo: dict | None = None,
     test_source: str = "",
+    registry=None,
 ) -> str:
     """Generate an intent-level instruction for one trajectory.
 
@@ -282,7 +298,7 @@ async def generate_instruction(
     )
 
     try:
-        result_text = await run_query(
+        result_text = await run_agent(
             prompt,
             ClaudeAgentOptions(
                 model=MODEL_FOR_GROUNDED_GENERATION,
@@ -290,7 +306,11 @@ async def generate_instruction(
                 max_budget_usd=INSTRUCTION_BUDGET_USD,
                 permission_mode="bypassPermissions",
             ),
-            label="instruction",
+            registry=registry,
+            full_name=(repo or {}).get("full_name", ""),
+            stage=6,
+            purpose="instruction",
+            raise_on_error=False,
         )
     except UsageLimitReached:
         raise
@@ -375,7 +395,7 @@ def _aggregate(steps: list, steps_meta: dict):
     return action_hist, role_hist, n_nav, valid_bbox_ratio, n_console
 
 
-async def classify_task_type(trajectory: dict, capture_meta: dict) -> str:
+async def classify_task_type(trajectory: dict, capture_meta: dict, registry=None, full_name: str = "") -> str:
     steps = trajectory.get("steps", [])
     steps_meta = (capture_meta or {}).get("steps", {})
     action_types, elements = [], []
@@ -393,7 +413,7 @@ async def classify_task_type(trajectory: dict, capture_meta: dict) -> str:
     )
 
     try:
-        result_text = await run_query(
+        result_text = await run_agent(
             prompt,
             ClaudeAgentOptions(
                 model=MODEL_FOR_CLASSIFICATION,
@@ -401,7 +421,11 @@ async def classify_task_type(trajectory: dict, capture_meta: dict) -> str:
                 max_budget_usd=TASK_TYPE_BUDGET_USD,
                 permission_mode="bypassPermissions",
             ),
-            label="classify",
+            registry=registry,
+            full_name=full_name,
+            stage=6,
+            purpose="classify",
+            raise_on_error=False,
         )
     except UsageLimitReached:
         raise
@@ -416,7 +440,7 @@ async def classify_task_type(trajectory: dict, capture_meta: dict) -> str:
     return "other"
 
 
-async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_generated: bool):
+async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_generated: bool, registry=None):
     """Fill the trajectory-level aggregate / provenance fields in metadata.json from the
     captured trajectory + capture_meta. Best-effort: never raise into the generation flow."""
     try:
@@ -460,7 +484,9 @@ async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_
         metadata["instruction_source"] = "generated" if instruction_was_generated else "human"
         metadata["thought_source"] = "generated"
         metadata["dedup_hash"] = _dedup_hash(steps)
-        metadata["task_type"] = await classify_task_type(traj, capture_meta)
+        metadata["task_type"] = await classify_task_type(
+            traj, capture_meta, registry=registry, full_name=repo.get("full_name", "")
+        )
 
         with open(meta_file, "w") as f:
             json.dump(metadata, f, indent=2)
@@ -481,31 +507,19 @@ async def run_generate(
     logger.info(f"Generating trajectories for {len(repos)} repos with {workers} workers")
 
     semaphore = asyncio.Semaphore(workers)
-    total_trajectories = 0
+    progress = StageProgress(6, len(repos))
 
     async def process_with_semaphore(repo):
-        nonlocal total_trajectories
         if rate_limit_tracker.limit_reached():
             return
+        async def core(reg, r):
+            return await generate_for_repo(reg, r, trajectory_base_dir)
         async with semaphore:
             try:
-                await generate_for_repo(registry, repo, trajectory_base_dir)
+                await run_repo(6, repo, registry, core, progress)
             except UsageLimitReached:
                 return
 
-        repo_after = registry.get_repo(repo["full_name"])
-        if repo_after and repo_after["status"] == RepoStatus.COMPLETED.value:
-            total_trajectories += repo_after.get("trajectory_count", 0)
-
     await asyncio.gather(*[process_with_semaphore(repo) for repo in repos])
 
-    stats = registry.get_stats()
-    completed = stats.get(RepoStatus.COMPLETED.value, 0)
-    rejected = stats.get(RepoStatus.REJECTED_GENERATE.value, 0)
-    logger.info(f"Generation complete: {completed} completed, {rejected} rejected, {total_trajectories} new trajectories")
-    return {
-        "processed": len(repos),
-        "passed": completed,
-        "rejected": rejected,
-        "trajectories": total_trajectories,
-    }
+    return progress.summary()

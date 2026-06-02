@@ -14,16 +14,32 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from repo_pipeline.dashboard.loader import load_corpus, summarize_warnings
+from repo_pipeline.dashboard.loader import (
+    load_agent_calls,
+    load_corpus,
+    load_registry,
+    summarize_warnings,
+)
 
 
 DEFAULT_TRAJ_DIR = REPO_ROOT / "trajectories"
+DEFAULT_DB_PATH = REPO_ROOT / "pipeline_data" / "registry.db"
 
 
 @st.cache_data(ttl=60, show_spinner="Scanning trajectories/ …")
 def cached_load_corpus(traj_root_str: str):
     traj_df, step_df, warnings = load_corpus(Path(traj_root_str))
     return traj_df, step_df, warnings
+
+
+@st.cache_data(ttl=60, show_spinner="Reading registry.db …")
+def cached_load_registry(db_path_str: str):
+    return load_registry(Path(db_path_str))
+
+
+@st.cache_data(ttl=60, show_spinner="Reading agent_calls …")
+def cached_load_agent_calls(db_path_str: str):
+    return load_agent_calls(Path(db_path_str))
 
 
 def sidebar_global_controls(warnings: list[str]) -> None:

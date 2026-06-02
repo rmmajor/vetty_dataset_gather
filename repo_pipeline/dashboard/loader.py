@@ -9,6 +9,7 @@ never crash on a malformed trajectory.
 
 import json
 import math
+import sqlite3
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -297,6 +298,66 @@ def summarize_warnings(warnings: list[str], limit: int = 20) -> str:
         return "\n".join(f"- {w}" for w in warnings)
     head = "\n".join(f"- {w}" for w in warnings[:limit])
     return head + f"\n- … and {len(warnings) - limit} more"
+
+
+# ---------- Registry (pipeline_data/registry.db) loaders -----------------------------------
+# The corpus loader above reads finished trajectories from disk; these read the funnel state
+# (every repo and why it was rejected) for the Rejections page. Read-only, tolerant of an
+# absent DB or a pre-migration schema (returns an empty frame instead of raising).
+
+_SHALLOW_DIMS = [
+    "production_complexity", "ui_difficulty", "interaction_richness", "test_count",
+    "multi_page_flows", "runnability", "framework_clarity", "application_vs_library",
+]
+_DEEP_FIELDS = ["test_file_count", "test_case_count", "is_self_contained", "estimated_trajectories"]
+
+
+def _json_get(blob, key):
+    if not blob:
+        return None
+    try:
+        return json.loads(blob).get(key) if isinstance(blob, str) else blob.get(key)
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return None
+
+
+def _read_sql(db_path: Path, query: str) -> pd.DataFrame:
+    if not Path(db_path).exists():
+        return pd.DataFrame()
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+    except sqlite3.OperationalError:
+        return pd.DataFrame()
+    try:
+        return pd.read_sql_query(query, con)
+    except (pd.errors.DatabaseError, sqlite3.OperationalError):
+        return pd.DataFrame()
+    finally:
+        con.close()
+
+
+def load_registry(db_path: Path) -> pd.DataFrame:
+    """One row per repo from the registry, with shallow/deep score JSON expanded into
+    `sc_<dim>` / `da_<field>` columns so the score-distribution charts can read them directly."""
+    df = _read_sql(db_path, "SELECT * FROM repos")
+    if df.empty:
+        return df
+    # Guarantee the columns the Rejections page reads, even against a registry that predates the
+    # failure-taxonomy migration (the dashboard reads read-only and never migrates).
+    if "failure_category" not in df.columns:
+        df["failure_category"] = None
+    if "retry_count" not in df.columns:
+        df["retry_count"] = 0
+    for dim in _SHALLOW_DIMS:
+        df[f"sc_{dim}"] = df["shallow_scores"].map(lambda b, k=dim: _json_get(b, k))
+    for field in _DEEP_FIELDS:
+        df[f"da_{field}"] = df["deep_analysis"].map(lambda b, k=field: _json_get(b, k))
+    return df
+
+
+def load_agent_calls(db_path: Path) -> pd.DataFrame:
+    """One row per Claude Agent SDK call (turns / cost / tokens / subtype), for the Turns & cost tab."""
+    return _read_sql(db_path, "SELECT * FROM agent_calls")
 
 
 def load_iso_date_range(traj_df: pd.DataFrame) -> tuple[Optional[str], Optional[str]]:

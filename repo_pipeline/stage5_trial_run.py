@@ -3,11 +3,19 @@ import json
 import logging
 import re
 
+from repo_pipeline._processing import run_repo
 from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import REPO_DIR, RESULTS_DIR, setup_repo_instrumentation
+from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
-from repo_pipeline.schemas import RepoStatus, TrialResults
+from repo_pipeline.schemas import (
+    FailureCategory,
+    QualityReject,
+    RepoStatus,
+    RetryableFailure,
+    TrialResults,
+)
 from repo_pipeline.sdk_runner import rate_limit_tracker
 
 logger = logging.getLogger(__name__)
@@ -55,12 +63,16 @@ def _collect_metrics(sandbox) -> TrialResults:
 
 
 async def trial_single_repo(registry: RepoRegistry, repo: dict):
+    """POC trial: run a few instrumented tests and gate on capture. Raises QualityReject for
+    deterministic quality failures (no tests / no usable capture) and RetryableFailure for infra
+    (clone failure); run_repo turns infra into retries, anything else into a categorized rejection."""
     repo_name = repo["full_name"]
 
     if repo.get("current_stage", 0) >= 5:
         return
 
-    logger.info(f"Trial run: {repo_name}")
+    rlog = repo_logger(5, repo_name)
+    rlog.info("trial run")
 
     deep_analysis = {}
     if repo.get("deep_analysis"):
@@ -78,8 +90,7 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
 
         _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
         if exit_code != 0:
-            registry.reject(repo_name, stage=5, reason=f"clone failed: {stderr[:200]}")
-            return
+            raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
 
         await _run(setup_repo_instrumentation, sandbox, profile)
 
@@ -90,8 +101,7 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
                 if "/node_modules/" not in path and path not in test_files:
                     test_files.append(path)
         if not test_files:
-            registry.reject(repo_name, stage=5, reason="no test files found")
-            return
+            raise QualityReject(FailureCategory.NO_TESTS, "no test files found")
 
         # Run up to MAX_TRIAL_FILES instrumented test files in code; stop once we capture coords.
         passed = failed = 0
@@ -117,21 +127,21 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
         # then fails an assertion still produced a valid trajectory).
         metrics.pass_rate = (passed / total) if total else (1.0 if metrics.valid_bounding_boxes else 0.0)
         metrics.notes = f"code-driven trial: {len(test_files)} test files found, ran up to {MAX_TRIAL_FILES}"
+        weighted = metrics.weighted_score
 
         if metrics.valid_bounding_boxes < 1 or metrics.screenshots_captured < 1:
-            registry.reject(
-                repo_name,
-                stage=5,
-                reason=(
+            raise QualityReject(
+                FailureCategory.NO_CAPTURE,
+                (
                     f"no usable capture (bboxes={metrics.valid_bounding_boxes}, "
                     f"screenshots={metrics.screenshots_captured}, traj={metrics.trajectory_count_estimate})"
                 ),
+                trial_results=metrics.model_dump(),
+                trial_score=weighted,
             )
-            return
 
-        weighted = metrics.weighted_score
-        logger.info(
-            f"  {repo_name}: weighted={weighted:.2f} bboxes={metrics.valid_bounding_boxes} "
+        rlog.info(
+            f"weighted={weighted:.2f} bboxes={metrics.valid_bounding_boxes} "
             f"actions={metrics.total_actions_captured} traj={metrics.trajectory_count_estimate} pass_rate={metrics.pass_rate:.0%}"
         )
         registry.update_status(
@@ -141,10 +151,6 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
             trial_results=metrics.model_dump(),
             trial_score=weighted,
         )
-
-    except Exception as e:
-        logger.error(f"Error in trial run for {repo_name}: {e}")
-        registry.reject(repo_name, stage=5, reason=f"trial error: {str(e)[:200]}")
     finally:
         await _run(sandbox.stop)
 
@@ -159,17 +165,14 @@ async def run_trial(
     logger.info(f"Trial running {len(repos)} repos with {workers} workers")
 
     semaphore = asyncio.Semaphore(workers)
+    progress = StageProgress(5, len(repos))
 
     async def process_with_semaphore(repo):
         if rate_limit_tracker.limit_reached():
             return
         async with semaphore:
-            await trial_single_repo(registry, repo)
+            await run_repo(5, repo, registry, trial_single_repo, progress)
 
     await asyncio.gather(*[process_with_semaphore(repo) for repo in repos])
 
-    stats = registry.get_stats()
-    passed = stats.get(RepoStatus.VALIDATED.value, 0)
-    rejected = stats.get(RepoStatus.REJECTED_TRIAL.value, 0)
-    logger.info(f"Trial runs complete: {passed} validated, {rejected} rejected")
-    return {"processed": len(repos), "passed": passed, "rejected": rejected}
+    return progress.summary()

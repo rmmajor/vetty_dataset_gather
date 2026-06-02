@@ -24,9 +24,11 @@ import logging
 import os
 from pathlib import Path
 
-from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, RateLimitEvent, ResultMessage
 
+from repo_pipeline.agent_runner import CLAUDE_CLI_PATH, run_agent
 from repo_pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
+from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 from repo_pipeline.sdk_runner import rate_limit_tracker, run_query, UsageLimitReached
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,10 @@ logger = logging.getLogger(__name__)
 # memory pathb-e2e-and-sdk-budget-floor). Defaults sit comfortably above that floor; the
 # per-call envelope for one think block is dominated by SDK overhead, not by tokens.
 THINK_BUDGET_USD = float(os.environ.get("THINK_BUDGET_USD", "0.15"))
+# A whole trajectory's thoughts run through ONE ClaudeSDKClient session, so this cap covers the
+# session (all steps), not a single call. Generous — actual spend is far lower; it only guards
+# against a runaway session, not per-step cost.
+THINK_SESSION_BUDGET_USD = float(os.environ.get("THINK_SESSION_BUDGET_USD", "5.0"))
 
 THINK_SYSTEM_TEMPLATE = """You are the agent currently executing a task in a web browser.
 Given the current screenshot and the next action you are about to take, write the inner
@@ -165,6 +171,8 @@ async def generate_think_for_step(
     history_block: str,
     about_to_action: str,
     grounding_hint: str,
+    registry=None,
+    full_name: str = "",
 ) -> str:
     """Single SDK call: send (system preamble + per-step user message + screenshot image)
     and return the model's thought verbatim. No regex post-filters: if the model produces
@@ -199,7 +207,7 @@ async def generate_think_for_step(
         }
 
     try:
-        result_text = await run_query(
+        result_text = await run_agent(
             prompt_stream(),
             ClaudeAgentOptions(
                 model=MODEL_FOR_GROUNDED_GENERATION,
@@ -207,7 +215,11 @@ async def generate_think_for_step(
                 max_budget_usd=THINK_BUDGET_USD,
                 permission_mode="bypassPermissions",
             ),
-            label="think",
+            registry=registry,
+            full_name=full_name,
+            stage=7,
+            purpose="think",
+            raise_on_error=False,
         )
     except UsageLimitReached:
         raise
@@ -221,6 +233,8 @@ async def generate_think_for_step(
 async def generate_thinks_for_trajectory(
     trajectory_dir: Path,
     workers: int = 1,
+    registry=None,
+    full_name: str = "",
 ) -> bool:
     """Generate a `<think>` block for every step in one trajectory, in step order.
 
@@ -273,41 +287,143 @@ async def generate_thinks_for_trajectory(
         grounding_by_step[n] = (role, name, bbox)
 
     ordered_steps = sorted(steps, key=lambda s: s.get("step", 0))
-    for step in ordered_steps:
-        n = step.get("step")
-        if not isinstance(n, int):
-            continue
-        if (step.get("thought") or "").strip():
-            continue
-        if not step.get("actions"):
-            continue
 
-        screenshot_path = trajectory_dir / step["screenshot"]
-        if not screenshot_path.exists():
-            logger.debug(f"  {trajectory_dir.name}: screenshot missing for step {n}, skipping")
-            continue
+    # All of a trajectory's missing thoughts run through ONE persistent ClaudeSDKClient session.
+    # Why: generation is sequential anyway (each thought builds on the prior), and a single session
+    # lets the large fixed context (Claude Code harness + system preamble) be cache-READ on turns
+    # 2+ instead of cache-CREATED on every call — the dominant cost we were paying per step. Prior
+    # thoughts live in the conversation rather than being re-sent as a growing history_block.
+    options = ClaudeAgentOptions(
+        model=MODEL_FOR_GROUNDED_GENERATION,
+        max_turns=1,
+        max_budget_usd=THINK_SESSION_BUDGET_USD,
+        permission_mode="bypassPermissions",
+    )
+    if CLAUDE_CLI_PATH:
+        options.cli_path = CLAUDE_CLI_PATH
 
-        history_block = render_history(steps, n, action_nl_by_step)
-        about_to = action_nl_by_step.get(n, "(no action)")
-        role, name, bbox = grounding_by_step.get(n, ("", "", None))
-        grounding_hint = render_grounding_hint(role, name, bbox)
+    shown: set[int] = set()  # steps whose context the model has already seen this session
+    first_turn = True
+    try:
+        async with ClaudeSDKClient(options=options) as client:
+            for step in ordered_steps:
+                n = step.get("step")
+                if not isinstance(n, int) or not step.get("actions"):
+                    continue
+                if (step.get("thought") or "").strip():
+                    continue  # already done (resume) — seeded into context below, not regenerated
+                screenshot_path = trajectory_dir / step["screenshot"]
+                if not screenshot_path.exists():
+                    logger.debug(f"  {trajectory_dir.name}: screenshot missing for step {n}, skipping")
+                    continue
 
-        thought = await generate_think_for_step(
-            screenshot_path=screenshot_path,
-            goal=goal,
-            start_url=start_url,
-            history_block=history_block,
-            about_to_action=about_to,
-            grounding_hint=grounding_hint,
-        )
-        step["thought"] = thought
+                # Resume-safe seeding: render any already-done steps the session hasn't seen yet —
+                # the full prefix on the first generated turn, only gaps thereafter. On a fresh
+                # trajectory this is empty after step 1, so later turns stay lean (cache-cheap).
+                seed_lines = []
+                for prior in ordered_steps:
+                    m = prior.get("step")
+                    if not isinstance(m, int) or m >= n or m in shown:
+                        continue
+                    if (prior.get("thought") or "").strip():
+                        seed_lines.append(f"{m}. [{prior['thought'].strip()}] → {action_nl_by_step.get(m, '(no action)')}")
+                        shown.add(m)
 
-    with open(trajectory_path, "w") as f:
-        json.dump(trajectory, f, indent=2)
+                about_to = action_nl_by_step.get(n, "(no action)")
+                role, name, bbox = grounding_by_step.get(n, ("", "", None))
+                grounding_hint = render_grounding_hint(role, name, bbox)
+
+                blocks = []
+                if first_turn:
+                    # Full instructions + goal once; the session carries them for later turns.
+                    blocks.append(THINK_SYSTEM_TEMPLATE.format(goal=goal, start_url=start_url))
+                if seed_lines:
+                    blocks.append("Steps so far in this trajectory:\n" + "\n".join(seed_lines))
+                reminder = ("Write the thought." if first_turn else
+                            "Write the next thought (1-3 sentences, first person, anchored in what is "
+                            "visible on screen; never quote selectors, roles, or coordinates).")
+                blocks.append(
+                    f"Now about to: {about_to}\n"
+                    f"(Grounding hint — do not quote in your output: {grounding_hint})\n\n{reminder}"
+                )
+                user_text = "\n\n---\n\n".join(blocks)
+                first_turn = False
+
+                step["thought"] = await _session_think_turn(
+                    client, user_text, screenshot_path,
+                    registry=registry, full_name=full_name, model=options.model,
+                )
+                shown.add(n)
+                # Crash-safe: persist after each step so a mid-trajectory stop still resumes cleanly.
+                with open(trajectory_path, "w") as f:
+                    json.dump(trajectory, f, indent=2)
+    except UsageLimitReached:
+        # Persist progress, then propagate so the run aborts without rejecting the repo.
+        with open(trajectory_path, "w") as f:
+            json.dump(trajectory, f, indent=2)
+        raise
+    except Exception as e:
+        logger.warning(f"  {trajectory_dir.name}: think session ended early: {e}")
+        with open(trajectory_path, "w") as f:
+            json.dump(trajectory, f, indent=2)
 
     filled = sum(1 for s in steps if (s.get("thought") or "").strip())
     logger.info(f"  {trajectory_dir.name}: generated {filled}/{len(steps)} think blocks")
     return True
+
+
+async def _session_think_turn(client, user_text: str, screenshot_path: Path, *,
+                              registry, full_name: str, model: str) -> str:
+    """Send one step as a turn in the persistent session and return the model's thought. Soft-fails
+    to "" on any error (the step stays empty and is retried on a later resume), so one bad turn
+    can't abort the trajectory."""
+    b64 = base64.b64encode(screenshot_path.read_bytes()).decode("utf-8")
+    message = {
+        "type": "user",
+        "message": {"role": "user", "content": [
+            {"type": "text", "text": user_text},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
+        ]},
+        "parent_tool_use_id": None,
+        "session_id": "default",
+    }
+
+    async def _stream(m=message):
+        yield m
+
+    if rate_limit_tracker.limit_reached():
+        raise UsageLimitReached("usage limit reached before think turn")
+
+    thought = ""
+    result_msg = None
+    try:
+        await client.query(_stream())
+        async for msg in client.receive_response():
+            if isinstance(msg, RateLimitEvent):
+                rate_limit_tracker.observe(msg.rate_limit_info)
+                continue
+            if isinstance(msg, AssistantMessage):
+                for block in getattr(msg, "content", None) or []:
+                    if hasattr(block, "text"):
+                        thought = block.text
+            if isinstance(msg, ResultMessage):
+                result_msg = msg
+                if msg.subtype == "success" and not msg.is_error:
+                    thought = msg.result or thought
+                elif getattr(msg, "api_error_status", None) == 429:
+                    rate_limit_tracker.mark_rejected()
+                    raise UsageLimitReached("HTTP 429 from think turn")
+    except UsageLimitReached:
+        raise
+    except Exception as e:
+        logger.warning(f"Think turn failed: {e}")
+        return ""
+
+    if result_msg is not None and registry is not None:
+        registry.record_agent_call(full_name, 7, "think", model, result_msg.num_turns,
+                                   result_msg.total_cost_usd, result_msg.usage, result_msg.subtype,
+                                   result_msg.is_error, result_msg.duration_ms)
+    return thought.strip()
 
 
 async def generate_thinks_for_all(

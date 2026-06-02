@@ -2,21 +2,21 @@ import hashlib
 import logging
 
 from repo_pipeline.registry import RepoRegistry
-from repo_pipeline.schemas import RepoStatus
+from repo_pipeline.schemas import FailureCategory, RepoStatus
 
 logger = logging.getLogger(__name__)
 
 MAX_SIZE_KB = 500_000
 
 
-def check_filter(repo: dict) -> tuple[bool, str]:
+def check_filter(repo: dict) -> tuple[bool, str, FailureCategory | None]:
     if repo.get("size_kb", 0) == 0:
-        return False, "empty repo"
+        return False, "empty repo", FailureCategory.EMPTY_REPO
 
     if repo.get("size_kb", 0) > MAX_SIZE_KB:
-        return False, "too large (>500MB, likely monorepo)"
+        return False, "too large (>500MB, likely monorepo)", FailureCategory.TOO_LARGE
 
-    return True, ""
+    return True, "", None
 
 
 def deduplicate_forks(registry: RepoRegistry, repos: list[dict]) -> tuple[list[dict], int]:
@@ -30,7 +30,7 @@ def deduplicate_forks(registry: RepoRegistry, repos: list[dict]) -> tuple[list[d
 
         parent_name = repo.get("parent_repo")
         if parent_name and registry.has_repo(parent_name):
-            registry.reject(repo["full_name"], stage=2, reason=f"fork of {parent_name} (parent already in registry)")
+            registry.reject(repo["full_name"], stage=2, reason=f"fork of {parent_name} (parent already in registry)", category=FailureCategory.DEDUP)
             deduped += 1
             continue
 
@@ -66,7 +66,7 @@ def deduplicate_clones(registry: RepoRegistry, repos: list[dict]) -> tuple[list[
     deduped = 0
     for repo in repos:
         if repo["full_name"] in duplicates_to_reject:
-            registry.reject(repo["full_name"], stage=2, reason="duplicate description (likely clone)")
+            registry.reject(repo["full_name"], stage=2, reason="duplicate description (likely clone)", category=FailureCategory.DEDUP)
             deduped += 1
         else:
             kept.append(repo)
@@ -83,11 +83,11 @@ def run_filter(registry: RepoRegistry, limit: int = None):
 
     basic_passed = []
     for repo in repos:
-        passes, reason = check_filter(repo)
+        passes, reason, category = check_filter(repo)
         if passes:
             basic_passed.append(repo)
         else:
-            registry.reject(repo["full_name"], stage=2, reason=reason)
+            registry.reject(repo["full_name"], stage=2, reason=reason, category=category)
             rejected += 1
 
     logger.info(f"Basic filter: {len(basic_passed)} passed, {rejected} rejected")
