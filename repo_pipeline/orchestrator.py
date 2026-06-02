@@ -7,9 +7,45 @@ import time
 from pathlib import Path
 
 from repo_pipeline.registry import RepoRegistry
-from repo_pipeline.schemas import STAGE_TO_REJECTED_STATUS
+from repo_pipeline.schemas import (
+    NON_QUALITY_CATEGORIES,
+    STAGE_BEHAVIOR_CUTOFFS,
+    STAGE_TO_REJECTED_STATUS,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def requeue_stale(registry: RepoRegistry, dry_run: bool = False) -> int:
+    """Re-queue rejections produced by superseded code: for each stage with a known behavior
+    cutoff, reset rejections recorded before that cutoff back to the stage's input status."""
+    verb = "would re-queue" if dry_run else "re-queued"
+    total = 0
+    for stage, cutoff in sorted(STAGE_BEHAVIOR_CUTOFFS.items()):
+        n = registry.reset_rejected(stage=stage, before=cutoff, dry_run=dry_run)
+        logger.info(f"  stage {stage}: {verb} {n} stale rejections (before {cutoff})")
+        total += n
+    logger.info(f"Stale re-queue: {verb} {total} repos total{' (dry-run)' if dry_run else ''}")
+    return total
+
+
+def requeue_infra(registry: RepoRegistry, dry_run: bool = False) -> int:
+    """Re-queue infra/flaky rejections (clone/SDK/timeout/max-turns/...) across all stages,
+    leaving genuine quality rejections in place."""
+    verb = "would re-queue" if dry_run else "re-queued"
+    n = registry.reset_rejected(category_in=NON_QUALITY_CATEGORIES, dry_run=dry_run)
+    logger.info(f"Infra re-queue: {verb} {n} infra/flaky rejections{' (dry-run)' if dry_run else ''}")
+    return n
+
+
+def requeue_rescore(registry: RepoRegistry, stage: int, min_score: float, dry_run: bool = False) -> int:
+    """Re-queue rejections a lowered gate would now accept: reset stage-N rejects whose stored gate
+    score is >= min_score back to that stage's input status, so re-running stage N re-admits them."""
+    verb = "would re-queue" if dry_run else "re-queued"
+    n = registry.reset_rejected(stage=stage, min_score=min_score, dry_run=dry_run)
+    logger.info(f"Rescore re-queue: {verb} {n} stage-{stage} rejections with score >= {min_score}"
+                f"{' (dry-run)' if dry_run else ''}. Re-run --stage {stage} to re-admit them.")
+    return n
 
 
 def setup_logging(data_dir: Path, verbose: bool = False):
@@ -53,7 +89,7 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
 
     print("Status counts:")
     status_order = [
-        "discovered", "filtered", "scored", "analyzed", "validated", "completed",
+        "discovered", "filtered", "scored", "analyzed", "validated", "captured", "completed",
         "rejected_filter", "rejected_score", "rejected_analyze", "rejected_trial", "rejected_generate",
     ]
     for status in status_order:
@@ -66,7 +102,7 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
     print(f"\n  Total trajectories generated: {total_traj:,}")
 
     print("\nPending for next run:")
-    for stage in [3, 4, 5, 6]:
+    for stage in [3, 4, 5, 6, 7]:
         count = pending.get(stage, 0)
         print(f"  Stage {stage}: {count:,} repos")
 
@@ -74,6 +110,12 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
         print("\nDomain distribution (non-rejected repos):")
         for domain, count in domain_dist.items():
             print(f"  {domain:20s} {count:>6,}")
+
+    category_dist = registry.get_failure_category_distribution()
+    if category_dist:
+        print("\nRejection categories (quality vs infra):")
+        for cat, count in category_dist:
+            print(f"  {cat:20s} {count:>6,}")
 
     if rejection_reasons:
         print("\nTop rejection reasons (all stages, all time):")
@@ -136,18 +178,23 @@ async def run_stage(
         from repo_pipeline.stage6_generate import run_generate
         return await run_generate(registry, trajectory_dir, limit=limit, workers=min(workers, 2), budget_remaining=budget_remaining)
 
+    elif stage == 7:
+        from repo_pipeline.stage7_think import run_think
+        return await run_think(registry, trajectory_dir, limit=limit, workers=min(workers, 3), budget_remaining=budget_remaining)
+
     else:
         raise ValueError(f"Unknown stage: {stage}")
 
 
 # Per-repo LLM cost estimates used only for --budget pacing (not metered spend).
-# Stages 5-6 are code-driven (no agent): stage 5 runs tests in code (~$0 LLM); stage 6's only LLM
-# cost is Haiku instruction + per-step think (with screenshots). Stages 3-4 still use Sonnet.
+# Stage 5 is code-driven (~$0 LLM). Stage 6 (capture) now only does the 1-per-trajectory
+# instruction + task-type calls — the expensive per-step think generation moved to stage 7.
 STAGE_COST_ESTIMATES = {
     3: 0.15,   # Sonnet shallow scoring
     4: 0.20,   # Sonnet static deep-analysis
     5: 0.02,   # code-driven trial — negligible LLM
-    6: 0.30,   # Haiku instruction + per-step think-with-image
+    6: 0.20,   # capture: instruction + task-type (1 call each per trajectory)
+    7: 0.50,   # think: per-step think-with-image (the heavy one), session-cached
 }
 
 
@@ -163,7 +210,7 @@ async def run_overnight(
     budget_used = 0.0
     stage_results = {}
 
-    for stage in [3, 4, 5, 6]:
+    for stage in [3, 4, 5, 6, 7]:
         if budget_used >= budget:
             logger.warning(f"Budget exhausted (${budget_used:.2f}/${budget:.2f}), stopping at stage {stage}")
             break
@@ -232,6 +279,24 @@ async def async_main(args):
             print_status(registry)
             return
 
+        if args.requeue_stale:
+            requeue_stale(registry, dry_run=args.dry_run)
+            print_status(registry)
+            return
+
+        if args.requeue_infra:
+            requeue_infra(registry, dry_run=args.dry_run)
+            print_status(registry)
+            return
+
+        if args.requeue_stage is not None:
+            if args.min_score is None:
+                logger.error("--requeue-stage requires --min-score")
+                sys.exit(1)
+            requeue_rescore(registry, args.requeue_stage, args.min_score, dry_run=args.dry_run)
+            print_status(registry)
+            return
+
         if args.overnight:
             await run_overnight(
                 registry,
@@ -287,7 +352,8 @@ def main():
 Examples:
   python -m repo_pipeline.orchestrator --stage 1        # Discover repos
   python -m repo_pipeline.orchestrator --stage 2        # Filter repos
-  python -m repo_pipeline.orchestrator --stage 3-6      # Run Claude stages
+  python -m repo_pipeline.orchestrator --stage 3-7      # Run Claude stages (capture + think)
+  python -m repo_pipeline.orchestrator --stage 7        # Fill think blocks for captured repos
   python -m repo_pipeline.orchestrator --overnight       # Full overnight run
   python -m repo_pipeline.orchestrator --status          # Print stats
         """,
@@ -295,6 +361,11 @@ Examples:
     parser.add_argument("--stage", type=str, help="Run specific stage(s): N or N-M (e.g., 3 or 3-6)")
     parser.add_argument("--overnight", action="store_true", help="Run stages 3-6 on all pending repos, notify via Telegram")
     parser.add_argument("--status", action="store_true", help="Print registry stats and exit")
+    parser.add_argument("--requeue-stale", action="store_true", help="Re-queue rejections from superseded code (per STAGE_BEHAVIOR_CUTOFFS) for a retry")
+    parser.add_argument("--requeue-infra", action="store_true", help="Re-queue infra/flaky rejections (clone/SDK/timeout/max-turns) across stages for a retry")
+    parser.add_argument("--requeue-stage", type=int, default=None, help="Re-queue rejections at this stage whose stored gate score >= --min-score (after lowering a threshold)")
+    parser.add_argument("--min-score", type=float, default=None, help="Score floor for --requeue-stage (e.g. --requeue-stage 4 --min-score 4)")
+    parser.add_argument("--dry-run", action="store_true", help="With --requeue-*: report counts without modifying the registry")
     parser.add_argument("--limit", type=int, default=None, help="Max repos per stage in this run")
     parser.add_argument("--workers", type=int, default=5, help="Parallel workers for LLM stages (default: 5)")
     parser.add_argument("--star-floor", type=int, default=5, help="Stage 1: exhaustively scrape repos down to this star count (default: 5)")

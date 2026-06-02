@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -16,8 +17,9 @@ class RepoStatus(str, Enum):
     REJECTED_ANALYZE = "rejected_analyze"
     VALIDATED = "validated"
     REJECTED_TRIAL = "rejected_trial"
-    COMPLETED = "completed"
+    CAPTURED = "captured"
     REJECTED_GENERATE = "rejected_generate"
+    COMPLETED = "completed"
 
 
 STAGE_TO_PASSED_STATUS = {
@@ -26,7 +28,8 @@ STAGE_TO_PASSED_STATUS = {
     3: RepoStatus.SCORED,
     4: RepoStatus.ANALYZED,
     5: RepoStatus.VALIDATED,
-    6: RepoStatus.COMPLETED,
+    6: RepoStatus.CAPTURED,    # stage 6 now only captures trajectories (no think blocks)
+    7: RepoStatus.COMPLETED,   # stage 7 fills think blocks, then completes
 }
 
 STAGE_TO_REJECTED_STATUS = {
@@ -35,6 +38,8 @@ STAGE_TO_REJECTED_STATUS = {
     4: RepoStatus.REJECTED_ANALYZE,
     5: RepoStatus.REJECTED_TRIAL,
     6: RepoStatus.REJECTED_GENERATE,
+    # Stage 7 (think) never rejects: a captured repo with good trajectories stays `captured`
+    # until its thoughts are complete (resumable across runs), it is never thrown away.
 }
 
 STAGE_TO_INPUT_STATUS = {
@@ -43,6 +48,82 @@ STAGE_TO_INPUT_STATUS = {
     4: RepoStatus.SCORED,
     5: RepoStatus.ANALYZED,
     6: RepoStatus.VALIDATED,
+    7: RepoStatus.CAPTURED,
+}
+
+
+class FailureCategory(str, Enum):
+    """Why a repo failed a stage. Orthogonal to RepoStatus (which encodes the stage): the
+    status says where it died, the category says *why* — a quality decision vs an infra/flaky
+    failure. Stored in repos.failure_category alongside the free-text filter_reason so the
+    dashboard can split genuine rejections from recoverable infrastructure noise."""
+
+    # Quality decisions — the funnel did its job; terminal.
+    QUALITY_GATE = "quality_gate"      # score / gate below threshold
+    NO_TESTS = "no_tests"              # no test files matched the framework globs
+    NO_CAPTURE = "no_capture"          # tests ran but produced no usable bbox/screenshot
+    DEDUP = "dedup"                    # fork / duplicate-description clone
+    EMPTY_REPO = "empty_repo"
+    TOO_LARGE = "too_large"
+
+    # Infrastructure / flakiness — recoverable; retried before becoming terminal.
+    CLONE_FAILED = "clone_failed"
+    SDK_ERROR = "sdk_error"            # Claude returned a non-success result
+    RATE_LIMITED = "rate_limited"
+    CONTROL_TIMEOUT = "control_timeout"
+    EXEC_TIMEOUT = "exec_timeout"
+    SANDBOX_ERROR = "sandbox_error"
+    PARSE_FAILED = "parse_failed"      # model output could not be parsed (LLM nondeterminism)
+
+    # Infra, but auto-retry cannot help (re-running hits the same wall) — surfaced, not retried.
+    MAX_TURNS = "max_turns"
+    BUDGET_EXCEEDED = "budget_exceeded"
+
+
+# Categories a transient retry can plausibly recover from. Tunable via env so the operator can
+# re-classify a category (e.g. move NO_CAPTURE in/out) without code edits.
+RETRYABLE_CATEGORIES = {
+    FailureCategory.CLONE_FAILED,
+    FailureCategory.SDK_ERROR,
+    FailureCategory.RATE_LIMITED,
+    FailureCategory.CONTROL_TIMEOUT,
+    FailureCategory.EXEC_TIMEOUT,
+    FailureCategory.SANDBOX_ERROR,
+    FailureCategory.PARSE_FAILED,
+}
+
+# Infra categories that are NOT auto-retried but ARE recoverable by re-queue (they need a config
+# change first, e.g. a higher max_turns). Used by --requeue-infra.
+NON_QUALITY_CATEGORIES = RETRYABLE_CATEGORIES | {
+    FailureCategory.MAX_TURNS,
+    FailureCategory.BUDGET_EXCEEDED,
+}
+
+MAX_RETRIES = int(os.environ.get("PIPELINE_MAX_RETRIES", "3"))
+
+
+class PipelineFailure(Exception):
+    """Base for stage failures. ``category`` is a FailureCategory, ``reason`` the human detail,
+    and ``extra`` any registry fields to persist with the outcome (e.g. the scores behind it)."""
+
+    def __init__(self, category: "FailureCategory", reason: str, **extra):
+        super().__init__(reason)
+        self.category = category
+        self.reason = reason
+        self.extra = extra
+
+
+class QualityReject(PipelineFailure):
+    """The repo genuinely failed a quality gate — terminal, never retried."""
+
+
+class RetryableFailure(PipelineFailure):
+    """An infrastructure / flaky failure — retried up to MAX_RETRIES before becoming terminal."""
+
+# Per-stage cutoff: rejections recorded before this instant were produced by superseded code and
+# should be re-queued (--requeue-stale). Extend when a stage's behavior changes again.
+STAGE_BEHAVIOR_CUTOFFS = {
+    5: "2026-05-27T14:29:03+03:00",  # commit 31c698d replaced agent-driven stage 5 with code-driven
 }
 
 

@@ -12,8 +12,15 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+from repo_pipeline.schemas import NON_QUALITY_CATEGORIES
+
 
 MUTED = "#888888"
+_INFRA_CATEGORY_VALUES = {c.value for c in NON_QUALITY_CATEGORIES}
+_STATUS_ORDER = [
+    "discovered", "filtered", "scored", "analyzed", "validated", "completed",
+    "rejected_filter", "rejected_score", "rejected_analyze", "rejected_trial", "rejected_generate",
+]
 
 
 def is_populated(series: pd.Series, *, allow_zero: bool = False) -> bool:
@@ -455,4 +462,123 @@ def dom_change_pie(step_df: pd.DataFrame) -> go.Figure:
                   color_discrete_map={"changed": "#1f77b4",
                                        "unchanged": "#cccccc"})
     fig.update_layout(height=320)
+    return fig
+
+
+# ---------- Rejection analysis (registry.db) -----------------------------------------------
+# These read the funnel-state frames from loader.load_registry / load_agent_calls, not the
+# trajectory corpus. They are the data the operator tunes pipeline parameters from.
+
+_PASS_REJECT_COLORS = {"passed": "#2ca02c", "rejected": "#d62728"}
+
+
+def status_bar(repos_df: pd.DataFrame) -> go.Figure:
+    if repos_df.empty or "status" not in repos_df.columns:
+        return empty_state_fig("registry.db not found — run the pipeline first")
+    counts = repos_df["status"].value_counts()
+    labels = [s for s in _STATUS_ORDER if counts.get(s, 0) > 0]
+    labels += [s for s in counts.index if s not in _STATUS_ORDER]
+    values = [int(counts.get(s, 0)) for s in labels]
+    colors = ["#d62728" if str(s).startswith("rejected_") else "#2ca02c" for s in labels]
+    fig = go.Figure(go.Bar(x=labels, y=values, marker_color=colors, text=values, textposition="outside"))
+    fig.update_layout(title="Repos by status (green = in funnel, red = rejected)",
+                      height=360, xaxis_tickangle=-30, yaxis_title="repos")
+    return fig
+
+
+def failure_category_bar(repos_df: pd.DataFrame) -> go.Figure:
+    if repos_df.empty or "status" not in repos_df.columns:
+        return empty_state_fig("registry.db not found")
+    rej = repos_df[repos_df["status"].astype(str).str.startswith("rejected_")]
+    if rej.empty:
+        return empty_state_fig("no rejections recorded")
+    cats = rej["failure_category"].fillna("(uncategorized)")
+    counts = cats.value_counts().reset_index()
+    counts.columns = ["failure_category", "count"]
+    counts["kind"] = counts["failure_category"].map(
+        lambda c: "infra / flaky" if c in _INFRA_CATEGORY_VALUES else "quality"
+    )
+    fig = px.bar(counts, x="failure_category", y="count", color="kind",
+                 color_discrete_map={"quality": "#1f77b4", "infra / flaky": "#ff7f0e"},
+                 title="Rejections by failure category (quality vs infra)")
+    fig.update_layout(height=360, xaxis_tickangle=-30, yaxis_title="repos")
+    return fig
+
+
+def score_dim_bar(repos_df: pd.DataFrame, value_col: str, outcome_col: str, title: str,
+                  threshold: Optional[float] = None) -> go.Figure:
+    """Grouped bar of a 1-5 (or deep) score, split passed vs rejected, with the gate threshold
+    drawn as a reference line — the core chart for tuning a gate."""
+    if repos_df.empty or value_col not in repos_df.columns:
+        return empty_state_fig("no data")
+    sub = repos_df[repos_df[value_col].notna()]
+    if sub.empty:
+        return empty_state_fig("no scores yet — run the stage or backfill_scores")
+    counts = sub.groupby([value_col, outcome_col]).size().reset_index(name="count")
+    fig = px.bar(counts, x=value_col, y="count", color=outcome_col, barmode="group",
+                 color_discrete_map=_PASS_REJECT_COLORS, title=title)
+    if threshold is not None:
+        fig.add_vline(x=threshold - 0.5, line_dash="dash", line_color="#555",
+                      annotation_text=f"gate ≥ {threshold:g}", annotation_position="top")
+    fig.update_layout(height=320, bargap=0.15, xaxis_title="score", yaxis_title="repos")
+    return fig
+
+
+def rejection_reason_bar(repos_df: pd.DataFrame, status: str, top: int = 12) -> go.Figure:
+    if repos_df.empty:
+        return empty_state_fig("registry.db not found")
+    sub = repos_df[(repos_df["status"] == status) & repos_df["filter_reason"].notna()]
+    if sub.empty:
+        return empty_state_fig(f"no {status} rejections")
+    counts = sub["filter_reason"].value_counts().head(top).reset_index()
+    counts.columns = ["reason", "count"]
+    fig = px.bar(counts, x="count", y="reason", orientation="h",
+                 title=f"Top reasons — {status} ({len(sub)} repos)")
+    fig.update_layout(height=max(280, 30 * len(counts)), yaxis={"autorange": "reversed"},
+                      margin={"l": 10, "r": 10, "t": 40, "b": 10})
+    return fig
+
+
+def retry_hist(repos_df: pd.DataFrame) -> go.Figure:
+    if repos_df.empty or "retry_count" not in repos_df.columns:
+        return empty_state_fig("no data")
+    sub = repos_df[repos_df["retry_count"].fillna(0) > 0]
+    if sub.empty:
+        return empty_state_fig("no repos have needed a retry yet")
+    counts = sub["retry_count"].value_counts().sort_index().reset_index()
+    counts.columns = ["retries", "count"]
+    fig = px.bar(counts, x="retries", y="count",
+                 title="Retry count distribution (repos that hit ≥1 infra retry)")
+    fig.update_layout(height=300, xaxis_title="retries", yaxis_title="repos")
+    return fig
+
+
+def agent_turns_box(calls_df: pd.DataFrame) -> go.Figure:
+    if calls_df is None or calls_df.empty:
+        return empty_state_fig("no agent calls recorded yet — run an agent stage")
+    fig = px.box(calls_df, x="stage", y="num_turns", color="purpose", points="outliers",
+                 title="Agent turns per call, by stage (is stage 4 hitting max_turns?)")
+    fig.update_layout(height=380, xaxis_title="stage", yaxis_title="num_turns")
+    return fig
+
+
+def agent_cost_bar(calls_df: pd.DataFrame) -> go.Figure:
+    if calls_df is None or calls_df.empty:
+        return empty_state_fig("no agent calls recorded yet")
+    grouped = calls_df.groupby("stage", as_index=False)["cost_usd"].sum()
+    fig = px.bar(grouped, x="stage", y="cost_usd", title="Total agent cost (USD) by stage")
+    fig.update_layout(height=300, xaxis_title="stage", yaxis_title="USD")
+    return fig
+
+
+def agent_subtype_bar(calls_df: pd.DataFrame) -> go.Figure:
+    if calls_df is None or calls_df.empty:
+        return empty_state_fig("no agent calls recorded yet")
+    counts = calls_df["subtype"].fillna("unknown").value_counts().reset_index()
+    counts.columns = ["subtype", "count"]
+    colors = ["#2ca02c" if s == "success" else "#d62728" for s in counts["subtype"]]
+    fig = go.Figure(go.Bar(x=counts["subtype"], y=counts["count"], marker_color=colors,
+                           text=counts["count"], textposition="outside"))
+    fig.update_layout(title="Agent result subtypes (success vs error_*)",
+                      height=300, xaxis_tickangle=-20, yaxis_title="calls")
     return fig

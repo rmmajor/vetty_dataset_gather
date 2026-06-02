@@ -5,15 +5,32 @@ import os
 import re
 import subprocess
 
-from claude_agent_sdk import ClaudeAgentOptions, AssistantMessage, ResultMessage, query
+from claude_agent_sdk import ClaudeAgentOptions
 
+from repo_pipeline._processing import run_repo
+from repo_pipeline.agent_runner import run_agent
 from repo_pipeline.llm_config import MODEL_FOR_REASONING
+from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
-from repo_pipeline.schemas import RepoStatus, ShallowScores
+from repo_pipeline.schemas import (
+    FailureCategory,
+    QualityReject,
+    RepoStatus,
+    RetryableFailure,
+    ShallowScores,
+)
 
 logger = logging.getLogger(__name__)
 
 SCORE_BUDGET_USD = float(os.environ.get("STAGE3_BUDGET_USD", "0.15"))
+
+# Gate minimums (each dimension is 1-5). Env-overridable so they can be tuned from the dashboard's
+# score distributions without a code edit. runnability defaults to 2 (reject only score-1 "requires
+# paid external services"); a 2 means "needs some setup" and the sandbox — which has outbound
+# network — gets to actually try it at stage 5 rather than being killed on a shallow guess here.
+GATE_APP_VS_LIBRARY_MIN = int(os.environ.get("STAGE3_GATE_APP_MIN", "3"))
+GATE_RUNNABILITY_MIN = int(os.environ.get("STAGE3_GATE_RUNNABILITY_MIN", "2"))
+GATE_INTERACTION_MIN = int(os.environ.get("STAGE3_GATE_INTERACTION_MIN", "2"))
 
 SCORING_PROMPT = """You are evaluating a GitHub repository for its suitability as a source of browser test trajectories (Playwright or Selenium). We need trajectories from PRODUCTION apps with complex UIs — not demos, tutorials, or practice repos.
 
@@ -183,7 +200,7 @@ async def fetch_repo_context_via_agent(repo: dict) -> dict:
     }
 
 
-async def score_single_repo(repo: dict, context: dict) -> ShallowScores | None:
+async def score_single_repo(registry: RepoRegistry, repo: dict, context: dict) -> ShallowScores:
     prompt = SCORING_PROMPT.format(
         repo_name=repo["full_name"],
         repo_url=repo["html_url"],
@@ -196,30 +213,21 @@ async def score_single_repo(repo: dict, context: dict) -> ShallowScores | None:
         sample_tests=context.get("sample_tests", "(not available)")[:4000],
     )
 
-    result_text = ""
-    last_assistant_text = ""
-    async for message in query(
-        prompt=prompt,
-        options=ClaudeAgentOptions(
+    result_text = await run_agent(
+        prompt,
+        ClaudeAgentOptions(
             model=MODEL_FOR_REASONING,
             max_turns=3,
             max_budget_usd=SCORE_BUDGET_USD,
             permission_mode="bypassPermissions",
         ),
-    ):
-        if isinstance(message, AssistantMessage) and hasattr(message, "content"):
-            for block in message.content:
-                if hasattr(block, "text"):
-                    last_assistant_text = block.text
-        if isinstance(message, ResultMessage):
-            if message.subtype == "success":
-                result_text = message.result or ""
-            else:
-                logger.warning(f"Scoring for {repo['full_name']} ended with: {message.subtype}")
-
-    if not result_text and last_assistant_text:
-        logger.info(f"Using last assistant text as scoring result for {repo['full_name']}")
-        result_text = last_assistant_text
+        registry=registry,
+        full_name=repo["full_name"],
+        stage=3,
+        purpose="shallow_score",
+        capture_assistant_fallback=True,
+        raise_on_error=True,
+    )
 
     try:
         cleaned = result_text.strip()
@@ -240,52 +248,45 @@ async def score_single_repo(repo: dict, context: dict) -> ShallowScores | None:
                     raise
         return ShallowScores(**scores_dict)
     except (json.JSONDecodeError, Exception) as e:
-        logger.warning(f"Failed to parse scores for {repo['full_name']}: {e}")
         logger.debug(f"Raw response: {result_text[:500]}")
-        return None
+        raise RetryableFailure(FailureCategory.PARSE_FAILED, f"failed to parse scores: {str(e)[:120]}")
 
 
 async def process_repo(registry: RepoRegistry, repo: dict):
+    """Shallow-score one repo. Raises QualityReject when it fails the app/run/interact gate
+    (carrying the scores so they persist) or RetryableFailure on a scoring SDK/parse failure."""
     repo_name = repo["full_name"]
 
     if repo.get("current_stage", 0) >= 3:
         return
 
-    logger.info(f"Scoring: {repo_name}")
+    rlog = repo_logger(3, repo_name)
+    rlog.info("scoring")
 
-    try:
-        context = await fetch_repo_context_via_agent(repo)
-        scores = await score_single_repo(repo, context)
-    except Exception as e:
-        logger.error(f"Error scoring {repo_name}: {e}")
-        registry.reject(repo_name, stage=3, reason=f"scoring error: {str(e)[:200]}")
-        return
-
-    if scores is None:
-        registry.reject(repo_name, stage=3, reason="failed to parse scores")
-        return
+    context = await fetch_repo_context_via_agent(repo)
+    scores = await score_single_repo(registry, repo, context)
 
     total = scores.total
-    logger.info(f"  {repo_name}: {total}/35 — {scores.model_dump()}")
+    rlog.info(f"{total}/35 — {scores.model_dump()}")
 
     # Gate on the signals that actually predict usable web-UI trajectories: it's an app not a
     # library (application_vs_library), it can run in the sandbox (runnability), and tests do more
     # than navigate+assert (interaction_richness). production_complexity is NOT gated — it conflates
     # "real app" with "complex app", which wrongly rejects simple-but-ideal apps like SauceDemo.
     if (
-        scores.application_vs_library < 3
-        or scores.runnability < 3
-        or scores.interaction_richness < 2
+        scores.application_vs_library < GATE_APP_VS_LIBRARY_MIN
+        or scores.runnability < GATE_RUNNABILITY_MIN
+        or scores.interaction_richness < GATE_INTERACTION_MIN
     ):
-        registry.reject(
-            repo_name,
-            stage=3,
-            reason=(
+        raise QualityReject(
+            FailureCategory.QUALITY_GATE,
+            (
                 f"not a runnable interactive web app (app={scores.application_vs_library}, "
                 f"run={scores.runnability}, interact={scores.interaction_richness})"
             ),
+            shallow_scores=scores.model_dump(),
+            shallow_total=total,
         )
-        return
 
     registry.update_status(
         repo_name,
@@ -306,28 +307,20 @@ async def run_shallow_score(
     logger.info(f"Shallow scoring {len(repos)} repos with {workers} workers")
 
     semaphore = asyncio.Semaphore(workers)
-    passed = 0
-    rejected = 0
+    progress = StageProgress(3, len(repos))
     cost_estimate = 0.0
 
     async def process_with_semaphore(repo):
-        nonlocal passed, rejected, cost_estimate
+        nonlocal cost_estimate
 
         if budget_remaining is not None and cost_estimate > budget_remaining:
             logger.warning("Budget limit reached, stopping")
             return
 
         async with semaphore:
-            await process_repo(registry, repo)
+            await run_repo(3, repo, registry, process_repo, progress)
             cost_estimate += 0.20  # rough estimate per repo
-
-        repo_after = registry.get_repo(repo["full_name"])
-        if repo_after and repo_after["status"] == RepoStatus.SCORED.value:
-            passed += 1
-        else:
-            rejected += 1
 
     await asyncio.gather(*[process_with_semaphore(repo) for repo in repos])
 
-    logger.info(f"Shallow scoring complete: {passed} passed, {rejected} rejected")
-    return {"processed": len(repos), "passed": passed, "rejected": rejected}
+    return progress.summary()
