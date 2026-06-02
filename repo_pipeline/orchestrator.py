@@ -89,11 +89,17 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
     print("\n=== Pipeline Registry Status ===\n")
 
     print("Status counts:")
-    status_order = [
+    # The 7-stage funnel — always shown (even at 0) so the full pipeline is visible at a glance.
+    progress_statuses = [
         "discovered", "filtered", "scored", "analyzed", "validated", "captured", "completed",
+    ]
+    # Rejection buckets — only shown when non-empty.
+    rejection_statuses = [
         "rejected_filter", "rejected_score", "rejected_analyze", "rejected_trial", "rejected_generate",
     ]
-    for status in status_order:
+    for status in progress_statuses:
+        print(f"  {status:25s} {stats.get(status, 0):>6,}")
+    for status in rejection_statuses:
         count = stats.get(status, 0)
         if count > 0:
             print(f"  {status:25s} {count:>6,}")

@@ -40,10 +40,11 @@ make record                # needs OPENAI_API_KEY; --resume is on by default
 make pipeline-discover     # stage 1, needs GITHUB_TOKEN
 make pipeline-filter       # stage 2
 make pipeline-score PIPELINE_LIMIT=50 PIPELINE_BUDGET=5   # stage 3, costs money
-make pipeline-overnight PIPELINE_BUDGET=30                # stages 3-6 once + Telegram report
-make pipeline-until-limit PIPELINE_LIMIT_PCT=75           # loop stages 3-6 until 75% of Claude usage limit
+make pipeline-overnight PIPELINE_BUDGET=30                # stages 3-7 once + Telegram report
+make pipeline-until-limit PIPELINE_LIMIT_PCT=75           # loop stages 3-7 until 75% of Claude usage limit
 make pipeline-status
-python -m repo_pipeline.orchestrator --stage 3-6 --limit 10 --budget 5 --workers 5
+python -m repo_pipeline.orchestrator --stage 3-7 --limit 10 --budget 5 --workers 5
+python -m repo_pipeline.orchestrator --stage 7          # think only: fill <think> blocks for captured repos
 python -m repo_pipeline.orchestrator --status
 
 # Convert + train (works on output of either path)
@@ -55,14 +56,15 @@ There is no test suite. The only executable checks are `make test-sandbox` (cont
 
 ## Path B architecture (`repo_pipeline/`)
 
-A 6-stage quality funnel, cast wide then reject aggressively. `orchestrator.py` is the entry point; it sets up logging to `pipeline_data/run_logs/`, then dispatches stages.
+A 7-stage quality funnel, cast wide then reject aggressively. `orchestrator.py` is the entry point; it sets up logging to `pipeline_data/run_logs/`, then dispatches stages. Capture (6) and think generation (7) are split so a slow/flaky think-gen can never block or fail a capture.
 
 **Registry state machine is the spine.** All repo state lives in `pipeline_data/registry.db` (SQLite, WAL). `schemas.py` defines three dicts — `STAGE_TO_INPUT_STATUS`, `STAGE_TO_PASSED_STATUS`, `STAGE_TO_REJECTED_STATUS` — that map each stage to the `RepoStatus` it consumes / promotes to / rejects to:
 
 ```
-discovered → filtered → scored → analyzed → validated → completed
+discovered → filtered → scored → analyzed → validated → captured → completed
                 ↓          ↓         ↓          ↓           ↓
           rejected_filter / _score / _analyze / _trial / _generate
+                                                  (stage 7 "think": captured → completed, never rejects)
 ```
 
 Each stage calls `registry.get_repos_for_stage(N)` (which selects by input status, ordered by a query-priority heuristic that deprioritizes demo/tutorial repos), then for each repo either `registry.update_status(..., PASSED)` or `registry.reject(...)`. Stages are **idempotent**: repos guard on `current_stage >= N` and re-running never reprocesses. To re-evaluate rejections use `registry.reset_rejected(stage=N)`. When adding a stage or status, extend the three mapping dicts rather than hardcoding stage numbers.
@@ -71,7 +73,8 @@ Each stage calls `registry.get_repos_for_stage(N)` (which selects by input statu
 - **1 discover** (`stage1_discover.py`): GitHub API across ~50+ `SEARCH_QUERIES`. No LLM. Needs `GITHUB_TOKEN`.
 - **2 filter** (`stage2_filter.py`): size/recency filters + fork & duplicate-description dedup. No LLM.
 - **3 shallow_score**: fetches repo metadata via `gh` CLI, Claude scores 7 dimensions (`ShallowScores`), gate at `SCORE_THRESHOLD`.
-- **4 deep_analyze**, **5 trial_run**, **6 generate**: run inside a `DockerSandbox`. Stage 5 instruments + runs one POC test; stage 6 runs the full suite, copies trajectories out, writes instructions, then generates think blocks.
+- **4 deep_analyze**, **5 trial_run**, **6 capture** (`stage6_generate.py`): run inside a `DockerSandbox`. Stage 5 instruments + runs one POC test; stage 6 runs the full suite, copies trajectories out, writes instructions + metadata, and marks the repo **`captured`** — it does NOT generate think blocks (resume-aware: re-running skips capture if valid trajectories already exist).
+- **7 think** (`stage7_think.py`): fills the per-step `<think>` blocks over `captured` repos, then marks `completed`. Decoupled from capture, resumable, and **never rejects** — a repo stays `captured` until its thoughts are complete. Order-by-score + `--limit` lets you supervise only the most useful captures first.
 
 **Sandbox isolation** (`sandbox.py`): repo code (clone, npm/pip install, test runs) executes only inside an ephemeral, capability-dropped Docker container (`repo-pipeline-sandbox:latest`, built from `docker/Dockerfile.sandbox` on the Playwright base image). `DockerSandbox` is a context manager exposing `exec_command/read_file/write_file/copy_out`; it enforces a 30-min container and 5-min per-command timeout. `create_mcp_server_config` / `sandbox_tool_executor` expose these as tools for the agent.
 
