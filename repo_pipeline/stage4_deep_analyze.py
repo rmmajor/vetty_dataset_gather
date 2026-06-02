@@ -19,6 +19,7 @@ from repo_pipeline.schemas import (
     RepoStatus,
     RetryableFailure,
 )
+from repo_pipeline.sdk_runner import UsageLimitReached
 
 logger = logging.getLogger(__name__)
 
@@ -206,11 +207,16 @@ async def run_deep_analyze(
 
     async def process_with_semaphore(repo):
         nonlocal cost_estimate
+        if rate_limit_tracker.limit_reached():
+            return
         if budget_remaining is not None and cost_estimate > budget_remaining:
             logger.warning("Budget limit reached, stopping")
             return
         async with semaphore:
-            await run_repo(4, repo, registry, analyze_single_repo, progress)
+            try:
+                await run_repo(4, repo, registry, analyze_single_repo, progress)
+            except UsageLimitReached:
+                return
             cost_estimate += 0.20
 
     await asyncio.gather(*[process_with_semaphore(repo) for repo in repos])

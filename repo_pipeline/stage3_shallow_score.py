@@ -19,6 +19,7 @@ from repo_pipeline.schemas import (
     RetryableFailure,
     ShallowScores,
 )
+from repo_pipeline.sdk_runner import UsageLimitReached
 
 logger = logging.getLogger(__name__)
 
@@ -313,12 +314,17 @@ async def run_shallow_score(
     async def process_with_semaphore(repo):
         nonlocal cost_estimate
 
+        if rate_limit_tracker.limit_reached():
+            return
         if budget_remaining is not None and cost_estimate > budget_remaining:
             logger.warning("Budget limit reached, stopping")
             return
 
         async with semaphore:
-            await run_repo(3, repo, registry, process_repo, progress)
+            try:
+                await run_repo(3, repo, registry, process_repo, progress)
+            except UsageLimitReached:
+                return
             cost_estimate += 0.20  # rough estimate per repo
 
     await asyncio.gather(*[process_with_semaphore(repo) for repo in repos])

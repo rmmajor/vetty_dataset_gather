@@ -17,6 +17,7 @@ from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
 from repo_pipeline.schemas import FailureCategory, QualityReject, RepoStatus, RetryableFailure
+from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +312,8 @@ async def generate_instruction(
             purpose="instruction",
             raise_on_error=False,
         )
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.warning(f"Instruction generation failed: {e}")
         return f"Verify the {test_name.replace('_', ' ')} behavior."
@@ -424,6 +427,8 @@ async def classify_task_type(trajectory: dict, capture_meta: dict, registry=None
             purpose="classify",
             raise_on_error=False,
         )
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.warning(f"Task-type classification failed: {e}")
         return "other"
@@ -485,6 +490,8 @@ async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_
 
         with open(meta_file, "w") as f:
             json.dump(metadata, f, indent=2)
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.warning(f"Metadata enrichment failed for {traj_dir.name}: {e}")
 
@@ -503,10 +510,15 @@ async def run_generate(
     progress = StageProgress(6, len(repos))
 
     async def process_with_semaphore(repo):
+        if rate_limit_tracker.limit_reached():
+            return
         async def core(reg, r):
             return await generate_for_repo(reg, r, trajectory_base_dir)
         async with semaphore:
-            await run_repo(6, repo, registry, core, progress)
+            try:
+                await run_repo(6, repo, registry, core, progress)
+            except UsageLimitReached:
+                return
 
     await asyncio.gather(*[process_with_semaphore(repo) for repo in repos])
 

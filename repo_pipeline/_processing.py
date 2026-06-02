@@ -24,6 +24,7 @@ from repo_pipeline.schemas import (
     QualityReject,
     RetryableFailure,
 )
+from repo_pipeline.sdk_runner import UsageLimitReached
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,9 @@ async def run_repo(stage: int, repo: dict, registry, core_fn, progress=None) -> 
             if progress:
                 progress.rejected_repo(infra=False)
             return "rejected"
+        except UsageLimitReached:
+            # Subscription quota hit — never reject; abort so the repo resumes next run.
+            raise
         except RetryableFailure as e:
             category, reason, extra = e.category, e.reason, e.extra
         except Exception as e:  # unclassified crash -> treat as a retryable sandbox error

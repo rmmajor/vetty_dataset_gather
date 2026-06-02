@@ -15,6 +15,7 @@ from pathlib import Path
 from repo_pipeline.logging_utils import repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.schemas import RepoStatus
+from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 from repo_pipeline.think_generator import generate_thinks_for_trajectory
 
 logger = logging.getLogger(__name__)
@@ -83,9 +84,13 @@ async def run_think(registry: RepoRegistry, trajectory_dir=None, limit: int = No
 
     async def process(repo):
         nonlocal completed, still_captured, trajectories
+        if rate_limit_tracker.limit_reached():
+            return
         async with semaphore:
             try:
                 await think_for_repo(registry, repo)
+            except UsageLimitReached:
+                return  # quota hit — leave captured, resume next run
             except Exception as e:
                 logger.error(f"Error generating thoughts for {repo['full_name']}: {e}")
         after = registry.get_repo(repo["full_name"])

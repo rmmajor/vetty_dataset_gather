@@ -24,10 +24,12 @@ import logging
 import os
 from pathlib import Path
 
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, RateLimitEvent, ResultMessage
 
 from repo_pipeline.agent_runner import CLAUDE_CLI_PATH, run_agent
 from repo_pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
+from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from repo_pipeline.sdk_runner import rate_limit_tracker, run_query, UsageLimitReached
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +221,8 @@ async def generate_think_for_step(
             purpose="think",
             raise_on_error=False,
         )
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.warning(f"Think generation failed: {e}")
         return ""
@@ -353,6 +357,11 @@ async def generate_thinks_for_trajectory(
                 # Crash-safe: persist after each step so a mid-trajectory stop still resumes cleanly.
                 with open(trajectory_path, "w") as f:
                     json.dump(trajectory, f, indent=2)
+    except UsageLimitReached:
+        # Persist progress, then propagate so the run aborts without rejecting the repo.
+        with open(trajectory_path, "w") as f:
+            json.dump(trajectory, f, indent=2)
+        raise
     except Exception as e:
         logger.warning(f"  {trajectory_dir.name}: think session ended early: {e}")
         with open(trajectory_path, "w") as f:
@@ -382,19 +391,30 @@ async def _session_think_turn(client, user_text: str, screenshot_path: Path, *,
     async def _stream(m=message):
         yield m
 
+    if rate_limit_tracker.limit_reached():
+        raise UsageLimitReached("usage limit reached before think turn")
+
     thought = ""
     result_msg = None
     try:
         await client.query(_stream())
         async for msg in client.receive_response():
+            if isinstance(msg, RateLimitEvent):
+                rate_limit_tracker.observe(msg.rate_limit_info)
+                continue
             if isinstance(msg, AssistantMessage):
                 for block in getattr(msg, "content", None) or []:
                     if hasattr(block, "text"):
                         thought = block.text
             if isinstance(msg, ResultMessage):
                 result_msg = msg
-                if msg.subtype == "success":
+                if msg.subtype == "success" and not msg.is_error:
                     thought = msg.result or thought
+                elif getattr(msg, "api_error_status", None) == 429:
+                    rate_limit_tracker.mark_rejected()
+                    raise UsageLimitReached("HTTP 429 from think turn")
+    except UsageLimitReached:
+        raise
     except Exception as e:
         logger.warning(f"Think turn failed: {e}")
         return ""
@@ -421,6 +441,9 @@ async def generate_thinks_for_all(
     processed = 0
 
     for traj_dir in trajectory_dirs:
+        if rate_limit_tracker.limit_reached():
+            logger.warning("Usage limit reached, stopping think generation")
+            break
         if budget_remaining is not None and cost_estimate > budget_remaining:
             logger.warning("Budget limit reached for think generation")
             break
@@ -435,7 +458,11 @@ async def generate_thinks_for_all(
         step_count = len(traj.get("steps", []))
         estimated_cost = step_count * 0.008
 
-        await generate_thinks_for_trajectory(traj_dir)
+        try:
+            await generate_thinks_for_trajectory(traj_dir)
+        except UsageLimitReached:
+            logger.warning("Usage limit reached, stopping think generation")
+            break
         cost_estimate += estimated_cost
         processed += 1
 

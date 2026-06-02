@@ -16,6 +16,7 @@ from repo_pipeline.schemas import (
     RetryableFailure,
     TrialResults,
 )
+from repo_pipeline.sdk_runner import rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,8 @@ async def run_trial(
     progress = StageProgress(5, len(repos))
 
     async def process_with_semaphore(repo):
+        if rate_limit_tracker.limit_reached():
+            return
         async with semaphore:
             await run_repo(5, repo, registry, trial_single_repo, progress)
 

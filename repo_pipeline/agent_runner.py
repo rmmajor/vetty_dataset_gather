@@ -17,9 +17,10 @@ import logging
 import os
 import shutil
 
-from claude_agent_sdk import AssistantMessage, ResultMessage, query
+from claude_agent_sdk import AssistantMessage, RateLimitEvent, ResultMessage, query
 
 from repo_pipeline.schemas import FailureCategory, RetryableFailure
+from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,12 @@ async def run_agent(
     ``capture_assistant_fallback`` keeps the last assistant message so a result that arrives in the
     final turn (rather than as a tool-free ``ResultMessage.result``) is still recovered.
     """
+    # Subscription rate limit: never reject a repo for quota. Bail before the call if the shared
+    # tracker already saw the limit, and turn a hard 429 into UsageLimitReached (which the retry
+    # wrapper re-raises, so the repo stays in its input status and resumes next run).
+    if rate_limit_tracker.limit_reached():
+        raise UsageLimitReached(f"usage limit reached before {purpose or 'agent call'}")
+
     result_text = ""
     last_assistant_text = ""
     result_msg = None
@@ -53,13 +60,16 @@ async def run_agent(
         options.cli_path = CLAUDE_CLI_PATH
 
     async for message in query(prompt=prompt, options=options):
+        if isinstance(message, RateLimitEvent):
+            rate_limit_tracker.observe(message.rate_limit_info)
+            continue
         if capture_assistant_fallback and isinstance(message, AssistantMessage):
             for block in getattr(message, "content", None) or []:
                 if hasattr(block, "text"):
                     last_assistant_text = block.text
         if isinstance(message, ResultMessage):
             result_msg = message
-            if message.subtype == "success":
+            if message.subtype == "success" and not message.is_error:
                 result_text = message.result or ""
 
     if result_msg is not None and registry is not None:
@@ -72,8 +82,12 @@ async def run_agent(
     if not result_text and last_assistant_text:
         result_text = last_assistant_text
 
-    if result_msg is not None and result_msg.subtype != "success":
-        logger.warning(f"agent[{purpose}] {full_name} ended with: {result_msg.subtype}")
+    if result_msg is not None and not (result_msg.subtype == "success" and not result_msg.is_error):
+        status = getattr(result_msg, "api_error_status", None)
+        logger.warning(f"agent[{purpose}] {full_name} ended with: {result_msg.subtype} api_error_status={status}")
+        if status == 429:
+            rate_limit_tracker.mark_rejected()
+            raise UsageLimitReached(f"HTTP 429 from agent ({purpose})")
         if raise_on_error and not result_text:
             category = (
                 FailureCategory.MAX_TURNS

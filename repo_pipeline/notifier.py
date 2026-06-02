@@ -26,6 +26,7 @@ def format_report(
     budget_used: float,
     budget_limit: float,
     stage_results: dict[int, dict],
+    rate_limit_info=None,
 ) -> str:
     from datetime import datetime
 
@@ -40,6 +41,18 @@ def format_report(
         f"Budget used: ${budget_used:.2f} / ${budget_limit:.2f}",
         "",
     ]
+
+    if rate_limit_info is not None:
+        util = getattr(rate_limit_info, "utilization", None)
+        util_str = f"{util * 100:.0f}%" if util is not None else "unknown"
+        rl_type = getattr(rate_limit_info, "rate_limit_type", None) or "?"
+        status = getattr(rate_limit_info, "status", None) or "?"
+        lines.append(f"Claude usage: {util_str} of limit ({rl_type}, status={status})")
+        resets_at = getattr(rate_limit_info, "resets_at", None)
+        if resets_at:
+            resets_str = datetime.fromtimestamp(resets_at).strftime("%Y-%m-%d %H:%M")
+            lines.append(f"Usage resets at: {resets_str}")
+        lines.append("")
 
     stage_names = {
         3: "Score",
@@ -115,6 +128,7 @@ async def send_report(
     budget_used: float,
     budget_limit: float,
     stage_results: dict[int, dict],
+    rate_limit_info=None,
 ):
     try:
         token, chat_id = get_bot_config()
@@ -122,7 +136,10 @@ async def send_report(
         logger.warning(f"Telegram not configured: {e}")
         return
 
-    report = format_report(registry, run_duration_seconds, budget_used, budget_limit, stage_results)
+    report = format_report(
+        registry, run_duration_seconds, budget_used, budget_limit, stage_results,
+        rate_limit_info=rate_limit_info,
+    )
     logger.info(f"Report:\n{report}")
 
     try:
