@@ -141,6 +141,31 @@ def resolve_profile(test_framework: str | None, framework_language: str | None) 
     return _DEFAULT_PROFILE
 
 
+# (framework, language) pairs we have a working capture hook for. The playwright-ts profile
+# also handles JavaScript (its test_globs match *.spec.js / *.test.js and the fixture re-export
+# works for JS), so javascript is listed even though the profile's primary `language` is
+# typescript. Extend this when adding a framework/language (alongside its profile + hook).
+SUPPORTED_COMBOS = frozenset({
+    ("playwright", "python"),
+    ("playwright", "typescript"),
+    ("playwright", "javascript"),
+    ("selenium", "python"),
+})
+
+
+def is_supported_profile(test_framework: str | None, framework_language: str | None) -> bool:
+    """True iff the (framework, language) pair has a real capture hook.
+
+    Unlike `resolve_profile` (which silently falls back to playwright-ts for unknown inputs),
+    this returns False for unsupported combinations — e.g. Java Playwright or non-Python
+    Selenium — so stage 4 can reject them up front instead of burning a sandbox on a run that
+    has no instrumentation hook and is guaranteed to produce no capture.
+    """
+    fw = (test_framework or "").strip().lower()
+    lang = (framework_language or "").strip().lower()
+    return (fw, lang) in SUPPORTED_COMBOS
+
+
 def all_interactive_actions() -> set[str]:
     """Union of every profile's interactive action vocabulary, lowercased.
 

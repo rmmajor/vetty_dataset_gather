@@ -7,7 +7,7 @@ from claude_agent_sdk import ClaudeAgentOptions
 
 from repo_pipeline._processing import run_repo
 from repo_pipeline.agent_runner import run_agent
-from repo_pipeline.frameworks import all_interactive_actions
+from repo_pipeline.frameworks import all_interactive_actions, is_supported_profile
 from repo_pipeline.llm_config import MODEL_FOR_REASONING
 from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
@@ -43,7 +43,13 @@ Use the `exec` tool to run shell commands inside the container, and `read`/`ls` 
    - Selenium: click, send_keys, clear, submit, Select.select_by_*, ActionChains
    - navigation (page.goto / driver.get), waits, assertions
 
-4. **Check self-containment**: Is there a docker-compose.yml? A local dev server script (package.json scripts like "dev", "start")? Or do tests hit external URLs?
+4. **Assess capturability** — can this suite actually run and drive a UI inside a bare sandbox (no host network, no external services, no secrets)? This is the single biggest predictor of whether we get usable trajectories. Determine each of:
+   - has_local_dev_server: does package.json define a "dev"/"start"/"serve"/"preview" script (or equivalent) that boots the app locally? The pipeline can start it before the tests.
+   - has_webserver_config: does playwright.config.* declare a `webServer` block (Playwright starts the app itself)?
+   - has_docker_compose: is there a docker-compose.yml?
+   - needs_external_backend: do tests require a separate backend/API/database, login credentials, paid third-party services, or a browser wallet/extension that won't exist in the sandbox?
+   - tests_public_url: do tests target a hardcoded PUBLIC https URL (a real hosted site) rather than localhost?
+   - is_self_contained: overall, can it run end-to-end with only dependency install + (optionally) starting its own bundled app?
 
 5. **Identify framework**: Which browser-test framework is this? Look at the imports and dependencies:
    - "selenium" / "webdriver" imports, selenium in requirements.txt → test_framework = "selenium"
@@ -60,6 +66,10 @@ After analysis, output your findings as a JSON object with EXACTLY these fields:
   "action_types": ["click", "send_keys", ...],
   "is_self_contained": <bool>,
   "has_docker_compose": <bool>,
+  "has_local_dev_server": <bool>,
+  "has_webserver_config": <bool>,
+  "needs_external_backend": <bool>,
+  "tests_public_url": <bool>,
   "test_framework": "<playwright|selenium>",
   "playwright_version": "<version or null>",
   "framework_language": "<python|typescript|javascript>",
@@ -96,10 +106,24 @@ def compute_deep_score(analysis: DeepAnalysis) -> int:
     found_interactive = {a.lower() for a in analysis.action_types} & all_interactive_actions()
     score += min(len(found_interactive), 3)
 
-    if analysis.is_self_contained or analysis.has_docker_compose:
+    # Capturability — the dominant predictor of a usable trajectory. A repo that boots its own
+    # app (dev server / webServer / docker-compose) is exactly what in-sandbox app-start can run;
+    # one targeting a public URL needs no app at all; one needing an external backend we cannot
+    # provide is penalized. This is what actually distinguishes the ~15% that capture today.
+    can_self_host = (
+        analysis.has_local_dev_server
+        or analysis.has_webserver_config
+        or analysis.has_docker_compose
+        or analysis.is_self_contained
+    )
+    if can_self_host:
+        score += 2
+    if analysis.tests_public_url:
         score += 1
+    if analysis.needs_external_backend and not can_self_host:
+        score -= 2
 
-    return score
+    return max(0, score)
 
 
 async def analyze_single_repo(registry: RepoRegistry, repo: dict):
@@ -155,6 +179,16 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
         analysis = parse_analysis_result(result_text)
         if analysis is None:
             raise RetryableFailure(FailureCategory.PARSE_FAILED, "failed to parse deep analysis")
+
+        # Reject frameworks with no capture hook (e.g. Java Playwright, non-Python Selenium) here,
+        # rather than admitting them to stage 5 to burn a sandbox on a guaranteed no-capture run.
+        if not is_supported_profile(analysis.test_framework, analysis.framework_language):
+            raise QualityReject(
+                FailureCategory.QUALITY_GATE,
+                f"unsupported framework: {analysis.test_framework}/{analysis.framework_language}",
+                deep_analysis=analysis.model_dump(),
+                deep_score=0,
+            )
 
         deep_score = compute_deep_score(analysis)
         rlog.info(f"deep_score={deep_score}, tests={analysis.test_case_count}, actions={analysis.action_types}")

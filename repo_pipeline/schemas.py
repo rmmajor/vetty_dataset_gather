@@ -172,6 +172,10 @@ class DeepAnalysis(BaseModel):
     action_types: list[str] = Field(default_factory=list)
     is_self_contained: bool = False
     has_docker_compose: bool = False
+    has_local_dev_server: bool = False
+    has_webserver_config: bool = False
+    needs_external_backend: bool = False
+    tests_public_url: bool = False
     test_framework: Optional[str] = None
     playwright_version: Optional[str] = None
     framework_language: Optional[str] = None
