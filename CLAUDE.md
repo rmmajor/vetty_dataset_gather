@@ -96,6 +96,8 @@ LLM stages run with an `asyncio.Semaphore(workers)`; the orchestrator caps worke
 
 `OPENAI_API_KEY` (Path A), `GITHUB_TOKEN` + `ANTHROPIC_API_KEY` (Path B), `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` (optional, for overnight reports). `crontab.example` shows the nightly `--overnight` job.
 
+Sandbox resource caps (per Docker container, `repo_pipeline/sandbox.py`) are env-tunable so a run can't exhaust host RAM: `SANDBOX_MEM_LIMIT` (default `2g`), `SANDBOX_MEMSWAP_LIMIT` (default = mem limit ⇒ no swap, hard cap), `SANDBOX_PIDS_LIMIT` (`1024`), `SANDBOX_CPUS` (`2`), `SANDBOX_TMP_SIZE` (RAM-backed `/tmp`, `1g`), `SANDBOX_SHM_SIZE` (`256m`). Peak ≈ `workers * (mem + tmpfs)`; keep it under the Docker VM memory. Raise `SANDBOX_MEM_LIMIT` if a legitimately heavy suite gets OOM-killed.
+
 ## Training
 
 `config.yaml` holds hyperparameters from the blueprint (Qwen3.5-9B-Base, LoRA r64/α128, lr 5e-5, 3 epochs, max_length 4096, `freeze_vit: true`, `max_pixels` exported as `MAX_PIXELS`). `train_qwen.py train` maps these keys to `swift sft` CLI flags; CLI overrides (`--epochs/--lr/--batch-size`) win over the config.

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -11,6 +12,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMAGE = "repo-pipeline-sandbox:latest"
 CONTAINER_TIMEOUT_SECONDS = 1800  # 30 minutes
 EXEC_TIMEOUT_SECONDS = 300  # 5 minutes per command
+
+# Per-container resource caps. With workers=2, peak demand is ~2 * (SANDBOX_MEM_LIMIT +
+# SANDBOX_TMP_SIZE), which must stay under the Docker VM memory; defaults target ~6g for an 8g VM.
+# SANDBOX_MEMSWAP_LIMIT == SANDBOX_MEM_LIMIT disables swap so the cap is hard (a runaway test is
+# OOM-killed in-container instead of spilling into host RAM). tmpfs is RAM-backed, hence capped too.
+SANDBOX_MEM_LIMIT = os.environ.get("SANDBOX_MEM_LIMIT", "2g")
+SANDBOX_MEMSWAP_LIMIT = os.environ.get("SANDBOX_MEMSWAP_LIMIT", SANDBOX_MEM_LIMIT)
+SANDBOX_PIDS_LIMIT = int(os.environ.get("SANDBOX_PIDS_LIMIT", "1024"))
+SANDBOX_CPUS = float(os.environ.get("SANDBOX_CPUS", "2"))
+SANDBOX_TMP_SIZE = os.environ.get("SANDBOX_TMP_SIZE", "1g")
+SANDBOX_SHM_SIZE = os.environ.get("SANDBOX_SHM_SIZE", "256m")
 
 
 class DockerSandbox:
@@ -33,11 +45,14 @@ class DockerSandbox:
             image=self.image,
             name=f"sandbox_{safe_name}_{int(time.time())}",
             command="sleep infinity",
-            mem_limit="4g",
-            nano_cpus=2_000_000_000,
+            mem_limit=SANDBOX_MEM_LIMIT,
+            memswap_limit=SANDBOX_MEMSWAP_LIMIT,
+            pids_limit=SANDBOX_PIDS_LIMIT,
+            shm_size=SANDBOX_SHM_SIZE,
+            nano_cpus=int(SANDBOX_CPUS * 1_000_000_000),
             cap_drop=["ALL"],
             security_opt=["no-new-privileges:true"],
-            tmpfs={"/tmp": "size=2g"},
+            tmpfs={"/tmp": f"size={SANDBOX_TMP_SIZE}"},
             detach=True,
             # /workspace is writable (not read-only for the whole container
             # because we need to clone and install deps)
