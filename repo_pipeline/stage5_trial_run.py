@@ -3,6 +3,7 @@ import json
 import logging
 import re
 
+from repo_pipeline import app_runner
 from repo_pipeline._processing import run_repo
 from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import REPO_DIR, RESULTS_DIR, setup_repo_instrumentation
@@ -94,6 +95,11 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
 
         await _run(setup_repo_instrumentation, sandbox, profile)
 
+        # Start the repo's own app (if it bundles one) so its E2E tests have something to drive —
+        # the single biggest no_capture cause. None when there's no app / Playwright self-manages.
+        app_spec = await _run(app_runner.detect_app_start, sandbox, profile)
+        await _run(app_runner.build_app, sandbox, app_spec)
+
         # Locate test files via the profile's globs (skip vendored deps).
         test_files: list[str] = []
         for glob in profile.test_globs:
@@ -112,6 +118,7 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
                 repo_name=repo_name, test_name_prefix=test_name_prefix,
                 framework=profile.test_framework, framework_language=profile.language,
             ).replace("<test_file>", rel)
+            cmd = app_runner.wrap_test_command(cmd, app_spec)
             out, err, _ = await _run(sandbox.exec_command, cmd, TEST_RUN_TIMEOUT)
             combined = out + err
             trial_outputs.append(f"$ {rel}\n{combined}")
