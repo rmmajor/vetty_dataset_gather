@@ -105,6 +105,7 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
 
         # Run up to MAX_TRIAL_FILES instrumented test files in code; stop once we capture coords.
         passed = failed = 0
+        trial_outputs: list[str] = []
         for test_file in test_files[:MAX_TRIAL_FILES]:
             rel = test_file.replace(REPO_DIR + "/", "")
             cmd = profile.test_command_single.format(
@@ -113,6 +114,7 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
             ).replace("<test_file>", rel)
             out, err, _ = await _run(sandbox.exec_command, cmd, TEST_RUN_TIMEOUT)
             combined = out + err
+            trial_outputs.append(f"$ {rel}\n{combined}")
             if (m := _PASS_RE.search(combined)):
                 passed += int(m.group(1))
             if (m := _FAIL_RE.search(combined)):
@@ -130,6 +132,11 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
         weighted = metrics.weighted_score
 
         if metrics.valid_bounding_boxes < 1 or metrics.screenshots_captured < 1:
+            # Persist the tail of the test output so "why pass_rate=0" (app-needed vs install
+            # failed vs instrumentation broke) is diagnosable after the container is gone — the
+            # feedback loop for tuning app-start and selection. The container is ephemeral.
+            tail = "\n".join("\n".join(trial_outputs).splitlines()[-40:])[-4000:]
+            metrics.notes += f"\n--- test output tail ---\n{tail}"
             raise QualityReject(
                 FailureCategory.NO_CAPTURE,
                 (

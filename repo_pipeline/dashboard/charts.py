@@ -636,3 +636,35 @@ def tokens_by_stage_bar(calls_df: pd.DataFrame) -> go.Figure:
 def avg_tokens_by_stage_bar(calls_df: pd.DataFrame) -> go.Figure:
     """Average tokens per call per stage, stacked by kind."""
     return _tokens_by_stage(calls_df, "mean", "Average tokens per call by stage (stacked by kind)")
+
+
+# ---------- Capture yield (registry.db) ----------------------------------------------------
+# Repos that reached stage 5 either cleared the trial (validated → captured → completed) or were
+# rejected at trial. Yield = passed / reached, sliced by framework — the headline health metric
+# for whether app-start + selection are working.
+_TRIAL_PASSED_STATUSES = {"validated", "captured", "completed"}
+
+
+def capture_yield_by_framework(repos_df: pd.DataFrame) -> go.Figure:
+    if repos_df.empty or "status" not in repos_df.columns:
+        return empty_state_fig("registry.db not found — run the pipeline first")
+    reached = repos_df[repos_df["status"].isin(_TRIAL_PASSED_STATUSES | {"rejected_trial"})].copy()
+    if reached.empty:
+        return empty_state_fig("no repos have reached stage 5 yet")
+    lang = reached["da_framework_language"].fillna("?") if "da_framework_language" in reached else "?"
+    fw = reached["da_test_framework"].fillna("?") if "da_test_framework" in reached else "?"
+    reached["fw"] = lang.astype(str) + " / " + fw.astype(str)
+    reached["outcome"] = reached["status"].map(
+        lambda s: "passed" if s in _TRIAL_PASSED_STATUSES else "rejected"
+    )
+    counts = reached.groupby(["fw", "outcome"]).size().reset_index(name="count")
+    order = counts.groupby("fw")["count"].sum().sort_values(ascending=False).index.tolist()
+    passed = int((reached["outcome"] == "passed").sum())
+    fig = px.bar(counts, x="fw", y="count", color="outcome", barmode="stack",
+                 color_discrete_map=_PASS_REJECT_COLORS,
+                 category_orders={"fw": order},
+                 title=f"Stage-5 capture yield by framework — {passed}/{len(reached)} "
+                       f"({passed / len(reached):.0%}) passed")
+    fig.update_layout(height=380, xaxis_title="language / framework", yaxis_title="repos",
+                      xaxis_tickangle=-20)
+    return fig
