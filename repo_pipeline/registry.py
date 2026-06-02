@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS agent_calls (
     cost_usd      REAL,
     input_tokens  INTEGER,
     output_tokens INTEGER,
+    cache_read_tokens     INTEGER,
+    cache_creation_tokens INTEGER,
     subtype       TEXT,
     is_error      BOOLEAN,
     duration_ms   INTEGER,
@@ -120,6 +122,15 @@ class RepoRegistry:
             self.conn.execute("ALTER TABLE repos ADD COLUMN failure_category TEXT")
         if "retry_count" not in columns:
             self.conn.execute("ALTER TABLE repos ADD COLUMN retry_count INTEGER DEFAULT 0")
+
+        call_columns = {
+            row[1]
+            for row in self.conn.execute("PRAGMA table_info(agent_calls)").fetchall()
+        }
+        if "cache_read_tokens" not in call_columns:
+            self.conn.execute("ALTER TABLE agent_calls ADD COLUMN cache_read_tokens INTEGER")
+        if "cache_creation_tokens" not in call_columns:
+            self.conn.execute("ALTER TABLE agent_calls ADD COLUMN cache_creation_tokens INTEGER")
 
     @staticmethod
     def _check_is_demo(source_query: str) -> bool:
@@ -347,11 +358,14 @@ class RepoRegistry:
         self.conn.execute(
             """INSERT INTO agent_calls
                (full_name, stage, purpose, model, num_turns, cost_usd, input_tokens,
-                output_tokens, subtype, is_error, duration_ms, ts)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                output_tokens, cache_read_tokens, cache_creation_tokens, subtype, is_error,
+                duration_ms, ts)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 full_name, stage, purpose, model, num_turns, cost_usd,
                 usage.get("input_tokens", 0), usage.get("output_tokens", 0),
+                usage.get("cache_read_input_tokens", 0),
+                usage.get("cache_creation_input_tokens", 0),
                 subtype, is_error, duration_ms,
                 datetime.now(timezone.utc).isoformat(),
             ),

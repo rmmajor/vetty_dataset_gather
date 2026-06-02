@@ -582,3 +582,57 @@ def agent_subtype_bar(calls_df: pd.DataFrame) -> go.Figure:
     fig.update_layout(title="Agent result subtypes (success vs error_*)",
                       height=300, xaxis_tickangle=-20, yaxis_title="calls")
     return fig
+
+
+# ---------- Token usage (registry.db agent_calls) ------------------------------------------
+# The four token columns, in stack order (cache below, billed output on top), with display labels.
+# cache_*_tokens are absent on calls recorded before the cache-token telemetry fix and read as 0.
+_TOKEN_COLS = ["cache_read_tokens", "cache_creation_tokens", "input_tokens", "output_tokens"]
+_TOKEN_LABELS = {
+    "cache_read_tokens": "cache read",
+    "cache_creation_tokens": "cache write",
+    "input_tokens": "input (uncached)",
+    "output_tokens": "output",
+}
+_TOKEN_COLORS = {
+    "cache read": "#ff7f0e",
+    "cache write": "#9467bd",
+    "input (uncached)": "#2ca02c",
+    "output": "#1f77b4",
+}
+
+
+def token_frame(calls_df: pd.DataFrame) -> pd.DataFrame:
+    """agent_calls with the four token columns coerced to numeric (0 for missing/old rows) plus a
+    `total_tokens` column. Lets the page compute totals without reasoning about absent columns."""
+    df = calls_df.copy()
+    for col in _TOKEN_COLS:
+        if col not in df.columns:
+            df[col] = 0
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    df["total_tokens"] = df[_TOKEN_COLS].sum(axis=1)
+    return df
+
+
+def _tokens_by_stage(calls_df: pd.DataFrame, agg: str, title: str) -> go.Figure:
+    if calls_df is None or calls_df.empty:
+        return empty_state_fig("no agent calls recorded yet — run an agent stage")
+    grouped = token_frame(calls_df).groupby("stage")[_TOKEN_COLS].agg(agg).reset_index()
+    melt = grouped.melt(id_vars="stage", var_name="kind", value_name="tokens")
+    melt["kind"] = melt["kind"].map(_TOKEN_LABELS)
+    melt["stage"] = melt["stage"].astype(str)
+    fig = px.bar(melt, x="stage", y="tokens", color="kind", color_discrete_map=_TOKEN_COLORS,
+                 title=title)
+    fig.update_layout(height=380, barmode="stack", xaxis_title="stage", yaxis_title="tokens",
+                      legend_title="token kind")
+    return fig
+
+
+def tokens_by_stage_bar(calls_df: pd.DataFrame) -> go.Figure:
+    """Total tokens per stage, stacked by kind."""
+    return _tokens_by_stage(calls_df, "sum", "Total tokens by stage (stacked by kind)")
+
+
+def avg_tokens_by_stage_bar(calls_df: pd.DataFrame) -> go.Figure:
+    """Average tokens per call per stage, stacked by kind."""
+    return _tokens_by_stage(calls_df, "mean", "Average tokens per call by stage (stacked by kind)")
