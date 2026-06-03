@@ -278,15 +278,22 @@ def _prepare(driver, element):
         except Exception:
             probe = {}
         bbox = probe.get("bbox")
+        cx = cy = 0
         if bbox:
             cx = int(bbox["x"] + bbox["width"] / 2)
             cy = int(bbox["y"] + bbox["height"] / 2)
-        else:
+        if cx == 0 and cy == 0:
+            # bbox missing or degenerate — fall back to a direct rect probe before giving up.
             try:
                 rect = driver.execute_script(_RECT_JS, element)
                 cx, cy = int(rect[0]), int(rect[1])
             except Exception:
-                cx, cy = 0, 0
+                cx = cy = 0
+        if cx == 0 and cy == 0:
+            # No usable on-screen coordinate. Skip the action entirely rather than record a (0,0)
+            # step — mirrors the Playwright TS hook and keeps invalid points out of the trajectory,
+            # the main cause of Selenium's low capture yield.
+            return None
         meta = _build_meta(driver, probe, bbox)
         shot = driver.get_screenshot_as_png()
         return {"cx": cx, "cy": cy, "shot": shot, "meta": meta}
