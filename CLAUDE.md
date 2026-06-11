@@ -43,8 +43,10 @@ make pipeline-score PIPELINE_LIMIT=50 PIPELINE_BUDGET=5   # stage 3, costs money
 make pipeline-overnight PIPELINE_BUDGET=30                # stages 3-7 once + Telegram report
 make pipeline-until-limit PIPELINE_LIMIT_PCT=75           # loop stages 3-7 until 75% of Claude usage limit
 make pipeline-status
+make test-driver           # scripted (no-LLM) smoke test of the agent-capture browser driver
 python -m repo_pipeline.orchestrator --stage 3-7 --limit 10 --budget 5 --workers 5
-python -m repo_pipeline.orchestrator --stage 7          # think only: fill <think> blocks for captured repos
+python -m repo_pipeline.orchestrator --stage 6 --capture-mode replay   # legacy test-replay capture
+python -m repo_pipeline.orchestrator --stage 7          # finalize supervision for captured repos
 python -m repo_pipeline.orchestrator --status
 
 # Convert + train (works on output of either path)
@@ -52,11 +54,15 @@ make convert               # trajectories/ -> training_data/sft_dataset.jsonl
 make train                 # invokes `swift sft` (needs ms-swift on a GPU box)
 ```
 
-There is no test suite. The only executable checks are `make test-sandbox` (container smoke test) and `make test-notifier` (Telegram bot). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
+There is no test suite. The executable checks are `make test-sandbox` (container smoke test), `make test-driver` (scripted no-LLM browser-driver session asserting the trajectory contract), and `make test-notifier` (Telegram bot). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
 
 ## Path B architecture (`repo_pipeline/`)
 
-A 7-stage quality funnel, cast wide then reject aggressively. `orchestrator.py` is the entry point; it sets up logging to `pipeline_data/run_logs/`, then dispatches stages. Capture (6) and think generation (7) are split so a slow/flaky think-gen can never block or fail a capture.
+A 7-stage quality funnel, cast wide then reject aggressively. `orchestrator.py` is the entry point; it sets up logging to `pipeline_data/run_logs/`, then dispatches stages. Capture (6) and supervision finalize (7) are split so a slow/flaky LLM pass can never block or fail a capture.
+
+**Capture modes.** `schemas.CAPTURE_MODE` (env `PIPELINE_CAPTURE_MODE` / CLI `--capture-mode`, default **`agent`**) switches how stages 4-6 behave:
+- **agent** (primary): the repo's app is booted inside the sandbox and a Claude teacher (`agent_capture.py`) pursues user tasks proposed by `task_proposer.py`, acting through an in-container Playwright HTTP driver (`instrumentation/browser_driver.js` + host wrapper `driver_session.py`) that records a screenshot + bbox-center coordinates per action. Every action tool requires a `thought` argument — per-step intent-level supervision is structural, not retrofitted. A post-run verifier judges the final screenshot against the goal; only verified trajectories get `success: true` (coherent partials are hindsight-relabeled to what they actually accomplished). Framework-independent: the repo's own tests are only feature hints for the proposer.
+- **replay** (secondary/legacy): inject instrumentation into the repo's Playwright/Selenium suite and record what the tests do.
 
 **Registry state machine is the spine.** All repo state lives in `pipeline_data/registry.db` (SQLite, WAL). `schemas.py` defines three dicts — `STAGE_TO_INPUT_STATUS`, `STAGE_TO_PASSED_STATUS`, `STAGE_TO_REJECTED_STATUS` — that map each stage to the `RepoStatus` it consumes / promotes to / rejects to:
 
@@ -73,8 +79,10 @@ Each stage calls `registry.get_repos_for_stage(N)` (which selects by input statu
 - **1 discover** (`stage1_discover.py`): GitHub API across ~50+ `SEARCH_QUERIES`. No LLM. Needs `GITHUB_TOKEN`.
 - **2 filter** (`stage2_filter.py`): size/recency filters + fork & duplicate-description dedup. No LLM.
 - **3 shallow_score**: fetches repo metadata via `gh` CLI, Claude scores 7 dimensions (`ShallowScores`), gate at `SCORE_THRESHOLD`.
-- **4 deep_analyze**, **5 trial_run**, **6 capture** (`stage6_generate.py`): run inside a `DockerSandbox`. Stage 5 instruments + runs one POC test; stage 6 runs the full suite, copies trajectories out, writes instructions + metadata, and marks the repo **`captured`** — it does NOT generate think blocks (resume-aware: re-running skips capture if valid trajectories already exist).
-- **7 think** (`stage7_think.py`): fills the per-step `<think>` blocks over `captured` repos, then marks `completed`. Decoupled from capture, resumable, and **never rejects** — a repo stays `captured` until its thoughts are complete. Order-by-score + `--limit` lets you supervise only the most useful captures first.
+- **4 deep_analyze**: static analysis in a `DockerSandbox`. Bootability (dev server / webServer / docker-compose) is the dominant score axis; in agent mode, public-URL-only suites with nothing bootable are hard-rejected, and framework support is irrelevant (replay mode still gates on `is_supported_profile`).
+- **5 trial_run**: agent mode = **boot gate** (`boot_gate_single_repo`): clone, `npm install`, daemonize the app (`driver_session.start_app`), probe it through the browser driver, reject `NO_BOOT` / trivial UIs (`BOOT_GATE_MIN_ELEMENTS`). Replay mode = legacy instrumented POC test run.
+- **6 capture** (`stage6_generate.py`): agent mode boots the app, proposes tasks, runs the teacher per task (fresh browser context each; one shared app server), verifies + dedups + caps per repo (`AGENT_MAX_KEPT_PER_REPO`, default 10), enriches metadata, marks **`captured`**. Resume-aware: re-running skips capture if valid trajectories already exist; partial sessions are copied out even on usage-limit aborts.
+- **7 finalize** (`stage7_think.py`): agent trajectories get their raw teacher thoughts POLISHED into student voice (one text-only call per trajectory, `thought_source: teacher_raw → teacher`); replay trajectories get thoughts GENERATED from screenshots. Then marks `completed`. Decoupled, resumable, **never rejects**.
 
 **Sandbox isolation** (`sandbox.py`): repo code (clone, npm/pip install, test runs) executes only inside an ephemeral, capability-dropped Docker container (`repo-pipeline-sandbox:latest`, built from `docker/Dockerfile.sandbox` on the Playwright base image). `DockerSandbox` is a context manager exposing `exec_command/read_file/write_file/copy_out`; it enforces a 30-min container and 5-min per-command timeout. `create_mcp_server_config` / `sandbox_tool_executor` expose these as tools for the agent.
 

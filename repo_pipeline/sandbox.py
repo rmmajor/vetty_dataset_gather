@@ -78,7 +78,8 @@ class DockerSandbox:
             self.stop()
             raise TimeoutError(f"Sandbox container exceeded {self.container_timeout}s timeout")
 
-    def exec_command(self, command: str, timeout: int = EXEC_TIMEOUT_SECONDS) -> tuple[str, str, int]:
+    def exec_command(self, command: str, timeout: int = EXEC_TIMEOUT_SECONDS,
+                     max_output: int = 50000) -> tuple[str, str, int]:
         self._check_timeout()
         if self.container is None:
             raise RuntimeError("Sandbox container not started")
@@ -97,10 +98,10 @@ class DockerSandbox:
             stderr = (exec_result.output[1] or b"").decode("utf-8", errors="replace") if exec_result.output else ""
             exit_code = exec_result.exit_code
 
-            if len(stdout) > 50000:
-                stdout = stdout[:50000] + "\n... (truncated)"
-            if len(stderr) > 50000:
-                stderr = stderr[:50000] + "\n... (truncated)"
+            if len(stdout) > max_output:
+                stdout = stdout[:max_output] + "\n... (truncated)"
+            if len(stderr) > max_output:
+                stderr = stderr[:max_output] + "\n... (truncated)"
 
             return stdout, stderr, exit_code
         except Exception as e:
@@ -220,7 +221,8 @@ class DockerSandbox:
             )
         else:
             cmd = f"curl -s -m {timeout - 5} -X {method} '{url}'"
-        stdout, stderr, exit_code = self.exec_command(cmd, timeout=timeout)
+        # Screenshot responses carry ~hundreds of KB of base64 — far past the default cap.
+        stdout, stderr, exit_code = self.exec_command(cmd, timeout=timeout, max_output=4_000_000)
         if exit_code != 0:
             raise ConnectionError(f"http_json {method} {url} failed (exit {exit_code}): {stderr[:300]}")
         try:
