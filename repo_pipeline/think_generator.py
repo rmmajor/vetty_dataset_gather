@@ -42,6 +42,32 @@ THINK_BUDGET_USD = float(os.environ.get("THINK_BUDGET_USD", "0.15"))
 # against a runaway session, not per-step cost.
 THINK_SESSION_BUDGET_USD = float(os.environ.get("THINK_SESSION_BUDGET_USD", "5.0"))
 
+POLISH_BUDGET_USD = float(os.environ.get("POLISH_BUDGET_USD", "0.50"))
+
+POLISH_PROMPT = """Below are the step-by-step inner thoughts an agent wrote WHILE executing a web
+task, paired with the action each thought preceded. Rewrite each thought into clean training
+supervision for a computer-use model: the first-person, present-tense inner monologue of an
+agent looking at the screen and deciding its next move.
+
+Rules for every rewritten thought:
+- 1-3 short sentences, first person, present tense.
+- Keep the original's reasoning and observations — you are polishing voice, not inventing
+  content. If the original references visible UI text, keep those references.
+- Remove ALL traces of tooling: never mention refs, snapshots, screenshots, tools, selectors,
+  elements by number, "the page state", coordinates, or being an AI/agent under instruction.
+- Tie the thought to progress toward the goal: what I observe, why this action is next.
+- If an original thought is empty or unusable, write a plausible thought from its action and
+  the surrounding context.
+
+Goal of the task: {goal}
+
+Steps (original thought -> action):
+{steps_block}
+
+Output ONLY a JSON array of {n} strings — the rewritten thought for each step, in order. No
+markdown fence, no prose."""
+
+
 THINK_SYSTEM_TEMPLATE = """You are the agent currently executing a task in a web browser.
 Given the current screenshot and the next action you are about to take, write the inner
 monologue (1-3 short sentences) that explains why this action moves you toward the goal.
@@ -424,6 +450,101 @@ async def _session_think_turn(client, user_text: str, screenshot_path: Path, *,
                                    result_msg.total_cost_usd, result_msg.usage, result_msg.subtype,
                                    result_msg.is_error, result_msg.duration_ms)
     return thought.strip()
+
+
+def _read_json_file(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
+def needs_polish(trajectory_dir: Path) -> bool:
+    """True for agent-captured trajectories whose thoughts are still the teacher's raw,
+    tool-aware reasoning (metadata.thought_source == 'teacher_raw')."""
+    return _read_json_file(trajectory_dir / "metadata.json").get("thought_source") == "teacher_raw"
+
+
+async def polish_thoughts_for_trajectory(
+    trajectory_dir: Path,
+    registry=None,
+    full_name: str = "",
+) -> bool:
+    """Rewrite a teacher trajectory's raw thoughts into clean student-voice supervision.
+
+    One text-only call per trajectory (the raw thoughts already carry the grounded reasoning;
+    no screenshots needed). On success the thoughts are replaced in trajectory.json and
+    metadata.thought_source flips to 'teacher' — the stage-7 completion signal. On any failure
+    the raw thoughts stay as-is and the repo remains `captured`, retried on the next run."""
+    trajectory_path = trajectory_dir / "trajectory.json"
+    metadata_path = trajectory_dir / "metadata.json"
+    if not trajectory_path.exists():
+        return False
+
+    trajectory = _read_json_file(trajectory_path)
+    steps = [s for s in trajectory.get("steps", []) if s.get("actions")]
+    if not steps:
+        return False
+
+    lines = []
+    for step in steps:
+        action_nl = render_action_nl(
+            step["actions"][0], role=step.get("role") or "", name=step.get("name") or ""
+        )
+        raw = (step.get("thought") or "").strip() or "(empty)"
+        lines.append(f"{step['step']}. [{raw}] -> {action_nl}")
+
+    prompt = POLISH_PROMPT.format(
+        goal=(trajectory.get("instruction") or "(goal not recorded)").strip(),
+        steps_block="\n".join(lines),
+        n=len(steps),
+    )
+
+    try:
+        result_text = await run_agent(
+            prompt,
+            ClaudeAgentOptions(
+                model=MODEL_FOR_GROUNDED_GENERATION,
+                max_turns=1,
+                max_budget_usd=POLISH_BUDGET_USD,
+                permission_mode="bypassPermissions",
+            ),
+            registry=registry,
+            full_name=full_name,
+            stage=7,
+            purpose="polish",
+            raise_on_error=False,
+        )
+    except UsageLimitReached:
+        raise
+    except Exception as e:
+        logger.warning(f"  {trajectory_dir.name}: thought polish failed: {e}")
+        return False
+
+    start, end = result_text.find("["), result_text.rfind("]") + 1
+    if start == -1 or end <= start:
+        logger.warning(f"  {trajectory_dir.name}: polish output not a JSON array")
+        return False
+    try:
+        rewritten = json.loads(result_text[start:end])
+    except json.JSONDecodeError:
+        logger.warning(f"  {trajectory_dir.name}: polish output unparseable")
+        return False
+    if len(rewritten) != len(steps) or not all(isinstance(t, str) and t.strip() for t in rewritten):
+        logger.warning(
+            f"  {trajectory_dir.name}: polish returned {len(rewritten)} thoughts for {len(steps)} steps"
+        )
+        return False
+
+    for step, thought in zip(steps, rewritten):
+        step["thought"] = thought.strip()
+    trajectory_path.write_text(json.dumps(trajectory, indent=2))
+
+    metadata = _read_json_file(metadata_path)
+    metadata["thought_source"] = "teacher"
+    metadata_path.write_text(json.dumps(metadata, indent=2))
+    logger.info(f"  {trajectory_dir.name}: polished {len(steps)} thoughts")
+    return True
 
 
 async def generate_thinks_for_all(

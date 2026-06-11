@@ -91,6 +91,9 @@ build-sandbox-selenium: ## Build Selenium sandbox image (linux/amd64; needed for
 test-sandbox: build-sandbox ## Test sandbox container lifecycle
 	python -m repo_pipeline.sandbox --test
 
+test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
+	python -m repo_pipeline.driver_smoke
+
 pipeline-discover: ## Stage 1: Discover QA repos on GitHub
 	@test -n "$$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN not set" && exit 1)
 	python -m repo_pipeline.orchestrator --stage 1

@@ -18,6 +18,11 @@ MODEL_FOR_GROUNDED_GENERATION = "claude-sonnet-4-6"
 test source + repo context for trajectory `instruction`s. Sonnet 4.6's reasoning quality
 matters here because the output IS the SFT supervision signal."""
 
+MODEL_FOR_TEACHER_AGENT = "claude-sonnet-4-6"
+"""The teacher driving the browser in agent capture (stage 6 agent mode). Multi-turn,
+tool-heavy, and the source of both the recorded actions and the per-step thoughts — the
+highest-leverage model choice in the pipeline. Bump to Opus for harder task batches."""
+
 MODEL_FOR_CLASSIFICATION = "claude-sonnet-4-6"
 """Single-label categorization (task-type tagging). Tight output schema, low-token in
 and out. Kept on Sonnet for consistency with the rest of the pipeline; if cost becomes

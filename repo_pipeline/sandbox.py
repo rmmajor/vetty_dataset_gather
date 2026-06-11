@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 import logging
 import os
 import subprocess
@@ -26,11 +28,14 @@ SANDBOX_SHM_SIZE = os.environ.get("SANDBOX_SHM_SIZE", "256m")
 
 
 class DockerSandbox:
-    def __init__(self, image=DEFAULT_IMAGE, platform=None):
+    def __init__(self, image=DEFAULT_IMAGE, platform=None, container_timeout=CONTAINER_TIMEOUT_SECONDS):
         self.image = image
         # Set for images that only exist for a non-host architecture (the Selenium image
         # is linux/amd64-only); None lets Docker pick the host-native variant.
         self.platform = platform
+        # Agent-capture sessions (stage 6 agent mode) hold one container across many tasks and
+        # need longer than the default 30 minutes; everything else keeps the default.
+        self.container_timeout = container_timeout
         self.client = docker.from_env()
         self.container = None
         self.container_id = None
@@ -67,11 +72,11 @@ class DockerSandbox:
         return self.container_id
 
     def _check_timeout(self):
-        if self.start_time and (time.time() - self.start_time) > CONTAINER_TIMEOUT_SECONDS:
+        if self.start_time and (time.time() - self.start_time) > self.container_timeout:
             cid = (self.container_id or "unknown")[:12]
-            logger.error(f"Container {cid} exceeded {CONTAINER_TIMEOUT_SECONDS}s timeout")
+            logger.error(f"Container {cid} exceeded {self.container_timeout}s timeout")
             self.stop()
-            raise TimeoutError(f"Sandbox container exceeded {CONTAINER_TIMEOUT_SECONDS}s timeout")
+            raise TimeoutError(f"Sandbox container exceeded {self.container_timeout}s timeout")
 
     def exec_command(self, command: str, timeout: int = EXEC_TIMEOUT_SECONDS) -> tuple[str, str, int]:
         self._check_timeout()
@@ -175,6 +180,53 @@ class DockerSandbox:
             if exit_code2 == 0:
                 return stdout2, stderr2, exit_code2
         return stdout, stderr, exit_code
+
+    def start_background(self, command: str, log_path: str) -> tuple[str, str, int]:
+        """Start a long-lived process inside the container that survives across exec calls.
+
+        Each exec_command runs in an independent shell, so a plainly-backgrounded process dies
+        with it. `setsid` + full stdio detachment re-parents the process to the container's
+        PID 1, where it keeps running until the container is destroyed (there is deliberately
+        no stop: containers are ephemeral). Used for the agent-capture app server and the
+        browser driver.
+        """
+        escaped = command.replace("'", "'\\''")
+        return self.exec_command(
+            f"setsid nohup bash -c '{escaped}' > '{log_path}' 2>&1 < /dev/null & echo $!",
+            timeout=30,
+        )
+
+    def wait_for_port(self, port: int, timeout_seconds: int = 60) -> bool:
+        """Poll an in-container TCP port until it accepts connections (bash /dev/tcp, no curl)."""
+        stdout, _, _ = self.exec_command(
+            f"for i in $(seq 1 {timeout_seconds}); do "
+            f"(exec 3<>/dev/tcp/127.0.0.1/{port}) 2>/dev/null && echo OPEN && break; sleep 1; done",
+            timeout=timeout_seconds + 15,
+        )
+        return "OPEN" in stdout
+
+    def http_json(self, method: str, url: str, payload: dict | None = None, timeout: int = 120) -> dict:
+        """One JSON request to an in-container HTTP server, returning the parsed response.
+
+        The payload travels base64-encoded through the exec shell so arbitrary text (quotes,
+        newlines, unicode in agent thoughts) survives without quoting issues, in a single exec.
+        """
+        if payload is not None:
+            encoded = base64.b64encode(json.dumps(payload).encode()).decode()
+            cmd = (
+                f"echo {encoded} | base64 -d | "
+                f"curl -s -m {timeout - 5} -X {method} -H 'Content-Type: application/json' "
+                f"--data-binary @- '{url}'"
+            )
+        else:
+            cmd = f"curl -s -m {timeout - 5} -X {method} '{url}'"
+        stdout, stderr, exit_code = self.exec_command(cmd, timeout=timeout)
+        if exit_code != 0:
+            raise ConnectionError(f"http_json {method} {url} failed (exit {exit_code}): {stderr[:300]}")
+        try:
+            return json.loads(stdout)
+        except json.JSONDecodeError:
+            raise ConnectionError(f"http_json {method} {url}: non-JSON response: {stdout[:300]}")
 
     def __enter__(self):
         return self

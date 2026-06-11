@@ -79,17 +79,21 @@ def _infer_port(script: str, dep_names: str) -> int:
     return 3000
 
 
-def detect_app_start(sandbox, profile: FrameworkProfile) -> AppStartSpec | None:
+def detect_app_start(sandbox, profile: FrameworkProfile, for_agent: bool = False) -> AppStartSpec | None:
     """Inspect the cloned repo and decide how (if at all) to start its app.
 
     Returns None when there's nothing to start here: no Node app, or a Playwright config that
     already manages its own `webServer` (left to Playwright), or no recognizable start script.
+
+    ``for_agent=True`` (agent capture / boot gate): there is no Playwright test run to honour a
+    `webServer` config, so the webServer short-circuit is skipped and the package.json start
+    script is used directly — webServer blocks almost always wrap that same script.
     """
     pkg = _read_json(sandbox, f"{REPO_DIR}/package.json")
     if not pkg:
         return None  # no Node app to start (python app servers etc. are out of scope for v1)
 
-    if profile.test_framework == "playwright" and _has_webserver_config(sandbox):
+    if not for_agent and profile.test_framework == "playwright" and _has_webserver_config(sandbox):
         logger.info("app-start: Playwright webServer config present — leaving startup to Playwright")
         return None
 

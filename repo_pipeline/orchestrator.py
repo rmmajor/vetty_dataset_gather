@@ -6,6 +6,7 @@ import sys
 import time
 from pathlib import Path
 
+from repo_pipeline import schemas
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.schemas import (
     NON_QUALITY_CATEGORIES,
@@ -194,15 +195,22 @@ async def run_stage(
 
 
 # Per-repo LLM cost estimates used only for --budget pacing (not metered spend).
-# Stage 5 is code-driven (~$0 LLM). Stage 6 (capture) now only does the 1-per-trajectory
-# instruction + task-type calls — the expensive per-step think generation moved to stage 7.
+# Stage 5 is code-driven (~$0 LLM). Stage 6 depends on the capture mode: agent capture runs
+# the task proposer + ~8 multi-turn teacher tasks + per-task verification per repo; replay
+# only does the 1-per-trajectory instruction + task-type calls.
 STAGE_COST_ESTIMATES = {
     3: 0.15,   # Sonnet shallow scoring
     4: 0.20,   # Sonnet static deep-analysis
-    5: 0.02,   # code-driven trial — negligible LLM
-    6: 0.20,   # capture: instruction + task-type (1 call each per trajectory)
-    7: 0.50,   # think: per-step think-with-image (the heavy one), session-cached
+    5: 0.02,   # code-driven boot gate / trial — negligible LLM
+    7: 0.50,   # finalize: polish (agent, text-only) / per-step think-with-image (replay)
 }
+STAGE6_COST_BY_MODE = {"agent": 6.00, "replay": 0.20}
+
+
+def stage_cost(stage: int) -> float:
+    if stage == 6:
+        return STAGE6_COST_BY_MODE.get(schemas.CAPTURE_MODE, STAGE6_COST_BY_MODE["agent"])
+    return STAGE_COST_ESTIMATES.get(stage, 0.10)
 
 
 async def drain_funnel(
@@ -256,7 +264,7 @@ async def drain_funnel(
                 logger.info(f"  No repos pending for stage {stage}, skipping")
                 continue
 
-            cost_per_repo = STAGE_COST_ESTIMATES.get(stage, 0.10)
+            cost_per_repo = stage_cost(stage)
             max_affordable = int(remaining_budget / cost_per_repo) if cost_per_repo > 0 else pending_count
             effective_limit = min(pending_count, max_affordable)
             if limit:
@@ -353,6 +361,9 @@ async def run_until_limit(
 
 
 async def async_main(args):
+    if args.capture_mode:
+        schemas.CAPTURE_MODE = args.capture_mode
+
     data_dir = Path(args.data_dir)
     trajectory_dir = Path(args.traj_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -436,8 +447,7 @@ async def async_main(args):
                 logger.info(f"Stage {stage} result: {result}")
 
                 processed = result.get("processed", 0)
-                cost_per = STAGE_COST_ESTIMATES.get(stage, 0)
-                budget_remaining -= processed * cost_per
+                budget_remaining -= processed * stage_cost(stage)
 
             print_status(registry, stages=stages)
             return
@@ -465,6 +475,9 @@ Examples:
         """,
     )
     parser.add_argument("--stage", type=str, help="Run specific stage(s): N or N-M (e.g., 3 or 3-6)")
+    parser.add_argument("--capture-mode", type=str, choices=["agent", "replay"], default=None,
+                        help="Stage 4-6 behavior: 'agent' (teacher acts in the booted app; default) or "
+                             "'replay' (legacy instrumented test suites). Also settable via PIPELINE_CAPTURE_MODE.")
     parser.add_argument("--overnight", action="store_true", help="Run stages 3-6 on all pending repos, notify via Telegram")
     parser.add_argument("--until-limit", type=float, nargs="?", const=100.0, default=None, metavar="PCT", help="Loop stages 3-6 until Claude usage reaches PCT%% of the subscription limit (bare flag = 100). Honors --budget too.")
     parser.add_argument("--status", action="store_true", help="Print registry stats and exit")

@@ -8,17 +8,20 @@ from urllib.parse import urlparse
 
 from claude_agent_sdk import ClaudeAgentOptions
 
-from repo_pipeline import app_runner
+from repo_pipeline import app_runner, driver_session
 from repo_pipeline._processing import run_repo
+from repo_pipeline.agent_capture import run_teacher_task, verify_trajectory
 from repo_pipeline.agent_runner import run_agent
 from repo_pipeline.frameworks import resolve_profile
-from repo_pipeline.instrumentation import setup_repo_instrumentation
+from repo_pipeline.instrumentation import REPO_DIR, RESULTS_DIR, setup_repo_instrumentation
 from repo_pipeline.llm_config import MODEL_FOR_CLASSIFICATION, MODEL_FOR_GROUNDED_GENERATION
 from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
+from repo_pipeline import schemas
 from repo_pipeline.schemas import FailureCategory, QualityReject, RepoStatus, RetryableFailure
 from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from repo_pipeline.task_proposer import propose_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,13 @@ logger = logging.getLogger(__name__)
 INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.15"))
 TASK_TYPE_BUDGET_USD = float(os.environ.get("TASK_TYPE_BUDGET_USD", "0.15"))
 SUITE_RUN_TIMEOUT = 480  # seconds; partial capture on timeout is fine for trajectory mining
+
+# One container hosts a whole repo's agent session (app boot + N teacher tasks), so it needs
+# more than the 30-minute default.
+AGENT_CONTAINER_TIMEOUT = int(os.environ.get("AGENT_CONTAINER_TIMEOUT", "5400"))
+# At most this many verified trajectories are kept per repo — diversity guard so one prolific
+# app cannot dominate the corpus the way Booking.com did.
+AGENT_MAX_KEPT = int(os.environ.get("AGENT_MAX_KEPT_PER_REPO", "10"))
 
 INSTRUCTION_PROMPT = """You are reading an automated browser test for a web application.
 Your job is to write a one-sentence INSTRUCTION describing what user-facing scenario the
@@ -150,16 +160,167 @@ async def _capture_suite(rlog, repo: dict, profile, repo_traj_dir: Path, test_na
         await _run(sandbox.stop)
 
 
+def _read_app_context(sandbox) -> tuple[str, str]:
+    """README + test-source excerpts from the cloned repo, as grounding for the task proposer."""
+    readme = ""
+    for name in ("README.md", "readme.md", "README.rst", "README"):
+        try:
+            readme = sandbox.read_file(f"{REPO_DIR}/{name}")
+            break
+        except Exception:
+            continue
+
+    test_hints = []
+    seen = 0
+    for glob in ("*.spec.ts", "*.test.ts", "*.spec.js", "test_*.py"):
+        for path in sandbox.list_files(glob, REPO_DIR):
+            if "/node_modules/" in path or seen >= 3:
+                continue
+            try:
+                content = sandbox.read_file(path)
+            except Exception:
+                continue
+            test_hints.append(f"--- {path.replace(REPO_DIR + '/', '')} ---\n{content[:1500]}")
+            seen += 1
+        if seen >= 3:
+            break
+    return readme[:4000], "\n\n".join(test_hints)
+
+
+async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo_traj_dir: Path):
+    """Agent capture for one repo: boot its app, propose user tasks, run the teacher on each,
+    and copy whatever was recorded out to the host — even on usage-limit aborts, so partial
+    sessions resume instead of being lost."""
+    repo_name = repo["full_name"]
+    # Default Playwright image regardless of the repo's own framework: the teacher never runs
+    # the repo's tests, and the browser driver needs this image's /ms-playwright browsers.
+    sandbox = DockerSandbox(container_timeout=AGENT_CONTAINER_TIMEOUT)
+    captured_anything = False
+    try:
+        await _run(sandbox.start, repo_name)
+
+        _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
+        if exit_code != 0:
+            raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
+
+        await _run(sandbox.install_node_deps)
+        app_url = await _run(driver_session.start_app, sandbox, profile)
+        if app_url is None:
+            log_tail, _, _ = await _run(sandbox.exec_command, f"tail -15 {driver_session.APP_LOG} 2>/dev/null")
+            raise QualityReject(
+                FailureCategory.NO_CAPTURE,
+                f"app did not boot for agent capture; app log tail: {log_tail[-300:]}",
+            )
+
+        await _run(driver_session.install_driver, sandbox)
+        await _run(driver_session.start_driver, sandbox)
+        client = driver_session.DriverClient(sandbox)
+
+        # Ground the task proposer in the LIVE app: homepage snapshot + screenshot from a
+        # probe session (discarded afterwards), plus README and test sources from the clone.
+        probe = await _run(client.session, "context_probe", app_url)
+        homepage_snapshot = probe.get("snapshot", "")
+        homepage_screenshot = await _run(client.screenshot_b64)
+        await _run(client.finish, "probe", "")
+        await _run(sandbox.exec_command, f"rm -rf {RESULTS_DIR}/task_context_probe")
+
+        readme, test_hints = await _run(_read_app_context, sandbox)
+        tasks = await propose_tasks(
+            repo, homepage_snapshot, homepage_screenshot, readme, test_hints, registry=registry
+        )
+        if not tasks:
+            raise RetryableFailure(FailureCategory.SDK_ERROR, "task proposal produced no tasks")
+        rlog.info(f"proposed {len(tasks)} tasks for {app_url}: " +
+                  "; ".join(t["instruction"][:60] for t in tasks[:4]) + " ...")
+
+        # Tasks share one app server (state accumulates realistically) but each gets a fresh
+        # browser context, so login/session state never leaks between trajectories.
+        for task in tasks:
+            if rate_limit_tracker.limit_reached():
+                raise UsageLimitReached("usage limit reached mid agent capture")
+            state = await run_teacher_task(client, task, app_url, registry=registry, full_name=repo_name)
+            captured_anything = True
+            rlog.info(
+                f"task '{task['id']}': {state['actions']} actions, "
+                f"outcome={state['agent_outcome'] or 'none'}"
+            )
+    finally:
+        if captured_anything:
+            repo_traj_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                await _run(sandbox.copy_out, RESULTS_DIR, str(repo_traj_dir))
+            except Exception as e:
+                logger.warning(f"copy_out after agent capture failed for {repo_name}: {e}")
+        await _run(sandbox.stop)
+
+
+def _excluded(traj_dir: Path, reason: str):
+    """Mark a trajectory as not-for-training (success=false) with the reason in capture_meta."""
+    trajectory_file = traj_dir / "trajectory.json"
+    traj = json.loads(trajectory_file.read_text())
+    traj["success"] = False
+    trajectory_file.write_text(json.dumps(traj, indent=2))
+    meta_file = traj_dir / "capture_meta.json"
+    meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
+    meta["excluded_reason"] = reason
+    meta_file.write_text(json.dumps(meta, indent=2))
+
+
+async def _postprocess_agent_capture(rlog, registry, repo, repo_traj_dir: Path) -> tuple[list[Path], int]:
+    """Verify every captured trajectory (idempotent: already-verified dirs are skipped), then
+    apply the per-repo diversity cap. Returns (valid_dirs_for_metadata, verified_count)."""
+    trajectory_dirs = sorted(repo_traj_dir.glob("task_*/")) if repo_traj_dir.exists() else []
+    valid_dirs = []
+    for traj_dir in trajectory_dirs:
+        if not _is_valid_trajectory(traj_dir):
+            continue
+        valid_dirs.append(traj_dir)
+        capture_meta = _load_capture_meta(traj_dir)
+        if "verifier" in capture_meta:
+            continue
+        verdict = await verify_trajectory(traj_dir, registry=registry, full_name=repo["full_name"])
+        rlog.info(
+            f"verify {traj_dir.name}: success={verdict['final_success']}"
+            f"{' (relabeled)' if verdict.get('relabeled') else ''} — {verdict.get('reasoning', '')[:100]}"
+        )
+
+    # Dedup + cap among verified-successful trajectories: identical action-shape duplicates are
+    # excluded, then the longest AGENT_MAX_KEPT survive (length is the scarce resource).
+    verified = []
+    for traj_dir in valid_dirs:
+        traj = json.loads((traj_dir / "trajectory.json").read_text())
+        if traj.get("success"):
+            verified.append((traj_dir, traj))
+    verified.sort(key=lambda pair: len(pair[1].get("steps", [])), reverse=True)
+
+    seen_hashes = set()
+    kept = 0
+    for traj_dir, traj in verified:
+        h = _dedup_hash(traj.get("steps", []))
+        if h in seen_hashes:
+            _excluded(traj_dir, "duplicate action sequence")
+            continue
+        if kept >= AGENT_MAX_KEPT:
+            _excluded(traj_dir, "per_repo_cap")
+            continue
+        seen_hashes.add(h)
+        kept += 1
+
+    return valid_dirs, kept
+
+
 async def generate_for_repo(
     registry: RepoRegistry,
     repo: dict,
     trajectory_base_dir: Path,
+    capture_mode: str = None,
 ):
     repo_name = repo["full_name"]
 
     if repo.get("current_stage", 0) >= 6:
         return
 
+    capture_mode = capture_mode or schemas.CAPTURE_MODE
     rlog = repo_logger(6, repo_name)
 
     deep_analysis = {}
@@ -173,58 +334,72 @@ async def generate_for_repo(
     test_name_prefix = repo_name.replace("/", "_")
     repo_traj_dir = trajectory_base_dir / f"repo_{test_name_prefix}"
 
-    # Resume: a prior run may have captured trajectories but died during instruction/think
-    # generation, leaving the repo stuck before completion. Re-running the suite would re-capture
-    # from scratch — wasteful, and on dynamic/anti-bot sites it loses the good capture. So skip
-    # the suite when valid trajectories already exist and just finish the (idempotent) supervision
-    # + completion steps below.
+    # Resume: a prior run may have captured trajectories but died during verification/instruction
+    # generation, leaving the repo stuck before completion. Re-running would re-capture from
+    # scratch — wasteful, so skip capture when valid trajectories already exist and just finish
+    # the (idempotent) post-processing below.
     if _has_valid_trajectories(repo_traj_dir):
         rlog.info(f"resuming: valid trajectories already on disk ({repo_traj_dir.name}), skipping capture")
+    elif capture_mode == "agent":
+        rlog.info("agent capture: booting app + running teacher tasks")
+        await _capture_agent(rlog, registry, repo, profile, repo_traj_dir)
     else:
-        rlog.info("generating trajectories")
+        rlog.info("replay capture: running instrumented test suite")
         await _capture_suite(rlog, repo, profile, repo_traj_dir, test_name_prefix)
 
     # ---- Post-capture processing. Idempotent, so it runs identically on a fresh capture or a
-    # resumed one: instructions and think blocks are only generated where missing. ----
-    trajectory_dirs = list(repo_traj_dir.glob("task_*/")) if repo_traj_dir.exists() else []
-    valid_dirs = []
-    instruction_generated = {}
+    # resumed one. Agent mode: verify + dedup/cap (instructions came from the task proposer).
+    # Replay mode: generate instructions where missing. ----
+    if capture_mode == "agent":
+        valid_dirs, valid_count = await _postprocess_agent_capture(rlog, registry, repo, repo_traj_dir)
+        instruction_generated = {d: True for d in valid_dirs}
+        thought_source = "teacher_raw"
+        rlog.info(f"{valid_count} verified trajectories from {len(valid_dirs)} captured")
+        if valid_count == 0:
+            raise QualityReject(FailureCategory.NO_CAPTURE, "no verified trajectories produced")
+    else:
+        trajectory_dirs = list(repo_traj_dir.glob("task_*/")) if repo_traj_dir.exists() else []
+        valid_dirs = []
+        instruction_generated = {}
+        thought_source = "generated"
 
-    for traj_dir in trajectory_dirs:
-        trajectory_file = traj_dir / "trajectory.json"
-        if not _is_valid_trajectory(traj_dir):
-            continue
-        with open(trajectory_file) as f:
-            traj = json.load(f)
-        valid_dirs.append(traj_dir)
+        for traj_dir in trajectory_dirs:
+            trajectory_file = traj_dir / "trajectory.json"
+            if not _is_valid_trajectory(traj_dir):
+                continue
+            with open(trajectory_file) as f:
+                traj = json.load(f)
+            valid_dirs.append(traj_dir)
 
-        if not traj.get("instruction"):
-            test_source = _load_test_source(traj_dir)
-            instruction = await generate_instruction(
-                traj,
-                _load_capture_meta(traj_dir),
-                repo=repo,
-                test_source=test_source,
-                registry=registry,
-            )
-            traj["instruction"] = instruction
-            instruction_generated[traj_dir] = True
-            with open(trajectory_file, "w") as f:
-                json.dump(traj, f, indent=2)
-        else:
-            instruction_generated[traj_dir] = False
+            if not traj.get("instruction"):
+                test_source = _load_test_source(traj_dir)
+                instruction = await generate_instruction(
+                    traj,
+                    _load_capture_meta(traj_dir),
+                    repo=repo,
+                    test_source=test_source,
+                    registry=registry,
+                )
+                traj["instruction"] = instruction
+                instruction_generated[traj_dir] = True
+                with open(trajectory_file, "w") as f:
+                    json.dump(traj, f, indent=2)
+            else:
+                instruction_generated[traj_dir] = False
 
-    valid_count = len(valid_dirs)
-    rlog.info(f"{valid_count} valid trajectories from {len(trajectory_dirs)} total")
-
-    if valid_count == 0:
-        raise QualityReject(FailureCategory.NO_CAPTURE, "no valid trajectories produced")
+        valid_count = len(valid_dirs)
+        rlog.info(f"{valid_count} valid trajectories from {len(trajectory_dirs)} total")
+        if valid_count == 0:
+            raise QualityReject(FailureCategory.NO_CAPTURE, "no valid trajectories produced")
 
     # Think blocks are NOT generated here — that is the separate, resumable stage 7 (think). Keeping
     # the per-step think generation out of capture means a think-gen stall can never block or fail a
     # capture: trajectories + instructions + metadata land, and the repo is marked `captured`.
     for traj_dir in valid_dirs:
-        await _enrich_metadata(traj_dir, repo, profile, instruction_generated.get(traj_dir, True), registry=registry)
+        await _enrich_metadata(
+            traj_dir, repo, profile, instruction_generated.get(traj_dir, True),
+            registry=registry, thought_source=thought_source,
+        )
 
     registry.update_status(
         repo_name,
@@ -446,7 +621,8 @@ async def classify_task_type(trajectory: dict, capture_meta: dict, registry=None
     return "other"
 
 
-async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_generated: bool, registry=None):
+async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_generated: bool,
+                           registry=None, thought_source: str = "generated"):
     """Fill the trajectory-level aggregate / provenance fields in metadata.json from the
     captured trajectory + capture_meta. Best-effort: never raise into the generation flow."""
     try:
@@ -488,7 +664,8 @@ async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_
         metadata["valid_bbox_ratio"] = valid_bbox_ratio
         metadata["n_console_errors"] = n_console
         metadata["instruction_source"] = "generated" if instruction_was_generated else "human"
-        metadata["thought_source"] = "generated"
+        metadata["thought_source"] = thought_source
+        metadata["capture_source"] = "agent" if thought_source.startswith("teacher") else "replay"
         metadata["dedup_hash"] = _dedup_hash(steps)
         metadata["task_type"] = await classify_task_type(
             traj, capture_meta, registry=registry, full_name=repo.get("full_name", "")
@@ -508,9 +685,11 @@ async def run_generate(
     limit: int = None,
     workers: int = 2,
     budget_remaining: float = None,
+    capture_mode: str = None,
 ):
+    capture_mode = capture_mode or schemas.CAPTURE_MODE
     repos = registry.get_repos_for_stage(6, limit=limit)
-    logger.info(f"Generating trajectories for {len(repos)} repos with {workers} workers")
+    logger.info(f"Generating trajectories for {len(repos)} repos with {workers} workers (mode: {capture_mode})")
 
     semaphore = asyncio.Semaphore(workers)
     progress = StageProgress(6, len(repos))
@@ -519,7 +698,7 @@ async def run_generate(
         if rate_limit_tracker.limit_reached():
             return
         async def core(reg, r):
-            return await generate_for_repo(reg, r, trajectory_base_dir)
+            return await generate_for_repo(reg, r, trajectory_base_dir, capture_mode=capture_mode)
         async with semaphore:
             try:
                 await run_repo(6, repo, registry, core, progress)

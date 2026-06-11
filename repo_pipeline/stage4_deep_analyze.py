@@ -12,6 +12,7 @@ from repo_pipeline.llm_config import MODEL_FOR_REASONING
 from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, build_sandbox_mcp_server
+from repo_pipeline import schemas
 from repo_pipeline.schemas import (
     DeepAnalysis,
     FailureCategory,
@@ -86,6 +87,15 @@ Output ONLY the JSON at the end of your analysis.
 DEEP_SCORE_THRESHOLD = int(os.environ.get("STAGE4_DEEP_SCORE_THRESHOLD", "4"))
 
 
+def can_self_host(analysis: DeepAnalysis) -> bool:
+    return (
+        analysis.has_local_dev_server
+        or analysis.has_webserver_config
+        or analysis.has_docker_compose
+        or analysis.is_self_contained
+    )
+
+
 def compute_deep_score(analysis: DeepAnalysis) -> int:
     score = 0
 
@@ -106,21 +116,15 @@ def compute_deep_score(analysis: DeepAnalysis) -> int:
     found_interactive = {a.lower() for a in analysis.action_types} & all_interactive_actions()
     score += min(len(found_interactive), 3)
 
-    # Capturability — the dominant predictor of a usable trajectory. A repo that boots its own
-    # app (dev server / webServer / docker-compose) is exactly what in-sandbox app-start can run;
-    # one targeting a public URL needs no app at all; one needing an external backend we cannot
-    # provide is penalized. This is what actually distinguishes the ~15% that capture today.
-    can_self_host = (
-        analysis.has_local_dev_server
-        or analysis.has_webserver_config
-        or analysis.has_docker_compose
-        or analysis.is_self_contained
-    )
-    if can_self_host:
-        score += 2
-    if analysis.tests_public_url:
-        score += 1
-    if analysis.needs_external_backend and not can_self_host:
+    # Bootability — the dominant axis. Agent capture (the primary trajectory source) needs the
+    # repo's own app serving inside the sandbox: a dev server / webServer / docker-compose is
+    # exactly what start_app can boot. A suite that only targets a public URL has nothing for
+    # the agent to drive (hard-gated below); one needing an external backend we cannot provide
+    # is penalized.
+    bootable = can_self_host(analysis)
+    if bootable:
+        score += 3
+    if analysis.needs_external_backend and not bootable:
         score -= 2
 
     return max(0, score)
@@ -180,12 +184,24 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
         if analysis is None:
             raise RetryableFailure(FailureCategory.PARSE_FAILED, "failed to parse deep analysis")
 
-        # Reject frameworks with no capture hook (e.g. Java Playwright, non-Python Selenium) here,
-        # rather than admitting them to stage 5 to burn a sandbox on a guaranteed no-capture run.
-        if not is_supported_profile(analysis.test_framework, analysis.framework_language):
+        # Replay mode runs the repo's own tests, so frameworks with no capture hook (e.g. Java
+        # Playwright, non-Python Selenium) are rejected before burning a stage-5 sandbox. Agent
+        # mode never runs the tests — the framework is irrelevant to capture there.
+        if schemas.CAPTURE_MODE == "replay" and not is_supported_profile(analysis.test_framework, analysis.framework_language):
             raise QualityReject(
                 FailureCategory.QUALITY_GATE,
                 f"unsupported framework: {analysis.test_framework}/{analysis.framework_language}",
+                deep_analysis=analysis.model_dump(),
+                deep_score=0,
+            )
+
+        # Agent mode hard gate: nothing bootable AND the suite targets a public site means the
+        # sandbox will never have an app for the teacher to drive — guaranteed stage-5 reject,
+        # cheaper to decide here from the static analysis.
+        if schemas.CAPTURE_MODE == "agent" and analysis.tests_public_url and not can_self_host(analysis):
+            raise QualityReject(
+                FailureCategory.QUALITY_GATE,
+                "public-URL-only suite with no bootable app; agent capture needs a local app",
                 deep_analysis=analysis.model_dump(),
                 deep_score=0,
             )

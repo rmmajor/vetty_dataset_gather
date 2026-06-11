@@ -62,6 +62,7 @@ class FailureCategory(str, Enum):
     QUALITY_GATE = "quality_gate"      # score / gate below threshold
     NO_TESTS = "no_tests"              # no test files matched the framework globs
     NO_CAPTURE = "no_capture"          # tests ran but produced no usable bbox/screenshot
+    NO_BOOT = "no_boot"                # boot gate: the repo's app never opened its port
     DEDUP = "dedup"                    # fork / duplicate-description clone
     EMPTY_REPO = "empty_repo"
     TOO_LARGE = "too_large"
@@ -100,6 +101,12 @@ NON_QUALITY_CATEGORIES = RETRYABLE_CATEGORIES | {
 }
 
 MAX_RETRIES = int(os.environ.get("PIPELINE_MAX_RETRIES", "3"))
+
+# How stages 4-6 produce trajectories. "agent": a Claude teacher pursues proposed user goals in
+# the repo's booted app (the browser driver records coordinates; framework-independent).
+# "replay": the legacy instrumented-test-suite path. Defined here — next to the state machine it
+# shapes — so every stage reads the same switch instead of each re-reading the environment.
+CAPTURE_MODE = os.environ.get("PIPELINE_CAPTURE_MODE", "agent")
 
 
 class PipelineFailure(Exception):

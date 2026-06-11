@@ -1,10 +1,17 @@
-"""Stage 7 — think generation.
+"""Stage 7 — supervision finalize.
 
-Decoupled from capture (stage 6): captures land fast and robustly; this stage fills the per-step
-`<think>` blocks afterwards over the captured corpus. It is the resumable, expensive, LLM-heavy
-half. A captured repo is marked `completed` once every generatable step has a thought; if some
-remain (a transient SDK stall, a rate limit), the repo simply stays `captured` and is picked up
-again next run — it is never rejected, because the trajectories themselves are already good.
+Decoupled from capture (stage 6): captures land fast and robustly; this stage finishes the
+per-step `<think>` supervision afterwards over the captured corpus. Two paths, by provenance:
+
+  * agent-captured trajectories arrive with the teacher's raw, tool-aware reasoning in every
+    step — those get POLISHED (one text-only call per trajectory) into clean student-voice
+    thoughts, flipping metadata.thought_source from `teacher_raw` to `teacher`;
+  * replay trajectories arrive with empty thoughts — those get GENERATED step-by-step from
+    the screenshots (the original vision path).
+
+A captured repo is marked `completed` once every trajectory is finalized; if some remain (a
+transient SDK stall, a rate limit), the repo simply stays `captured` and is picked up again
+next run — it is never rejected, because the trajectories themselves are already good.
 """
 
 import asyncio
@@ -16,15 +23,20 @@ from repo_pipeline.logging_utils import repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.schemas import RepoStatus
 from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
-from repo_pipeline.think_generator import generate_thinks_for_trajectory
+from repo_pipeline.think_generator import (
+    generate_thinks_for_trajectory,
+    needs_polish,
+    polish_thoughts_for_trajectory,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def thoughts_complete(repo_traj_dir: Path) -> bool:
     """True when every generatable step (has an action and an on-disk screenshot) in every
-    trajectory of this repo has a thought. Steps with a missing screenshot can't be generated, so
-    they don't block completion."""
+    trajectory of this repo has a thought AND no trajectory still carries raw (unpolished)
+    teacher reasoning. Steps with a missing screenshot can't be generated, so they don't block
+    completion."""
     task_dirs = list(repo_traj_dir.glob("task_*")) if repo_traj_dir.exists() else []
     if not task_dirs:
         return False
@@ -32,6 +44,8 @@ def thoughts_complete(repo_traj_dir: Path) -> bool:
         trajectory_file = task_dir / "trajectory.json"
         if not trajectory_file.exists():
             continue
+        if needs_polish(task_dir):
+            return False
         try:
             steps = json.loads(trajectory_file.read_text()).get("steps", [])
         except (json.JSONDecodeError, OSError):
@@ -59,11 +73,15 @@ async def think_for_repo(registry: RepoRegistry, repo: dict):
         return
 
     task_dirs = sorted(traj_dir.glob("task_*"))
-    rlog.info(f"generating think blocks across {len(task_dirs)} trajectories")
+    rlog.info(f"finalizing supervision across {len(task_dirs)} trajectories")
     for task_dir in task_dirs:
-        # Each trajectory runs through one persistent session (see think_generator) — sequential
-        # within a trajectory, so we process the repo's trajectories one at a time here.
-        await generate_thinks_for_trajectory(task_dir, registry=registry, full_name=repo_name)
+        if needs_polish(task_dir):
+            # Teacher trajectory: raw reasoning is already present — one text-only polish call.
+            await polish_thoughts_for_trajectory(task_dir, registry=registry, full_name=repo_name)
+        else:
+            # Replay trajectory: thoughts are empty — generate from screenshots through one
+            # persistent session (see think_generator), sequential within a trajectory.
+            await generate_thinks_for_trajectory(task_dir, registry=registry, full_name=repo_name)
 
     if thoughts_complete(traj_dir):
         registry.update_status(repo_name, RepoStatus.COMPLETED.value, stage=7)
