@@ -240,6 +240,7 @@ async def drain_funnel(
     # pre-size batches, never charge the budget.
     cost_baseline = cost_tracker.total_usd
     stage_results = {}
+    stage_errors: list[str] = []
 
     def budget_used() -> float:
         return cost_tracker.total_usd - cost_baseline
@@ -301,6 +302,11 @@ async def drain_funnel(
                 logger.error(f"  Stage {stage} failed: {e}")
                 stage_results.setdefault(stage, {"processed": 0, "passed": 0, "rejected": 0})
                 stage_results[stage]["error"] = str(e)
+                # A crashed stage starves everything downstream of it. Record it loudly: a
+                # stage-4 NameError once ran a whole night looking like "0 repos pending".
+                err = f"stage {stage}: {type(e).__name__}: {str(e)[:200]}"
+                if err not in stage_errors:
+                    stage_errors.append(err)
 
         if not loop:
             break
@@ -327,6 +333,11 @@ async def drain_funnel(
         )
     except Exception as e:
         logger.error(f"Failed to send Telegram report: {e}")
+
+    if stage_errors:
+        logger.warning("RUN DEGRADED — one or more stages crashed (downstream stages were starved):")
+        for err in stage_errors:
+            logger.warning(f"  !! {err}")
 
     logger.info(f"Run complete in {run_duration/3600:.1f}h, metered spend: ${budget_used():.2f}/${budget:.2f} "
                 f"across {cost_tracker.call_count} calls")

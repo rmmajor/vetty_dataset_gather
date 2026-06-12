@@ -48,7 +48,13 @@ Test excerpts (feature hints):
 Measured UI affordances on the live page (counts of real elements — trust these over guesses):
 {affordances_block}
 
-Propose exactly {n_tasks} tasks. Requirements:
+FIRST judge whether the app is actually usable from the screenshot and elements: an app whose
+content area shows an error ("An error occurred", stack traces, blank data regions needing a
+dead backend) cannot host real tasks no matter how good its shell looks. Judging health wrong
+in the optimistic direction wastes an expensive agent run per task; be strict.
+
+Then propose UP TO {n_tasks} tasks — ONLY as many as the working parts of the app can
+genuinely support. A broken app gets an empty tasks list. Requirements for each task:
 - Each instruction is a USER GOAL in imperative voice ("Create a project called X, add two \
 tasks to it, and mark the first one done"), 8-30 words. NEVER use verify/test/assert/check \
 phrasing. NEVER mention selectors, the DOM, or testing.
@@ -66,9 +72,10 @@ action mixes. Concrete values (names, amounts, dates) should be specific and var
 hard = 12+ actions, multiple stages, or requires discovering a non-obvious UI affordance.
 - Skew hard: at most 2 easy tasks.
 
-Output ONLY a JSON array (no markdown fence, no prose):
-[{{"id": "<kebab-slug>", "instruction": "<the user goal>", "difficulty": "easy|medium|hard",
-   "expected_actions": <int>, "action_kinds": ["click", "type", ...]}}, ...]"""
+Output ONLY a JSON object (no markdown fence, no prose):
+{{"app_health": {{"usable": <true|false>, "notes": "<one sentence: what works / what is broken>"}},
+ "tasks": [{{"id": "<kebab-slug>", "instruction": "<the user goal>", "difficulty": "easy|medium|hard",
+            "expected_actions": <int>, "action_kinds": ["click", "type", ...]}}, ...]}}"""
 
 
 # Affordance count -> a hard quota line in the proposal prompt. Generic: a new sophistication
@@ -122,19 +129,28 @@ def _image_prompt_stream(text: str, screenshot_b64: str | None):
     return stream()
 
 
-def parse_tasks(text: str) -> list[dict]:
-    """Extract the JSON task array from the model output. Returns [] when unparseable —
-    the stage treats that as a retryable condition, not a content filter."""
-    start = text.find("[")
-    end = text.rfind("]") + 1
-    if start == -1 or end <= start:
-        return []
-    try:
-        raw = json.loads(text[start:end])
-    except json.JSONDecodeError:
-        return []
+def parse_proposal(text: str) -> dict | None:
+    """Extract {"app_health": {...}, "tasks": [...]} from the model output. Returns None when
+    unparseable — the stage treats that as a retryable condition, not a content filter. A
+    bare task array (older prompt shape) still parses, with health assumed usable."""
+    obj_start = text.find("{")
+    arr_start = text.find("[")
+    raw = None
+    if obj_start != -1 and (arr_start == -1 or obj_start < arr_start):
+        try:
+            raw = json.loads(text[obj_start:text.rfind("}") + 1])
+        except json.JSONDecodeError:
+            raw = None
+    if raw is None and arr_start != -1:
+        try:
+            raw = {"app_health": {"usable": True, "notes": ""}, "tasks": json.loads(text[arr_start:text.rfind("]") + 1])}
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, dict):
+        return None
+
     tasks = []
-    for i, item in enumerate(raw):
+    for i, item in enumerate(raw.get("tasks") or []):
         if not isinstance(item, dict) or not (item.get("instruction") or "").strip():
             continue
         slug = (item.get("id") or f"task-{i + 1}").strip().replace(" ", "-")[:60]
@@ -145,7 +161,8 @@ def parse_tasks(text: str) -> list[dict]:
             "expected_actions": int(item.get("expected_actions", 8) or 8),
             "action_kinds": item.get("action_kinds", []),
         })
-    return tasks
+    health = raw.get("app_health") if isinstance(raw.get("app_health"), dict) else {"usable": True, "notes": ""}
+    return {"app_health": health, "tasks": tasks}
 
 
 async def propose_tasks(
@@ -157,7 +174,10 @@ async def propose_tasks(
     n_tasks: int = None,
     registry=None,
     affordances: dict | None = None,
-) -> list[dict]:
+) -> dict | None:
+    """Returns {"app_health": {"usable", "notes"}, "tasks": [...]} or None on SDK/parse failure
+    (retryable). An unusable app comes back as usable=False with an empty task list — the
+    caller rejects the repo without spending a single teacher call."""
     n_tasks = n_tasks or TASKS_PER_REPO
     affordances_block, affordance_quotas = render_affordances(affordances)
     prompt_text = PROPOSE_PROMPT.format(
@@ -191,9 +211,9 @@ async def propose_tasks(
         raise
     except Exception as e:
         logger.warning(f"Task proposal failed for {repo.get('full_name')}: {e}")
-        return []
+        return None
 
-    tasks = parse_tasks(result_text)
-    if not tasks:
+    proposal = parse_proposal(result_text)
+    if proposal is None:
         logger.warning(f"Task proposal unparseable for {repo.get('full_name')}: {result_text[:200]}")
-    return tasks
+    return proposal

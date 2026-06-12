@@ -61,6 +61,10 @@ the page is visibly loading. On canvas/drawing surfaces (no listed elements), ta
 screenshot and act with click_xy / drag_path at pixel coordinates.
 - If an action is refused or the page doesn't react as expected, re-snapshot, reconsider, and \
 try a DIFFERENT approach rather than repeating the same action.
+- Distinguish YOUR mistakes (recover and continue) from a BROKEN APP (error pages, missing \
+content, dead backend). If the app itself cannot support the goal, confirm the blockage once \
+— one re-snapshot or one alternate route — then call task_complete with outcome='failed' \
+immediately. Grinding against a broken app produces worthless recordings.
 - You have at most {max_actions} actions. Be purposeful, not hasty: completing the goal \
 properly matters more than speed.
 - You MUST end by calling task_complete with an honest outcome — when the goal is \

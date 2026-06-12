@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 
 ANALYZE_BUDGET_USD = float(os.environ.get("STAGE4_BUDGET_USD", "0.75"))
 
+# Per-pass admission cap. Stage 3's gates pass plenty of mediocre (ui=2/interaction=2) apps;
+# get_repos_for_stage(4) orders by UI richness, so capping each pass to the top K spends the
+# analysis budget on the richest candidates and lets toy apps pool at `scored` indefinitely —
+# selection by ordering, not rejection.
+TOP_K_PER_PASS = int(os.environ.get("STAGE4_TOP_K_PER_PASS", "15"))
+
 DEEP_ANALYSIS_PROMPT = """You are analyzing the browser-test repository '{repo_name}' that has been cloned to /workspace/repo inside a Docker container. The test suite uses either Playwright or Selenium.
 
 Your goal is to perform a STATIC analysis of this repository's test suite — read files only, do NOT install dependencies (installability is verified later in the trial stage) — to determine if it can produce high-quality browser automation trajectories.
@@ -248,8 +254,10 @@ async def run_deep_analyze(
     workers: int = 3,
     budget_remaining: float = None,
 ):
-    repos = registry.get_repos_for_stage(4, limit=limit)
-    logger.info(f"Deep analyzing {len(repos)} repos with {workers} workers")
+    effective_limit = min(limit, TOP_K_PER_PASS) if limit else TOP_K_PER_PASS
+    repos = registry.get_repos_for_stage(4, limit=effective_limit)
+    logger.info(f"Deep analyzing {len(repos)} repos with {workers} workers "
+                f"(top-{effective_limit} by richness ordering)")
 
     semaphore = asyncio.Semaphore(workers)
     progress = StageProgress(4, len(repos))

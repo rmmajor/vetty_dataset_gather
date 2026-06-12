@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -124,6 +125,32 @@ def _has_valid_trajectories(repo_traj_dir: Path) -> bool:
     return repo_traj_dir.exists() and any(_is_valid_trajectory(d) for d in repo_traj_dir.glob("task_*/"))
 
 
+def _safe_task_id(task_id: str) -> str:
+    """Mirror of the driver's task-id sanitization, so host code can predict task dir names."""
+    return re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(task_id))[:120]
+
+
+def _load_proposed_tasks(repo_traj_dir: Path) -> list[dict] | None:
+    proposals_file = repo_traj_dir / "proposed_tasks.json"
+    if not proposals_file.exists():
+        return None
+    try:
+        return json.loads(proposals_file.read_text()).get("tasks") or None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _agent_capture_complete(repo_traj_dir: Path) -> bool:
+    """Task-level resume: capture is complete only when EVERY proposed task has a valid
+    recording on disk. A repo-level any-valid check forfeited the unrun tail of the task
+    list whenever a run died mid-repo. Legacy dirs without a persisted proposal fall back
+    to the old any-valid semantics."""
+    tasks = _load_proposed_tasks(repo_traj_dir)
+    if tasks is None:
+        return _has_valid_trajectories(repo_traj_dir)
+    return all(_is_valid_trajectory(repo_traj_dir / f"task_{_safe_task_id(t['id'])}") for t in tasks)
+
+
 async def _capture_suite(rlog, repo: dict, profile, repo_traj_dir: Path, test_name_prefix: str):
     """Run the instrumented test suite in a sandbox and copy results to repo_traj_dir. Raises
     RetryableFailure on clone/copy infra errors. NOT idempotent (re-running re-captures from
@@ -220,37 +247,57 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
         await _run(driver_session.start_driver, sandbox)
         client = driver_session.DriverClient(sandbox)
 
-        # Ground the task proposer in the LIVE app: homepage snapshot + screenshot from a
-        # probe session (discarded afterwards), plus README and test sources from the clone.
-        probe = await _run(client.session, "context_probe", app_url)
-        homepage_snapshot = probe.get("snapshot", "")
-        homepage_screenshot = await _run(client.screenshot_b64)
-        try:
-            affordances = await _run(client.affordances)
-        except Exception:
-            affordances = {}
-        await _run(client.finish, "probe", "")
-        await _run(sandbox.exec_command, f"rm -rf {RESULTS_DIR}/task_context_probe")
+        # Task list: reuse a persisted proposal on resume (no LLM, and the task set stays
+        # stable across runs so task-level resume is meaningful); otherwise ground the
+        # proposer in the LIVE app and persist what it returns.
+        tasks = _load_proposed_tasks(repo_traj_dir)
+        if tasks is None:
+            probe = await _run(client.session, "context_probe", app_url)
+            homepage_snapshot = probe.get("snapshot", "")
+            homepage_screenshot = await _run(client.screenshot_b64)
+            try:
+                affordances = await _run(client.affordances)
+            except Exception:
+                affordances = {}
+            await _run(client.finish, "probe", "")
+            await _run(sandbox.exec_command, f"rm -rf {RESULTS_DIR}/task_context_probe")
 
-        readme, test_hints = await _run(_read_app_context, sandbox)
-        tasks = await propose_tasks(
-            repo, homepage_snapshot, homepage_screenshot, readme, test_hints,
-            registry=registry, affordances=affordances,
-        )
-        if not tasks:
-            raise RetryableFailure(FailureCategory.SDK_ERROR, "task proposal produced no tasks")
-        rlog.info(f"proposed {len(tasks)} tasks for {app_url}: " +
-                  "; ".join(t["instruction"][:60] for t in tasks[:4]) + " ...")
+            readme, test_hints = await _run(_read_app_context, sandbox)
+            proposal = await propose_tasks(
+                repo, homepage_snapshot, homepage_screenshot, readme, test_hints,
+                registry=registry, affordances=affordances,
+            )
+            if proposal is None:
+                raise RetryableFailure(FailureCategory.SDK_ERROR, "task proposal failed or unparseable")
+            health = proposal.get("app_health") or {}
+            if not health.get("usable", True) or not proposal["tasks"]:
+                # The app booted but cannot host real tasks (dead backend, error content) —
+                # reject BEFORE spending a single teacher call on it.
+                raise QualityReject(
+                    FailureCategory.NO_CAPTURE,
+                    f"proposer judged app unusable: {health.get('notes', 'no tasks proposed')[:200]}",
+                )
+            tasks = proposal["tasks"]
+            repo_traj_dir.mkdir(parents=True, exist_ok=True)
+            (repo_traj_dir / "proposed_tasks.json").write_text(json.dumps(proposal, indent=2))
+            rlog.info(f"proposed {len(tasks)} tasks for {app_url} "
+                      f"(health: {health.get('notes', 'ok')[:80]}): " +
+                      "; ".join(t["instruction"][:60] for t in tasks[:4]) + " ...")
+        else:
+            rlog.info(f"resuming persisted proposal: {len(tasks)} tasks")
 
         # Tasks share one app server (state accumulates realistically) but each gets a fresh
         # browser context, so login/session state never leaks between trajectories.
-        for task in tasks:
+        for i, task in enumerate(tasks):
+            if _is_valid_trajectory(repo_traj_dir / f"task_{_safe_task_id(task['id'])}"):
+                rlog.info(f"task '{task['id']}': already recorded, skipping")
+                continue
             if rate_limit_tracker.limit_reached():
                 raise UsageLimitReached("usage limit reached mid agent capture")
             if sandbox.remaining_seconds() < AGENT_TASK_TIME_RESERVE:
                 rlog.info(
                     f"container time low ({sandbox.remaining_seconds():.0f}s left), "
-                    f"stopping after {tasks.index(task)} of {len(tasks)} tasks"
+                    f"stopping after {i} of {len(tasks)} tasks"
                 )
                 break
             # Set before the task runs: a mid-task abort (usage limit, SDK crash) must still
@@ -358,15 +405,18 @@ async def generate_for_repo(
     test_name_prefix = repo_name.replace("/", "_")
     repo_traj_dir = trajectory_base_dir / f"repo_{test_name_prefix}"
 
-    # Resume: a prior run may have captured trajectories but died during verification/instruction
-    # generation, leaving the repo stuck before completion. Re-running would re-capture from
-    # scratch — wasteful, so skip capture when valid trajectories already exist and just finish
-    # the (idempotent) post-processing below.
-    if _has_valid_trajectories(repo_traj_dir):
+    # Resume: a prior run may have captured some-but-not-all proposed tasks before dying.
+    # Agent mode resumes at TASK granularity (_capture_agent skips tasks already on disk and
+    # reuses the persisted proposal); capture is skipped entirely only when every proposed
+    # task has a valid recording. Replay keeps the repo-level any-valid check.
+    if capture_mode == "agent":
+        if _agent_capture_complete(repo_traj_dir):
+            rlog.info(f"resuming: all proposed tasks already recorded ({repo_traj_dir.name}), skipping capture")
+        else:
+            rlog.info("agent capture: booting app + running teacher tasks")
+            await _capture_agent(rlog, registry, repo, profile, repo_traj_dir)
+    elif _has_valid_trajectories(repo_traj_dir):
         rlog.info(f"resuming: valid trajectories already on disk ({repo_traj_dir.name}), skipping capture")
-    elif capture_mode == "agent":
-        rlog.info("agent capture: booting app + running teacher tasks")
-        await _capture_agent(rlog, registry, repo, profile, repo_traj_dir)
     else:
         rlog.info("replay capture: running instrumented test suite")
         await _capture_suite(rlog, repo, profile, repo_traj_dir, test_name_prefix)
