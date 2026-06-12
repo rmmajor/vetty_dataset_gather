@@ -132,6 +132,12 @@ def run_smoke() -> bool:
                 break
         assert guard_tripped, "loop guard did not trip after repeated identical clicks"
 
+        result = client.act({
+            "kind": "done",
+            "thought": "The page now greets me as Smokey, which is exactly what the task required.",
+        })
+        assert result["step"] >= 5, "done step was not recorded"
+
         finish = client.finish("completed", "Typed a name, clicked greet, saw the greeting.")
         assert finish["steps"] >= 4, f"expected >=4 recorded steps, got {finish['steps']}"
 
@@ -156,6 +162,12 @@ def run_smoke() -> bool:
             type_step = traj["steps"][0]
             kinds = [a["type"] for a in type_step["actions"]]
             assert kinds == ["click", "type"], f"type step should record click+type, got {kinds}"
+
+            last_step = traj["steps"][-1]
+            assert [a["type"] for a in last_step["actions"]] == ["done"], "last step must be the done action"
+            assert meta.get("done_recorded") is True, "capture_meta missing done_recorded"
+            recorded_kinds = {a["type"] for s in traj["steps"] for a in s["actions"]}
+            assert {"move", "drag", "wait", "done"} <= recorded_kinds, f"missing action kinds: {recorded_kinds}"
 
         logger.info("Driver smoke test PASSED")
         return True

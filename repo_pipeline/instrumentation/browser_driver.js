@@ -510,6 +510,13 @@ async function handleAct(body) {
     await state.page.mouse.down();
     for (const p of path.slice(1)) await state.page.mouse.move(p.x, p.y, { steps: 8 });
     await state.page.mouse.up();
+  } else if (kind === 'done') {
+    // Terminal step: the screen state that justifies declaring the goal met, plus a
+    // {type:"done"} action — the student must learn WHEN to stop, not just how to act.
+    actions = [{ type: 'done' }];
+    await recordStep(thought, actions, null);
+    state.task.meta.done_recorded = true;
+    return { ok: true, step: state.task.steps.length, url: state.page.url(), snapshot: '(task ended)' };
   } else if (kind === 'wait') {
     // An explicit, recorded wait: the student must learn WHEN waiting is the right action
     // (loading spinners, async updates), so it lands as a real step.
@@ -592,7 +599,13 @@ async function handleSession(body) {
     instruction: body.instruction || '',
     startUrl: body.start_url,
     steps: [],
-    meta: { recorder: 'browser_driver', framework: 'agent', steps: {}, navigations: [] },
+    meta: {
+      recorder: 'browser_driver',
+      framework: 'agent',
+      steps: {},
+      navigations: [],
+      task_meta: body.task_meta || {},
+    },
     recentActions: [],
   };
 

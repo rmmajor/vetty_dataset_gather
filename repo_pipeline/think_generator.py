@@ -141,6 +141,10 @@ def render_action_nl(action: dict, role: str = "", name: str = "") -> str:
         return "wait"
     if action_type == "drag":
         return f"drag{target_phrase}" if target_phrase else "drag"
+    if action_type == "move":
+        return f"hover over{target_phrase}" if target_phrase else "hover"
+    if action_type == "done":
+        return "declare the task complete"
 
     return action_type or "act"
 

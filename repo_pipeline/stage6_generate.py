@@ -690,6 +690,11 @@ async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_
         metadata["instruction_source"] = "generated" if instruction_was_generated else "human"
         metadata["thought_source"] = thought_source
         metadata["capture_source"] = "agent" if thought_source.startswith("teacher") else "replay"
+        verifier = capture_meta.get("verifier") or {}
+        if verifier:
+            metadata["efficiency"] = verifier.get("efficiency")
+            metadata["efficiency_ratio"] = verifier.get("efficiency_ratio")
+            metadata["relabeled"] = verifier.get("relabeled", False)
         metadata["dedup_hash"] = _dedup_hash(steps)
         metadata["task_type"] = await classify_task_type(
             traj, capture_meta, registry=registry, full_name=repo.get("full_name", "")

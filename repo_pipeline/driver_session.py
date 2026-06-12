@@ -116,8 +116,11 @@ class DriverClient:
     def status(self) -> dict:
         return self.sandbox.http_json("GET", f"{self.base}/status", timeout=30)
 
-    def session(self, task_id: str, start_url: str, instruction: str = "") -> dict:
-        return self._post("/session", {"task_id": task_id, "start_url": start_url, "instruction": instruction})
+    def session(self, task_id: str, start_url: str, instruction: str = "", task_meta: dict | None = None) -> dict:
+        return self._post("/session", {
+            "task_id": task_id, "start_url": start_url,
+            "instruction": instruction, "task_meta": task_meta or {},
+        })
 
     def act(self, payload: dict) -> dict:
         return self._post("/act", payload)

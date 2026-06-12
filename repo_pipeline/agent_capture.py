@@ -70,26 +70,31 @@ worse than reporting failure.
 
 Begin now."""
 
-VERIFY_PROMPT = """You are auditing whether a browser-automation run actually accomplished its goal. \
-Be skeptical: agents overclaim. Judge ONLY from the evidence below.
+VERIFY_PROMPT = """You are auditing whether a browser-automation run actually accomplished its goal, \
+and whether it did so EFFICIENTLY. Be skeptical: agents overclaim. Judge ONLY from the evidence below.
 
 Goal given to the agent: {instruction}
 
-Actions performed ({n_steps} steps):
+Actions performed ({n_steps} steps; the task designer expected roughly {expected_actions}):
 {step_summary}
 
 Agent's own outcome claim: {agent_outcome} — {agent_summary}
 
-The attached image is the FINAL state of the app after the run.
+Attached images, in order: {image_labels}.
 
 Answer in JSON only (no fence, no prose):
 {{"success": <true|false>,
+  "efficiency": "<efficient|acceptable|meandering>",
   "accomplished": "<if success=false but the run coherently completed a meaningful sub-goal, \
 state that sub-goal as a standalone user instruction in imperative voice; else null>",
   "reasoning": "<one or two sentences>"}}
 
 Rules:
 - success=true only if the final state visibly reflects the goal being met.
+- efficiency: 'efficient' = purposeful progress throughout (mid-run screenshots show \
+distinct forward states); 'acceptable' = minor detours or one recovered mistake; \
+'meandering' = repeated actions without effect, aimless wandering, or step count far beyond \
+what the goal needs. Meandering trajectories are bad training data even when they succeed.
 - "accomplished" must describe something the FINAL screenshot actually evidences, must cover \
 the trajectory from its first step, and must be a goal a real user could have asked for. \
 If the run is a meandering mess, use null.
@@ -337,13 +342,33 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
 
     @tool(
         "task_complete",
-        "End the task. outcome: 'completed' | 'partial' | 'failed'. summary: 1-3 sentences of "
-        "what was actually achieved, honestly.",
-        {"outcome": str, "summary": str},
+        "End the task. outcome: 'completed' | 'partial' | 'failed'. summary: what was actually "
+        "achieved, honestly. closing_thought (required when outcome=completed): 1-3 first-person "
+        "present-tense sentences stating what you SEE on screen that confirms the goal is met — "
+        "this is recorded as the final step's reasoning.",
+        {
+            "type": "object",
+            "properties": {
+                "outcome": {"type": "string", "enum": ["completed", "partial", "failed"]},
+                "summary": {"type": "string"},
+                "closing_thought": {"type": "string"},
+            },
+            "required": ["outcome", "summary"],
+        },
     )
     async def complete_tool(args):
+        outcome = args.get("outcome", "")
+        # A confirmed completion records a terminal `done` step (screenshot of the final state
+        # + the agent's goal-is-met observation) — the supervision that teaches WHEN to stop.
+        if outcome == "completed" and not state["completed"]:
+            thought = (args.get("closing_thought") or "").strip() or (args.get("summary") or "").strip()
+            try:
+                await _run(client.act, {"kind": "done", "thought": thought})
+                state["actions"] += 1
+            except Exception as e:
+                logger.warning(f"done-step recording failed: {e}")
         state["completed"] = True
-        state["agent_outcome"] = args.get("outcome", "")
+        state["agent_outcome"] = outcome
         state["agent_summary"] = args.get("summary", "")
         return _text("task ended. Stop here — give a one-line closing message.")
 
@@ -376,7 +401,10 @@ async def run_teacher_task(
     state = {"actions": 0, "completed": False, "agent_outcome": "", "agent_summary": ""}
 
     loop = asyncio.get_running_loop()
-    session = await loop.run_in_executor(None, client.session, task["id"], app_url, task["instruction"])
+    task_meta = {"difficulty": task.get("difficulty", ""), "expected_actions": task.get("expected_actions", 0)}
+    session = await loop.run_in_executor(
+        None, lambda: client.session(task["id"], app_url, task["instruction"], task_meta=task_meta)
+    )
 
     server, allowed = build_driver_mcp_server(client, state)
     prompt = TEACHER_PROMPT.format(
@@ -441,12 +469,14 @@ def _step_summary(traj: dict, limit: int = 40) -> str:
     return "\n".join(lines) or "(no steps recorded)"
 
 
-def _verify_prompt_stream(text: str, screenshot_path: Path):
+def _verify_prompt_stream(text: str, screenshot_paths: list[Path]):
     import base64
 
     content = [{"type": "text", "text": text}]
-    if screenshot_path.exists():
-        b64 = base64.b64encode(screenshot_path.read_bytes()).decode()
+    for path in screenshot_paths:
+        if not path.exists():
+            continue
+        b64 = base64.b64encode(path.read_bytes()).decode()
         content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}})
 
     async def stream():
@@ -458,6 +488,28 @@ def _verify_prompt_stream(text: str, screenshot_path: Path):
         }
 
     return stream()
+
+
+def _verification_screenshots(traj_dir: Path, steps: list) -> tuple[list[Path], str]:
+    """Final screenshot plus 2 sampled mid-trajectory frames. A final-screenshot-only verifier
+    is process-blind: a run that wandered into the right end state trains wandering as
+    positive. Mid frames let the judge see whether progress was actually being made."""
+    paths = []
+    labels = []
+    ui_steps = [s for s in steps if s.get("actions") and s["actions"][0].get("type") != "done"]
+    if len(ui_steps) >= 6:
+        for fraction, label in ((1 / 3, "mid-run (1/3)"), (2 / 3, "mid-run (2/3)")):
+            step = ui_steps[int(len(ui_steps) * fraction)]
+            p = traj_dir / step.get("screenshot", "")
+            if p.exists():
+                paths.append(p)
+                labels.append(f"{label} — before step {step.get('step')}")
+    final = traj_dir / "final_screenshot.png"
+    if not final.exists() and steps:
+        final = traj_dir / steps[-1].get("screenshot", "")
+    paths.append(final)
+    labels.append("FINAL state")
+    return paths, "; ".join(labels)
 
 
 async def verify_trajectory(
@@ -477,24 +529,24 @@ async def verify_trajectory(
     agent_outcome = (state or {}).get("agent_outcome") or capture_meta.get("agent_outcome") or "(none)"
     agent_summary = (state or {}).get("agent_summary") or capture_meta.get("agent_summary") or "(none)"
 
-    final_screenshot = traj_dir / "final_screenshot.png"
-    if not final_screenshot.exists():
-        steps = traj.get("steps", [])
-        if steps:
-            final_screenshot = traj_dir / steps[-1]["screenshot"]
+    steps = traj.get("steps", [])
+    screenshots, image_labels = _verification_screenshots(traj_dir, steps)
+    expected_actions = (capture_meta.get("task_meta") or {}).get("expected_actions") or "(unspecified)"
 
     prompt = VERIFY_PROMPT.format(
         instruction=traj.get("instruction", ""),
-        n_steps=len(traj.get("steps", [])),
+        n_steps=len(steps),
+        expected_actions=expected_actions,
         step_summary=_step_summary(traj),
         agent_outcome=agent_outcome,
         agent_summary=agent_summary,
+        image_labels=image_labels,
     )
 
-    verdict = {"success": False, "accomplished": None, "reasoning": "verifier unavailable"}
+    verdict = {"success": False, "efficiency": None, "accomplished": None, "reasoning": "verifier unavailable"}
     try:
         result_text = await run_agent(
-            _verify_prompt_stream(prompt, final_screenshot),
+            _verify_prompt_stream(prompt, screenshots),
             ClaudeAgentOptions(
                 model=MODEL_FOR_REASONING,
                 max_turns=1,
@@ -512,6 +564,7 @@ async def verify_trajectory(
             parsed = json.loads(result_text[start:end])
             verdict = {
                 "success": bool(parsed.get("success", False)),
+                "efficiency": parsed.get("efficiency"),
                 "accomplished": parsed.get("accomplished"),
                 "reasoning": str(parsed.get("reasoning", ""))[:500],
             }
@@ -522,16 +575,26 @@ async def verify_trajectory(
 
     relabeled = False
     accomplished = (verdict.get("accomplished") or "").strip() if not verdict["success"] else ""
-    if verdict["success"]:
+    # A meandering run is bad supervision even when the goal was technically met — the model
+    # would learn the wandering, not the goal.
+    if verdict["success"] and verdict.get("efficiency") != "meandering":
         traj["success"] = True
-    elif accomplished and len(traj.get("steps", [])) >= RELABEL_MIN_STEPS:
+    elif accomplished and len(traj.get("steps", [])) >= RELABEL_MIN_STEPS and verdict.get("efficiency") != "meandering":
         traj["instruction"] = accomplished
         traj["success"] = True
         relabeled = True
     else:
         traj["success"] = False
 
-    capture_meta["verifier"] = {**verdict, "relabeled": relabeled}
+    ui_steps = sum(1 for s in steps if s.get("actions") and s["actions"][0].get("type") != "done")
+    expected = (capture_meta.get("task_meta") or {}).get("expected_actions") or 0
+    capture_meta["verifier"] = {
+        **verdict,
+        "relabeled": relabeled,
+        "ui_steps": ui_steps,
+        "expected_actions": expected,
+        "efficiency_ratio": round(ui_steps / expected, 2) if expected else None,
+    }
     trajectory_file.write_text(json.dumps(traj, indent=2))
     meta_file.write_text(json.dumps(capture_meta, indent=2))
     return {**verdict, "relabeled": relabeled, "final_success": traj["success"]}
