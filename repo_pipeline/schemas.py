@@ -201,6 +201,10 @@ class TrialResults(BaseModel):
     total_actions_captured: int = 0
     screenshots_captured: int = 0
     notes: str = ""
+    # Boot-gate UI sophistication profile (agent mode): counts of draggables, sliders,
+    # canvases, rich-text editors etc. from the driver's /affordances endpoint. Drives the
+    # task proposer's drag/complex-input quotas and the dashboard's sophistication view.
+    affordances: dict = Field(default_factory=dict)
 
     @property
     def weighted_score(self) -> float:

@@ -24,12 +24,20 @@
  *   POST /finish   {agent_outcome, agent_summary} -> finalize trajectory.json + final screenshot
  *
  * /act kinds:
- *   click   {ref, button?, dblclick?}           -> {type:"click", x, y, button}
- *   type    {ref, text, press_enter?}           -> click + {type:"type", text} (+ Enter keypress)
- *   press   {keys: ["Control","a"]}             -> {type:"keypress", keys}
- *   scroll  {dy}                                -> {type:"scroll", x, y, scroll_x, scroll_y}
- *   drag    {ref, to_ref}                       -> {type:"drag", path:[{x,y},{x,y}]}
- *   select  {ref, value}                        -> {type:"click", x, y} (native <select>)
+ *   click     {ref, button?, dblclick?}         -> {type:"click", x, y, button}
+ *   type      {ref, text, press_enter?}         -> click + {type:"type", text} (+ Enter keypress)
+ *   press     {keys: ["Control","a"]}           -> {type:"keypress", keys}
+ *   scroll    {dy}                              -> {type:"scroll", x, y, scroll_x, scroll_y}
+ *   drag      {ref, to_ref}                     -> {type:"drag", path} (HTML5-DnD fallback)
+ *   hover     {ref}                             -> {type:"move", x, y} (hover-revealed UI)
+ *   click_xy  {x, y, button?, dblclick?}        -> {type:"click", x, y} (canvas/maps, no DOM ref)
+ *   drag_path {path:[{x,y},...]}                -> {type:"drag", path} (canvas drawing/dragging)
+ *   wait      {seconds}                         -> {type:"wait"} (recorded: waiting is learnable)
+ *   select    {ref, value}                      -> {type:"click", x, y} (native <select>)
+ *   upload    {ref, filename?, content?}        -> meta only (no replayable pixel equivalent)
+ *
+ * POST /affordances reports counts of sophistication signals (draggables, sliders, canvases,
+ * rich-text editors...) for boot-gate profiling and task-proposer quotas.
  */
 'use strict';
 
@@ -87,7 +95,8 @@ const state = {
 // Serialized into the page; walks the DOM, tags interactive elements with data-cua-ref and
 // returns {elements: [...], texts: [...]} for the compact text tree rendered host-side below.
 function pageCollectSnapshot(maxElements) {
-  const INTERACTIVE = 'a[href], button, input, select, textarea, summary, [role], [onclick], [contenteditable="true"], [tabindex]';
+  const INTERACTIVE = 'a[href], button, input, select, textarea, summary, [role], [onclick], '
+    + '[contenteditable="true"], [tabindex], [draggable="true"], [data-rbd-draggable-id], canvas';
   const out = [];
   let refCounter = 1;
   document.querySelectorAll('[data-cua-ref]').forEach((el) => el.removeAttribute('data-cua-ref'));
@@ -313,6 +322,60 @@ async function resolveRef(ref) {
 async function settle() {
   await state.page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
   await state.page.waitForTimeout(400);
+  // Animation quiescence: screenshots taken mid-transition (sliding panels, fading modals)
+  // are incoherent observations. Sample the layout twice per check and wait until two
+  // consecutive samples match, capped so a perpetual animation (carousel, spinner) can't
+  // stall the driver.
+  const deadline = Date.now() + 1500;
+  let prev = '';
+  while (Date.now() < deadline) {
+    const sample = await state.page.evaluate(() => {
+      const rects = [];
+      const els = document.querySelectorAll('body *');
+      for (let i = 0; i < els.length && rects.length < 60; i += Math.ceil(els.length / 60) || 1) {
+        const r = els[i].getBoundingClientRect();
+        rects.push(`${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)}`);
+      }
+      return rects.join(';');
+    }).catch(() => '');
+    if (sample && sample === prev) break;
+    prev = sample;
+    await state.page.waitForTimeout(150);
+  }
+}
+
+/* ------------------------------ drag support ------------------------------ */
+
+// Light DOM fingerprint to detect whether a mouse-path drag actually changed anything.
+// Pointer-event libraries (dnd-kit, react-dnd pointer sensors) respond to raw mouse input,
+// but native HTML5 drag-and-drop ignores it in headless Chromium — those need synthesized
+// DragEvents. The fallback fires only when the mouse drag provably did nothing.
+async function domFingerprint() {
+  return state.page.evaluate(() => {
+    const els = document.querySelectorAll('body *');
+    let order = '';
+    for (let i = 0; i < Math.min(els.length, 120); i += 1) order += els[i].tagName[0];
+    const text = document.body ? document.body.innerText : '';
+    return `${els.length}:${text.length}:${order}`;
+  }).catch(() => '');
+}
+
+async function html5DragFallback(sourceLocator, destLocator) {
+  const source = await sourceLocator.elementHandle();
+  const dest = await destLocator.elementHandle();
+  if (!source || !dest) return false;
+  await state.page.evaluate(([src, dst]) => {
+    const dataTransfer = new DataTransfer();
+    const fire = (el, type) => el.dispatchEvent(
+      new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer })
+    );
+    fire(src, 'dragstart');
+    fire(dst, 'dragenter');
+    fire(dst, 'dragover');
+    fire(dst, 'drop');
+    fire(src, 'dragend');
+  }, [source, dest]);
+  return true;
 }
 
 /* ------------------------------ loop guard ------------------------------ */
@@ -338,11 +401,12 @@ function loopGuard(signature) {
 async function handleAct(body) {
   if (!state.page) throw new Error('no active session — call /session first');
   const { kind, thought } = body;
-  if (!thought || !String(thought).trim()) {
+  // Upload is an unrecorded enabler (see below); every recorded action requires a thought.
+  if (kind !== 'upload' && (!thought || !String(thought).trim())) {
     throw new Error("every action requires a non-empty 'thought' explaining the intent behind it");
   }
 
-  if (kind === 'click' || kind === 'select' || kind === 'drag' || kind === 'type') {
+  if (['click', 'select', 'drag', 'type', 'hover', 'upload'].includes(kind)) {
     if (body.ref === undefined || body.ref === null) throw new Error(`kind '${kind}' requires a 'ref'`);
   }
 
@@ -394,10 +458,78 @@ async function handleAct(body) {
     const dest = await resolveRef(body.to_ref);
     actions = [{ type: 'drag', path: [{ x: target.cx, y: target.cy }, { x: dest.cx, y: dest.cy }] }];
     await recordStep(thought, actions, target);
+    // Baseline AFTER the cursor reaches the drag origin: moving there can itself mutate the
+    // DOM (hover menus collapsing/opening), which must not mask a no-op drag.
     await state.page.mouse.move(target.cx, target.cy);
+    await state.page.waitForTimeout(200);
+    const before = await domFingerprint();
     await state.page.mouse.down();
     await state.page.mouse.move(dest.cx, dest.cy, { steps: 12 });
     await state.page.mouse.up();
+    await state.page.waitForTimeout(300);
+    if ((await domFingerprint()) === before) {
+      const fired = await html5DragFallback(target.locator, dest.locator).catch(() => false);
+      if (fired) {
+        state.task.meta.steps[String(state.task.steps.length)].drag_fallback = 'html5';
+        writeTrajectory(false);
+      }
+    }
+  } else if (kind === 'hover') {
+    loopGuard(`hover:${body.ref}`);
+    target = await resolveRef(body.ref);
+    actions = [{ type: 'move', x: target.cx, y: target.cy }];
+    await recordStep(thought, actions, target);
+    await state.page.mouse.move(target.cx, target.cy);
+    // Hover-revealed UI (menus, row buttons) typically appears after a short delay.
+    await state.page.waitForTimeout(500);
+  } else if (kind === 'click_xy') {
+    // Coordinate-grounded click for surfaces with no DOM to reference (canvas, maps,
+    // drawing apps). The agent supplies coordinates read from a screenshot.
+    const x = Math.round(body.x), y = Math.round(body.y);
+    if (!(x >= 0 && x < VIEWPORT.width && y >= 0 && y < VIEWPORT.height)) {
+      throw new Error(`click_xy (${x},${y}) outside the ${VIEWPORT.width}x${VIEWPORT.height} viewport`);
+    }
+    loopGuard(`click_xy:${x},${y}`);
+    const button = body.button === 'right' ? 'right' : 'left';
+    actions = [{ type: 'click', x, y, button }];
+    await recordStep(thought, actions, null);
+    if (body.dblclick) await state.page.mouse.dblclick(x, y, { button });
+    else await state.page.mouse.click(x, y, { button });
+  } else if (kind === 'drag_path') {
+    const path = Array.isArray(body.path) ? body.path.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) })) : [];
+    if (path.length < 2) throw new Error("kind 'drag_path' requires a 'path' of at least 2 points");
+    for (const p of path) {
+      if (!(p.x >= 0 && p.x < VIEWPORT.width && p.y >= 0 && p.y < VIEWPORT.height)) {
+        throw new Error(`drag_path point (${p.x},${p.y}) outside the viewport`);
+      }
+    }
+    loopGuard(`drag_path:${path[0].x},${path[0].y}:${path[path.length - 1].x},${path[path.length - 1].y}`);
+    actions = [{ type: 'drag', path }];
+    await recordStep(thought, actions, null);
+    await state.page.mouse.move(path[0].x, path[0].y);
+    await state.page.mouse.down();
+    for (const p of path.slice(1)) await state.page.mouse.move(p.x, p.y, { steps: 8 });
+    await state.page.mouse.up();
+  } else if (kind === 'wait') {
+    // An explicit, recorded wait: the student must learn WHEN waiting is the right action
+    // (loading spinners, async updates), so it lands as a real step.
+    const seconds = Math.min(Math.max(Number(body.seconds) || 1, 0.2), 10);
+    loopGuard(`wait:${await state.page.evaluate(() => document.body ? document.body.innerText.length : 0)}`);
+    actions = [{ type: 'wait' }];
+    await recordStep(thought, actions, null);
+    await state.page.waitForTimeout(seconds * 1000);
+  } else if (kind === 'upload') {
+    // Enabler, not supervision: programmatic file attachment has no pixel-action equivalent
+    // a student could replay (a real click opens an OS dialog), so it is logged in meta only.
+    target = await resolveRef(body.ref);
+    const filename = String(body.filename || 'upload.txt').replace(/[^a-zA-Z0-9_.-]+/g, '_');
+    const filePath = `/tmp/${filename}`;
+    fs.writeFileSync(filePath, body.content !== undefined ? String(body.content) : 'sample upload content\n');
+    await target.locator.setInputFiles(filePath);
+    state.task.meta.uploads = state.task.meta.uploads || [];
+    state.task.meta.uploads.push({ after_step: state.task.steps.length, ref: body.ref, filename });
+    await settle();
+    return { ok: true, step: state.task.steps.length, url: state.page.url(), snapshot: (await takeSnapshot()).slice(0, 8000), note: 'file attached (not recorded as a step)' };
   } else if (kind === 'select') {
     if (body.value === undefined) throw new Error("kind 'select' requires 'value'");
     loopGuard(`select:${body.ref}:${body.value}`);
@@ -519,6 +651,38 @@ const routes = {
     await scrubDevOverlays();
     const buf = await state.page.screenshot();
     return { ok: true, b64: buf.toString('base64') };
+  },
+  'POST /affordances': async () => {
+    if (!state.page) throw new Error('no active session');
+    const counts = await state.page.evaluate(() => {
+      const visible = (el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 2 && r.height > 2;
+      };
+      const count = (selector, min) => {
+        let n = 0;
+        document.querySelectorAll(selector).forEach((el) => {
+          if (!visible(el)) return;
+          if (min && (el.getBoundingClientRect().width < min || el.getBoundingClientRect().height < min)) return;
+          n += 1;
+        });
+        return n;
+      };
+      return {
+        draggables: count('[draggable="true"], [data-rbd-draggable-id], .react-draggable'),
+        sliders: count('input[type="range"], [role="slider"]'),
+        date_inputs: count('input[type="date"], input[type="datetime-local"], input[type="time"], input[type="month"], input[type="week"]'),
+        color_inputs: count('input[type="color"]'),
+        file_inputs: document.querySelectorAll('input[type="file"]').length,
+        rich_text_editors: count('[contenteditable="true"], [role="textbox"][aria-multiline="true"]'),
+        canvases: count('canvas', 100),
+        multi_selects: count('select[multiple]'),
+        autocompletes: count('[role="combobox"], [aria-autocomplete="list"]'),
+        media_players: count('video, audio'),
+        iframes: count('iframe'),
+      };
+    });
+    return { ok: true, affordances: counts };
   },
   'POST /navigate': async (body) => {
     if (!state.page) throw new Error('no active session');

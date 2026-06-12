@@ -225,12 +225,17 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
         probe = await _run(client.session, "context_probe", app_url)
         homepage_snapshot = probe.get("snapshot", "")
         homepage_screenshot = await _run(client.screenshot_b64)
+        try:
+            affordances = await _run(client.affordances)
+        except Exception:
+            affordances = {}
         await _run(client.finish, "probe", "")
         await _run(sandbox.exec_command, f"rm -rf {RESULTS_DIR}/task_context_probe")
 
         readme, test_hints = await _run(_read_app_context, sandbox)
         tasks = await propose_tasks(
-            repo, homepage_snapshot, homepage_screenshot, readme, test_hints, registry=registry
+            repo, homepage_snapshot, homepage_screenshot, readme, test_hints,
+            registry=registry, affordances=affordances,
         )
         if not tasks:
             raise RetryableFailure(FailureCategory.SDK_ERROR, "task proposal produced no tasks")

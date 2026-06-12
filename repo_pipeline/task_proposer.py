@@ -45,6 +45,9 @@ README excerpt:
 Test excerpts (feature hints):
 {test_hints}
 
+Measured UI affordances on the live page (counts of real elements — trust these over guesses):
+{affordances_block}
+
 Propose exactly {n_tasks} tasks. Requirements:
 - Each instruction is a USER GOAL in imperative voice ("Create a project called X, add two \
 tasks to it, and mark the first one done"), 8-30 words. NEVER use verify/test/assert/check \
@@ -52,7 +55,7 @@ phrasing. NEVER mention selectors, the DOM, or testing.
 - At least {n_long} tasks must plausibly require 8 or more user actions (multi-page or \
 multi-stage flows: create-then-edit, fill-then-review, search-then-compare, configure-then-use).
 - At least 2 tasks must require typing into forms or fields.
-- Include scroll-dependent or drag-dependent tasks IF the visible UI affords them (long lists, \
+{affordance_quotas}- Include scroll-dependent or drag-dependent tasks IF the visible UI affords them (long lists, \
 kanban boards, sliders, reorderable items); otherwise do not invent them.
 - Tasks must be achievable with what this app visibly offers — no external accounts, no email \
 verification, no payment with real cards. If the app has a login/demo account visible on the \
@@ -66,6 +69,38 @@ hard = 12+ actions, multiple stages, or requires discovering a non-obvious UI af
 Output ONLY a JSON array (no markdown fence, no prose):
 [{{"id": "<kebab-slug>", "instruction": "<the user goal>", "difficulty": "easy|medium|hard",
    "expected_actions": <int>, "action_kinds": ["click", "type", ...]}}, ...]"""
+
+
+# Affordance count -> a hard quota line in the proposal prompt. Generic: a new sophistication
+# signal is a new entry here (and a counter in the driver's /affordances), not new prompt code.
+_AFFORDANCE_QUOTAS = {
+    "draggables": "- The page has {n} draggable elements: at least 1 task MUST require dragging "
+                  "(reorder, move between columns, drop onto a target).\n",
+    "sliders": "- The page has {n} sliders: at least 1 task MUST involve setting a slider to a "
+               "specific value by dragging it.\n",
+    "rich_text_editors": "- The page has {n} rich-text editors: at least 1 task MUST involve "
+                         "composing or formatting multi-line content in one.\n",
+    "date_inputs": "- The page has {n} date/time inputs: at least 1 task MUST involve picking "
+                   "specific dates or times.\n",
+    "canvases": "- The page has {n} canvas surfaces: at least 1 task MUST involve drawing or "
+                "direct manipulation on the canvas.\n",
+    "autocompletes": "- The page has {n} autocomplete fields: at least 1 task MUST involve "
+                     "typing a partial value and selecting a suggestion.\n",
+    "multi_selects": "- The page has {n} multi-select inputs: at least 1 task MUST involve "
+                     "selecting several options in one.\n",
+}
+
+
+def render_affordances(affordances: dict | None) -> tuple[str, str]:
+    """(human-readable block for the prompt, hard quota lines) from the driver's counts."""
+    if not affordances:
+        return "(not measured)", ""
+    present = {k: v for k, v in affordances.items() if v}
+    block = ", ".join(f"{k}={v}" for k, v in present.items()) or "(none beyond basic click/type targets)"
+    quotas = "".join(
+        template.format(n=present[key]) for key, template in _AFFORDANCE_QUOTAS.items() if key in present
+    )
+    return block, quotas
 
 
 def _image_prompt_stream(text: str, screenshot_b64: str | None):
@@ -121,8 +156,10 @@ async def propose_tasks(
     test_hints: str,
     n_tasks: int = None,
     registry=None,
+    affordances: dict | None = None,
 ) -> list[dict]:
     n_tasks = n_tasks or TASKS_PER_REPO
+    affordances_block, affordance_quotas = render_affordances(affordances)
     prompt_text = PROPOSE_PROMPT.format(
         repo_name=repo.get("full_name", ""),
         repo_description=(repo.get("description") or "").strip() or "(no description)",
@@ -131,6 +168,8 @@ async def propose_tasks(
         test_hints=(test_hints or "(no test sources available)")[:5000],
         n_tasks=n_tasks,
         n_long=max(1, int(n_tasks * 0.6)),
+        affordances_block=affordances_block,
+        affordance_quotas=affordance_quotas,
     )
 
     try:

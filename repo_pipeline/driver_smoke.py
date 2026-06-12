@@ -20,12 +20,29 @@ from repo_pipeline.sandbox import DockerSandbox
 logger = logging.getLogger(__name__)
 
 TEST_PAGE = """<!doctype html>
-<html><head><title>Driver smoke</title></head><body>
+<html><head><title>Driver smoke</title>
+<style>
+  .menu-items { display: none; }
+  .menu:hover .menu-items { display: block; }
+</style></head><body>
 <h1>Smoke test app</h1>
 <p id="status" role="status">waiting</p>
 <input id="name" type="text" placeholder="Your name">
 <button onclick="document.getElementById('status').innerText='hello '+document.getElementById('name').value">Greet</button>
 <select id="color"><option value="red">red</option><option value="blue">blue</option></select>
+
+<div class="menu"><button>Open menu</button>
+  <div class="menu-items"><button id="hidden-action">Hidden action</button></div></div>
+
+<input type="range" id="volume" min="0" max="100" aria-label="Volume">
+<canvas id="board" width="300" height="200" style="border:1px solid"></canvas>
+
+<ul id="list" ondragover="event.preventDefault()">
+  <li id="item-a" draggable="true" ondragstart="event.dataTransfer.setData('text','item-a')">Alpha</li>
+  <li id="item-b" draggable="true" ondragstart="event.dataTransfer.setData('text','item-b')"
+      ondrop="var s=document.getElementById(event.dataTransfer.getData('text'));this.parentNode.insertBefore(s,this.nextSibling);document.getElementById('status').innerText='reordered'">Beta</li>
+</ul>
+
 <div style="height: 1500px"></div>
 <a href="#bottom" id="bottom-link">Bottom link</a>
 </body></html>"""
@@ -72,6 +89,36 @@ def run_smoke() -> bool:
             "kind": "scroll", "dy": 800,
             "thought": "The bottom link is below the fold, scrolling down to reach it.",
         })
+        client.act({"kind": "scroll", "dy": -800, "thought": "Scrolling back up to the controls."})
+
+        affordances = client.affordances()
+        logger.info(f"affordances: {affordances}")
+        assert affordances["draggables"] == 2, f"expected 2 draggables, got {affordances}"
+        assert affordances["sliders"] == 1 and affordances["canvases"] == 1, f"bad affordances: {affordances}"
+
+        # Hover reveals the CSS-hidden menu item and records a `move` action.
+        snapshot = client.snapshot()["snapshot"]
+        result = client.act({
+            "kind": "hover", "ref": ref_for("Open menu"),
+            "thought": "The menu may hide more options; hovering to reveal them.",
+        })
+        assert "Hidden action" in result["snapshot"], f"hover did not reveal menu: {result['snapshot'][:300]}"
+
+        # HTML5 drag-and-drop: raw mouse drag does nothing here, the DragEvent fallback must fire.
+        snapshot = result["snapshot"]
+        result = client.act({
+            "kind": "drag", "ref": ref_for("Alpha"), "to_ref": ref_for("Beta"),
+            "thought": "Reordering the list by dragging Alpha below Beta.",
+        })
+        assert "reordered" in result["snapshot"], f"drag (html5 fallback) had no effect: {result['snapshot'][:300]}"
+
+        # Coordinate tools for canvas surfaces + a recorded wait.
+        client.act({"kind": "click_xy", "x": 200, "y": 400,
+                    "thought": "Clicking directly on the canvas area."})
+        client.act({"kind": "drag_path", "path": [{"x": 180, "y": 380}, {"x": 260, "y": 420}],
+                    "thought": "Drawing a stroke across the canvas."})
+        client.act({"kind": "wait", "seconds": 0.5,
+                    "thought": "Letting the page settle before continuing."})
 
         # The loop guard must refuse a third identical scroll from the same position only if no
         # progress was made; instead verify the explicit guard with repeated clicks.

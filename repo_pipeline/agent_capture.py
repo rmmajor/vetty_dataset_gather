@@ -55,6 +55,10 @@ button in the toolbar should open the creation form."
 snapshots, tools, or selectors in a thought; speak only about the app as a user sees it.
 - Prefer acting through the UI. Do not use browser_navigate to jump to deep URLs — a real \
 user finds things by clicking; navigate only if the UI is genuinely stuck.
+- Controls are often hidden until hover (row edit/delete buttons, dropdown menus) — hover \
+over the element, then re-snapshot. Use drag for reordering and kanban moves. Use wait when \
+the page is visibly loading. On canvas/drawing surfaces (no listed elements), take a \
+screenshot and act with click_xy / drag_path at pixel coordinates.
 - If an action is refused or the page doesn't react as expected, re-snapshot, reconsider, and \
 try a DIFFERENT approach rather than repeating the same action.
 - You have at most {max_actions} actions. Be purposeful, not hasty: completing the goal \
@@ -198,12 +202,85 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
 
     @tool(
         "drag",
-        "Drag one element onto another (kanban cards, sliders, reordering).",
+        "Drag one element onto another (kanban cards, sliders, reordering). Falls back to "
+        "HTML5 drag events automatically when raw mouse dragging has no effect.",
         action_schema({"ref": {"type": "integer"}, "to_ref": {"type": "integer"}}, ["ref", "to_ref"]),
     )
     async def drag_tool(args):
         return await _act({
             "kind": "drag", "ref": args["ref"], "to_ref": args["to_ref"], "thought": args.get("thought", ""),
+        })
+
+    @tool(
+        "hover",
+        "Move the mouse over an element without clicking — opens hover menus and reveals "
+        "hidden row controls (edit/delete buttons). Re-snapshot afterwards to see what appeared.",
+        action_schema({"ref": {"type": "integer"}}, ["ref"]),
+    )
+    async def hover_tool(args):
+        return await _act({"kind": "hover", "ref": args["ref"], "thought": args.get("thought", "")})
+
+    @tool(
+        "click_xy",
+        "Click at exact pixel coordinates (1280x720 viewport). ONLY for surfaces with no "
+        "referenceable elements — canvases, maps, drawing areas. Read coordinates from a "
+        "screenshot first. For normal elements always use click with a ref.",
+        action_schema(
+            {
+                "x": {"type": "integer"}, "y": {"type": "integer"},
+                "button": {"type": "string", "enum": ["left", "right"]},
+                "dblclick": {"type": "boolean"},
+            },
+            ["x", "y"],
+        ),
+    )
+    async def click_xy_tool(args):
+        return await _act({
+            "kind": "click_xy", "x": args["x"], "y": args["y"], "thought": args.get("thought", ""),
+            "button": args.get("button", "left"), "dblclick": bool(args.get("dblclick", False)),
+        })
+
+    @tool(
+        "drag_path",
+        "Press the mouse down and drag through a sequence of pixel coordinates. ONLY for "
+        "canvas surfaces (drawing, lasso-select, panning a map). For element-to-element "
+        "drags use drag with refs.",
+        action_schema(
+            {
+                "path": {
+                    "type": "array", "minItems": 2,
+                    "items": {
+                        "type": "object",
+                        "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}},
+                        "required": ["x", "y"],
+                    },
+                },
+            },
+            ["path"],
+        ),
+    )
+    async def drag_path_tool(args):
+        return await _act({"kind": "drag_path", "path": args.get("path", []), "thought": args.get("thought", "")})
+
+    @tool(
+        "upload",
+        "Attach a file to a file input (generates a small file in the environment). Optional "
+        "filename and text content. Not recorded as a user action — use only when a task "
+        "needs a file to proceed.",
+        {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "integer"},
+                "filename": {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["ref"],
+        },
+    )
+    async def upload_tool(args):
+        return await _act({
+            "kind": "upload", "ref": args["ref"],
+            "filename": args.get("filename", "upload.txt"), "content": args.get("content"),
         })
 
     @tool(
@@ -235,15 +312,15 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
 
     @tool(
         "wait",
-        "Wait up to 10 seconds for the page to settle (loading spinners, async updates).",
-        {"seconds": float},
+        "Deliberately wait up to 10 seconds for the page to settle (loading spinners, async "
+        "updates, animations). This is a recorded action — knowing WHEN to wait is part of "
+        "the skill being captured.",
+        action_schema({"seconds": {"type": "number"}}, ["seconds"]),
     )
     async def wait_tool(args):
-        try:
-            result = await _run(client.wait, float(args.get("seconds", 1)))
-            return _text(f"URL: {result['url']}\n\n{result['snapshot']}")
-        except Exception as e:
-            return _text(f"wait failed: {str(e)[:300]}", is_error=True)
+        return await _act({
+            "kind": "wait", "seconds": float(args.get("seconds", 1)), "thought": args.get("thought", ""),
+        })
 
     @tool(
         "navigate",
@@ -271,14 +348,16 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         return _text("task ended. Stop here — give a one-line closing message.")
 
     tools = [
-        click_tool, type_tool, press_tool, scroll_tool, drag_tool, select_tool,
+        click_tool, type_tool, press_tool, scroll_tool, drag_tool, hover_tool,
+        click_xy_tool, drag_path_tool, upload_tool, select_tool,
         snapshot_tool, screenshot_tool, wait_tool, navigate_tool, complete_tool,
     ]
     server = create_sdk_mcp_server(name=server_name, version="1.0.0", tools=tools)
     allowed = [
         f"mcp__{server_name}__{name}"
         for name in (
-            "click", "type", "press", "scroll", "drag", "select",
+            "click", "type", "press", "scroll", "drag", "hover",
+            "click_xy", "drag_path", "upload", "select",
             "snapshot", "screenshot", "wait", "navigate", "task_complete",
         )
     ]

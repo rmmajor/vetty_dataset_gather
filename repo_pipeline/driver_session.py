@@ -134,5 +134,8 @@ class DriverClient:
     def wait(self, seconds: float) -> dict:
         return self._post("/wait", {"seconds": seconds})
 
+    def affordances(self) -> dict:
+        return self._post("/affordances")["affordances"]
+
     def finish(self, agent_outcome: str, agent_summary: str) -> dict:
         return self._post("/finish", {"agent_outcome": agent_outcome, "agent_summary": agent_summary})

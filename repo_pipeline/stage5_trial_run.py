@@ -125,6 +125,11 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
                 f"(< {MIN_INTERACTIVE_ELEMENTS}); snapshot head: {probe.get('snapshot', '')[:200]}",
             )
 
+        try:
+            affordances = await _run(client.affordances)
+        except Exception:
+            affordances = {}
+
         metrics = TrialResults(
             pass_rate=1.0,
             action_diversity_score=min(n_elements / 30.0, 1.0),
@@ -134,8 +139,10 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
             valid_bounding_boxes=n_elements,
             screenshots_captured=1,
             notes=f"boot gate: app served at {app_url}, {n_elements} interactive elements on homepage",
+            affordances=affordances,
         )
-        rlog.info(f"boot OK at {app_url}: {n_elements} interactive elements")
+        rich = {k: v for k, v in affordances.items() if v}
+        rlog.info(f"boot OK at {app_url}: {n_elements} interactive elements; affordances: {rich or 'basic'}")
         registry.update_status(
             repo_name,
             RepoStatus.VALIDATED.value,
