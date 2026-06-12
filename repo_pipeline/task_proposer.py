@@ -68,6 +68,12 @@ verification, no payment with real cards. If the app has a login/demo account vi
 page or in the README, tasks may use it.
 - Make tasks DIVERSE from each other: different features, different parts of the app, different \
 action mixes. Concrete values (names, amounts, dates) should be specific and varied.
+- Tasks run IN ORDER against ONE app instance whose data PERSISTS between tasks (each task gets \
+a fresh browser session, but the app keeps its state). Order tasks so early ones create data and \
+later ones operate on accumulated data — finding, editing, reorganizing, or cleaning up existing \
+items is HARDER and more valuable than creating from scratch. Phrase existing-data tasks \
+generically ("archive every completed item", "rename the oldest entry") rather than naming \
+artifacts from a specific earlier task, so they work against whatever state is actually present.
 - difficulty: easy = obvious 3-6 action flow; medium = 6-12 actions or one non-obvious step; \
 hard = 12+ actions, multiple stages, or requires discovering a non-obvious UI affordance.
 - Skew hard: at most 2 easy tasks.

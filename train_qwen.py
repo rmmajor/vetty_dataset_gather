@@ -175,6 +175,7 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False)
     output_path.mkdir(parents=True, exist_ok=True)
 
     all_examples = []
+    examples_by_group = {}
     skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0}
     report = {
         "trajectories": 0, "by_source": {}, "actions": {}, "lengths": [],
@@ -241,6 +242,11 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False)
             continue
 
         all_examples.extend(examples)
+        # Split unit: the APP, not the step. Steps of one trajectory (and trajectories of one
+        # app) share screenshots and layout — splitting below app level leaks pixels into val
+        # and turns val loss into a memorization check.
+        group = traj_dir.parent.name if traj_dir.parent.name.startswith("repo_") else traj_dir.name
+        examples_by_group.setdefault(group, []).extend(examples)
         report["trajectories"] += 1
         report["by_source"][source] = report["by_source"].get(source, 0) + 1
         report["lengths"].append(len(trajectory.get("steps", [])))
@@ -274,10 +280,21 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False)
     print(f"Skipped: {skipped}")
     print("======================\n")
 
-    random.shuffle(all_examples)
-    val_count = int(len(all_examples) * val_split)
-    val_examples = all_examples[:val_count]
-    train_examples = all_examples[val_count:]
+    # Group-wise split: whole apps go to val, never individual steps.
+    groups = list(examples_by_group.items())
+    random.shuffle(groups)
+    val_target = int(len(all_examples) * val_split)
+    val_examples, train_examples, val_groups = [], [], []
+    for group, examples in groups:
+        if val_target and len(val_examples) < val_target and len(groups) > 1:
+            val_examples.extend(examples)
+            val_groups.append(group)
+        else:
+            train_examples.extend(examples)
+    random.shuffle(train_examples)
+    random.shuffle(val_examples)
+    if val_groups:
+        print(f"Validation groups (held-out apps): {', '.join(val_groups)}")
 
     train_path = output_path / "sft_dataset.jsonl"
     with open(train_path, "w") as f:
