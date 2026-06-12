@@ -22,8 +22,14 @@ VIEWPORT = (1280, 720)
 
 
 def _action_signature(step: dict) -> tuple:
+    """Full action identity, INCLUDING scroll deltas and drag paths — progressive scrolls
+    share (type, x, y) but are distinct actions, not a stuck loop."""
     return tuple(
-        (a.get("type"), a.get("x"), a.get("y"), a.get("text"), tuple(a.get("keys") or []))
+        (
+            a.get("type"), a.get("x"), a.get("y"), a.get("text"), tuple(a.get("keys") or []),
+            a.get("scroll_x"), a.get("scroll_y"),
+            json.dumps(a.get("path")) if a.get("path") else None,
+        )
         for a in step.get("actions", [])
     )
 
