@@ -127,8 +127,9 @@ def _image_prompt_stream(text: str, screenshot_b64: str | None):
     """Single user message with optional attached screenshot, in SDK streaming-input form."""
     content = [{"type": "text", "text": text}]
     if screenshot_b64:
+        # The driver serves agent-facing screenshots as JPEG (SDK 1MB message-buffer limit).
         content.append(
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": screenshot_b64}}
+            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": screenshot_b64}}
         )
 
     async def stream():

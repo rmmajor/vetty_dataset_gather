@@ -319,7 +319,7 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
     async def screenshot_tool(args):
         try:
             b64 = await _run(client.screenshot_b64)
-            return {"content": [{"type": "image", "data": b64, "mimeType": "image/png"}]}
+            return {"content": [{"type": "image", "data": b64, "mimeType": "image/jpeg"}]}
         except Exception as e:
             return _text(f"screenshot failed: {str(e)[:300]}", is_error=True)
 

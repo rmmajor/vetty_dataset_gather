@@ -662,8 +662,11 @@ const routes = {
   'POST /screenshot': async () => {
     if (!state.page) throw new Error('no active session');
     await scrubDevOverlays();
-    const buf = await state.page.screenshot();
-    return { ok: true, b64: buf.toString('base64') };
+    // JPEG for the AGENT'S eyes only: image-heavy pages (map tiles, photo grids) produce
+    // PNGs whose base64 exceeds the SDK's 1MB message buffer and kills the whole query.
+    // Recorded training screenshots (recordStep) remain lossless PNG per the contract.
+    const buf = await state.page.screenshot({ type: 'jpeg', quality: 60 });
+    return { ok: true, b64: buf.toString('base64'), mime: 'image/jpeg' };
   },
   'POST /affordances': async () => {
     if (!state.page) throw new Error('no active session');
