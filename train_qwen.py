@@ -9,11 +9,22 @@ from pathlib import Path
 import yaml
 
 
-SYSTEM_PROMPT = (
-    "You are a GUI agent that interacts with web browsers. "
-    "Given a screenshot and a task, reason about the current state "
-    "and output a structured action to complete the task."
-)
+SYSTEM_PROMPT = """You are a GUI agent that operates a web browser at a 1280x720 resolution. \
+Given a task, a screenshot of the current page, and your previous actions, reason about the \
+state in <think>...</think>, then output one or more actions, one per line.
+
+Available actions (coordinates are absolute pixels on the screenshot):
+action: click(<ref>(x, y)</ref>, button=left|right)
+action: double_click(<ref>(x, y)</ref>)
+action: move(<ref>(x, y)</ref>)
+action: type("text")
+action: keypress(["Enter"])
+action: scroll(<ref>(x, y)</ref>, scrollX=0, scrollY=500)
+action: drag(<ref>(x1, y1)</ref> -> <ref>(x2, y2)</ref>)
+action: wait()
+action: done()
+
+Use done() only when the task is fully accomplished and the screen confirms it."""
 
 
 def format_action_for_training(action):
@@ -54,6 +65,9 @@ def format_action_for_training(action):
     elif action_type == "wait":
         return "action: wait()"
 
+    elif action_type == "done":
+        return "action: done()"
+
     elif action_type == "screenshot":
         return "action: screenshot()"
 
@@ -77,70 +91,95 @@ def format_action_summary(action):
     return action_type
 
 
-def convert_trajectory_to_messages(trajectory, trajectory_dir):
+# Text history shown to the model for each step. Windowed: long trajectories would otherwise
+# bloat the prompt, and at inference the runtime keeps a bounded history too.
+HISTORY_WINDOW = 10
+
+
+def _maybe_synthesize_done_step(trajectory, trajectory_dir, capture_meta):
+    """Terminal supervision for agent trajectories recorded before the driver emitted `done`
+    steps: when the teacher honestly reported completion and the final screenshot exists,
+    append a {type:"done"} step whose thought is the teacher's own completion summary. Without
+    a terminal step the model is never taught to STOP — it would act forever at inference."""
+    steps = trajectory.get("steps", [])
+    if any(a.get("type") == "done" for s in steps for a in s.get("actions", [])):
+        return
+    if capture_meta.get("agent_outcome") != "completed":
+        return
+    summary = (capture_meta.get("agent_summary") or "").strip()
+    final_screenshot = trajectory_dir / "final_screenshot.png"
+    if not summary or not final_screenshot.exists():
+        return
+    steps.append({
+        "step": (steps[-1]["step"] + 1) if steps else 1,
+        "screenshot": "final_screenshot.png",
+        "thought": summary,
+        "actions": [{"type": "done"}],
+    })
+
+
+def convert_trajectory_to_examples(trajectory, trajectory_dir):
+    """One training example PER STEP: current screenshot + task + windowed text history ->
+    <think> + action(s). A whole trajectory as one multi-turn example packs every screenshot
+    (~300 visual tokens each) into a single sequence — a 21-step trajectory is ~9k tokens
+    against max_length 4096, so the trainer silently truncated exactly the long-horizon tails
+    this dataset exists for. Per-step examples match inference conditions (one screenshot +
+    text history) and supervise every step uniformly."""
     instruction = trajectory["instruction"]
     steps = trajectory["steps"]
-
     if not steps:
-        return None
+        return []
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
+    examples = []
     action_history = []
 
     for step in steps:
-        screenshot_filename = step["screenshot"]
-        screenshot_path = str((trajectory_dir / screenshot_filename).resolve())
-
-        if not Path(screenshot_path).exists():
-            continue
-
-        user_text = f"Task: {instruction}"
-        if action_history:
-            history_str = ", ".join(action_history)
-            user_text += f"\nPrevious actions: [{history_str}]"
-        user_text += "\nWhat action should you take?"
-
-        user_content = [
-            {"type": "image", "image": screenshot_path},
-            {"type": "text", "text": user_text},
-        ]
-        messages.append({"role": "user", "content": user_content})
-
+        screenshot_path = (trajectory_dir / step["screenshot"]).resolve()
         thought = step.get("thought", "")
         actions = step.get("actions", [])
         if not actions and "action" in step:
             actions = [step["action"]]
 
-        action_strs = [format_action_for_training(a) for a in actions]
-        action_str = "\n".join(action_strs)
+        if screenshot_path.exists() and actions:
+            user_text = f"Task: {instruction}"
+            if action_history:
+                window = action_history[-HISTORY_WINDOW:]
+                omitted = len(action_history) - len(window)
+                prefix = f"... {omitted} earlier actions, " if omitted > 0 else ""
+                user_text += f"\nPrevious actions: [{prefix}{', '.join(window)}]"
+            user_text += "\nWhat action should you take?"
 
-        if thought:
-            assistant_content = f"<think>{thought}</think>\n{action_str}"
-        else:
-            assistant_content = action_str
+            action_str = "\n".join(format_action_for_training(a) for a in actions)
+            assistant_content = f"<think>{thought}</think>\n{action_str}" if thought else action_str
 
-        messages.append({"role": "assistant", "content": assistant_content})
+            examples.append({
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": [
+                        {"type": "image", "image": str(screenshot_path)},
+                        {"type": "text", "text": user_text},
+                    ]},
+                    {"role": "assistant", "content": assistant_content},
+                ]
+            })
 
         for a in actions:
             action_history.append(format_action_summary(a))
 
-    if len(messages) <= 1:
-        return None
-
-    return {"messages": messages}
+    return examples
 
 
-def convert_trajectories(input_dir, output_dir, val_split):
+def convert_trajectories(input_dir, output_dir, val_split, include_replay=False):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     all_examples = []
-    included_from_failed = 0
-    skipped_empty = 0
-    skipped_unverified = 0
-    skipped_excluded = 0
+    skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0}
+    report = {
+        "trajectories": 0, "by_source": {}, "actions": {}, "lengths": [],
+        "domains": {}, "done_steps": 0, "thought_sources": {},
+    }
 
     trajectory_dirs = sorted(
         d for d in input_path.glob("**/task_*")
@@ -149,11 +188,7 @@ def convert_trajectories(input_dir, output_dir, val_split):
     print(f"Found {len(trajectory_dirs)} trajectory directories")
 
     for traj_dir in trajectory_dirs:
-        trajectory_file = traj_dir / "trajectory.json"
-        if not trajectory_file.exists():
-            continue
-
-        with open(trajectory_file) as f:
+        with open(traj_dir / "trajectory.json") as f:
             trajectory = json.load(f)
 
         metadata = {}
@@ -165,36 +200,79 @@ def convert_trajectories(input_dir, output_dir, val_split):
             except (json.JSONDecodeError, OSError):
                 pass
 
+        capture_meta = {}
+        capture_meta_file = traj_dir / "capture_meta.json"
+        if capture_meta_file.exists():
+            try:
+                with open(capture_meta_file) as f:
+                    capture_meta = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        source = metadata.get("capture_source") or (
+            "path_a" if "mind2web" in traj_dir.name else "replay"
+        )
+
         # An explicit exclusion (quality audit, dedup, per-repo cap, contamination) overrides
-        # every leniency below — these are KNOWN-BAD recordings, regardless of provenance.
+        # everything below — these are KNOWN-BAD recordings, regardless of provenance.
         if metadata.get("excluded_reason"):
-            skipped_excluded += 1
+            skipped["excluded"] += 1
             continue
 
-        # `success` means different things by provenance (metadata.capture_source). Agent
-        # captures: success is the VERIFIER's verdict — false marks unverified trajectories
-        # that must never train. Replay/Path A: a test that performed real actions then
-        # failed an assertion still yields a usable trajectory, so failed ones are kept.
-        # convert_trajectory_to_messages drops missing-screenshot steps and empty
-        # trajectories either way.
-        if not trajectory.get("success", True):
-            if metadata.get("capture_source") == "agent":
-                skipped_unverified += 1
-                continue
-            included_from_failed += 1
-
-        example = convert_trajectory_to_messages(trajectory, traj_dir)
-        if example is None:
-            skipped_empty += 1
+        # Replay trajectories carry QA-style supervision (test-assertion instructions,
+        # retrofitted thoughts) — the exact style the agent pipeline replaced. They train
+        # only on explicit opt-in.
+        if source == "replay" and not include_replay:
+            skipped["replay_gated"] += 1
             continue
 
-        all_examples.append(example)
+        # Agent captures: `success` is the VERIFIER's verdict — false marks unverified
+        # trajectories that must never train.
+        if not trajectory.get("success", True) and source == "agent":
+            skipped["unverified"] += 1
+            continue
 
-    print(f"Converted {len(all_examples)} trajectories")
-    print(f"Included {included_from_failed} trajectories from failed tests (success=false, kept for usable steps)")
-    print(f"Skipped {skipped_unverified} unverified agent trajectories (success=false)")
-    print(f"Skipped {skipped_excluded} explicitly excluded trajectories (metadata.excluded_reason)")
-    print(f"Skipped {skipped_empty} empty/invalid trajectories")
+        if source == "agent":
+            _maybe_synthesize_done_step(trajectory, traj_dir, capture_meta)
+
+        examples = convert_trajectory_to_examples(trajectory, traj_dir)
+        if not examples:
+            skipped["empty"] += 1
+            continue
+
+        all_examples.extend(examples)
+        report["trajectories"] += 1
+        report["by_source"][source] = report["by_source"].get(source, 0) + 1
+        report["lengths"].append(len(trajectory.get("steps", [])))
+        domain = metadata.get("website") or metadata.get("domain") or "unknown"
+        report["domains"][domain] = report["domains"].get(domain, 0) + 1
+        ts = metadata.get("thought_source", "unknown")
+        report["thought_sources"][ts] = report["thought_sources"].get(ts, 0) + 1
+        for step in trajectory.get("steps", []):
+            for a in step.get("actions", []):
+                t = a.get("type", "?")
+                report["actions"][t] = report["actions"].get(t, 0) + 1
+                if t == "done":
+                    report["done_steps"] += 1
+
+    # ---- Corpus report: the at-a-glance health check that catches a Booking.com-style
+    # regression at convert time instead of in a JSON file weeks later. ----
+    lengths = sorted(report["lengths"])
+    total_actions = sum(report["actions"].values()) or 1
+    print(f"\n=== Corpus report ===")
+    print(f"Trajectories trained on: {report['trajectories']}  (examples: {len(all_examples)})")
+    print(f"By source: {report['by_source']}")
+    print(f"Thought sources: {report['thought_sources']}")
+    if lengths:
+        mid = lengths[len(lengths) // 2]
+        print(f"Steps/trajectory: min={lengths[0]} median={mid} p90={lengths[int(len(lengths)*0.9)]} max={lengths[-1]}")
+    print("Action mix: " + ", ".join(
+        f"{t}={n} ({n / total_actions:.0%})" for t, n in sorted(report["actions"].items(), key=lambda kv: -kv[1])
+    ))
+    print(f"Terminal done() steps: {report['done_steps']}/{report['trajectories']} trajectories")
+    print("Domains: " + ", ".join(f"{d}={n}" for d, n in sorted(report["domains"].items(), key=lambda kv: -kv[1])[:10]))
+    print(f"Skipped: {skipped}")
+    print("======================\n")
 
     random.shuffle(all_examples)
     val_count = int(len(all_examples) * val_split)
@@ -277,6 +355,8 @@ def main():
     convert_parser.add_argument("--input", type=str, required=True, help="Input trajectories directory")
     convert_parser.add_argument("--output", type=str, default="training_data/", help="Output directory")
     convert_parser.add_argument("--val-split", type=float, default=0.1, help="Validation split fraction")
+    convert_parser.add_argument("--include-replay", action="store_true",
+                                help="Also train on legacy test-replay trajectories (QA-style supervision; off by default)")
 
     train_parser = subparsers.add_parser("train", help="Launch ms-swift SFT training")
     train_parser.add_argument("--config", type=str, required=True, help="Path to config.yaml")
@@ -288,7 +368,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "convert":
-        convert_trajectories(args.input, args.output, args.val_split)
+        convert_trajectories(args.input, args.output, args.val_split, include_replay=args.include_replay)
     elif args.command == "train":
         train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size)
 
