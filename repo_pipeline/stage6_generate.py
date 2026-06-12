@@ -238,8 +238,10 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
         for task in tasks:
             if rate_limit_tracker.limit_reached():
                 raise UsageLimitReached("usage limit reached mid agent capture")
-            state = await run_teacher_task(client, task, app_url, registry=registry, full_name=repo_name)
+            # Set before the task runs: a mid-task abort (usage limit, SDK crash) must still
+            # copy whatever steps the driver already recorded for this task.
             captured_anything = True
+            state = await run_teacher_task(client, task, app_url, registry=registry, full_name=repo_name)
             rlog.info(
                 f"task '{task['id']}': {state['actions']} actions, "
                 f"outcome={state['agent_outcome'] or 'none'}"
