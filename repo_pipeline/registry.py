@@ -253,14 +253,17 @@ class RepoRegistry:
             params.append(language)
 
         if stage >= 4:
-            # Prefer the most capturable first: deep_score (set in stage 4) now encodes
-            # capturability — self-hostable apps and public-URL suites score higher, external-
-            # backend repos lower — so post-analysis stages (5+) drain the repos most likely to
-            # yield trajectories first. For stage 4 itself deep_score is still NULL (→0), so this
-            # degrades to the prior production_complexity / shallow_total ordering.
+            # Drain order: bootability first (deep_score, set in stage 4 — NULL→0 for stage 4's
+            # own input, where the richness term then dominates), then UI sophistication. The
+            # richness term double-weights ui_difficulty + interaction_richness so apps with
+            # drag-and-drop / editors / data grids reach agent capture before plain click+type
+            # apps — selection, not rejection: plain apps still drain, just later.
             query += (
                 " ORDER BY COALESCE(deep_score, 0) DESC,"
-                " CAST(json_extract(shallow_scores, '$.production_complexity') AS INTEGER) DESC,"
+                " (2 * COALESCE(CAST(json_extract(shallow_scores, '$.ui_difficulty') AS INTEGER), 0)"
+                "  + 2 * COALESCE(CAST(json_extract(shallow_scores, '$.interaction_richness') AS INTEGER), 0)"
+                "  + COALESCE(CAST(json_extract(shallow_scores, '$.production_complexity') AS INTEGER), 0)"
+                "  + COALESCE(CAST(json_extract(shallow_scores, '$.multi_page_flows') AS INTEGER), 0)) DESC,"
                 " COALESCE(shallow_total, 0) DESC, stars DESC"
             )
             if limit:
