@@ -31,6 +31,13 @@ BUILD_TIMEOUT = int(os.environ.get("SANDBOX_APP_BUILD_TIMEOUT", "420"))
 
 # Start scripts to try, in order of preference. `dev` needs no build and is the most likely to work.
 _START_SCRIPTS = ("dev", "start", "serve", "preview")
+
+# Dev servers must serve the APP, not developer tooling: CRA/webpack splash full-screen ESLint
+# walls over the page on lint findings (e.g. CRLF/LF mismatches on checkout), which would land
+# in every recorded screenshot. These env vars disable the lint plugin and overlay at the
+# source; the browser driver additionally scrubs any overlay that still appears. BROWSER=none
+# stops CRA trying to open a browser; CI='' keeps warnings from being promoted to hard errors.
+_DEV_SERVER_ENV = "DISABLE_ESLINT_PLUGIN=true ESLINT_NO_DEV_ERRORS=true BROWSER=none CI=''"
 _PW_CONFIG_NAMES = (
     "playwright.config.ts", "playwright.config.js", "playwright.config.mjs",
     "playwright.config.cjs", "playwright.config.mts", "playwright.config.cts",
@@ -106,7 +113,11 @@ def detect_app_start(sandbox, profile: FrameworkProfile, for_agent: bool = False
     port = _infer_port(scripts.get(chosen, ""), dep_names)
     # `dev` runs unbuilt; production-style starts (start/serve/preview) need a build first.
     build_cmd = f"cd {REPO_DIR} && npm run build" if (chosen != "dev" and "build" in scripts) else None
-    spec = AppStartSpec(start_cmd=f"cd {REPO_DIR} && npm run {chosen}", port=port, build_cmd=build_cmd)
+    spec = AppStartSpec(
+        start_cmd=f"cd {REPO_DIR} && {_DEV_SERVER_ENV} npm run {chosen}",
+        port=port,
+        build_cmd=build_cmd,
+    )
     logger.info(f"app-start: will run `npm run {chosen}` on :{port}"
                 f"{' (after build)' if build_cmd else ''}")
     return spec

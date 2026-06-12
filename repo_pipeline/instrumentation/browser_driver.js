@@ -206,7 +206,34 @@ function renderElement(e) {
   return line;
 }
 
+// Dev-server tooling injects full-screen overlays (webpack/CRA eslint walls, Vite error
+// overlays, Next.js portals) that are NOT part of the app a user would see in production.
+// They contaminate screenshots and snapshots, so every observation scrubs them first; the
+// count is recorded in capture_meta for observability. Extend the registry per framework.
+const DEV_OVERLAY_SELECTORS = [
+  'iframe#webpack-dev-server-client-overlay',
+  '#webpack-dev-server-client-overlay-div',
+  'vite-error-overlay',
+  'nextjs-portal',
+  '#react-refresh-overlay',
+];
+
+async function scrubDevOverlays() {
+  const removed = await state.page.evaluate((selectors) => {
+    let n = 0;
+    for (const sel of selectors) {
+      document.querySelectorAll(sel).forEach((el) => { el.remove(); n += 1; });
+    }
+    return n;
+  }, DEV_OVERLAY_SELECTORS).catch(() => 0);
+  if (removed && state.task) {
+    state.task.meta.dev_overlays_scrubbed = (state.task.meta.dev_overlays_scrubbed || 0) + removed;
+  }
+  return removed;
+}
+
 async function takeSnapshot() {
+  await scrubDevOverlays();
   const data = await state.page.evaluate(pageCollectSnapshot, SNAPSHOT_MAX_ELEMENTS);
   return renderSnapshot(data);
 }
@@ -233,6 +260,7 @@ async function recordStep(thought, actions, target) {
   const t = state.task;
   const stepNum = t.steps.length + 1;
   const screenshotName = `step_${String(stepNum).padStart(3, '0')}_screenshot.png`;
+  await scrubDevOverlays();
   await state.page.screenshot({ path: path.join(t.dir, screenshotName) });
 
   const step = { step: stepNum, screenshot: screenshotName, thought: thought || '', actions };
@@ -445,6 +473,7 @@ async function handleSession(body) {
 async function handleFinish(body) {
   if (!state.task) throw new Error('no active session');
   if (state.page) {
+    await scrubDevOverlays();
     await state.page.screenshot({ path: path.join(state.task.dir, 'final_screenshot.png') }).catch(() => {});
   }
   state.task.meta.agent_outcome = body.agent_outcome || '';
@@ -487,6 +516,7 @@ const routes = {
   },
   'POST /screenshot': async () => {
     if (!state.page) throw new Error('no active session');
+    await scrubDevOverlays();
     const buf = await state.page.screenshot();
     return { ok: true, b64: buf.toString('base64') };
   },
