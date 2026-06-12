@@ -71,6 +71,11 @@ class DockerSandbox:
         logger.info(f"Started sandbox container {self.container_id[:12]} for {repo_full_name}")
         return self.container_id
 
+    def remaining_seconds(self) -> float:
+        if self.start_time is None:
+            return 0.0
+        return self.container_timeout - (time.time() - self.start_time)
+
     def _check_timeout(self):
         if self.start_time and (time.time() - self.start_time) > self.container_timeout:
             cid = (self.container_id or "unknown")[:12]

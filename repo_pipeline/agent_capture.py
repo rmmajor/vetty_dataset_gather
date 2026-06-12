@@ -59,8 +59,10 @@ user finds things by clicking; navigate only if the UI is genuinely stuck.
 try a DIFFERENT approach rather than repeating the same action.
 - You have at most {max_actions} actions. Be purposeful, not hasty: completing the goal \
 properly matters more than speed.
-- When the goal is accomplished (or you are certain it cannot be), call task_complete with \
-an honest outcome. Lying about completion is worse than reporting failure.
+- You MUST end by calling task_complete with an honest outcome — when the goal is \
+accomplished, or when you are certain it cannot be. Never finish with only a text message; \
+the run does not count as ended until task_complete is called. Lying about completion is \
+worse than reporting failure.
 
 Begin now."""
 
@@ -305,8 +307,9 @@ async def run_teacher_task(
         max_actions=MAX_ACTIONS_PER_TASK,
     )
 
+    final_text = ""
     try:
-        await run_agent(
+        final_text = await run_agent(
             prompt,
             ClaudeAgentOptions(
                 model=MODEL_FOR_TEACHER_AGENT,
@@ -325,9 +328,12 @@ async def run_teacher_task(
         )
     finally:
         # Always finalize so the trajectory + final screenshot land on disk, even when the
-        # teacher ran out of turns/budget without calling task_complete.
+        # teacher ran out of turns/budget without calling task_complete. A teacher that ends
+        # with a closing message but no task_complete call still leaves the verifier its own
+        # account of the run.
         if not state["completed"]:
-            state["agent_outcome"] = state["agent_outcome"] or "abandoned"
+            state["agent_outcome"] = state["agent_outcome"] or "unreported"
+            state["agent_summary"] = state["agent_summary"] or (final_text or "").strip()[:400]
         try:
             await loop.run_in_executor(
                 None, client.finish, state["agent_outcome"], state["agent_summary"]

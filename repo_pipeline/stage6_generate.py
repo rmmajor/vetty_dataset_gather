@@ -33,8 +33,12 @@ TASK_TYPE_BUDGET_USD = float(os.environ.get("TASK_TYPE_BUDGET_USD", "0.15"))
 SUITE_RUN_TIMEOUT = 480  # seconds; partial capture on timeout is fine for trajectory mining
 
 # One container hosts a whole repo's agent session (app boot + N teacher tasks), so it needs
-# more than the 30-minute default.
-AGENT_CONTAINER_TIMEOUT = int(os.environ.get("AGENT_CONTAINER_TIMEOUT", "5400"))
+# more than the 30-minute default. Teacher turns can stretch enormously under subscription
+# rate-limit waits, hence the generous ceiling plus the per-task time reserve below.
+AGENT_CONTAINER_TIMEOUT = int(os.environ.get("AGENT_CONTAINER_TIMEOUT", "10800"))
+# Don't start another teacher task with less than this much container time left — a task that
+# gets cut off mid-flight records an incoherent tail.
+AGENT_TASK_TIME_RESERVE = int(os.environ.get("AGENT_TASK_TIME_RESERVE", "900"))
 # At most this many verified trajectories are kept per repo — diversity guard so one prolific
 # app cannot dominate the corpus the way Booking.com did.
 AGENT_MAX_KEPT = int(os.environ.get("AGENT_MAX_KEPT_PER_REPO", "10"))
@@ -238,6 +242,12 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
         for task in tasks:
             if rate_limit_tracker.limit_reached():
                 raise UsageLimitReached("usage limit reached mid agent capture")
+            if sandbox.remaining_seconds() < AGENT_TASK_TIME_RESERVE:
+                rlog.info(
+                    f"container time low ({sandbox.remaining_seconds():.0f}s left), "
+                    f"stopping after {tasks.index(task)} of {len(tasks)} tasks"
+                )
+                break
             # Set before the task runs: a mid-task abort (usage limit, SDK crash) must still
             # copy whatever steps the driver already recorded for this task.
             captured_anything = True
@@ -246,13 +256,20 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                 f"task '{task['id']}': {state['actions']} actions, "
                 f"outcome={state['agent_outcome'] or 'none'}"
             )
+            # Incremental copy-out: teacher turns can be slow under rate-limit waits, and a
+            # container-timeout mid-task must never cost the tasks already recorded.
+            repo_traj_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                await _run(sandbox.copy_out, RESULTS_DIR, str(repo_traj_dir))
+            except Exception as e:
+                logger.warning(f"incremental copy_out failed for {repo_name}: {e}")
     finally:
         if captured_anything:
             repo_traj_dir.mkdir(parents=True, exist_ok=True)
             try:
                 await _run(sandbox.copy_out, RESULTS_DIR, str(repo_traj_dir))
             except Exception as e:
-                logger.warning(f"copy_out after agent capture failed for {repo_name}: {e}")
+                logger.warning(f"final copy_out after agent capture failed for {repo_name}: {e}")
         await _run(sandbox.stop)
 
 
