@@ -26,17 +26,16 @@ from pathlib import Path
 
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, RateLimitEvent, ResultMessage
 
-from repo_pipeline.agent_runner import CLAUDE_CLI_PATH, run_agent
+from repo_pipeline.agent_runner import run_agent
 from repo_pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
-from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
-from repo_pipeline.sdk_runner import rate_limit_tracker, run_query, UsageLimitReached
+from repo_pipeline.sdk_runner import UsageLimitReached, harden_options, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
 # Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet 4.6 — see
 # memory pathb-e2e-and-sdk-budget-floor). Defaults sit comfortably above that floor; the
 # per-call envelope for one think block is dominated by SDK overhead, not by tokens.
-THINK_BUDGET_USD = float(os.environ.get("THINK_BUDGET_USD", "0.15"))
+THINK_BUDGET_USD = float(os.environ.get("THINK_BUDGET_USD", "0.30"))
 # A whole trajectory's thoughts run through ONE ClaudeSDKClient session, so this cap covers the
 # session (all steps), not a single call. Generous — actual spend is far lower; it only guards
 # against a runaway session, not per-step cost.
@@ -325,8 +324,7 @@ async def generate_thinks_for_trajectory(
         max_budget_usd=THINK_SESSION_BUDGET_USD,
         permission_mode="bypassPermissions",
     )
-    if CLAUDE_CLI_PATH:
-        options.cli_path = CLAUDE_CLI_PATH
+    harden_options(options)
 
     shown: set[int] = set()  # steps whose context the model has already seen this session
     first_turn = True

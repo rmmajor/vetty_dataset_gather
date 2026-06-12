@@ -14,20 +14,18 @@ text came back.
 """
 
 import logging
-import os
-import shutil
 
 from claude_agent_sdk import AssistantMessage, RateLimitEvent, ResultMessage, query
 
 from repo_pipeline.schemas import FailureCategory, RetryableFailure
-from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from repo_pipeline.sdk_runner import (
+    CLAUDE_CLI_PATH,
+    UsageLimitReached,
+    harden_options,
+    rate_limit_tracker,
+)
 
 logger = logging.getLogger(__name__)
-
-# The SDK always prefers its bundled CLI, which can lag the system install and has wedged on
-# subprocess spawn. Pin to the (newer, session-proven) system `claude` when available; override
-# with CLAUDE_CLI_PATH. None -> fall back to the SDK's default (bundled) discovery.
-CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH") or shutil.which("claude")
 
 
 async def run_agent(
@@ -56,21 +54,32 @@ async def run_agent(
     last_assistant_text = ""
     result_msg = None
 
-    if CLAUDE_CLI_PATH and not getattr(options, "cli_path", None):
-        options.cli_path = CLAUDE_CLI_PATH
+    harden_options(options)
 
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, RateLimitEvent):
-            rate_limit_tracker.observe(message.rate_limit_info)
-            continue
-        if capture_assistant_fallback and isinstance(message, AssistantMessage):
-            for block in getattr(message, "content", None) or []:
-                if hasattr(block, "text"):
-                    last_assistant_text = block.text
-        if isinstance(message, ResultMessage):
-            result_msg = message
-            if message.subtype == "success" and not message.is_error:
-                result_text = message.result or ""
+    try:
+        async for message in query(prompt=prompt, options=options):
+            if isinstance(message, RateLimitEvent):
+                rate_limit_tracker.observe(message.rate_limit_info)
+                continue
+            if capture_assistant_fallback and isinstance(message, AssistantMessage):
+                for block in getattr(message, "content", None) or []:
+                    if hasattr(block, "text"):
+                        last_assistant_text = block.text
+            if isinstance(message, ResultMessage):
+                result_msg = message
+                if message.subtype == "success" and not message.is_error:
+                    result_text = message.result or ""
+    except UsageLimitReached:
+        raise
+    except Exception as e:
+        # The SDK surfaces the CLI's structured error result as an exception ("Claude Code
+        # returned an error result: Reached maximum budget ($X)"). A blown per-call budget is
+        # deterministic — retrying re-spends the full budget for the same failure — so it gets
+        # the non-retryable BUDGET_EXCEEDED category (recoverable later via --requeue-infra
+        # after raising the cap). Everything else stays a retryable infra failure.
+        if "maximum budget" in str(e).lower():
+            raise RetryableFailure(FailureCategory.BUDGET_EXCEEDED, str(e)[:200])
+        raise
 
     if result_msg is not None and registry is not None:
         registry.record_agent_call(

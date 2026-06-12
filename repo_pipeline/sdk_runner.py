@@ -9,6 +9,8 @@ between stages, and we raise `UsageLimitReached` so a quota-exhausted call NEVER
 repo to be rejected — the repo stays in its input status and is retried on the next run.
 """
 import logging
+import os
+import shutil
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -19,6 +21,24 @@ from claude_agent_sdk import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The SDK always prefers its bundled CLI, which can lag the system install and has wedged on
+# subprocess spawn. Pin to the (newer, session-proven) system `claude` when available; override
+# with CLAUDE_CLI_PATH. None -> fall back to the SDK's default (bundled) discovery.
+CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH") or shutil.which("claude")
+
+
+def harden_options(options) -> None:
+    """Apply pipeline-wide option defaults in place: pin the system CLI, and strip filesystem
+    settings from headless calls. Without `setting_sources=[]` the spawned CLI loads the
+    OPERATOR'S user-level plugins/skills into every call's system prompt — measured at +20k
+    cache-creation tokens per call after a plugin install (bare `claude -p pong` = $0.19),
+    which silently tripled the fixed cost of every query and blew through per-call budgets.
+    Pipeline prompts are self-contained; they must not inherit the operator's environment."""
+    if CLAUDE_CLI_PATH and not getattr(options, "cli_path", None):
+        options.cli_path = CLAUDE_CLI_PATH
+    if getattr(options, "setting_sources", None) is None:
+        options.setting_sources = []
 
 
 class UsageLimitReached(Exception):
@@ -110,6 +130,8 @@ async def run_query(
     """
     if rate_limit_tracker.limit_reached():
         raise UsageLimitReached(f"usage limit reached before query ({label})")
+
+    harden_options(options)
 
     result_text = ""
     last_assistant_text = ""

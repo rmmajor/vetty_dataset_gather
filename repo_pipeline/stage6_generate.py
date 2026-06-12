@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 # Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet 4.6 — see
 # memory pathb-e2e-and-sdk-budget-floor). Defaults sit comfortably above that floor; tune
 # down only after verifying a smaller cap doesn't trip `error_max_budget_usd`.
-INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.15"))
-TASK_TYPE_BUDGET_USD = float(os.environ.get("TASK_TYPE_BUDGET_USD", "0.15"))
+INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.30"))
+TASK_TYPE_BUDGET_USD = float(os.environ.get("TASK_TYPE_BUDGET_USD", "0.30"))
 SUITE_RUN_TIMEOUT = 480  # seconds; partial capture on timeout is fine for trajectory mining
 
 # One container hosts a whole repo's agent session (app boot + N teacher tasks), so it needs
