@@ -223,6 +223,12 @@ class RepoRegistry:
 
         query = """SELECT *,
             CASE
+                WHEN source_query LIKE 'topic:self-hosted%' OR source_query LIKE 'topic:selfhosted%'
+                     OR source_query LIKE 'topic:kanban%' OR source_query LIKE 'topic:webapp%'
+                     OR source_query LIKE 'topic:dashboard%' OR source_query LIKE 'topic:admin-dashboard%'
+                     OR source_query LIKE 'topic:project-management%' OR source_query LIKE 'topic:crm%'
+                     OR source_query LIKE 'topic:inventory%' OR source_query LIKE 'topic:notes-app%'
+                     OR source_query LIKE 'topic:todo topic:fullstack%' THEN 1
                 WHEN source_query LIKE '%stars:>%' THEN 1
                 WHEN source_query LIKE '%stars:%' THEN 2
                 WHEN source_query LIKE 'playwright test %' AND source_query NOT LIKE '%demo%'

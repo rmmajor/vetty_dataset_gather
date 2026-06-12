@@ -77,6 +77,13 @@ artifacts from a specific earlier task, so they work against whatever state is a
 - difficulty: easy = obvious 3-6 action flow; medium = 6-12 actions or one non-obvious step; \
 hard = 12+ actions, multiple stages, or requires discovering a non-obvious UI affordance.
 - Skew hard: at most 2 easy tasks.
+- Include 1-2 EXPLORATORY tasks (difficulty "hard"): state WHAT the user wants but not WHERE \
+it lives, so the agent must hunt through menus, settings, or hover-revealed controls — e.g. \
+"Find where this app lets you export your data, and export it" rather than "Open Settings > \
+Export". Only propose goals the app genuinely supports (use the README/tests as evidence).
+- Vary instruction PHRASING across tasks like real users would: some imperative and precise, \
+some terse ("dark mode on, then find the oldest entry"), some conversational ("I need a list \
+of everything I finished this week"). Never test/QA voice.
 
 Output ONLY a JSON object (no markdown fence, no prose):
 {{"app_health": {{"usable": <true|false>, "notes": "<one sentence: what works / what is broken>"}},

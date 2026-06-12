@@ -179,6 +179,29 @@ SEARCH_QUERIES = [
     "playwright e2e open source app stars:>100",
     "playwright integration test SaaS",
     '"npx playwright test" filename:.github/workflows',
+
+    # ---- Bootable web apps, TEST-INDEPENDENT ----
+    # Agent capture made the funnel test-agnostic everywhere downstream of here: the boot
+    # gate boots apps (no instrumentation), the proposer grounds in README + live homepage,
+    # the teacher never runs a test. Requiring a test framework at discovery was a vestige
+    # that excluded most of the bootable-app universe. These queries admit app-shaped repos
+    # directly; stage 3's bootable-interactive-app rubric does the judging.
+    "topic:self-hosted topic:webapp",
+    "topic:self-hosted language:TypeScript stars:>30",
+    "topic:self-hosted language:JavaScript stars:>30",
+    "topic:selfhosted web stars:>20",
+    "topic:webapp topic:docker stars:>20",
+    "topic:kanban stars:>20",
+    "topic:dashboard topic:react stars:>30",
+    "topic:admin-dashboard stars:>50",
+    "topic:project-management language:TypeScript stars:>30",
+    "topic:inventory-management web stars:>10",
+    "topic:crm language:TypeScript stars:>30",
+    "topic:notes-app stars:>20",
+    "topic:todo topic:fullstack stars:>20",
+    "web app docker-compose dev language:TypeScript stars:50..500",
+    "dashboard app language:TypeScript stars:30..300 in:description",
+    '"npm run dev" filename:docker-compose.yml stars:>20',
 ]
 
 # Selenium is a second trajectory source. The query set mirrors the Playwright one
