@@ -92,29 +92,38 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry, max_task
         await asyncio.get_running_loop().run_in_executor(None, driver_session.start_driver, sandbox)
         client = driver_session.DriverClient(sandbox)
 
+        states = {}
         for task in pending:
             if rate_limit_tracker.limit_reached():
                 raise UsageLimitReached("usage limit reached during public capture")
             state = await run_teacher_task(
                 client, task, site["start_url"], registry=registry, full_name=f"site:{site['name']}"
             )
+            states[task["id"]] = state
             summary["captured"] += 1
             site_dir.mkdir(parents=True, exist_ok=True)
             await asyncio.get_running_loop().run_in_executor(
                 None, sandbox.copy_out, RESULTS_DIR, str(site_dir)
             )
-            traj_dir = site_dir / f"task_{_safe_task_id(task['id'])}"
-            if traj_dir.exists():
-                verdict = await _verify_and_finalize(traj_dir, site, task, state, registry)
-                if verdict.get("final_success"):
-                    summary["verified"] += 1
-                logger.info(
-                    f"[{site['name']}] task '{task['id']}': {state['actions']} actions, "
-                    f"outcome={state['agent_outcome']}, verified={verdict.get('final_success')}"
-                    f" ({verdict.get('efficiency')})"
-                )
+            logger.info(f"[{site['name']}] task '{task['id']}': {state['actions']} actions, "
+                        f"outcome={state['agent_outcome']}")
     finally:
         await asyncio.get_running_loop().run_in_executor(None, sandbox.stop)
+
+    # Finalize ONLY after the capture loop: each copy_out re-copies the container's
+    # capture_meta/trajectory files over the host copies, so per-task verdicts written
+    # mid-loop were clobbered by the next task's copy (cost the first sweep 4 verdicts).
+    for task in pending:
+        traj_dir = site_dir / f"task_{_safe_task_id(task['id'])}"
+        if not traj_dir.exists() or task["id"] not in states:
+            continue
+        verdict = await _verify_and_finalize(traj_dir, site, task, states[task["id"]], registry)
+        if verdict.get("final_success"):
+            summary["verified"] += 1
+        logger.info(
+            f"[{site['name']}] task '{task['id']}': verified={verdict.get('final_success')}"
+            f" ({verdict.get('efficiency')})"
+        )
     return summary
 
 
