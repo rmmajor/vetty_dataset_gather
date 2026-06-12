@@ -131,6 +131,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Public-site teacher capture lane")
     parser.add_argument("--sites", type=str, default=None, help="Comma-separated site names (default: all)")
     parser.add_argument("--max-tasks", type=int, default=None, help="Max tasks per site this run")
+    parser.add_argument("--parallel", type=int, default=3, help="Concurrent site sandboxes")
     parser.add_argument("--traj-dir", type=str, default="trajectories/")
     args = parser.parse_args()
 
@@ -141,15 +142,23 @@ async def main():
 
     registry = RepoRegistry("pipeline_data/registry.db")
     results = []
-    try:
-        for site in sites:
+    # Sites are independent (one sandbox each, browser-only ~0.5GB real) — run a few
+    # concurrently. Keep this below the Docker VM headroom shared with funnel stages.
+    semaphore = asyncio.Semaphore(int(args.parallel))
+
+    async def run_site(site):
+        async with semaphore:
+            if rate_limit_tracker.limit_reached():
+                return
             try:
                 results.append(await capture_site(site, Path(args.traj_dir), registry, args.max_tasks))
             except UsageLimitReached:
-                logger.warning("usage limit reached — stopping; finished sites keep their captures")
-                break
+                logger.warning(f"[{site['name']}] usage limit reached — captures so far are kept")
             except Exception as e:
                 logger.error(f"[{site['name']}] failed: {e}")
+
+    try:
+        await asyncio.gather(*[run_site(site) for site in sites])
     finally:
         registry.close()
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated public-site capture lane: stable, login-free, bot-tolerant sites with hand-authored hard tasks. Tasks must be NON-DESTRUCTIVE (browse/search/navigate/configure-view only — no account creation, no posting, no purchases). Phrase instructions as user intents robust to cosmetic UI changes; the verifier judges the final screenshot, so every task must end in a visually checkable state.",
+  "_comment": "Curated public-site capture lane: stable, login-free, bot-tolerant sites with hand-authored hard tasks. Tasks must be NON-DESTRUCTIVE (browse/search/navigate/configure-view only \u2014 no account creation, no posting, no purchases). Phrase instructions as user intents robust to cosmetic UI changes; the verifier judges the final screenshot, so every task must end in a visually checkable state.",
   "sites": [
     {
       "name": "wikipedia",
@@ -11,21 +11,53 @@
           "instruction": "Find the Wikipedia article about the Voyager 1 spacecraft, then navigate from it to the article about the rocket that launched it, ending with that rocket's article on screen.",
           "difficulty": "hard",
           "expected_actions": 10,
-          "action_kinds": ["click", "type", "scroll"]
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
         },
         {
           "id": "compare-population-tables",
           "instruction": "Look up the article 'List of countries by population' and sort or locate the table so that the country ranked 5th by population is visible on screen.",
           "difficulty": "hard",
           "expected_actions": 9,
-          "action_kinds": ["click", "type", "scroll"]
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
         },
         {
           "id": "disambiguation-navigation",
           "instruction": "Search Wikipedia for 'Mercury', open the disambiguation page, and navigate to the article about the chemical element, ending on its physical properties section.",
           "difficulty": "medium",
           "expected_actions": 8,
-          "action_kinds": ["click", "type", "scroll"]
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        },
+        {
+          "id": "featured-article-history",
+          "instruction": "Open today's featured article from the Wikipedia main page, then view its edit history and end with the list of recent changes to it on screen.",
+          "difficulty": "hard",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ]
+        },
+        {
+          "id": "language-hop-count",
+          "instruction": "Look up the article about the Eiffel Tower and switch it to the German edition, ending with the German article visible.",
+          "difficulty": "medium",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "type"
+          ]
         }
       ]
     },
@@ -39,14 +71,32 @@
           "instruction": "Search Open Library for books by Ursula K. Le Guin, filter the results to show only ebooks, and open the page for one of them.",
           "difficulty": "hard",
           "expected_actions": 11,
-          "action_kinds": ["click", "type", "scroll"]
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
         },
         {
           "id": "subject-browse-decade",
           "instruction": "Browse to the science fiction subject page and narrow what is shown to works from the 1960s, ending with the filtered list visible.",
           "difficulty": "hard",
           "expected_actions": 10,
-          "action_kinds": ["click", "type", "scroll"]
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        },
+        {
+          "id": "compare-two-authors",
+          "instruction": "I want to see which has more works listed on Open Library: Isaac Asimov or Arthur C. Clarke \u2014 check both author pages and end on the one with more.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ]
         }
       ]
     },
@@ -60,21 +110,44 @@
           "instruction": "Search for Lisbon, Portugal, then pan the map westward by dragging until the Atlantic coastline is centered, ending zoomed in enough to read street names near the waterfront.",
           "difficulty": "hard",
           "expected_actions": 10,
-          "action_kinds": ["click", "type", "drag_path", "scroll"]
+          "action_kinds": [
+            "click",
+            "type",
+            "drag_path",
+            "scroll"
+          ]
         },
         {
           "id": "directions-between-stations",
           "instruction": "Use the directions feature to get a route from 'Gare du Nord, Paris' to 'Gare de Lyon, Paris', ending with the route summary visible.",
           "difficulty": "hard",
           "expected_actions": 12,
-          "action_kinds": ["click", "type"]
+          "action_kinds": [
+            "click",
+            "type"
+          ]
         },
         {
           "id": "switch-map-layer",
           "instruction": "Find Tokyo on the map, then switch the base layer to the cycling map, ending with Tokyo shown in the new layer.",
           "difficulty": "medium",
           "expected_actions": 8,
-          "action_kinds": ["click", "type"]
+          "action_kinds": [
+            "click",
+            "type"
+          ]
+        },
+        {
+          "id": "zoom-into-island",
+          "instruction": "Find Iceland on the map and zoom in by dragging and scrolling until Reykjavik's street grid is readable, ending centered on the city.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag_path",
+            "scroll"
+          ]
         }
       ]
     },
@@ -88,7 +161,21 @@
           "instruction": "Find books by Jules Verne available in French on Project Gutenberg, and open the book page for one of them, ending with its download options visible.",
           "difficulty": "hard",
           "expected_actions": 11,
-          "action_kinds": ["click", "type", "scroll"]
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        },
+        {
+          "id": "top-downloads-browse",
+          "instruction": "Show me what's popular: open Project Gutenberg's most-downloaded books list and open the page for whichever ranks first today.",
+          "difficulty": "medium",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ]
         }
       ]
     },
@@ -102,7 +189,22 @@
           "instruction": "Search the Internet Archive for 'Apollo 11', filter the results to show only videos, sort them by date, and open one result, ending on its item page.",
           "difficulty": "hard",
           "expected_actions": 12,
-          "action_kinds": ["click", "type", "scroll"]
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        },
+        {
+          "id": "vintage-software-collection",
+          "instruction": "Browse to the MS-DOS games collection on the Internet Archive, sort by most viewed all time, and open the top result's page.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
         }
       ]
     },
@@ -116,7 +218,80 @@
           "instruction": "Find the MDN reference page for the CSS 'grid-template-areas' property and scroll to its interactive example, ending with the example visible.",
           "difficulty": "medium",
           "expected_actions": 8,
-          "action_kinds": ["click", "type", "scroll"]
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        },
+        {
+          "id": "search-refine-flexbox",
+          "instruction": "flexbox guide \u2014 find MDN's main flexbox layout guide (not the property reference) and end at its section about wrapping.",
+          "difficulty": "hard",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wiktionary",
+      "start_url": "https://en.wiktionary.org",
+      "domain": "reference",
+      "tasks": [
+        {
+          "id": "etymology-chain",
+          "instruction": "Look up the word 'serendipity' on Wiktionary, read its etymology, and follow the link to the word it derives from, ending on that entry.",
+          "difficulty": "hard",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        },
+        {
+          "id": "translations-table",
+          "instruction": "Find the Wiktionary entry for 'butterfly' and expand its translations section so the Japanese translation is visible.",
+          "difficulty": "medium",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "openfoodfacts",
+      "start_url": "https://world.openfoodfacts.org",
+      "domain": "consumer",
+      "tasks": [
+        {
+          "id": "nutriscore-filter",
+          "instruction": "Search Open Food Facts for breakfast cereals and narrow the results to products with Nutri-Score A, ending with the filtered list on screen.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        },
+        {
+          "id": "product-compare-additives",
+          "instruction": "Look up Nutella on Open Food Facts and end on the section of its product page that lists additives.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
         }
       ]
     }
