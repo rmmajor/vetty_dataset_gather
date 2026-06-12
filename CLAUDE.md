@@ -21,7 +21,9 @@ Every trajectory is a directory `task_*/` (Path A: `task_mind2web_NNNN/`; Path B
  "total_steps", "success"}
 ```
 
-Action dicts are normalized across both paths: `{type:"click", x, y, button}`, `{type:"type", text}`, `{type:"keypress", keys:[...]}`, `{type:"scroll", x, y, scroll_x, scroll_y}`, `{type:"drag", path:[{x,y}...]}`. Viewport is fixed at **1280x720, deviceScaleFactor=1** everywhere. `train_qwen.py` converts thoughts into `<think>...</think>` and coordinates into `<ref>(x, y)</ref>` for the SFT target. `convert` skips any trajectory with `success: false`.
+Action dicts are normalized across both paths: `{type:"click", x, y, button}`, `{type:"type", text}`, `{type:"keypress", keys:[...]}`, `{type:"scroll", x, y, scroll_x, scroll_y}`, `{type:"drag", path:[{x,y}...]}`, `{type:"move", x, y}` (hover), `{type:"wait"}`, and the terminal `{type:"done"}`. Viewport is fixed at **1280x720, deviceScaleFactor=1** everywhere.
+
+`train_qwen.py convert` emits **one SFT example per step** (current screenshot + instruction + windowed text history → `<think>` + actions; whole-trajectory multi-turn examples blew the 4096 max_length and truncated long-horizon tails). Gating: `metadata.excluded_reason` always skips; agent trajectories require `success: true` (the verifier's verdict); legacy replay trajectories train only with `--include-replay`. Every convert prints a corpus health report — read it.
 
 ## Common commands
 

@@ -94,6 +94,9 @@ test-sandbox: build-sandbox ## Test sandbox container lifecycle
 test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
 	python -m repo_pipeline.driver_smoke
 
+audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on defects)
+	python -m repo_pipeline.corpus_audit trajectories/
+
 pipeline-discover: ## Stage 1: Discover QA repos on GitHub
 	@test -n "$$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN not set" && exit 1)
 	python -m repo_pipeline.orchestrator --stage 1
