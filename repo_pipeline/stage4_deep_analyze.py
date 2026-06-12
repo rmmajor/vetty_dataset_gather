@@ -20,7 +20,7 @@ from repo_pipeline.schemas import (
     RepoStatus,
     RetryableFailure,
 )
-from repo_pipeline.sdk_runner import UsageLimitReached
+from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
