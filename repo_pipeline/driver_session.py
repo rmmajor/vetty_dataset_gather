@@ -84,6 +84,10 @@ def start_app(sandbox, profile) -> str | None:
     spec = app_runner.detect_app_start(sandbox, profile, for_agent=True)
     if spec is None:
         return None
+    if spec.app_dir != app_runner.REPO_DIR:
+        # Monorepo subdir app: the callers' root-level npm install was a no-op; install
+        # where the app actually lives before building/starting it.
+        sandbox.exec_command(f"cd {spec.app_dir} && npm install", timeout=300)
     app_runner.build_app(sandbox, spec)
     sandbox.start_background(spec.start_cmd, APP_LOG)
     if not sandbox.wait_for_port(spec.port, app_runner.APP_READY_TIMEOUT):

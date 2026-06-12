@@ -52,9 +52,34 @@ _FRAMEWORK_PORTS = (
 
 @dataclass(frozen=True)
 class AppStartSpec:
-    start_cmd: str           # shell command that boots the app (run from REPO_DIR)
+    start_cmd: str           # shell command that boots the app
     port: int                # TCP port the app is expected to listen on
     build_cmd: str | None    # one-time build to run before starting, or None
+    app_dir: str = REPO_DIR  # directory holding the app's package.json (monorepos: a subdir)
+
+
+# Conventional monorepo app-directory names, tried in order when the repo root has no
+# package.json. A kanban/board app living in frontend/ used to hard-reject as no_boot.
+_APP_SUBDIR_NAMES = ("frontend", "client", "web", "app", "ui", "www", "site", "dashboard")
+
+
+def _find_app_dir(sandbox) -> str | None:
+    """REPO_DIR if it has a package.json, else the most app-conventional immediate subdir
+    that does. None when no Node app exists anywhere shallow."""
+    if _read_json(sandbox, f"{REPO_DIR}/package.json"):
+        return REPO_DIR
+    candidates = []
+    for path in sandbox.list_files("package.json", REPO_DIR):
+        rel = path.replace(REPO_DIR + "/", "")
+        if "/node_modules/" in path or rel.count("/") != 1:
+            continue
+        candidates.append(rel.split("/")[0])
+    if not candidates:
+        return None
+    for name in _APP_SUBDIR_NAMES:
+        if name in candidates:
+            return f"{REPO_DIR}/{name}"
+    return f"{REPO_DIR}/{sorted(candidates)[0]}"
 
 
 def _read_json(sandbox, path: str) -> dict | None:
@@ -96,9 +121,12 @@ def detect_app_start(sandbox, profile: FrameworkProfile, for_agent: bool = False
     `webServer` config, so the webServer short-circuit is skipped and the package.json start
     script is used directly — webServer blocks almost always wrap that same script.
     """
-    pkg = _read_json(sandbox, f"{REPO_DIR}/package.json")
-    if not pkg:
+    app_dir = _find_app_dir(sandbox)
+    if app_dir is None:
         return None  # no Node app to start (python app servers etc. are out of scope for v1)
+    pkg = _read_json(sandbox, f"{app_dir}/package.json")
+    if not pkg:
+        return None
 
     if not for_agent and profile.test_framework == "playwright" and _has_webserver_config(sandbox):
         logger.info("app-start: Playwright webServer config present — leaving startup to Playwright")
@@ -112,13 +140,14 @@ def detect_app_start(sandbox, profile: FrameworkProfile, for_agent: bool = False
     dep_names = " ".join(list(pkg.get("dependencies", {})) + list(pkg.get("devDependencies", {})))
     port = _infer_port(scripts.get(chosen, ""), dep_names)
     # `dev` runs unbuilt; production-style starts (start/serve/preview) need a build first.
-    build_cmd = f"cd {REPO_DIR} && npm run build" if (chosen != "dev" and "build" in scripts) else None
+    build_cmd = f"cd {app_dir} && npm run build" if (chosen != "dev" and "build" in scripts) else None
     spec = AppStartSpec(
-        start_cmd=f"cd {REPO_DIR} && {_DEV_SERVER_ENV} npm run {chosen}",
+        start_cmd=f"cd {app_dir} && {_DEV_SERVER_ENV} npm run {chosen}",
         port=port,
         build_cmd=build_cmd,
+        app_dir=app_dir,
     )
-    logger.info(f"app-start: will run `npm run {chosen}` on :{port}"
+    logger.info(f"app-start: will run `npm run {chosen}` in {app_dir.replace(REPO_DIR, '.')} on :{port}"
                 f"{' (after build)' if build_cmd else ''}")
     return spec
 
