@@ -97,6 +97,9 @@ test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
 audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on defects)
 	python -m repo_pipeline.corpus_audit trajectories/
 
+capture-public: ## Teacher capture on curated public sites (real-web diversity lane)
+	python -m repo_pipeline.public_capture $(if $(PUBLIC_SITES),--sites $(PUBLIC_SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
+
 pipeline-discover: ## Stage 1: Discover QA repos on GitHub
 	@test -n "$$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN not set" && exit 1)
 	python -m repo_pipeline.orchestrator --stage 1

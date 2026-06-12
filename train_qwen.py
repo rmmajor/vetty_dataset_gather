@@ -242,10 +242,11 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False)
             continue
 
         all_examples.extend(examples)
-        # Split unit: the APP, not the step. Steps of one trajectory (and trajectories of one
-        # app) share screenshots and layout — splitting below app level leaks pixels into val
-        # and turns val loss into a memorization check.
-        group = traj_dir.parent.name if traj_dir.parent.name.startswith("repo_") else traj_dir.name
+        # Split unit: the APP/SITE, not the step. Steps of one trajectory (and trajectories of
+        # one app) share screenshots and layout — splitting below app level leaks pixels into
+        # val and turns val loss into a memorization check.
+        parent = traj_dir.parent.name
+        group = parent if parent.startswith(("repo_", "site_")) else traj_dir.name
         examples_by_group.setdefault(group, []).extend(examples)
         report["trajectories"] += 1
         report["by_source"][source] = report["by_source"].get(source, 0) + 1

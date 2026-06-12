@@ -96,9 +96,13 @@ state that sub-goal as a standalone user instruction in imperative voice; else n
 Rules:
 - success=true only if the final state visibly reflects the goal being met.
 - efficiency: 'efficient' = purposeful progress throughout (mid-run screenshots show \
-distinct forward states); 'acceptable' = minor detours or one recovered mistake; \
-'meandering' = repeated actions without effect, aimless wandering, or step count far beyond \
-what the goal needs. Meandering trajectories are bad training data even when they succeed.
+distinct forward states); 'acceptable' = minor detours, a recovered mistake, or a suboptimal \
+but purposeful route; 'meandering' = REQUIRES CLEAR EVIDENCE: the same action repeated \
+without effect, work done then undone, or step count far beyond need (more than ~2x the \
+expected actions). Do NOT grade meandering merely because a faster route existed — browsing \
+an index instead of searching, or taking extra steps through real-site clutter (cookie \
+banners, popups), is a legitimate strategy and 'acceptable' at worst. Meandering trajectories \
+are bad training data even when they succeed; purposeful indirect ones are good data.
 - "accomplished" must describe something the FINAL screenshot actually evidences, must cover \
 the trajectory from its first step, and must be a goal a real user could have asked for. \
 If the run is a meandering mess, use null.

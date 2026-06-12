@@ -1,0 +1,124 @@
+{
+  "_comment": "Curated public-site capture lane: stable, login-free, bot-tolerant sites with hand-authored hard tasks. Tasks must be NON-DESTRUCTIVE (browse/search/navigate/configure-view only — no account creation, no posting, no purchases). Phrase instructions as user intents robust to cosmetic UI changes; the verifier judges the final screenshot, so every task must end in a visually checkable state.",
+  "sites": [
+    {
+      "name": "wikipedia",
+      "start_url": "https://en.wikipedia.org",
+      "domain": "reference",
+      "tasks": [
+        {
+          "id": "voyager-launch-vehicle-hop",
+          "instruction": "Find the Wikipedia article about the Voyager 1 spacecraft, then navigate from it to the article about the rocket that launched it, ending with that rocket's article on screen.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "compare-population-tables",
+          "instruction": "Look up the article 'List of countries by population' and sort or locate the table so that the country ranked 5th by population is visible on screen.",
+          "difficulty": "hard",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "disambiguation-navigation",
+          "instruction": "Search Wikipedia for 'Mercury', open the disambiguation page, and navigate to the article about the chemical element, ending on its physical properties section.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "openlibrary",
+      "start_url": "https://openlibrary.org",
+      "domain": "books",
+      "tasks": [
+        {
+          "id": "filter-author-editions",
+          "instruction": "Search Open Library for books by Ursula K. Le Guin, filter the results to show only ebooks, and open the page for one of them.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "subject-browse-decade",
+          "instruction": "Browse to the science fiction subject page and narrow what is shown to works from the 1960s, ending with the filtered list visible.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "openstreetmap",
+      "start_url": "https://www.openstreetmap.org",
+      "domain": "maps",
+      "tasks": [
+        {
+          "id": "pan-to-landmark",
+          "instruction": "Search for Lisbon, Portugal, then pan the map westward by dragging until the Atlantic coastline is centered, ending zoomed in enough to read street names near the waterfront.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "drag_path", "scroll"]
+        },
+        {
+          "id": "directions-between-stations",
+          "instruction": "Use the directions feature to get a route from 'Gare du Nord, Paris' to 'Gare de Lyon, Paris', ending with the route summary visible.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type"]
+        },
+        {
+          "id": "switch-map-layer",
+          "instruction": "Find Tokyo on the map, then switch the base layer to the cycling map, ending with Tokyo shown in the new layer.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": ["click", "type"]
+        }
+      ]
+    },
+    {
+      "name": "gutenberg",
+      "start_url": "https://www.gutenberg.org",
+      "domain": "books",
+      "tasks": [
+        {
+          "id": "author-language-filter",
+          "instruction": "Find books by Jules Verne available in French on Project Gutenberg, and open the book page for one of them, ending with its download options visible.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "archive-org",
+      "start_url": "https://archive.org",
+      "domain": "media",
+      "tasks": [
+        {
+          "id": "filtered-media-search",
+          "instruction": "Search the Internet Archive for 'Apollo 11', filter the results to show only videos, sort them by date, and open one result, ending on its item page.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "mdn",
+      "start_url": "https://developer.mozilla.org",
+      "domain": "documentation",
+      "tasks": [
+        {
+          "id": "css-reference-example",
+          "instruction": "Find the MDN reference page for the CSS 'grid-template-areas' property and scroll to its interactive example, ending with the example visible.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    }
+  ]
+}
