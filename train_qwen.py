@@ -139,6 +139,7 @@ def convert_trajectories(input_dir, output_dir, val_split):
     all_examples = []
     included_from_failed = 0
     skipped_empty = 0
+    skipped_unverified = 0
 
     trajectory_dirs = sorted(
         d for d in input_path.glob("**/task_*")
@@ -154,10 +155,24 @@ def convert_trajectories(input_dir, output_dir, val_split):
         with open(trajectory_file) as f:
             trajectory = json.load(f)
 
-        # Keep trajectories regardless of the test's pass/fail `success` flag — a test that
-        # performed real actions then failed an assertion still yields a usable trajectory.
-        # convert_trajectory_to_messages drops missing-screenshot steps and empty trajectories.
+        # `success` means different things by provenance (metadata.capture_source). Agent
+        # captures: success is the VERIFIER's verdict — false marks unverified, duplicate, or
+        # per-repo-capped trajectories that must never train. Replay/Path A: a test that
+        # performed real actions then failed an assertion still yields a usable trajectory,
+        # so failed ones are kept. convert_trajectory_to_messages drops missing-screenshot
+        # steps and empty trajectories either way.
         if not trajectory.get("success", True):
+            metadata_file = traj_dir / "metadata.json"
+            capture_source = ""
+            if metadata_file.exists():
+                try:
+                    with open(metadata_file) as f:
+                        capture_source = json.load(f).get("capture_source", "")
+                except (json.JSONDecodeError, OSError):
+                    pass
+            if capture_source == "agent":
+                skipped_unverified += 1
+                continue
             included_from_failed += 1
 
         example = convert_trajectory_to_messages(trajectory, traj_dir)
@@ -169,6 +184,7 @@ def convert_trajectories(input_dir, output_dir, val_split):
 
     print(f"Converted {len(all_examples)} trajectories")
     print(f"Included {included_from_failed} trajectories from failed tests (success=false, kept for usable steps)")
+    print(f"Skipped {skipped_unverified} unverified/excluded agent trajectories (success=false)")
     print(f"Skipped {skipped_empty} empty/invalid trajectories")
 
     random.shuffle(all_examples)
