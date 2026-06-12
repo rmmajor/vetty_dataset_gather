@@ -184,7 +184,11 @@ async def run_stage(
 
     elif stage == 6:
         from repo_pipeline.stage6_generate import run_generate
-        return await run_generate(registry, trajectory_dir, limit=limit, workers=min(workers, 2), budget_remaining=budget_remaining)
+        # Each stage-6 worker holds a sandbox with a booted app + headless Chromium (~1.2GB
+        # real). Default 2 fits alongside the other stages in an ~8GB Docker VM; raise via
+        # env when the VM has headroom or other lanes are idle.
+        stage6_cap = int(os.environ.get("STAGE6_WORKERS", "2"))
+        return await run_generate(registry, trajectory_dir, limit=limit, workers=min(workers, stage6_cap), budget_remaining=budget_remaining)
 
     elif stage == 7:
         from repo_pipeline.stage7_think import run_think

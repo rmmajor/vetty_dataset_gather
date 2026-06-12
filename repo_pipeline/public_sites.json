@@ -58,6 +58,27 @@
             "click",
             "type"
           ]
+        },
+        {
+          "id": "on-this-day-deep-dive",
+          "instruction": "From Wikipedia's main page, pick an event from the 'On this day' section, open its article, and end on the references section.",
+          "difficulty": "hard",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ]
+        },
+        {
+          "id": "category-tree-walk",
+          "instruction": "Find the article about chess, open its categories at the bottom, and navigate into the 'Chess' category page, ending with its subcategories visible.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
         }
       ]
     },
@@ -96,6 +117,16 @@
           "action_kinds": [
             "click",
             "type"
+          ]
+        },
+        {
+          "id": "reading-log-explore",
+          "instruction": "Find the trending books section on Open Library, open the most-trending title, and end on its ratings area.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "scroll"
           ]
         }
       ]
@@ -148,6 +179,18 @@
             "drag_path",
             "scroll"
           ]
+        },
+        {
+          "id": "two-city-compare-zoom",
+          "instruction": "Look at Venice, Italy on the map close enough to see its canals, then jump to Amsterdam and end at a comparable zoom over its canal ring.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag_path",
+            "scroll"
+          ]
         }
       ]
     },
@@ -174,6 +217,17 @@
           "expected_actions": 7,
           "action_kinds": [
             "click",
+            "scroll"
+          ]
+        },
+        {
+          "id": "search-by-subject-bookshelf",
+          "instruction": "Find Project Gutenberg's detective fiction bookshelf and open a book from it, ending with the book's reading options visible.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type",
             "scroll"
           ]
         }
@@ -205,6 +259,16 @@
             "type",
             "scroll"
           ]
+        },
+        {
+          "id": "wayback-lookup",
+          "instruction": "Use the Wayback Machine on archive.org to look up how nytimes.com looked, and open a snapshot from any year before 2010.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ]
         }
       ]
     },
@@ -233,6 +297,16 @@
             "click",
             "type",
             "scroll"
+          ]
+        },
+        {
+          "id": "http-status-hunt",
+          "instruction": "I keep seeing 418 jokes \u2014 find MDN's page explaining HTTP status code 418 and end with its description on screen.",
+          "difficulty": "medium",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "type"
           ]
         }
       ]
@@ -263,6 +337,17 @@
             "type",
             "scroll"
           ]
+        },
+        {
+          "id": "rhymes-navigation",
+          "instruction": "Look up 'orange' on Wiktionary and navigate to its rhymes page, ending with the rhymes list visible.",
+          "difficulty": "hard",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
         }
       ]
     },
@@ -287,6 +372,17 @@
           "instruction": "Look up Nutella on Open Food Facts and end on the section of its product page that lists additives.",
           "difficulty": "medium",
           "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ]
+        },
+        {
+          "id": "category-country-drill",
+          "instruction": "Browse Open Food Facts' chocolate category, narrow it to products sold in Germany, and open the first product, ending on its Nutri-Score detail.",
+          "difficulty": "hard",
+          "expected_actions": 12,
           "action_kinds": [
             "click",
             "type",
