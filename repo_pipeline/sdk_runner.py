@@ -109,6 +109,32 @@ class RateLimitTracker:
 rate_limit_tracker = RateLimitTracker()
 
 
+class CostTracker:
+    """Process-global accumulator of ACTUAL spend, fed by every recorded ResultMessage's
+    total_cost_usd. The orchestrator's --budget used to be paced by per-repo guesses
+    (STAGE_COST_ESTIMATES), which drifted badly from reality — a 200-repo stage-3 pass
+    'spent' $30 of estimate while the subscription window sat at 10% — and stopped runs
+    that had barely started. Budget checks now read this; estimates only pre-size batches.
+
+    Synchronous, no awaits — atomic under the single asyncio event loop."""
+
+    def __init__(self):
+        self.total_usd = 0.0
+        self.call_count = 0
+
+    def add(self, cost_usd) -> None:
+        if cost_usd:
+            self.total_usd += float(cost_usd)
+            self.call_count += 1
+
+    def reset(self) -> None:
+        self.total_usd = 0.0
+        self.call_count = 0
+
+
+cost_tracker = CostTracker()
+
+
 async def run_query(
     prompt,
     options,
@@ -147,6 +173,7 @@ async def run_query(
                     last_assistant_text = block.text
 
         if isinstance(message, ResultMessage):
+            cost_tracker.add(getattr(message, "total_cost_usd", None))
             if message.subtype == "success" and not message.is_error:
                 result_text = message.result or ""
             else:

@@ -28,7 +28,7 @@ from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClie
 
 from repo_pipeline.agent_runner import run_agent
 from repo_pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
-from repo_pipeline.sdk_runner import UsageLimitReached, harden_options, rate_limit_tracker
+from repo_pipeline.sdk_runner import UsageLimitReached, cost_tracker, harden_options, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -443,10 +443,12 @@ async def _session_think_turn(client, user_text: str, screenshot_path: Path, *,
         logger.warning(f"Think turn failed: {e}")
         return ""
 
-    if result_msg is not None and registry is not None:
-        registry.record_agent_call(full_name, 7, "think", model, result_msg.num_turns,
-                                   result_msg.total_cost_usd, result_msg.usage, result_msg.subtype,
-                                   result_msg.is_error, result_msg.duration_ms)
+    if result_msg is not None:
+        cost_tracker.add(getattr(result_msg, "total_cost_usd", None))
+        if registry is not None:
+            registry.record_agent_call(full_name, 7, "think", model, result_msg.num_turns,
+                                       result_msg.total_cost_usd, result_msg.usage, result_msg.subtype,
+                                       result_msg.is_error, result_msg.duration_ms)
     return thought.strip()
 
 

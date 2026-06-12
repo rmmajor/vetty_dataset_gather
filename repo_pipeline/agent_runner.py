@@ -21,6 +21,7 @@ from repo_pipeline.schemas import FailureCategory, RetryableFailure
 from repo_pipeline.sdk_runner import (
     CLAUDE_CLI_PATH,
     UsageLimitReached,
+    cost_tracker,
     harden_options,
     rate_limit_tracker,
 )
@@ -67,6 +68,7 @@ async def run_agent(
                         last_assistant_text = block.text
             if isinstance(message, ResultMessage):
                 result_msg = message
+                cost_tracker.add(getattr(message, "total_cost_usd", None))
                 if message.subtype == "success" and not message.is_error:
                     result_text = message.result or ""
     except UsageLimitReached:

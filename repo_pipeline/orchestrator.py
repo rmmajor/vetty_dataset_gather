@@ -13,7 +13,7 @@ from repo_pipeline.schemas import (
     STAGE_BEHAVIOR_CUTOFFS,
     STAGE_TO_REJECTED_STATUS,
 )
-from repo_pipeline.sdk_runner import rate_limit_tracker
+from repo_pipeline.sdk_runner import cost_tracker, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -234,12 +234,19 @@ async def drain_funnel(
     is set, crossing it) stops the run instead of letting repos be rejected.
     """
     start_time = time.time()
-    budget_used = 0.0
+    # Budget is now paced by ACTUAL metered spend (every ResultMessage's total_cost_usd lands
+    # in cost_tracker), not by per-repo estimates — those drifted badly enough to stop a run
+    # at "$30 estimated" while the real session window sat at 10%. Estimates below only
+    # pre-size batches, never charge the budget.
+    cost_baseline = cost_tracker.total_usd
     stage_results = {}
 
+    def budget_used() -> float:
+        return cost_tracker.total_usd - cost_baseline
+
     def should_stop() -> bool:
-        if budget_used >= budget:
-            logger.warning(f"Budget exhausted (${budget_used:.2f}/${budget:.2f}), stopping")
+        if budget_used() >= budget:
+            logger.warning(f"Budget exhausted (${budget_used():.2f}/${budget:.2f} metered), stopping")
             return True
         if rate_limit_tracker.limit_reached():
             util = rate_limit_tracker.max_utilization()
@@ -255,8 +262,8 @@ async def drain_funnel(
             if should_stop():
                 break
 
-            remaining_budget = budget - budget_used
-            logger.info(f"--- Stage {stage} --- (budget remaining: ${remaining_budget:.2f})")
+            remaining_budget = budget - budget_used()
+            logger.info(f"--- Stage {stage} --- (budget remaining: ${remaining_budget:.2f} of ${budget:.2f}, metered)")
 
             pending = registry.get_pending_counts()
             pending_count = pending.get(stage, 0)
@@ -284,7 +291,6 @@ async def drain_funnel(
                 )
                 processed = result.get("processed", 0)
                 pass_processed += processed
-                budget_used += processed * cost_per_repo
 
                 # Accumulate processed across passes; keep the latest registry-derived
                 # passed/rejected/trajectories (those are cumulative totals already).
@@ -316,13 +322,14 @@ async def drain_funnel(
     from repo_pipeline.notifier import send_report
     try:
         await send_report(
-            registry, run_duration, budget_used, budget, stage_results,
+            registry, run_duration, budget_used(), budget, stage_results,
             rate_limit_info=rate_limit_tracker.latest(),
         )
     except Exception as e:
         logger.error(f"Failed to send Telegram report: {e}")
 
-    logger.info(f"Run complete in {run_duration/3600:.1f}h, budget used: ${budget_used:.2f}/${budget:.2f}")
+    logger.info(f"Run complete in {run_duration/3600:.1f}h, metered spend: ${budget_used():.2f}/${budget:.2f} "
+                f"across {cost_tracker.call_count} calls")
     return stage_results
 
 
@@ -426,7 +433,7 @@ async def async_main(args):
 
         if args.stage:
             stages = parse_stage_range(args.stage)
-            budget_remaining = args.budget
+            cost_baseline = cost_tracker.total_usd
 
             for stage in stages:
                 if stage == 1 and not github_token:
@@ -441,13 +448,11 @@ async def async_main(args):
                     trajectory_dir,
                     limit=args.limit,
                     workers=args.workers,
-                    budget_remaining=budget_remaining,
+                    budget_remaining=args.budget - (cost_tracker.total_usd - cost_baseline),
                     star_floor=args.star_floor,
                 )
-                logger.info(f"Stage {stage} result: {result}")
-
-                processed = result.get("processed", 0)
-                budget_remaining -= processed * stage_cost(stage)
+                logger.info(f"Stage {stage} result: {result} "
+                            f"(metered spend so far: ${cost_tracker.total_usd - cost_baseline:.2f})")
 
             print_status(registry, stages=stages)
             return
