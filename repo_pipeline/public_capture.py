@@ -24,7 +24,7 @@ from repo_pipeline import driver_session
 from repo_pipeline.agent_capture import run_teacher_task, verify_trajectory
 from repo_pipeline.instrumentation import RESULTS_DIR
 from repo_pipeline.registry import RepoRegistry
-from repo_pipeline.sandbox import DockerSandbox
+from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler
 from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 from repo_pipeline.stage6_generate import _is_valid_trajectory, _safe_task_id
 from repo_pipeline.think_generator import needs_polish, polish_thoughts_for_trajectory
@@ -136,6 +136,7 @@ async def main():
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    install_sigterm_handler()
     only = set(args.sites.split(",")) if args.sites else None
     sites = load_sites(only)
     logger.info(f"Public capture over {len(sites)} sites: {', '.join(s['name'] for s in sites)}")

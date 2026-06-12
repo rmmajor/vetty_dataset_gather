@@ -519,6 +519,9 @@ Examples:
     data_dir = Path(args.data_dir)
     setup_logging(data_dir, verbose=args.verbose)
 
+    from repo_pipeline.sandbox import install_sigterm_handler
+    install_sigterm_handler()
+
     asyncio.run(async_main(args))
 
 

@@ -49,7 +49,13 @@ class DockerSandbox:
         create_kwargs = dict(
             image=self.image,
             name=f"sandbox_{safe_name}_{int(time.time())}",
-            command="sleep infinity",
+            # Self-expiring + auto-removing: the container's main process sleeps exactly the
+            # container timeout, then exits, and Docker removes it. Host-side cleanup (stop()
+            # in finally blocks) is the normal path, but it never runs when the pipeline
+            # process is SIGKILLed or crashes — this guarantees no orphan outlives its
+            # timeout even with a dead owner.
+            command=["sleep", str(self.container_timeout)],
+            auto_remove=True,
             mem_limit=SANDBOX_MEM_LIMIT,
             memswap_limit=SANDBOX_MEMSWAP_LIMIT,
             pids_limit=SANDBOX_PIDS_LIMIT,
@@ -157,6 +163,8 @@ class DockerSandbox:
             try:
                 self.container.remove(force=True)
                 logger.info(f"Destroyed sandbox container {self.container_id[:12]}")
+            except docker.errors.NotFound:
+                pass  # auto_remove already reaped it (self-expired)
             except Exception as e:
                 logger.warning(f"Failed to remove container: {e}")
             self.container = None
@@ -266,6 +274,19 @@ class DockerSandbox:
             return False
         finally:
             sandbox.stop()
+
+
+def install_sigterm_handler():
+    """pkill sends SIGTERM, which by default terminates Python WITHOUT running finally
+    blocks — leaking every live sandbox until its self-expiry reaps it. Converting to
+    SystemExit lets the normal cleanup paths run on graceful restarts. Best-effort:
+    SIGKILL and crashes are covered by the containers' auto_remove self-expiry instead."""
+    import signal
+
+    def _terminate(signum, frame):
+        raise SystemExit(143)
+
+    signal.signal(signal.SIGTERM, _terminate)
 
 
 def build_sandbox_mcp_server(sandbox: DockerSandbox, server_name: str = "sandbox"):
