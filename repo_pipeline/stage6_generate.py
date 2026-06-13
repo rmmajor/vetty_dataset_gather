@@ -303,11 +303,23 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
             # Set before the task runs: a mid-task abort (usage limit, SDK crash) must still
             # copy whatever steps the driver already recorded for this task.
             captured_anything = True
-            state = await run_teacher_task(client, task, app_url, registry=registry, full_name=repo_name)
-            rlog.info(
-                f"task '{task['id']}': {state['actions']} actions, "
-                f"outcome={state['agent_outcome'] or 'none'}"
-            )
+            # Per-task isolation: ONE task's failure — a blown per-task budget (the long, hard
+            # tasks we most want are the priciest), an SDK error, or a browser crash — must
+            # NEVER discard the repo's already-captured trajectories. The repo is judged on
+            # what it captured, in post-processing. Only a global usage-limit stop propagates.
+            try:
+                state = await run_teacher_task(client, task, app_url, registry=registry, full_name=repo_name)
+                rlog.info(
+                    f"task '{task['id']}': {state['actions']} actions, "
+                    f"outcome={state['agent_outcome'] or 'none'}"
+                )
+            except UsageLimitReached:
+                raise
+            except Exception as e:
+                rlog.warning(
+                    f"task '{task['id']}' aborted ({type(e).__name__}: {str(e)[:120]}); "
+                    f"keeping prior captures and continuing"
+                )
             # Incremental copy-out: teacher turns can be slow under rate-limit waits, and a
             # container-timeout mid-task must never cost the tasks already recorded.
             repo_traj_dir.mkdir(parents=True, exist_ok=True)
