@@ -63,7 +63,9 @@ Use the `exec` tool to run shell commands inside the container, and `read`/`ls` 
    - "@playwright/test" or "pytest-playwright" / "playwright" → test_framework = "playwright"
    Also determine the language: Python (pytest), TypeScript, or JavaScript. NOTE: Selenium is only supported for Python — flag a non-Python Selenium repo in notes.
 
-6. **Estimate trajectory count**: Based on test count and typical actions per test, estimate how many usable trajectories this repo could produce.
+6. **Estimate trajectory count**: How many usable, distinct browser-automation trajectories could this repo realistically yield? In AGENT capture (the default) a trajectory is a multi-step USER TASK performed in the repo's booted app — so base the estimate on the app's interactive surface (distinct features, pages, forms, and end-to-end flows a user could complete), NOT on the number of existing test cases. A repo with many unit tests but a trivial or non-existent UI yields ~0; a rich app with no tests can still yield many.
+
+7. **Fit verdict** (`good_fit`): Decide whether this repo is a GOOD FIT for collecting diverse, rich, multi-step web-task trajectories to train a computer-use agent. Set `good_fit: false` (with a short `veto_reason`) if it is any of: a toy / boilerplate / starter template; a tutorial, course, or "learning" project; a test-suite-only repo or a testing library / framework / tool (its own code is what's under test — there is no real product UI); a repo whose UI is trivial; one that needs an external backend / database / paid service / browser wallet the sandbox cannot provide; or one whose functionality is entirely behind a third-party login (GitHub/Google OAuth, etc.) that cannot be completed in an isolated sandbox. Otherwise `good_fit: true`. Be decisive — this verdict vetoes the repo before any expensive boot/capture is spent on it.
 
 After analysis, output your findings as a JSON object with EXACTLY these fields:
 ```json
@@ -81,6 +83,8 @@ After analysis, output your findings as a JSON object with EXACTLY these fields:
   "playwright_version": "<version or null>",
   "framework_language": "<python|typescript|javascript>",
   "estimated_trajectories": <int>,
+  "good_fit": <bool>,
+  "veto_reason": "<short reason if good_fit is false, else empty string>",
   "notes": "<brief notes about anything notable>"
 }}
 ```
@@ -91,6 +95,13 @@ Output ONLY the JSON at the end of your analysis.
 # Gate for promotion to stage 5 (deep_score is 0–10). Env-overridable so it can be tuned from the
 # dashboard's score distribution without a code edit.
 DEEP_SCORE_THRESHOLD = int(os.environ.get("STAGE4_DEEP_SCORE_THRESHOLD", "4"))
+
+# Fit-veto thresholds (agent mode). Stage 4 exists to reject toys CHEAPLY here — before a stage-5
+# boot or a stage-6 capture is wasted discovering that the "app" was a unit-test suite, a
+# boilerplate, or a login wall. Both env-tunable so they can be tightened from the score
+# distribution without a code edit; set a floor to 0 to disable that rule.
+MIN_EST_TRAJECTORIES = int(os.environ.get("STAGE4_MIN_EST_TRAJECTORIES", "3"))
+TOY_COMPLEXITY_MAX = int(os.environ.get("STAGE4_TOY_COMPLEXITY_MAX", "2"))
 
 
 def can_self_host(analysis: DeepAnalysis) -> bool:
@@ -136,6 +147,83 @@ def compute_deep_score(analysis: DeepAnalysis) -> int:
     return max(0, score)
 
 
+def fit_veto(analysis: DeepAnalysis, shallow_scores: dict | None) -> str | None:
+    """Return a rejection reason if this repo is an obvious bad fit for the trajectory dataset,
+    else None. The SAME predicate guards stage 4 going forward and the retroactive prune_unfit
+    cleanup, so a toy is rejected by identical logic whether analyzed now or before the veto
+    existed. Generic + env-tunable: every rule reads a threshold; none hardcodes a repo name.
+
+    The deterministic rules are a cheap, unambiguous backstop; the model's holistic ``good_fit``
+    verdict (filled by the stage-4 prompt, or by judge_fit over a stored analysis) is the main gate
+    and catches boilerplates / course repos / login-walled apps that the raw numbers rate highly."""
+    if schemas.CAPTURE_MODE == "agent":
+        if MIN_EST_TRAJECTORIES > 0 and analysis.estimated_trajectories < MIN_EST_TRAJECTORIES:
+            return (f"only ~{analysis.estimated_trajectories} usable trajectories "
+                    f"(< {MIN_EST_TRAJECTORIES}) — too little for a capture-worthy app")
+        if analysis.needs_external_backend and not can_self_host(analysis):
+            return "needs an external backend/service the sandbox cannot provide"
+
+    production_complexity = (shallow_scores or {}).get("production_complexity")
+    if isinstance(production_complexity, int) and production_complexity <= TOY_COMPLEXITY_MAX:
+        return f"toy/tutorial (production_complexity {production_complexity} <= {TOY_COMPLEXITY_MAX})"
+
+    if not analysis.good_fit:
+        return f"not a good fit — {analysis.veto_reason or 'model vetoed'}"
+
+    return None
+
+
+FIT_VERDICT_PROMPT = """You are deciding whether a GitHub repository belongs in a dataset of diverse, rich, multi-step web-browsing task trajectories used to train a computer-use agent.
+
+A GOOD fit is a self-containable web APPLICATION that boots locally and offers a rich, multi-section interactive UI where a user can perform many distinct multi-step tasks (create / edit / configure / transact / navigate).
+
+A BAD fit (good_fit=false) is any of: a toy / boilerplate / starter template; a tutorial, course, or "learning" project; a test-suite-only repo or a testing library / framework / tool (its own code is what's under test — there is no real product UI); a repo whose UI is trivial; one that needs an external backend / database / paid service / browser wallet the sandbox cannot provide; or one whose functionality is entirely behind a third-party login (GitHub/Google OAuth, etc.) that cannot be completed in an isolated sandbox.
+
+Repository: {repo_name}
+Description: {description}
+Shallow scores (1-5): {shallow_scores_summary}
+Static analysis already gathered:
+{analysis_summary}
+
+Decide based on the evidence above. Output ONLY this JSON, nothing else:
+{{"good_fit": <bool>, "veto_reason": "<short reason if good_fit is false, else empty string>"}}
+"""
+
+
+async def judge_fit(registry: RepoRegistry, repo: dict, analysis: DeepAnalysis,
+                    shallow_scores: dict | None) -> tuple[bool, str]:
+    """Holistic, text-only 'is this a good fit?' verdict over an ALREADY-computed analysis — no
+    clone, no sandbox. Renders the same judgment the stage-4 prompt now produces inline, for repos
+    analyzed before that verdict existed (used by prune_unfit). Parse failure → (True, "") so a
+    flaky call never wrongly prunes; the deterministic fit_veto rules still apply on top."""
+    summary = ", ".join(f"{k}={v}" for k, v in (shallow_scores or {}).items()) or "(none)"
+    prompt = FIT_VERDICT_PROMPT.format(
+        repo_name=repo["full_name"],
+        description=repo.get("description") or "(none)",
+        shallow_scores_summary=summary,
+        analysis_summary=json.dumps(analysis.model_dump(), indent=2),
+    )
+    text = await run_agent(
+        prompt,
+        ClaudeAgentOptions(
+            model=MODEL_FOR_REASONING,
+            max_turns=1,
+            permission_mode="bypassPermissions",
+        ),
+        registry=registry,
+        full_name=repo["full_name"],
+        stage=4,
+        purpose="fit_verdict",
+    )
+    try:
+        start = text.rfind("{")
+        end = text.rfind("}") + 1
+        data = json.loads(text[start:end])
+        return bool(data.get("good_fit", True)), str(data.get("veto_reason", "") or "")
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return True, ""
+
+
 async def analyze_single_repo(registry: RepoRegistry, repo: dict):
     """Static deep analysis of one repo's test suite. Raises QualityReject on a low deep score
     (carrying the analysis so it persists for the dashboard) or RetryableFailure on infra/flaky
@@ -157,9 +245,10 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
             raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
 
         shallow_scores_raw = repo.get("shallow_scores")
+        shallow_scores_dict = {}
         if shallow_scores_raw:
-            scores = json.loads(shallow_scores_raw) if isinstance(shallow_scores_raw, str) else shallow_scores_raw
-            shallow_scores_summary = ", ".join(f"{k}={v}" for k, v in scores.items())
+            shallow_scores_dict = json.loads(shallow_scores_raw) if isinstance(shallow_scores_raw, str) else shallow_scores_raw
+            shallow_scores_summary = ", ".join(f"{k}={v}" for k, v in shallow_scores_dict.items())
             shallow_scores_summary += f" (total: {repo.get('shallow_total', '?')}/35)"
         else:
             shallow_scores_summary = "(not available)"
@@ -214,6 +303,18 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
 
         deep_score = compute_deep_score(analysis)
         rlog.info(f"deep_score={deep_score}, tests={analysis.test_case_count}, actions={analysis.action_types}")
+
+        # Fit veto — the decisive "is this worth capturing at all?" gate. Runs before the numeric
+        # threshold so an obvious toy/boilerplate/login-wall is rejected here (cheaply) instead of
+        # surviving to a stage-5 boot or stage-6 capture. The model's good_fit verdict came back in
+        # the analysis JSON; fit_veto folds it together with the deterministic backstops.
+        if reason := fit_veto(analysis, shallow_scores_dict):
+            raise QualityReject(
+                FailureCategory.QUALITY_GATE,
+                f"fit veto: {reason}",
+                deep_analysis=analysis.model_dump(),
+                deep_score=deep_score,
+            )
 
         if deep_score >= DEEP_SCORE_THRESHOLD:
             registry.update_status(

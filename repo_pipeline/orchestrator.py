@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -12,8 +13,11 @@ from repo_pipeline.schemas import (
     NON_QUALITY_CATEGORIES,
     STAGE_BEHAVIOR_CUTOFFS,
     STAGE_TO_REJECTED_STATUS,
+    DeepAnalysis,
+    FailureCategory,
+    RepoStatus,
 )
-from repo_pipeline.sdk_runner import cost_tracker, rate_limit_tracker
+from repo_pipeline.sdk_runner import UsageLimitReached, cost_tracker, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +52,54 @@ def requeue_rescore(registry: RepoRegistry, stage: int, min_score: float, dry_ru
     logger.info(f"Rescore re-queue: {verb} {n} stage-{stage} rejections with score >= {min_score}"
                 f"{' (dry-run)' if dry_run else ''}. Re-run --stage {stage} to re-admit them.")
     return n
+
+
+async def prune_unfit(registry: RepoRegistry, dry_run: bool = False) -> int:
+    """Retroactively reject repos already past stage 4 that are obvious bad fits, so no more
+    stage-5 boot / stage-6 capture compute is wasted on them. Re-judges each from its STORED
+    analysis (no re-clone): the deterministic fit_veto backstops first, and only if those keep the
+    repo, one cheap text-only good_fit verdict. Vetoed repos move to rejected_analyze — reversible
+    via ``--requeue-stage 4 --min-score 0``. This is exactly the stage-4 fit veto (same predicate)
+    applied to the existing backlog."""
+    from repo_pipeline.stage4_deep_analyze import fit_veto, judge_fit
+
+    candidates = registry.get_repos_by_status(
+        [RepoStatus.ANALYZED.value, RepoStatus.VALIDATED.value]
+    )
+    verb = "would prune" if dry_run else "pruned"
+    logger.info(f"Prune unfit: re-judging {len(candidates)} repos past stage 4")
+    pruned = 0
+    for repo in candidates:
+        raw = repo.get("deep_analysis")
+        if not raw:
+            logger.info(f"  SKIP  {repo['full_name']} ({repo['status']}): no stored analysis")
+            continue
+        analysis = DeepAnalysis(**(json.loads(raw) if isinstance(raw, str) else raw))
+        shallow_raw = repo.get("shallow_scores")
+        shallow = (json.loads(shallow_raw) if isinstance(shallow_raw, str) else shallow_raw) or {}
+
+        # Deterministic backstops first (free); only spend a verdict call if they keep the repo.
+        reason = fit_veto(analysis, shallow)
+        if reason is None:
+            try:
+                analysis.good_fit, analysis.veto_reason = await judge_fit(registry, repo, analysis, shallow)
+            except UsageLimitReached:
+                logger.warning("  usage limit reached — stopping prune; re-run to finish the rest")
+                break
+            reason = fit_veto(analysis, shallow)
+
+        if reason:
+            logger.info(f"  PRUNE {repo['full_name']} ({repo['status']}): {reason}")
+            if not dry_run:
+                registry.reject(repo["full_name"], stage=4, reason=f"fit veto: {reason}",
+                                category=FailureCategory.QUALITY_GATE,
+                                deep_analysis=analysis.model_dump())
+            pruned += 1
+        else:
+            logger.info(f"  KEEP  {repo['full_name']} ({repo['status']})")
+
+    logger.info(f"Prune unfit: {verb} {pruned}/{len(candidates)} repos{' (dry-run)' if dry_run else ''}")
+    return pruned
 
 
 def setup_logging(data_dir: Path, verbose: bool = False):
@@ -427,6 +479,11 @@ async def async_main(args):
             print_status(registry)
             return
 
+        if args.prune_unfit:
+            await prune_unfit(registry, dry_run=args.dry_run)
+            print_status(registry)
+            return
+
         if args.until_limit is not None:
             pct = args.until_limit
             if not (0 < pct <= 100):
@@ -513,6 +570,7 @@ Examples:
     parser.add_argument("--requeue-infra", action="store_true", help="Re-queue infra/flaky rejections (clone/SDK/timeout/max-turns) across stages for a retry")
     parser.add_argument("--requeue-stage", type=int, default=None, help="Re-queue rejections at this stage whose stored gate score >= --min-score (after lowering a threshold)")
     parser.add_argument("--min-score", type=float, default=None, help="Score floor for --requeue-stage (e.g. --requeue-stage 4 --min-score 4)")
+    parser.add_argument("--prune-unfit", action="store_true", help="Re-judge repos already past stage 4 and reject obvious bad-fits (toys, boilerplates, login-walled, test-suite-only) so no more stage-5/6 compute is wasted. Reversible via --requeue-stage 4 --min-score 0. Honors --dry-run.")
     parser.add_argument("--dry-run", action="store_true", help="With --requeue-*: report counts without modifying the registry")
     parser.add_argument("--limit", type=int, default=None, help="Max repos per stage in this run")
     parser.add_argument("--workers", type=int, default=5, help="Parallel workers for LLM stages (default: 5)")

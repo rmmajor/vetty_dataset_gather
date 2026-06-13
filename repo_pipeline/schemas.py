@@ -189,6 +189,12 @@ class DeepAnalysis(BaseModel):
     deps_install_success: bool = False
     estimated_trajectories: int = 0
     notes: str = ""
+    # Stage-4 fit verdict. The holistic "is this worth capturing at all?" judgment, set by the
+    # deep-analysis prompt (agent mode) or by judge_fit over a stored analysis. Defaults keep
+    # analyses recorded before the verdict existed parsing cleanly — good_fit=True means "the
+    # holistic layer did not veto it" (the deterministic fit_veto rules still apply on top).
+    good_fit: bool = True
+    veto_reason: str = ""
 
 
 class TrialResults(BaseModel):

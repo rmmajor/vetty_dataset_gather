@@ -393,6 +393,18 @@ class RepoRegistry:
             return dict(row)
         return None
 
+    def get_repos_by_status(self, statuses: list[str]) -> list[dict]:
+        """All repos whose status is in ``statuses``. Generic selector for cross-stage operations
+        (e.g. the unfit-prune cleanup, which re-judges everything past stage 4 still awaiting an
+        expensive capture) that don't fit the single-input-status get_repos_for_stage shape."""
+        if not statuses:
+            return []
+        placeholders = ",".join("?" * len(statuses))
+        rows = self.conn.execute(
+            f"SELECT * FROM repos WHERE status IN ({placeholders})", statuses
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_stats(self) -> dict:
         rows = self.conn.execute(
             "SELECT status, COUNT(*) as count FROM repos GROUP BY status"
