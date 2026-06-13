@@ -184,7 +184,11 @@ async def run_stage(
 
     elif stage == 5:
         from repo_pipeline.stage5_trial_run import run_trial
-        return await run_trial(registry, limit=limit, workers=min(workers, 2), budget_remaining=budget_remaining)
+        # Boot gate = clone + npm install + boot + driver probe (~1-2GB/worker). Default 2 is
+        # safe alongside capture; raise via env when running stage 5 on its own (no concurrent
+        # stage-6 capture eating RAM) to drain the analyzed backlog faster.
+        stage5_cap = int(os.environ.get("STAGE5_WORKERS", "2"))
+        return await run_trial(registry, limit=limit, workers=min(workers, stage5_cap), budget_remaining=budget_remaining)
 
     elif stage == 6:
         from repo_pipeline.stage6_generate import run_generate
