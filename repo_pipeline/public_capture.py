@@ -35,8 +35,8 @@ SITES_CONFIG = Path(__file__).parent / "public_sites.json"
 PUBLIC_CONTAINER_TIMEOUT = 10800
 
 
-def load_sites(only: set[str] | None = None) -> list[dict]:
-    sites = json.loads(SITES_CONFIG.read_text())["sites"]
+def load_sites(only: set[str] | None = None, config_path: Path | None = None) -> list[dict]:
+    sites = json.loads((config_path or SITES_CONFIG).read_text())["sites"]
     if only:
         sites = [s for s in sites if s["name"] in only]
     return sites
@@ -133,12 +133,14 @@ async def main():
     parser.add_argument("--max-tasks", type=int, default=None, help="Max tasks per site this run")
     parser.add_argument("--parallel", type=int, default=3, help="Concurrent site sandboxes")
     parser.add_argument("--traj-dir", type=str, default="trajectories/")
+    parser.add_argument("--config", type=str, default=None,
+                        help="Path to a sites JSON (default: public_sites.json)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     install_sigterm_handler()
     only = set(args.sites.split(",")) if args.sites else None
-    sites = load_sites(only)
+    sites = load_sites(only, Path(args.config) if args.config else None)
     logger.info(f"Public capture over {len(sites)} sites: {', '.join(s['name'] for s in sites)}")
 
     registry = RepoRegistry("pipeline_data/registry.db")

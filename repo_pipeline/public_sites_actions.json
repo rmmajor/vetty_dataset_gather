@@ -1,0 +1,1464 @@
+{
+  "_comment": "ACTION-FIRST CUA site lane. Every task must END IN AN ACTION COMPLETED or ARTIFACT PRODUCED (file/route/cart/post/config/edit), NOT content browsing. auth_required marks tasks whose completion needs an account/login/payment so the auth-capture lane can take them; auth_required=false tasks complete anonymously. Inline-authored installment (2026-06-13) while subagent fan-out was rate-limited; target is 300 sites. Tasks phrased as user intents, robust to cosmetic UI change, ending in a visually checkable accomplished state.",
+  "sites": [
+    {
+      "name": "photopea",
+      "start_url": "https://www.photopea.com",
+      "domain": "create-image",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "crop-export-png",
+          "instruction": "Open a new 800x600 document, draw a filled rectangle on it, then export the result as a PNG so the export/download dialog with the PNG is shown.",
+          "difficulty": "hard",
+          "expected_actions": 40,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "text-layer-export",
+          "instruction": "Create a new document, add a text layer reading 'SALE', change its font size, and export the image as JPG ending on the save dialog.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "remove-bg",
+      "start_url": "https://www.remove.bg",
+      "domain": "create-image",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "remove-and-download",
+          "instruction": "Upload one of the sample images, let the background be removed, and reach the download button for the cut-out result.",
+          "difficulty": "medium",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "ilovepdf",
+      "start_url": "https://www.ilovepdf.com",
+      "domain": "create-pdf",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "merge-two-pdfs",
+          "instruction": "Use the Merge PDF tool, add two PDF files, arrange their order, and reach the 'Merge'/download step for the combined file.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "split-pdf-range",
+          "instruction": "Open the Split PDF tool, upload a file, choose a page range to extract, and reach the download of the split output.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "excalidraw",
+      "start_url": "https://excalidraw.com",
+      "domain": "create-diagram",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "draw-flow-export",
+          "instruction": "Draw two rectangles connected by an arrow, label one of them, then export the canvas as a PNG ending on the export dialog.",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "drawio",
+      "start_url": "https://app.diagrams.net",
+      "domain": "create-diagram",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "flowchart-export",
+          "instruction": "Start a blank diagram, drag two shapes onto the canvas, connect them, and use Export to produce a downloadable PNG/SVG.",
+          "difficulty": "hard",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "drag",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "mermaid-live",
+      "start_url": "https://mermaid.live",
+      "domain": "create-diagram",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "edit-flowchart-svg",
+          "instruction": "Edit the diagram code to add a new node and edge to the flowchart, see it render, then reach the SVG/PNG export action.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "regex101",
+      "start_url": "https://regex101.com",
+      "domain": "create-code",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "build-email-regex",
+          "instruction": "Write a regular expression that matches email addresses, paste a test string, and confirm the matches are highlighted in the test panel.",
+          "difficulty": "hard",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "desmos",
+      "start_url": "https://www.desmos.com/calculator",
+      "domain": "create-math",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "plot-parabola",
+          "instruction": "Enter the function y=x^2-4 into the expression list and add a second function y=2x+1 so both curves are plotted on the graph.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "coolors",
+      "start_url": "https://coolors.co",
+      "domain": "create-design",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "generate-lock-palette",
+          "instruction": "Open the palette generator, lock one color, regenerate the others a few times, and reach the export/save-palette action.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "keypress"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "squoosh",
+      "start_url": "https://squoosh.app",
+      "domain": "create-image",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "compress-download",
+          "instruction": "Upload an image, adjust the compression quality slider, and reach the download button for the compressed output.",
+          "difficulty": "hard",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "drag"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "cloudconvert",
+      "start_url": "https://cloudconvert.com",
+      "domain": "convert-file",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "png-to-jpg",
+          "instruction": "Select a PNG-to-JPG conversion, add a file, start the conversion, and reach the download of the converted file.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "carbon",
+      "start_url": "https://carbon.now.sh",
+      "domain": "create-image",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "code-image-export",
+          "instruction": "Paste a code snippet, change the color theme, and reach the export button to produce a downloadable code image.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "google-maps",
+      "start_url": "https://www.google.com/maps",
+      "domain": "plan-route",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "multi-stop-route",
+          "instruction": "Get driving directions from Boston, MA to New York, NY, then add a stop at New Haven, CT so the multi-stop route with total time and distance is shown.",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "transit-directions",
+          "instruction": "Get public-transit directions between two named stations in a city, then change the departure time so an updated transit itinerary with departure times is shown.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "google-flights",
+      "start_url": "https://www.google.com/travel/flights",
+      "domain": "plan-flight",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "search-select-flight",
+          "instruction": "Search round-trip flights between two cities for given dates, filter to nonstop only, sort by price, and select a specific flight so its detail/continue screen is shown.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "rome2rio",
+      "start_url": "https://www.rome2rio.com",
+      "domain": "plan-trip",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "multimodal-plan",
+          "instruction": "Plan travel from Lisbon to Madrid, open the train option, and expand it so the detailed schedule and price for that leg are shown.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "pcpartpicker",
+      "start_url": "https://pcpartpicker.com",
+      "domain": "configure-product",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "build-pc",
+          "instruction": "Start a new system build, add a CPU and a compatible motherboard from the part pickers, and reach the build summary showing both parts and a compatibility note.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "tesla-design",
+      "start_url": "https://www.tesla.com/modely/design",
+      "domain": "configure-product",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "configure-modely",
+          "instruction": "Configure a Model Y: choose a paint color, switch the wheels, and toggle an option so the updated price summary reflects the selections.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "bahn",
+      "start_url": "https://www.bahn.com/en",
+      "domain": "plan-transit",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "search-select-connection",
+          "instruction": "Search train connections from Berlin to Munich for a chosen date and time, then open one result so its stop-by-stop itinerary is shown (stop before booking).",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "bankrate-mortgage",
+      "start_url": "https://www.bankrate.com/mortgages/mortgage-calculator/",
+      "domain": "calculator",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "mortgage-amortization",
+          "instruction": "Enter a home price, down payment, rate and term into the mortgage calculator and reach the computed monthly payment with the amortization breakdown shown.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "wolframalpha",
+      "start_url": "https://www.wolframalpha.com",
+      "domain": "compute",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "compute-query",
+          "instruction": "Enter a multi-part computational query (e.g. 'distance from Earth to Mars today in light minutes'), run it, and confirm the computed result pods are displayed.",
+          "difficulty": "medium",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "kayak",
+      "start_url": "https://www.kayak.com",
+      "domain": "plan-flight",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "search-filter-select",
+          "instruction": "Search flights for a route and dates, apply a stops filter and a max-price filter, then select a result so its booking-options screen is reached.",
+          "difficulty": "hard",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "zocdoc",
+      "start_url": "https://www.zocdoc.com",
+      "domain": "book-appointment",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "find-doctor-slot",
+          "instruction": "Search for a dermatologist in a given city, filter by insurance and availability this week, then select an available appointment time slot so the booking/login step is reached.",
+          "difficulty": "hard",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "opentable",
+      "start_url": "https://www.opentable.com",
+      "domain": "book-restaurant",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "find-table-time",
+          "instruction": "Find a restaurant in a chosen city for a party of two tonight, filter by cuisine, and select an available time slot so the reservation-details/login step is reached.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "booking-com",
+      "start_url": "https://www.booking.com",
+      "domain": "book-hotel",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "search-select-hotel",
+          "instruction": "Search hotels in a city for given dates and 2 guests, filter to 4+ star with free cancellation, sort by price, and select a room so the reservation/checkout step is reached.",
+          "difficulty": "hard",
+          "expected_actions": 17,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "airbnb",
+      "start_url": "https://www.airbnb.com",
+      "domain": "book-stay",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "search-select-listing",
+          "instruction": "Search stays in a city with dates and guests, apply a price and 'entire place' filter, open a listing, and press Reserve so the booking/login step is reached.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "eventbrite",
+      "start_url": "https://www.eventbrite.com",
+      "domain": "book-tickets",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "select-event-tickets",
+          "instruction": "Find an event in a chosen city this month, open it, choose a ticket quantity, and proceed to the checkout/register step.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "ticketmaster",
+      "start_url": "https://www.ticketmaster.com",
+      "domain": "book-tickets",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "pick-seats",
+          "instruction": "Search for an event, open an available date, select a seating section and a ticket quantity, and reach the checkout/sign-in step.",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "zillow",
+      "start_url": "https://www.zillow.com",
+      "domain": "real-estate",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "filter-request-tour",
+          "instruction": "Search homes for sale in a city, filter to 3+ beds under a price cap, open a listing, and start the 'Request a tour' / contact-agent flow so its form is shown.",
+          "difficulty": "hard",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "indeed",
+      "start_url": "https://www.indeed.com",
+      "domain": "jobs",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "search-apply",
+          "instruction": "Search remote 'data analyst' jobs, filter to the last 7 days, open a posting, and start the Apply flow so the application/login step is reached.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "doordash",
+      "start_url": "https://www.doordash.com",
+      "domain": "food-order",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "build-order-checkout",
+          "instruction": "Enter a delivery address, open a restaurant, add two items (customizing one) to the cart, and proceed to the checkout/login step.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "healthgrades",
+      "start_url": "https://www.healthgrades.com",
+      "domain": "book-appointment",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "find-specialist",
+          "instruction": "Search for a cardiologist near a given location, filter by patient rating, open a provider, and reach the appointment-request step.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "pastebin",
+      "start_url": "https://pastebin.com",
+      "domain": "publish-text",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "create-paste",
+          "instruction": "Type a block of text into the new-paste editor, set an expiration and syntax highlighting, create the paste, and confirm the resulting paste URL/page is shown.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "rentry",
+      "start_url": "https://rentry.co",
+      "domain": "publish-text",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "publish-markdown",
+          "instruction": "Write a short markdown note in the editor, set a custom URL, publish it, and confirm the published page with its edit code is shown.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "imgbb",
+      "start_url": "https://imgbb.com",
+      "domain": "upload-image",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "anon-upload",
+          "instruction": "Upload an image anonymously and reach the page that shows the hosted image link/embed codes.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "strawpoll",
+      "start_url": "https://strawpoll.com",
+      "domain": "create-poll",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "create-poll",
+          "instruction": "Create a new poll with a question and at least three options, enable one setting, create it, and confirm the live poll/voting page is shown.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "gutenberg",
+      "start_url": "https://www.gutenberg.org",
+      "domain": "download-book",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "find-download-epub",
+          "instruction": "Search for a specific public-domain title, open its book page, and reach the EPUB download so the download begins or the file link is shown.",
+          "difficulty": "hard",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "standard-ebooks",
+      "start_url": "https://standardebooks.org",
+      "domain": "download-book",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "download-epub",
+          "instruction": "Browse to a specific ebook, open its page, and download the compatible EPUB so the download action completes.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "annas-archive",
+      "start_url": "https://annas-archive.org",
+      "domain": "download-book",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "search-download",
+          "instruction": "Search for a book title, open a result, and reach a working free-download option so the download page/link is shown.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "unsplash",
+      "start_url": "https://unsplash.com",
+      "domain": "download-asset",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "search-download-photo",
+          "instruction": "Search for 'mountain sunrise', open a photo, and trigger the free download so the image download begins.",
+          "difficulty": "medium",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "telegra-ph",
+      "start_url": "https://telegra.ph",
+      "domain": "publish-article",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "publish-article",
+          "instruction": "Write a title and a couple of paragraphs in the editor, then publish so the public article URL is shown.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "tempmail",
+      "start_url": "https://temp-mail.org",
+      "domain": "get-inbox",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "obtain-inbox",
+          "instruction": "Obtain a disposable email address from the page and copy it so the generated inbox address is shown ready to receive mail.",
+          "difficulty": "medium",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "todoist",
+      "start_url": "https://todoist.com",
+      "domain": "tasks",
+      "category": "productivity",
+      "tasks": [
+        {
+          "id": "create-task",
+          "instruction": "Create a new task with a name, a due date of tomorrow, and a priority, and confirm it appears in the task list.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "trello",
+      "start_url": "https://trello.com",
+      "domain": "kanban",
+      "category": "productivity",
+      "tasks": [
+        {
+          "id": "create-move-card",
+          "instruction": "Create a card in the first list, then drag it to another list so the card appears under its new column.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "google-calendar",
+      "start_url": "https://calendar.google.com",
+      "domain": "calendar",
+      "category": "productivity",
+      "tasks": [
+        {
+          "id": "add-event",
+          "instruction": "Create a calendar event titled 'Product Launch' for next Tuesday at 3pm with a 30-minute duration and confirm it appears on the calendar grid.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "cryptpad",
+      "start_url": "https://cryptpad.fr",
+      "domain": "docs",
+      "category": "productivity",
+      "tasks": [
+        {
+          "id": "create-rich-doc",
+          "instruction": "Create a new Rich Text pad without logging in, type a heading and a bulleted list, and confirm the formatted content is in the document.",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "dillinger",
+      "start_url": "https://dillinger.io",
+      "domain": "docs",
+      "category": "productivity",
+      "tasks": [
+        {
+          "id": "markdown-export",
+          "instruction": "Write markdown with a header and a code block in the editor, see the live preview, and reach the export-as (HTML/PDF/Markdown) action.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "hackmd",
+      "start_url": "https://hackmd.io",
+      "domain": "docs",
+      "category": "productivity",
+      "tasks": [
+        {
+          "id": "create-note",
+          "instruction": "Create a new markdown note, add a title and a checklist, and confirm the rendered preview reflects the content.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "calendly",
+      "start_url": "https://calendly.com",
+      "domain": "scheduling",
+      "category": "productivity",
+      "tasks": [
+        {
+          "id": "configure-event-type",
+          "instruction": "Create a new 30-minute event type, set its name and availability, and reach the step where its booking link is shown.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "miro",
+      "start_url": "https://miro.com",
+      "domain": "whiteboard",
+      "category": "productivity",
+      "tasks": [
+        {
+          "id": "add-sticky-notes",
+          "instruction": "Open a new board, add two sticky notes with text, and connect or group them so both labeled notes are on the board.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "amazon",
+      "start_url": "https://www.amazon.com",
+      "domain": "shop",
+      "category": "shopping-commerce",
+      "tasks": [
+        {
+          "id": "filter-add-cart",
+          "instruction": "Search for 'wireless headphones', filter to 4+ stars and a price range, open a product, add it to the cart, and proceed to the cart/checkout page.",
+          "difficulty": "hard",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "ebay",
+      "start_url": "https://www.ebay.com",
+      "domain": "shop",
+      "category": "shopping-commerce",
+      "tasks": [
+        {
+          "id": "buy-it-now-cart",
+          "instruction": "Search for an item, filter to 'Buy It Now' and a condition, open a listing, select options, and add it to the cart so the cart page is shown.",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "ikea",
+      "start_url": "https://www.ikea.com",
+      "domain": "shop",
+      "category": "shopping-commerce",
+      "tasks": [
+        {
+          "id": "add-to-bag",
+          "instruction": "Search for a desk, filter by color, open a product, choose a variant, and add it to the bag so the shopping-bag summary is shown.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "dominos",
+      "start_url": "https://www.dominos.com",
+      "domain": "food-order",
+      "category": "shopping-commerce",
+      "tasks": [
+        {
+          "id": "build-pizza-checkout",
+          "instruction": "Start a carryout order, build a medium pizza choosing crust and two toppings, add it to the order, and proceed to the checkout step.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "bestbuy",
+      "start_url": "https://www.bestbuy.com",
+      "domain": "shop",
+      "category": "shopping-commerce",
+      "tasks": [
+        {
+          "id": "filter-add-cart",
+          "instruction": "Search for a laptop, apply brand and RAM filters, open a product, and add it to the cart so the cart/checkout page is reached.",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "etsy",
+      "start_url": "https://www.etsy.com",
+      "domain": "shop",
+      "category": "shopping-commerce",
+      "tasks": [
+        {
+          "id": "personalize-add-cart",
+          "instruction": "Search for a personalized gift, open a listing, set a personalization option and variant, and add it to the cart so the cart page is shown.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "asos",
+      "start_url": "https://www.asos.com",
+      "domain": "shop",
+      "category": "shopping-commerce",
+      "tasks": [
+        {
+          "id": "size-add-bag",
+          "instruction": "Search for a jacket, filter by size and color, open a product, select a size, and add it to the bag so the bag summary is shown.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "starbucks",
+      "start_url": "https://www.starbucks.com/menu",
+      "domain": "food-order",
+      "category": "shopping-commerce",
+      "tasks": [
+        {
+          "id": "customize-drink",
+          "instruction": "Open a drink from the menu, customize size and an add-on, and add it to the order so the order summary reflects the customization.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "reddit",
+      "start_url": "https://www.reddit.com",
+      "domain": "social-post",
+      "category": "social-communication",
+      "tasks": [
+        {
+          "id": "compose-post",
+          "instruction": "Start creating a text post, choose a subreddit, write a title and body, and reach the Post/submit button (login wall counts).",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "mastodon-social",
+      "start_url": "https://mastodon.social",
+      "domain": "social-post",
+      "category": "social-communication",
+      "tasks": [
+        {
+          "id": "compose-toot",
+          "instruction": "Open the compose box, write a post with a hashtag, set its visibility, and reach the Publish button (login wall counts).",
+          "difficulty": "hard",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "x-twitter",
+      "start_url": "https://twitter.com",
+      "domain": "social-post",
+      "category": "social-communication",
+      "tasks": [
+        {
+          "id": "compose-tweet",
+          "instruction": "Open the tweet composer, write a message, and reach the Post button (login wall counts as the boundary).",
+          "difficulty": "medium",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "medium",
+      "start_url": "https://medium.com",
+      "domain": "publish-article",
+      "category": "social-communication",
+      "tasks": [
+        {
+          "id": "write-story",
+          "instruction": "Start a new story, write a title and an opening paragraph, and reach the Publish dialog (login wall counts).",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "devto",
+      "start_url": "https://dev.to",
+      "domain": "publish-article",
+      "category": "social-communication",
+      "tasks": [
+        {
+          "id": "write-post",
+          "instruction": "Open the new-post editor, add a title, tags, and body markdown, and reach the Publish button (login wall counts).",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "stackoverflow",
+      "start_url": "https://stackoverflow.com",
+      "domain": "qa-post",
+      "category": "social-communication",
+      "tasks": [
+        {
+          "id": "ask-question",
+          "instruction": "Start the Ask Question flow, write a title, a body, and add tags, and reach the Review/Post step (login wall counts).",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "github",
+      "start_url": "https://github.com",
+      "domain": "code-collab",
+      "category": "social-communication",
+      "tasks": [
+        {
+          "id": "create-gist",
+          "instruction": "Open gist.github.com, add a filename and content, and reach the Create gist action (login wall counts).",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "pinterest",
+      "start_url": "https://www.pinterest.com",
+      "domain": "social-post",
+      "category": "social-communication",
+      "tasks": [
+        {
+          "id": "create-pin",
+          "instruction": "Start creating a Pin, add a title and description and a destination link, and reach the Publish step (login wall counts).",
+          "difficulty": "hard",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "govuk",
+      "start_url": "https://www.gov.uk",
+      "domain": "gov-service",
+      "category": "gov-civic-finance",
+      "tasks": [
+        {
+          "id": "benefit-checker",
+          "instruction": "Find and complete a benefits/eligibility checker wizard with sample answers so it reaches a result/summary screen.",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "usps",
+      "start_url": "https://www.usps.com",
+      "domain": "shipping",
+      "category": "gov-civic-finance",
+      "tasks": [
+        {
+          "id": "calculate-postage",
+          "instruction": "Use the postage price calculator: enter origin and destination ZIPs and a package size/weight, and reach the calculated shipping options/prices.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "wise",
+      "start_url": "https://wise.com",
+      "domain": "money-transfer",
+      "category": "gov-civic-finance",
+      "tasks": [
+        {
+          "id": "build-transfer",
+          "instruction": "Build a money transfer: enter a send amount and choose source and destination currencies, and reach the review screen showing fees and recipient-gets amount (stop at login).",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "esta",
+      "start_url": "https://esta.cbp.dhs.gov",
+      "domain": "gov-application",
+      "category": "gov-civic-finance",
+      "tasks": [
+        {
+          "id": "start-application",
+          "instruction": "Start a new individual ESTA application, accept the disclaimers, and advance through the first applicant-information screen.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "geico-quote",
+      "start_url": "https://www.geico.com",
+      "domain": "insurance-quote",
+      "category": "gov-civic-finance",
+      "tasks": [
+        {
+          "id": "auto-quote-start",
+          "instruction": "Start an auto-insurance quote: enter a ZIP and advance through the first vehicle/driver information steps toward a quote.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "irs-withholding",
+      "start_url": "https://www.irs.gov/individuals/tax-withholding-estimator",
+      "domain": "tax-tool",
+      "category": "gov-civic-finance",
+      "tasks": [
+        {
+          "id": "withholding-estimate",
+          "instruction": "Launch the Tax Withholding Estimator and complete its first steps with sample inputs to reach a computed estimate screen.",
+          "difficulty": "hard",
+          "expected_actions": 45,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "fcc-speedtest",
+      "start_url": "https://www.fcc.gov/speed-test",
+      "domain": "utility-tool",
+      "category": "gov-civic-finance",
+      "tasks": [
+        {
+          "id": "run-speed-test",
+          "instruction": "Start the broadband speed test and let it run so the measured download/upload results are displayed.",
+          "difficulty": "medium",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "wait"
+          ],
+          "auth_required": false
+        }
+      ]
+    },
+    {
+      "name": "ssa-estimator",
+      "start_url": "https://www.ssa.gov/benefits/retirement/estimator.html",
+      "domain": "gov-tool",
+      "category": "gov-civic-finance",
+      "tasks": [
+        {
+          "id": "retirement-estimate",
+          "instruction": "Open the retirement benefit estimator and complete its initial inputs to reach an estimated-benefits result screen.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ]
+    }
+  ]
+}
