@@ -169,17 +169,17 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir):
     return examples
 
 
-def convert_trajectories(input_dir, output_dir, val_split, include_replay=False):
+def convert_trajectories(input_dir, output_dir, val_split, include_replay=False, exclude_meandering=False):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     all_examples = []
     examples_by_group = {}
-    skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0}
+    skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0, "meandering": 0}
     report = {
         "trajectories": 0, "by_source": {}, "actions": {}, "lengths": [],
-        "domains": {}, "done_steps": 0, "thought_sources": {},
+        "domains": {}, "done_steps": 0, "thought_sources": {}, "meandering": 0,
     }
 
     trajectory_dirs = sorted(
@@ -233,6 +233,14 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False)
             skipped["unverified"] += 1
             continue
 
+        # Efficiency is a quality tag, not a gate: meandering goal-completions train by default but
+        # can be dropped for a clean run. `success` already means the goal was met.
+        is_meandering = ((capture_meta.get("verifier") or {}).get("efficiency") == "meandering"
+                         or metadata.get("efficiency") == "meandering")
+        if exclude_meandering and is_meandering:
+            skipped["meandering"] += 1
+            continue
+
         if source == "agent":
             _maybe_synthesize_done_step(trajectory, traj_dir, capture_meta)
 
@@ -249,6 +257,8 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False)
         group = parent if parent.startswith(("repo_", "site_")) else traj_dir.name
         examples_by_group.setdefault(group, []).extend(examples)
         report["trajectories"] += 1
+        if is_meandering:
+            report["meandering"] += 1
         report["by_source"][source] = report["by_source"].get(source, 0) + 1
         report["lengths"].append(len(trajectory.get("steps", [])))
         domain = metadata.get("website") or metadata.get("domain") or "unknown"
@@ -277,6 +287,7 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False)
         f"{t}={n} ({n / total_actions:.0%})" for t, n in sorted(report["actions"].items(), key=lambda kv: -kv[1])
     ))
     print(f"Terminal done() steps: {report['done_steps']}/{report['trajectories']} trajectories")
+    print(f"Meandering (tagged, included; pass --exclude-meandering to drop): {report['meandering']}")
     print("Domains: " + ", ".join(f"{d}={n}" for d, n in sorted(report["domains"].items(), key=lambda kv: -kv[1])[:10]))
     print(f"Skipped: {skipped}")
     print("======================\n")
@@ -373,6 +384,8 @@ def main():
     convert_parser.add_argument("--input", type=str, required=True, help="Input trajectories directory")
     convert_parser.add_argument("--output", type=str, default="training_data/", help="Output directory")
     convert_parser.add_argument("--val-split", type=float, default=0.1, help="Validation split fraction")
+    convert_parser.add_argument("--exclude-meandering", action="store_true",
+                                help="Drop trajectories the verifier graded 'meandering' (kept by default)")
     convert_parser.add_argument("--include-replay", action="store_true",
                                 help="Also train on legacy test-replay trajectories (QA-style supervision; off by default)")
 
@@ -386,7 +399,8 @@ def main():
     args = parser.parse_args()
 
     if args.command == "convert":
-        convert_trajectories(args.input, args.output, args.val_split, include_replay=args.include_replay)
+        convert_trajectories(args.input, args.output, args.val_split, include_replay=args.include_replay,
+                             exclude_meandering=args.exclude_meandering)
     elif args.command == "train":
         train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size)
 

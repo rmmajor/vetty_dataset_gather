@@ -7,8 +7,10 @@ replay-gated ones are reported but not gated) for recording defects that no LLM 
   * empty type actions ({type:"type", text:""} — broken recording);
   * coordinates outside the 1280x720 viewport;
   * steps with missing screenshots or empty thoughts;
-  * verified agent trajectories lacking a terminal done step;
-  * verifier-graded meandering that still carries success:true.
+  * verified agent trajectories lacking a terminal done step.
+
+Meandering goal-completions (efficiency:meandering + success:true) are a VALID, TAGGED state,
+not a defect — reported as a [warn] and excludable from training via `convert --exclude-meandering`.
 
 Exit code 1 when any trainable trajectory fails — wire into CI / run before every training
 export: `python -m repo_pipeline.corpus_audit trajectories/` (or `make audit-corpus`).
@@ -76,7 +78,7 @@ def audit_trajectory(traj_dir: Path) -> list[str]:
 
     verifier = capture_meta.get("verifier") or {}
     if verifier.get("efficiency") == "meandering" and trajectory.get("success"):
-        defects.append("verifier graded meandering but success:true")
+        defects.append("tagged meandering (success:true) — kept; drop at convert with --exclude-meandering")
 
     is_agent = capture_meta.get("recorder") == "browser_driver"
     if is_agent and trajectory.get("success"):
@@ -113,7 +115,7 @@ def run_audit(corpus_dir: Path) -> int:
             continue
         trainable += 1
         defects = audit_trajectory(traj_dir)
-        hard = [d for d in defects if "pre-done-era" not in d]
+        hard = [d for d in defects if "pre-done-era" not in d and "tagged meandering" not in d]
         if defects:
             marker = "FAIL" if hard else "warn"
             print(f"[{marker}] {traj_dir.relative_to(corpus_dir)}")
