@@ -844,7 +844,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "reproducible fail/meander across runs"
     },
     {
       "name": "todoist",
@@ -2512,7 +2514,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "itinerary builder: reproducible fail"
     },
     {
       "name": "viamichelin-route",
@@ -2546,7 +2550,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "0-action bot/JS block"
     },
     {
       "name": "citymapper",
@@ -2610,7 +2616,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "transit-planner: reproducible 1-2 action fail"
     },
     {
       "name": "skyscanner",
@@ -2642,7 +2650,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "travel-search: bot-defended, can't reach selectable result (auth/proxy lane)"
     },
     {
       "name": "momondo",
@@ -2674,7 +2684,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "travel-search: bot-defended (long grinds)"
     },
     {
       "name": "trainline",
@@ -2706,7 +2718,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "travel-search: bot-defended (long grinds)"
     },
     {
       "name": "omio",
@@ -2738,7 +2752,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "travel-search: bot-defended"
     },
     {
       "name": "flixbus",
@@ -2802,7 +2818,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "travel-search: 0-action bot-block"
     },
     {
       "name": "12go-asia",
@@ -2894,7 +2912,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "0-action heavy-JS configurator"
     },
     {
       "name": "mercedes-build",
@@ -2984,7 +3004,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "dead: ERR_HTTP2_PROTOCOL_ERROR"
     },
     {
       "name": "volvo-build",
@@ -3014,7 +3036,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "0-action heavy-JS configurator"
     },
     {
       "name": "dell-configure",
@@ -3044,7 +3068,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "0-action bot/JS block"
     },
     {
       "name": "lenovo-configure",
