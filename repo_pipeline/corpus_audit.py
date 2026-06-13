@@ -100,6 +100,17 @@ def is_trainable(traj_dir: Path) -> bool:
         return False
     if source == "agent" and not trajectory.get("success", True):
         return False
+    # Stuck loops (>= LOOP_RUN_LIMIT identical consecutive actions) are bad supervision; auto-exclude
+    # them here so this audit and train_qwen.py convert agree without manual intervention.
+    max_run = run = 0
+    prev = None
+    for step in trajectory.get("steps", []):
+        sig = _action_signature(step)
+        run = run + 1 if sig == prev and sig else 1
+        prev = sig
+        max_run = max(max_run, run)
+    if max_run >= LOOP_RUN_LIMIT:
+        return False
     return True
 
 

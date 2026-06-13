@@ -8,6 +8,8 @@ from pathlib import Path
 
 import yaml
 
+from repo_pipeline.corpus_audit import LOOP_RUN_LIMIT, _action_signature
+
 
 SYSTEM_PROMPT = """You are a GUI agent that operates a web browser at a 1280x720 resolution. \
 Given a task, a screenshot of the current page, and your previous actions, reason about the \
@@ -176,7 +178,7 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
 
     all_examples = []
     examples_by_group = {}
-    skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0, "meandering": 0}
+    skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0, "meandering": 0, "stuck_loop": 0}
     report = {
         "trajectories": 0, "by_source": {}, "actions": {}, "lengths": [],
         "domains": {}, "done_steps": 0, "thought_sources": {}, "meandering": 0,
@@ -239,6 +241,19 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
                          or metadata.get("efficiency") == "meandering")
         if exclude_meandering and is_meandering:
             skipped["meandering"] += 1
+            continue
+
+        # Stuck loops (>= LOOP_RUN_LIMIT identical consecutive actions) are bad supervision —
+        # auto-excluded (same detection as corpus_audit) so the corpus self-cleans as capture scales.
+        max_run = run = 0
+        prev = None
+        for step in trajectory.get("steps", []):
+            sig = _action_signature(step)
+            run = run + 1 if sig == prev and sig else 1
+            prev = sig
+            max_run = max(max_run, run)
+        if max_run >= LOOP_RUN_LIMIT:
+            skipped["stuck_loop"] += 1
             continue
 
         if source == "agent":
