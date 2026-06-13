@@ -176,7 +176,11 @@ async def run_stage(
 
     elif stage == 4:
         from repo_pipeline.stage4_deep_analyze import run_deep_analyze
-        return await run_deep_analyze(registry, limit=limit, workers=min(workers, 3), budget_remaining=budget_remaining)
+        # Stage 4 is static analysis only (clone + read files, NO npm install / app boot), so
+        # its containers are light — the 3-worker default is conservative. Raise via env when
+        # you want to blast the scored backlog and have RAM headroom.
+        stage4_cap = int(os.environ.get("STAGE4_WORKERS", "3"))
+        return await run_deep_analyze(registry, limit=limit, workers=min(workers, stage4_cap), budget_remaining=budget_remaining)
 
     elif stage == 5:
         from repo_pipeline.stage5_trial_run import run_trial
