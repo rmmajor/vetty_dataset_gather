@@ -95,12 +95,14 @@ Attached images, in order: {image_labels}.
 Answer in JSON only (no fence, no prose):
 {{"success": <true|false>,
   "efficiency": "<efficient|acceptable|meandering>",
-  "accomplished": "<if success=false but the run coherently completed a meaningful sub-goal, \
-state that sub-goal as a standalone user instruction in imperative voice; else null>",
   "reasoning": "<one or two sentences>"}}
 
 Rules:
-- success=true only if the final state visibly reflects the goal being met.
+- success=true ONLY if the final state visibly reflects the ORIGINAL goal being met. Judge the goal \
+EXACTLY as stated — never credit a partial or substitute accomplishment. If the agent reached the \
+right page but did not perform the action, started a blank/placeholder document instead of the one \
+asked for, or signed in but never did the task, that is success=false. The goal is NEVER rewritten \
+to whatever the agent happened to manage.
 - efficiency: 'efficient' = purposeful progress throughout (mid-run screenshots show \
 distinct forward states); 'acceptable' = minor detours, a recovered mistake, or a suboptimal \
 but purposeful route; 'meandering' = REQUIRES CLEAR EVIDENCE: the same action repeated \
@@ -109,9 +111,8 @@ expected actions). Do NOT grade meandering merely because a faster route existed
 an index instead of searching, or taking extra steps through real-site clutter (cookie \
 banners, popups), is a legitimate strategy and 'acceptable' at worst. Meandering trajectories \
 are bad training data even when they succeed; purposeful indirect ones are good data.
-- "accomplished" must describe something the FINAL screenshot actually evidences, must cover \
-the trajectory from its first step, and must be a goal a real user could have asked for. \
-If the run is a meandering mess, use null.
+- Judge only from the attached screenshots and the step summary; the agent's own outcome claim is \
+a hint, not evidence.
 - Never reward an agent that just clicked around without effect."""
 
 
@@ -594,23 +595,16 @@ async def verify_trajectory(
     efficiency_ratio = round(ui_steps / expected, 2) if expected else None
 
     relabeled = False
-    accomplished = (verdict.get("accomplished") or "").strip() if not verdict["success"] else ""
-    # A meandering run is usually bad supervision (the model would learn the wandering, not the
-    # goal), but a run that reached the goal within MEANDER_OK_RATIO x the expected actions is
-    # clean enough to keep — the extra steps are noise. Falls back to discard when the ratio is
-    # unknown (no expected_actions), so we never keep an unbounded meander.
+    # Hindsight-RECLASSIFICATION is forbidden: success is judged ONLY against the original
+    # instruction, never rewritten to a sub-goal the agent happened to accomplish (which used to
+    # turn "compress a PDF" into "navigate to the compress page"). A near-efficient meander that met
+    # the ORIGINAL goal is still kept (tagged); an unbounded meander is discarded.
+    # Falls back to discard when the ratio is unknown (no expected_actions).
     efficiency_ok = (
         verdict.get("efficiency") != "meandering"
         or (efficiency_ratio is not None and efficiency_ratio <= MEANDER_OK_RATIO)
     )
-    if verdict["success"] and efficiency_ok:
-        traj["success"] = True
-    elif accomplished and len(traj.get("steps", [])) >= RELABEL_MIN_STEPS and efficiency_ok:
-        traj["instruction"] = accomplished
-        traj["success"] = True
-        relabeled = True
-    else:
-        traj["success"] = False
+    traj["success"] = bool(verdict["success"] and efficiency_ok)
 
     capture_meta["verifier"] = {
         **verdict,

@@ -66,7 +66,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "split-pdf-range",
@@ -77,7 +78,8 @@
             "click",
             "type"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -213,7 +215,8 @@
             "click",
             "drag"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -232,7 +235,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -697,7 +701,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -1279,7 +1284,8 @@
             "click",
             "type"
           ],
-          "auth_required": true
+          "auth_required": true,
+          "requires_upload": true
         }
       ]
     },
@@ -1436,7 +1442,8 @@
             "click",
             "wait"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -1476,7 +1483,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "pixlr-collage-filter",
@@ -1572,7 +1580,8 @@
             "scroll",
             "type"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "pdf24-pdf-to-jpg",
@@ -1584,7 +1593,8 @@
             "scroll",
             "type"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -1604,7 +1614,8 @@
             "scroll",
             "type"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "sejda-edit-pdf-text",
@@ -1616,7 +1627,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -1636,7 +1648,8 @@
             "scroll",
             "type"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "mp3cut-fade-save",
@@ -1648,7 +1661,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -1668,7 +1682,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "oac-wav-to-mp3",
@@ -1680,7 +1695,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -2164,7 +2180,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "geogebra-geometry-construction",
@@ -2208,7 +2225,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -2328,7 +2346,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "method-draw-logo-text",
@@ -2340,7 +2359,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -4568,7 +4588,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "paste-url-rehost",
@@ -4598,7 +4619,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "upload-and-copy-link",
@@ -4609,7 +4631,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -4628,7 +4651,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -4647,7 +4671,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "upload-and-open-share",
@@ -4658,7 +4683,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -4677,7 +4703,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -4696,7 +4723,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "set-expiry-upload",
@@ -4707,7 +4735,8 @@
             "click",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
@@ -7480,7 +7509,8 @@
             "click",
             "type"
           ],
-          "auth_required": true
+          "auth_required": true,
+          "requires_upload": true
         },
         {
           "id": "gist-comment",
@@ -7610,7 +7640,8 @@
             "click",
             "type"
           ],
-          "auth_required": true
+          "auth_required": true,
+          "requires_upload": true
         },
         {
           "id": "flickr-comment-photo",
@@ -7642,7 +7673,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": true
+          "auth_required": true,
+          "requires_upload": true
         },
         {
           "id": "deviantart-post-comment",
@@ -7674,7 +7706,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": true
+          "auth_required": true,
+          "requires_upload": true
         }
       ]
     },
@@ -7694,7 +7727,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": true
+          "auth_required": true,
+          "requires_upload": true
         }
       ]
     },
