@@ -32,6 +32,12 @@ AGENT_MAX_TURNS = int(os.environ.get("AGENT_MAX_TURNS", "150"))
 VERIFY_BUDGET_USD = float(os.environ.get("VERIFY_BUDGET_USD", "0.30"))
 # Hindsight relabeling only makes sense for trajectories with real substance.
 RELABEL_MIN_STEPS = int(os.environ.get("AGENT_RELABEL_MIN_STEPS", "3"))
+# A "meandering" grade normally forces success:false (the model shouldn't learn wandering), but a
+# run that REACHED the goal within this many times the expected action count is clean enough to
+# keep — the few extra steps are noise, not a different lesson. The verifier's qualitative
+# "meandering" grade is noisy (it fires on repeated actions and has flagged runs at ratio ~1.05),
+# so this quantitative ratio overrides it. Env-tunable; raise to keep looser runs.
+MEANDER_OK_RATIO = float(os.environ.get("AGENT_MEANDER_OK_RATIO", "2.0"))
 
 TEACHER_PROMPT = """You are a skilled computer user accomplishing a goal in a web application. \
 Work through the app's UI exactly as a careful human would.
@@ -581,27 +587,37 @@ async def verify_trajectory(
     except Exception as e:
         logger.warning(f"verification failed for {traj_dir.name}: {e}")
 
+    # Efficiency ratio is computed up front so the success gate can use it to keep near-efficient
+    # meanders (MEANDER_OK_RATIO), not just record it after the fact.
+    ui_steps = sum(1 for s in steps if s.get("actions") and s["actions"][0].get("type") != "done")
+    expected = (capture_meta.get("task_meta") or {}).get("expected_actions") or 0
+    efficiency_ratio = round(ui_steps / expected, 2) if expected else None
+
     relabeled = False
     accomplished = (verdict.get("accomplished") or "").strip() if not verdict["success"] else ""
-    # A meandering run is bad supervision even when the goal was technically met — the model
-    # would learn the wandering, not the goal.
-    if verdict["success"] and verdict.get("efficiency") != "meandering":
+    # A meandering run is usually bad supervision (the model would learn the wandering, not the
+    # goal), but a run that reached the goal within MEANDER_OK_RATIO x the expected actions is
+    # clean enough to keep — the extra steps are noise. Falls back to discard when the ratio is
+    # unknown (no expected_actions), so we never keep an unbounded meander.
+    efficiency_ok = (
+        verdict.get("efficiency") != "meandering"
+        or (efficiency_ratio is not None and efficiency_ratio <= MEANDER_OK_RATIO)
+    )
+    if verdict["success"] and efficiency_ok:
         traj["success"] = True
-    elif accomplished and len(traj.get("steps", [])) >= RELABEL_MIN_STEPS and verdict.get("efficiency") != "meandering":
+    elif accomplished and len(traj.get("steps", [])) >= RELABEL_MIN_STEPS and efficiency_ok:
         traj["instruction"] = accomplished
         traj["success"] = True
         relabeled = True
     else:
         traj["success"] = False
 
-    ui_steps = sum(1 for s in steps if s.get("actions") and s["actions"][0].get("type") != "done")
-    expected = (capture_meta.get("task_meta") or {}).get("expected_actions") or 0
     capture_meta["verifier"] = {
         **verdict,
         "relabeled": relabeled,
         "ui_steps": ui_steps,
         "expected_actions": expected,
-        "efficiency_ratio": round(ui_steps / expected, 2) if expected else None,
+        "efficiency_ratio": efficiency_ratio,
     }
     trajectory_file.write_text(json.dumps(traj, indent=2))
     meta_file.write_text(json.dumps(capture_meta, indent=2))
