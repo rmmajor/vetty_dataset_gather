@@ -23,7 +23,7 @@ from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
-SCORE_BUDGET_USD = float(os.environ.get("STAGE3_BUDGET_USD", "0.30"))
+SCORE_BUDGET_USD = float(os.environ.get("STAGE3_BUDGET_USD", "2.0"))
 
 # Gate minimums (each dimension is 1-5). Env-overridable so they can be tuned from the dashboard's
 # score distributions without a code edit. runnability defaults to 2 (reject only score-1 "requires

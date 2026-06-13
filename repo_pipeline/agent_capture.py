@@ -27,7 +27,7 @@ from repo_pipeline.sdk_runner import UsageLimitReached
 logger = logging.getLogger(__name__)
 
 MAX_ACTIONS_PER_TASK = int(os.environ.get("AGENT_MAX_ACTIONS", "60"))
-AGENT_TASK_BUDGET_USD = float(os.environ.get("AGENT_TASK_BUDGET_USD", "2.50"))
+AGENT_TASK_BUDGET_USD = float(os.environ.get("AGENT_TASK_BUDGET_USD", "25.0"))
 AGENT_MAX_TURNS = int(os.environ.get("AGENT_MAX_TURNS", "150"))
 VERIFY_BUDGET_USD = float(os.environ.get("VERIFY_BUDGET_USD", "0.30"))
 # Hindsight relabeling only makes sense for trajectories with real substance.

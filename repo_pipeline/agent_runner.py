@@ -74,13 +74,15 @@ async def run_agent(
     except UsageLimitReached:
         raise
     except Exception as e:
-        # The SDK surfaces the CLI's structured error result as an exception ("Claude Code
-        # returned an error result: Reached maximum budget ($X)"). A blown per-call budget is
-        # deterministic — retrying re-spends the full budget for the same failure — so it gets
-        # the non-retryable BUDGET_EXCEEDED category (recoverable later via --requeue-infra
-        # after raising the cap). Everything else stays a retryable infra failure.
+        # Budget is INFORMATIONAL ONLY — it must NEVER reject a repo or discard a trajectory.
+        # The SDK surfaces a per-call budget cap as an exception ("...Reached maximum budget").
+        # Treat it as a soft stop: return whatever was produced (the teacher's partial
+        # trajectory is already finalized by its own finally block). Runaway protection comes
+        # from max_turns + the per-task action cap, not from dollars.
         if "maximum budget" in str(e).lower():
-            raise RetryableFailure(FailureCategory.BUDGET_EXCEEDED, str(e)[:200])
+            logger.info(f"agent[{purpose}] {full_name} reached its per-call budget cap "
+                        f"(informational — not treated as a failure)")
+            return result_text
         raise
 
     if result_msg is not None and registry is not None:

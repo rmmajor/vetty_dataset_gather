@@ -24,7 +24,7 @@ from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
-ANALYZE_BUDGET_USD = float(os.environ.get("STAGE4_BUDGET_USD", "0.75"))
+ANALYZE_BUDGET_USD = float(os.environ.get("STAGE4_BUDGET_USD", "5.0"))
 
 # Per-pass admission cap. Stage 3's gates pass plenty of mediocre (ui=2/interaction=2) apps;
 # get_repos_for_stage(4) orders by UI richness, so capping each pass to the top K spends the

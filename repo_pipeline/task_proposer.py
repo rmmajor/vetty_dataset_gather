@@ -22,7 +22,7 @@ from repo_pipeline.sdk_runner import UsageLimitReached
 logger = logging.getLogger(__name__)
 
 TASKS_PER_REPO = int(os.environ.get("AGENT_TASKS_PER_REPO", "8"))
-PROPOSE_BUDGET_USD = float(os.environ.get("TASK_PROPOSE_BUDGET_USD", "0.50"))
+PROPOSE_BUDGET_USD = float(os.environ.get("TASK_PROPOSE_BUDGET_USD", "2.0"))
 
 PROPOSE_PROMPT = """You are designing realistic user tasks for a computer-use agent to perform in a \
 live web application. The tasks become training data for a model that must learn LONG-HORIZON \
