@@ -160,7 +160,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "infeasible-headless: consent wall blocks grounding (reproducible 0-1 action)"
     },
     {
       "name": "desmos",
@@ -367,7 +369,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "infeasible-headless: 0-action heavy-JS configurator"
     },
     {
       "name": "bahn",
@@ -782,7 +786,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "dead: DNS does not resolve in sandbox (ERR_NAME_NOT_RESOLVED)"
     },
     {
       "name": "unsplash",
@@ -1092,7 +1098,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "infeasible-headless: 0-action bot-block"
     },
     {
       "name": "etsy",
@@ -1112,7 +1120,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "infeasible-headless: 0-action bot-block"
     },
     {
       "name": "asos",
@@ -1132,7 +1142,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "infeasible-headless: 0-action bot-block"
     },
     {
       "name": "starbucks",
@@ -1445,7 +1457,9 @@
           "auth_required": false,
           "requires_upload": true
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "dead: ERR_HTTP2_PROTOCOL_ERROR, won't load"
     },
     {
       "name": "ssa-estimator",
@@ -1716,7 +1730,8 @@
             "scroll",
             "type"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         },
         {
           "id": "audiomass-amplify-save",
@@ -1728,7 +1743,8 @@
             "type",
             "scroll"
           ],
-          "auth_required": false
+          "auth_required": false,
+          "requires_upload": true
         }
       ]
     },
