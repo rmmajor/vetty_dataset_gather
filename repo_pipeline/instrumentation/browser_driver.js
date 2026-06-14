@@ -610,8 +610,18 @@ async function handleSession(body) {
   };
 
   await state.page.goto(body.start_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await settle();
-  const snapshot = await takeSnapshot();
+  // SPAs (React/Vue/Vite/Next) render their UI only after hydration, which lands well after
+  // `domcontentloaded` fires on the near-empty `<div id="root">` shell — snapshotting immediately
+  // saw 0 interactive elements and the boot gate wrongly rejected a perfectly-good app. Poll the
+  // snapshot until the hydrated UI appears (or give up), so the probe judges the RENDERED page.
+  // (networkidle is deliberately avoided: dev servers hold an open HMR websocket, so it never fires.)
+  let snapshot = '';
+  for (let i = 0; i < 8; i++) {
+    await settle();
+    snapshot = await takeSnapshot();
+    if ((snapshot.match(/^\[\d+\] /gm) || []).length >= 5) break;
+    await state.page.waitForTimeout(800);
+  }
   return { ok: true, url: state.page.url(), snapshot: snapshot.slice(0, 15000) };
 }
 

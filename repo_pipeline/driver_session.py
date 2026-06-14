@@ -74,6 +74,27 @@ def start_driver(sandbox):
         raise DriverError(f"driver did not open port {DRIVER_PORT}; log tail: {log_tail[-400:]}")
 
 
+def _wait_for_http_port(sandbox, preferred: int, timeout: int) -> int | None:
+    """Poll for a listening TCP port that ANSWERS HTTP and return it. The inferred `preferred` port
+    is tried first each round; otherwise any other listening port that returns a 2xx/3xx is accepted
+    — so an app on a non-guessed port (webpack-dev-server defaults to 8080, custom servers pick
+    anything) is still found instead of falsely read as NO_BOOT. Runs as one in-container shell loop
+    (parsing /proc/net/tcp{,6}) to avoid per-second docker-exec overhead; excludes the driver port."""
+    script = (
+        f"for i in $(seq 1 {timeout}); do "
+        f"for p in {preferred} $(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null "
+        f"| awk 'NR>1 && $4==\"0A\"{{print $2}}' | sed 's/.*://' "
+        f"| while read h; do printf '%d\\n' \"0x$h\" 2>/dev/null; done | sort -un); do "
+        f"[ \"$p\" = \"{DRIVER_PORT}\" ] && continue; "
+        f"code=$(curl -s -o /dev/null -w '%{{http_code}}' -m 2 \"http://127.0.0.1:$p/\" 2>/dev/null); "
+        f"case \"$code\" in 2*|3*) echo \"CUA_PORT=$p\"; exit 0;; esac; "
+        f"done; sleep 1; done"
+    )
+    out, _, _ = sandbox.exec_command(script, timeout=timeout + 20)
+    m = re.search(r"CUA_PORT=(\d+)", out or "")
+    return int(m.group(1)) if m else None
+
+
 def start_app(sandbox, profile) -> str | None:
     """Detect, build, and daemonize the repo's bundled app; return its base URL or None.
 
@@ -84,17 +105,22 @@ def start_app(sandbox, profile) -> str | None:
     spec = app_runner.detect_app_start(sandbox, profile, for_agent=True)
     if spec is None:
         return None
-    if spec.app_dir != app_runner.REPO_DIR:
-        # Monorepo subdir app: the callers' root-level npm install was a no-op; install
-        # where the app actually lives before building/starting it.
-        sandbox.exec_command(f"cd {spec.app_dir} && npm install", timeout=300)
+    # Install with the app's OWN package manager, in its own dir. A blind root `npm install` is a
+    # no-op for monorepo subdir apps and outright fails for pnpm/yarn/workspace repos (their dev
+    # binary then never lands on PATH — the dominant boot failure), so the install lives here next
+    # to the start that depends on it. A failed install surfaces at start as `<tool>: not found`
+    # in APP_LOG, which is what the boot gate reports.
+    sandbox.exec_command(spec.install_cmd, timeout=600)
     app_runner.build_app(sandbox, spec)
     sandbox.start_background(spec.start_cmd, APP_LOG)
-    if not sandbox.wait_for_port(spec.port, app_runner.APP_READY_TIMEOUT):
+    port = _wait_for_http_port(sandbox, spec.port, app_runner.APP_READY_TIMEOUT)
+    if port is None:
         log_tail, _, _ = sandbox.exec_command(f"tail -25 {APP_LOG}")
-        logger.warning(f"app did not open port {spec.port}; log tail: {log_tail[-500:]}")
+        logger.warning(f"app did not open an HTTP port (inferred :{spec.port}); log tail: {log_tail[-500:]}")
         return None
-    return f"http://127.0.0.1:{spec.port}"
+    if port != spec.port:
+        logger.info(f"app bound :{port} (inferred :{spec.port}) — using detected port")
+    return f"http://127.0.0.1:{port}"
 
 
 def count_interactive_elements(snapshot: str) -> int:

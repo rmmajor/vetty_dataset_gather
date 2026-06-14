@@ -62,6 +62,14 @@ class DockerSandbox:
             shm_size=SANDBOX_SHM_SIZE,
             nano_cpus=int(SANDBOX_CPUS * 1_000_000_000),
             cap_drop=["ALL"],
+            # Grant back ONLY the file-ownership/permission caps that dependency installs need:
+            # npm/pnpm/yarn extract tarballs preserving ownership (fchown) and run postinstall
+            # scripts that chmod/chown — with cap_drop=ALL these die with "EPERM: operation not
+            # permitted, fchown", leaving node_modules empty so the dev binary is "not found" and
+            # the app reads as NO_BOOT. These caps are container-local; the dangerous ones
+            # (SYS_ADMIN, NET_ADMIN, SYS_PTRACE, MKNOD, …) stay dropped, and no-new-privileges +
+            # ephemeral + resource caps + no host bind-mounts keep isolation strong.
+            cap_add=["CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "SETUID", "SETGID"],
             security_opt=["no-new-privileges:true"],
             tmpfs={"/tmp": f"size={SANDBOX_TMP_SIZE}"},
             detach=True,

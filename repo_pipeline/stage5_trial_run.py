@@ -102,11 +102,12 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
         if exit_code != 0:
             raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
 
-        _, install_err, install_code = await _run(sandbox.install_node_deps)
+        # start_app owns the dependency install now: it picks the repo's own package manager
+        # (npm/pnpm/yarn) in the app's actual dir, which a blind root `npm install` got wrong.
         app_url = await _run(driver_session.start_app, sandbox, profile)
         if app_url is None:
-            app_log, _, _ = await _run(sandbox.exec_command, f"tail -15 {driver_session.APP_LOG} 2>/dev/null")
-            detail = app_log.strip() or (install_err[-300:] if install_code != 0 else "no recognizable start script")
+            app_log, _, _ = await _run(sandbox.exec_command, f"tail -20 {driver_session.APP_LOG} 2>/dev/null")
+            detail = app_log.strip() or "no recognizable start script / no bootable Node app"
             raise QualityReject(
                 FailureCategory.NO_BOOT,
                 f"app did not boot (public_url_tests={bool(deep_analysis.get('tests_public_url'))}); {detail[-300:]}",
