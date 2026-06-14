@@ -12,9 +12,12 @@ import sqlite3
 import sys
 from collections import Counter
 
-from repo_pipeline.bootable_gate import ProbeError, gate_repo
+from repo_pipeline.bootable_gate import ProbeError, gate_repo, is_hard_reject
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.schemas import FailureCategory
+
+# Conservative (option B): only HARD rejects drop; ambiguous "no framework" repos pass to the LLM.
+AGGRESSIVE = "--aggressive" in sys.argv
 
 SCORE_COST = 184.19 / 4181
 ANALYZE_COST = 91.50 / 525
@@ -44,12 +47,16 @@ def sweep(names, label, workers=8):
     acc = [r for r in results if r[1] is True]
     rej = [r for r in results if r[1] is False]
     err = [r for r in results if r[1] is None]
+    hard = [r for r in rej if is_hard_reject(r[2]) or AGGRESSIVE]
+    soft = [r for r in rej if not (is_hard_reject(r[2]) or AGGRESSIVE)]
     graded = len(acc) + len(rej)
-    rate = len(rej) / graded if graded else 0
+    rate = len(hard) / graded if graded else 0   # only HARD rejects are dropped
     print(f"\n=== {label}: {len(names)} probed ===")
-    print(f"  ACCEPT={len(acc)}  REJECT={len(rej)}  probe_error={len(err)}  -> reject rate {rate:.0%}")
+    print(f"  KEEP={len(acc) + len(soft)} (accept {len(acc)} + soft-defer {len(soft)})  "
+          f"HARD-REJECT={len(hard)}  probe_error={len(err)}  -> drop rate {rate:.0%}")
     for reason, n in Counter(r[2] for r in rej).most_common(6):
-        print(f"     {n:>4}  {reason}")
+        tag = "DROP" if (is_hard_reject(reason) or AGGRESSIVE) else "keep"
+        print(f"     {n:>4}  [{tag}] {reason}")
     return results, rate
 
 
@@ -74,7 +81,7 @@ total_rej = total_err = 0
 for bucket_names, stage in ((filtered, 2), (scored, 3)):
     results, _ = sweep(bucket_names, f"APPLY stage-{stage} input ({len(bucket_names)} repos)", workers=8)
     for name, accept, reason in results:
-        if accept is False:
+        if accept is False and (is_hard_reject(reason) or AGGRESSIVE):
             registry.reject(name, stage=stage, reason=f"not a bootable app (re-gate): {reason}",
                             category=FailureCategory.NOT_BOOTABLE)
             total_rej += 1

@@ -51,6 +51,21 @@ MONOREPO_MARKERS = {"pnpm-workspace.yaml", "lerna.json", "turbo.json", "nx.json"
 # Directory names that signal app source (vs a pure test repo).
 APP_STRUCTURE_DIRS = {"src", "app", "apps", "client", "frontend", "web", "packages", "server"}
 
+# Reject reasons confident enough to drop a repo WITHOUT an LLM: clearly not a Node app, or clearly
+# a test suite. The ambiguous remainder ("package.json without a framework", "no bootable-app
+# signal") is a known false-positive class (jQuery/Bootstrap/vanilla web UIs the probe can't tell
+# from non-apps), so by default it passes through to the LLM stages instead of being rejected here.
+HARD_REJECT_REASONS = frozenset({
+    "no package.json / compose / app structure",
+    "test-suite only (e2e tooling, no app framework)",
+})
+
+
+def is_hard_reject(reason: str) -> bool:
+    """True when a REJECT reason is confident enough to drop the repo at the gate (conservative
+    mode). Soft rejects fall through to the LLM stages."""
+    return reason in HARD_REJECT_REASONS
+
 
 def parse_package_json(text: str) -> dict | None:
     """Extract the signal fields from package.json text. None when the text is absent/unparseable

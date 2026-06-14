@@ -3,7 +3,7 @@ import hashlib
 import logging
 import os
 
-from repo_pipeline.bootable_gate import ProbeError, gate_repo
+from repo_pipeline.bootable_gate import ProbeError, gate_repo, is_hard_reject
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.schemas import FailureCategory, RepoStatus
 
@@ -14,13 +14,17 @@ MAX_SIZE_KB = 500_000
 # No-LLM bootable-app gate: reject test-suite / non-app repos before any LLM stage. On by default;
 # set BOOTABLE_GATE=0 to fall back to the old metadata-only filter. Probes are network I/O, run in
 # a small thread pool. A probe error never rejects (infra) — the repo stays `discovered` to retry.
+# Conservative by default: only HARD rejects (clearly non-app / test-suite) drop here; ambiguous
+# "no framework" repos pass to the LLM. BOOTABLE_GATE_AGGRESSIVE=1 rejects those too.
 BOOTABLE_GATE = os.environ.get("BOOTABLE_GATE", "1") != "0"
+BOOTABLE_GATE_AGGRESSIVE = os.environ.get("BOOTABLE_GATE_AGGRESSIVE", "0") == "1"
 BOOTABLE_GATE_WORKERS = int(os.environ.get("BOOTABLE_GATE_WORKERS", "8"))
 
 
 def run_bootable_gate(registry: RepoRegistry, repos: list[dict]) -> tuple[list[dict], int, int]:
-    """Probe each repo (no LLM) and split into bootable-apps vs rejected. Returns
-    (accepted, n_rejected, n_probe_errors). Probe errors are left at their input status (retryable)."""
+    """Probe each repo (no LLM) and split into kept vs rejected. Returns
+    (kept, n_rejected, n_probe_errors). A soft reject is kept (passed to the LLM) unless aggressive;
+    probe errors are left at their input status (retryable)."""
     def probe(repo):
         try:
             accept, reason = gate_repo(repo["full_name"])
@@ -28,18 +32,18 @@ def run_bootable_gate(registry: RepoRegistry, repos: list[dict]) -> tuple[list[d
         except ProbeError as e:
             return repo, None, str(e)[:160]
 
-    accepted, rejected, errors = [], 0, 0
+    kept, rejected, errors = [], 0, 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=BOOTABLE_GATE_WORKERS) as ex:
         for repo, accept, reason in ex.map(probe, repos):
-            if accept is True:
-                accepted.append(repo)
-            elif accept is False:
+            if accept is None:
+                errors += 1  # probe error: leave at input status, retry next run
+            elif accept or not (is_hard_reject(reason) or BOOTABLE_GATE_AGGRESSIVE):
+                kept.append(repo)  # bootable, or a soft reject we defer to the LLM
+            else:
                 registry.reject(repo["full_name"], stage=2, reason=f"not a bootable app: {reason}",
                                 category=FailureCategory.NOT_BOOTABLE)
                 rejected += 1
-            else:
-                errors += 1  # probe error: leave at input status, retry next run
-    return accepted, rejected, errors
+    return kept, rejected, errors
 
 
 def check_filter(repo: dict) -> tuple[bool, str, FailureCategory | None]:
