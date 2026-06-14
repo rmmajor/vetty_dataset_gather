@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions
@@ -527,6 +528,24 @@ def _verification_screenshots(traj_dir: Path, steps: list) -> tuple[list[Path], 
     return paths, "; ".join(labels)
 
 
+def _parse_first_json_object(text: str) -> dict:
+    """Extract the verdict object from a verifier response that may wrap the JSON in prose, follow
+    it with a second block, or emit a trailing comma. A first-{ to last-} slice + json.loads breaks
+    on both the trailing content ("Extra data") and the trailing comma the model commonly produces,
+    silently defaulting good trajectories to success=False. raw_decode reads exactly the first JSON
+    value (ignoring anything after); the trailing-comma strip is a JSON-repair fallback, not a
+    content filter. Raises if no parseable object is present."""
+    start = text.find("{")
+    if start == -1:
+        raise ValueError("no JSON object in verifier response")
+    snippet = text[start:]
+    try:
+        return json.JSONDecoder().raw_decode(snippet)[0]
+    except json.JSONDecodeError:
+        repaired = re.sub(r",(\s*[}\]])", r"\1", snippet)
+        return json.JSONDecoder().raw_decode(repaired)[0]
+
+
 async def verify_trajectory(
     traj_dir: Path,
     state: dict | None = None,
@@ -574,9 +593,8 @@ async def verify_trajectory(
             purpose="verify",
             raise_on_error=False,
         )
-        start, end = result_text.find("{"), result_text.rfind("}") + 1
-        if start != -1 and end > start:
-            parsed = json.loads(result_text[start:end])
+        if result_text.find("{") != -1:
+            parsed = _parse_first_json_object(result_text)
             verdict = {
                 "success": bool(parsed.get("success", False)),
                 "efficiency": parsed.get("efficiency"),
