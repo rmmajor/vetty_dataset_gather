@@ -138,6 +138,7 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
     domain_dist = registry.get_domain_distribution()
     rejection_reasons = registry.get_rejection_reasons(limit=10)
     total_traj = registry.count_total_trajectories()
+    captured_traj = registry.count_total_trajectories(RepoStatus.CAPTURED.value)
 
     print("\n=== Pipeline Registry Status ===\n")
 
@@ -159,7 +160,9 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
 
     total = sum(stats.values())
     print(f"  {'TOTAL':25s} {total:>6,}")
-    print(f"\n  Total trajectories generated: {total_traj:,}")
+    print(f"\n  Total trajectories generated (completed): {total_traj:,}")
+    if captured_traj:
+        print(f"  Captured but pending stage-7 finalize:    {captured_traj:,}")
 
     print("\nPending for next run:")
     for stage in [3, 4, 5, 6, 7]:

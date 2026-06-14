@@ -541,9 +541,12 @@ class RepoRegistry:
             for row in rows
         }
 
-    def count_total_trajectories(self) -> int:
+    def count_total_trajectories(self, status: str = None) -> int:
+        """Sum trajectory_count over repos in a status (default: completed = finalized/trainable).
+        Pass RepoStatus.CAPTURED.value to count trajectories captured but pending stage-7 finalize —
+        these exist on disk and verified but are not yet counted as 'generated'."""
         row = self.conn.execute(
             "SELECT COALESCE(SUM(trajectory_count), 0) as total FROM repos WHERE status = ?",
-            (RepoStatus.COMPLETED.value,),
+            (status or RepoStatus.COMPLETED.value,),
         ).fetchone()
         return row["total"]
