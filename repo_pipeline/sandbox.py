@@ -142,8 +142,12 @@ class DockerSandbox:
             raise IOError(f"Cannot write {path}: {stderr}")
 
     def list_files(self, pattern: str = "*", directory: str = "/workspace") -> list[str]:
+        # Prune node_modules / .git before matching: an installed repo holds thousands of vendored
+        # package.json files that no caller wants, and the `head -500` cap would otherwise be spent
+        # on them — silently dropping the real project files (the app's own package.json included).
         stdout, _, exit_code = self.exec_command(
-            f"find '{directory}' -maxdepth 5 -name '{pattern}' -type f 2>/dev/null | head -500"
+            f"find '{directory}' -maxdepth 5 \\( -name node_modules -o -name .git \\) -prune -o "
+            f"-name '{pattern}' -type f -print 2>/dev/null | head -500"
         )
         if exit_code != 0:
             return []

@@ -234,7 +234,11 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
         if exit_code != 0:
             raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
 
-        await _run(sandbox.install_node_deps)
+        # No blind root `npm install` here: start_app owns the dependency install (it detects the
+        # repo's own package manager and installs in the app's dir), exactly as the stage-5 boot
+        # gate does. A pre-install would populate node_modules *before* detection runs, and the
+        # thousands of vendored package.json files starve app-dir detection (see _find_app_dir),
+        # making a repo that booted in stage 5 falsely fail to boot here.
         app_url = await _run(driver_session.start_app, sandbox, profile)
         if app_url is None:
             log_tail, _, _ = await _run(sandbox.exec_command, f"tail -15 {driver_session.APP_LOG} 2>/dev/null")
