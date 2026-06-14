@@ -84,7 +84,7 @@ Export". Only propose goals the app genuinely supports (use the README/tests as 
 - Vary instruction PHRASING across tasks like real users would: some imperative and precise, \
 some terse ("dark mode on, then find the oldest entry"), some conversational ("I need a list \
 of everything I finished this week"). Never test/QA voice.
-
+{avoid_block}
 Output ONLY a JSON object (no markdown fence, no prose):
 {{"app_health": {{"usable": <true|false>, "notes": "<one sentence: what works / what is broken>"}},
  "tasks": [{{"id": "<kebab-slug>", "instruction": "<the user goal>", "difficulty": "easy|medium|hard",
@@ -109,6 +109,18 @@ _AFFORDANCE_QUOTAS = {
     "multi_selects": "- The page has {n} multi-select inputs: at least 1 task MUST involve "
                      "selecting several options in one.\n",
 }
+
+
+def render_avoid(avoid_instructions: list[str] | None) -> str:
+    """A prompt block listing tasks already captured for this app, so the proposer covers NEW
+    ground instead of regenerating them. Empty when nothing is covered yet (repo lane's default)."""
+    if not avoid_instructions:
+        return ""
+    lines = "\n".join(f"- {a.strip()}" for a in avoid_instructions[:40] if a and a.strip())
+    if not lines:
+        return ""
+    return ("\nALREADY-COVERED for this app — do NOT propose these or trivial rephrasings of them; "
+            f"choose DIFFERENT features, flows, and parts of the app:\n{lines}\n")
 
 
 def render_affordances(affordances: dict | None) -> tuple[str, str]:
@@ -188,6 +200,7 @@ async def propose_tasks(
     n_tasks: int = None,
     registry=None,
     affordances: dict | None = None,
+    avoid_instructions: list[str] | None = None,
 ) -> dict | None:
     """Returns {"app_health": {"usable", "notes"}, "tasks": [...]} or None on SDK/parse failure
     (retryable). An unusable app comes back as usable=False with an empty task list — the
@@ -204,6 +217,7 @@ async def propose_tasks(
         n_long=max(1, int(n_tasks * 0.6)),
         affordances_block=affordances_block,
         affordance_quotas=affordance_quotas,
+        avoid_block=render_avoid(avoid_instructions),
     )
 
     try:

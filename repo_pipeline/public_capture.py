@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -26,20 +27,31 @@ from repo_pipeline.instrumentation import RESULTS_DIR
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler
 from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
-from repo_pipeline.stage6_generate import _is_valid_trajectory, _safe_task_id
+from repo_pipeline.stage6_generate import _is_valid_trajectory, _load_proposed_tasks, _safe_task_id
+from repo_pipeline.task_proposer import propose_tasks
 from repo_pipeline.think_generator import needs_polish, polish_thoughts_for_trajectory
 
 logger = logging.getLogger(__name__)
 
 SITES_CONFIG = Path(__file__).parent / "public_sites.json"
 PUBLIC_CONTAINER_TIMEOUT = 10800
+PUBLIC_TASKS_PER_SITE = int(os.environ.get("PUBLIC_TASKS_PER_SITE", "6"))
+
+
+async def _run(fn, *args):
+    return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
+
+
+def _norm_instruction(text: str) -> str:
+    return " ".join((text or "").lower().split())
 
 
 def load_sites(only: set[str] | None = None, config_path: Path | None = None) -> list[dict]:
     sites = json.loads((config_path or SITES_CONFIG).read_text())["sites"]
     if only:
-        sites = [s for s in sites if s["name"] in only]
-    return sites
+        # Explicitly named sites are honored even if skip-tagged (lets you re-probe a dud).
+        return [s for s in sites if s["name"] in only]
+    return [s for s in sites if not s.get("skip_capture")]
 
 
 async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: dict, registry):
@@ -57,7 +69,7 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
         "domain": site.get("domain", "public_web"),
         "framework": "agent",
         "capture_source": "agent",
-        "instruction_source": "human",
+        "instruction_source": task.get("instruction_source", "curated"),
         "thought_source": "teacher_raw",
         "task_type": "other",
         "difficulty": task.get("difficulty", "medium"),
@@ -74,25 +86,97 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
     return verdict
 
 
-async def capture_site(site: dict, trajectory_base_dir: Path, registry, max_tasks: int | None = None) -> dict:
-    """One sandbox per site (the driver's browser is in-container; no app boot needed).
-    Task-level resume: tasks already recorded on disk are skipped, mirroring stage 6."""
-    site_dir = trajectory_base_dir / f"site_{site['name']}"
-    tasks = site["tasks"][:max_tasks] if max_tasks else site["tasks"]
-    pending = [t for t in tasks if not _is_valid_trajectory(site_dir / f"task_{_safe_task_id(t['id'])}")]
-    summary = {"site": site["name"], "captured": 0, "verified": 0, "skipped": len(tasks) - len(pending)}
-    if not pending:
-        logger.info(f"[{site['name']}] all {len(tasks)} tasks already recorded")
-        return summary
+def _merge_tasks(curated: list[dict], proposed: list[dict], max_tasks: int | None) -> list[dict]:
+    """Curated config tasks first (instruction_source=curated: generated offline, reviewed into
+    the JSON), then live proposer tasks that don't duplicate a curated one (generated). Slug
+    collisions get a `-gen` suffix so each task maps to a distinct task_*/ directory."""
+    merged = [{**t, "instruction_source": "curated"} for t in curated]
+    seen_norm = {_norm_instruction(t.get("instruction", "")) for t in merged}
+    seen_ids = {t["id"] for t in merged}
+    for t in proposed:
+        if _norm_instruction(t.get("instruction", "")) in seen_norm:
+            continue
+        tid = t["id"] if t["id"] not in seen_ids else f"{t['id']}-gen"
+        seen_ids.add(tid)
+        seen_norm.add(_norm_instruction(t.get("instruction", "")))
+        merged.append({**t, "id": tid, "instruction_source": "generated"})
+    return merged[:max_tasks] if max_tasks else merged
 
+
+async def _propose_for_site(client, sandbox, site: dict, avoid: list[str], registry) -> dict | None:
+    """Ground the proposer in the LIVE public site (homepage snapshot + screenshot + affordances),
+    mirroring stage 6's context probe. Returns the proposal dict, or None on SDK/parse failure."""
+    probe = await _run(client.session, "context_probe", site["start_url"])
+    snapshot = probe.get("snapshot", "")
+    screenshot = await _run(client.screenshot_b64)
+    try:
+        affordances = await _run(client.affordances)
+    except Exception:
+        affordances = {}
+    await _run(client.finish, "probe", "")
+    await _run(sandbox.exec_command, f"rm -rf {RESULTS_DIR}/task_context_probe")
+
+    repo = {
+        "full_name": f"public:{site['name']}",
+        "description": site.get("domain") or site.get("category") or site["name"],
+    }
+    return await propose_tasks(
+        repo, snapshot, screenshot, "", "",
+        n_tasks=PUBLIC_TASKS_PER_SITE, registry=registry,
+        affordances=affordances, avoid_instructions=avoid,
+    )
+
+
+async def capture_site(site: dict, trajectory_base_dir: Path, registry,
+                       max_tasks: int | None = None, propose: bool = True) -> dict:
+    """One sandbox per site (the driver's browser is in-container; no app boot needed).
+
+    Lever 1: curated config tasks are deepened with proposer-generated tasks grounded in the live
+    site. The proposal is persisted to proposed_tasks.json and reused on resume, so re-runs are
+    stable and task-level resume (skip tasks already on disk) is meaningful — mirroring stage 6."""
+    site_dir = trajectory_base_dir / f"site_{site['name']}"
+    curated = site.get("tasks", [])
+    persisted = _load_proposed_tasks(site_dir)
+
+    # With a persisted proposal (or proposing disabled) the full task set is known without the
+    # driver, so a fully-recorded site short-circuits before a sandbox is ever started.
+    if persisted is not None or not propose:
+        full = _merge_tasks(curated, persisted or [], max_tasks)
+        if full and all(_is_valid_trajectory(site_dir / f"task_{_safe_task_id(t['id'])}") for t in full):
+            logger.info(f"[{site['name']}] all {len(full)} tasks already recorded")
+            return {"site": site["name"], "captured": 0, "verified": 0, "skipped": len(full)}
+
+    summary = {"site": site["name"], "captured": 0, "verified": 0, "skipped": 0}
+    ran: list[dict] = []
+    states: dict = {}
+    full: list[dict] = []
     sandbox = DockerSandbox(container_timeout=PUBLIC_CONTAINER_TIMEOUT)
     try:
-        await asyncio.get_running_loop().run_in_executor(None, sandbox.start, f"public/{site['name']}")
-        await asyncio.get_running_loop().run_in_executor(None, driver_session.install_driver, sandbox)
-        await asyncio.get_running_loop().run_in_executor(None, driver_session.start_driver, sandbox)
+        await _run(sandbox.start, f"public/{site['name']}")
+        await _run(driver_session.install_driver, sandbox)
+        await _run(driver_session.start_driver, sandbox)
         client = driver_session.DriverClient(sandbox)
 
-        states = {}
+        proposed = persisted
+        if proposed is None and propose:
+            proposal = await _propose_for_site(client, sandbox, site, [t["instruction"] for t in curated], registry)
+            if proposal is not None:
+                proposed = proposal.get("tasks") or []
+                site_dir.mkdir(parents=True, exist_ok=True)
+                (site_dir / "proposed_tasks.json").write_text(json.dumps(proposal, indent=2))
+                health = proposal.get("app_health") or {}
+                logger.info(f"[{site['name']}] proposed {len(proposed)} extra tasks "
+                            f"(health: {health.get('notes', 'ok')[:80]})")
+            else:
+                logger.warning(f"[{site['name']}] task proposal failed — using curated config tasks only")
+
+        full = _merge_tasks(curated, proposed or [], max_tasks)
+        pending = [t for t in full if not _is_valid_trajectory(site_dir / f"task_{_safe_task_id(t['id'])}")]
+        summary["skipped"] = len(full) - len(pending)
+        if not pending:
+            logger.info(f"[{site['name']}] all {len(full)} tasks already recorded")
+            return summary
+
         for task in pending:
             if rate_limit_tracker.limit_reached():
                 raise UsageLimitReached("usage limit reached during public capture")
@@ -100,22 +184,21 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry, max_task
                 client, task, site["start_url"], registry=registry, full_name=f"site:{site['name']}"
             )
             states[task["id"]] = state
+            ran.append(task)
             summary["captured"] += 1
             site_dir.mkdir(parents=True, exist_ok=True)
-            await asyncio.get_running_loop().run_in_executor(
-                None, sandbox.copy_out, RESULTS_DIR, str(site_dir)
-            )
+            await _run(sandbox.copy_out, RESULTS_DIR, str(site_dir))
             logger.info(f"[{site['name']}] task '{task['id']}': {state['actions']} actions, "
                         f"outcome={state['agent_outcome']}")
     finally:
-        await asyncio.get_running_loop().run_in_executor(None, sandbox.stop)
+        await _run(sandbox.stop)
 
     # Finalize ONLY after the capture loop: each copy_out re-copies the container's
     # capture_meta/trajectory files over the host copies, so per-task verdicts written
     # mid-loop were clobbered by the next task's copy (cost the first sweep 4 verdicts).
-    for task in pending:
+    for task in ran:
         traj_dir = site_dir / f"task_{_safe_task_id(task['id'])}"
-        if not traj_dir.exists() or task["id"] not in states:
+        if not traj_dir.exists():
             continue
         verdict = await _verify_and_finalize(traj_dir, site, task, states[task["id"]], registry)
         if verdict.get("final_success"):
@@ -131,6 +214,8 @@ async def main():
     parser = argparse.ArgumentParser(description="Public-site teacher capture lane")
     parser.add_argument("--sites", type=str, default=None, help="Comma-separated site names (default: all)")
     parser.add_argument("--max-tasks", type=int, default=None, help="Max tasks per site this run")
+    parser.add_argument("--no-propose", action="store_true",
+                        help="Disable proposer-generated tasks; run only curated config tasks")
     parser.add_argument("--parallel", type=int, default=3, help="Concurrent site sandboxes")
     parser.add_argument("--traj-dir", type=str, default="trajectories/")
     parser.add_argument("--config", type=str, default=None,
@@ -154,7 +239,8 @@ async def main():
             if rate_limit_tracker.limit_reached():
                 return
             try:
-                results.append(await capture_site(site, Path(args.traj_dir), registry, args.max_tasks))
+                results.append(await capture_site(
+                    site, Path(args.traj_dir), registry, args.max_tasks, propose=not args.no_propose))
             except UsageLimitReached:
                 logger.warning(f"[{site['name']}] usage limit reached — captures so far are kept")
             except Exception as e:
