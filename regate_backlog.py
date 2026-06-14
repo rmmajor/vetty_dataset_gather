@@ -9,7 +9,9 @@ Apply for real (probes every backlog repo, rejects non-bootable -> NOT_BOOTABLE)
 import concurrent.futures
 import random
 import sqlite3
+import subprocess
 import sys
+import time
 from collections import Counter
 
 from repo_pipeline.bootable_gate import ProbeError, gate_repo, is_hard_reject
@@ -75,16 +77,49 @@ if not APPLY:
     print(f"\n  DRY RUN — re-run with --apply to reject the non-bootable backlog for real.")
     sys.exit(0)
 
-# Apply: probe every backlog repo, reject the non-bootable ones.
+# Apply: probe every backlog repo (budget-aware), reject the non-bootable ones.
+# The GraphQL probe costs ~1 point/repo against a 5000/hr budget; 11k repos spans multiple windows.
+# Process in chunks at low concurrency (dodge secondary rate limits) and sleep until reset when the
+# budget runs low, committing rejects per chunk so progress survives and re-runs are idempotent.
+CHUNK = 150
+APPLY_WORKERS = 4
+
+
+def graphql_budget():
+    try:
+        out = subprocess.run(["gh", "api", "rate_limit", "--jq",
+                              ".resources.graphql.remaining,.resources.graphql.reset"],
+                             capture_output=True, text=True, timeout=30)
+        rem, reset = out.stdout.split()
+        return int(rem), int(reset)
+    except Exception:
+        return None, None
+
+
+def wait_for_budget(need):
+    rem, reset = graphql_budget()
+    if rem is not None and rem < need:
+        wait = max(reset - int(time.time()) + 5, 5)
+        print(f"  graphql budget {rem} < {need}; sleeping {wait}s until reset", flush=True)
+        time.sleep(wait)
+
+
 registry = RepoRegistry()
 total_rej = total_err = 0
 for bucket_names, stage in ((filtered, 2), (scored, 3)):
-    results, _ = sweep(bucket_names, f"APPLY stage-{stage} input ({len(bucket_names)} repos)", workers=8)
-    for name, accept, reason in results:
-        if accept is False and (is_hard_reject(reason) or AGGRESSIVE):
-            registry.reject(name, stage=stage, reason=f"not a bootable app (re-gate): {reason}",
-                            category=FailureCategory.NOT_BOOTABLE)
-            total_rej += 1
-        elif accept is None:
-            total_err += 1
-print(f"\nAPPLIED: {total_rej} repos rejected NOT_BOOTABLE, {total_err} probe errors left in place.")
+    print(f"\n=== APPLY stage-{stage}: {len(bucket_names)} repos (chunks of {CHUNK}) ===", flush=True)
+    for i in range(0, len(bucket_names), CHUNK):
+        chunk = bucket_names[i:i + CHUNK]
+        wait_for_budget(len(chunk) + 50)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS) as ex:
+            results = list(ex.map(probe, chunk))
+        for name, accept, reason in results:
+            if accept is False and (is_hard_reject(reason) or AGGRESSIVE):
+                registry.reject(name, stage=stage, reason=f"not a bootable app (re-gate): {reason}",
+                                category=FailureCategory.NOT_BOOTABLE)
+                total_rej += 1
+            elif accept is None:
+                total_err += 1
+        print(f"  stage-{stage}: {min(i + CHUNK, len(bucket_names))}/{len(bucket_names)} probed; "
+              f"{total_rej} rejected, {total_err} probe-errors", flush=True)
+print(f"\nAPPLIED: {total_rej} repos rejected NOT_BOOTABLE, {total_err} probe errors left in place.", flush=True)
