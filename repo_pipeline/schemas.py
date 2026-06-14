@@ -63,6 +63,7 @@ class FailureCategory(str, Enum):
     NO_TESTS = "no_tests"              # no test files matched the framework globs
     NO_CAPTURE = "no_capture"          # tests ran but produced no usable bbox/screenshot
     NO_BOOT = "no_boot"                # boot gate: the repo's app never opened its port
+    NOT_BOOTABLE = "not_bootable"      # stage-2 gate: not a bootable interactive web app (test suite / non-app)
     DEDUP = "dedup"                    # fork / duplicate-description clone
     EMPTY_REPO = "empty_repo"
     TOO_LARGE = "too_large"
