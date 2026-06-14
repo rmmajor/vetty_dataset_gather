@@ -1896,7 +1896,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "tableconvert",
@@ -2286,7 +2288,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "lipsum-generator",
@@ -3256,7 +3260,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "omnicalculator",
@@ -3579,7 +3585,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "dell-alienware-configure",
@@ -3609,7 +3617,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "doctolib",
@@ -4169,7 +4179,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "linkedin-jobs",
@@ -4433,7 +4445,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "ghostbin-com",
@@ -6115,7 +6129,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "macys-beauty",
@@ -6147,7 +6163,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "argos-electronics",
@@ -6179,7 +6197,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "otto-de-fashion",
@@ -6315,7 +6335,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "zalando-fashion",
@@ -6347,7 +6369,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "hm-clothing",
@@ -6379,7 +6403,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "uniqlo-basics",
@@ -6431,7 +6457,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "nordstrom-luxury",
@@ -6463,7 +6491,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "boohoo-fast-fashion",
@@ -6483,7 +6513,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "next-uk-fashion",
@@ -6579,7 +6611,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "lowes-home-improvement",
@@ -6599,7 +6633,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "sephora-beauty",
@@ -6631,7 +6667,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "ulta-beauty",
@@ -6663,7 +6701,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "douglas-de-beauty",
@@ -6683,7 +6723,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "tesco-uk-grocery",
@@ -6855,7 +6897,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "just-eat-uk",
@@ -6895,7 +6939,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "aliexpress-marketplace",
@@ -6927,7 +6973,9 @@
           ],
           "auth_required": true
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "temu-marketplace",
@@ -8070,7 +8118,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "travel-state-gov-passport",
@@ -8193,7 +8243,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "vote-gov-state-redirect",
@@ -8351,7 +8403,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "nerdwallet-personal-loan-calculator",
@@ -8479,7 +8533,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "lemonade-renters-insurance-quote",
@@ -8575,7 +8631,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "moneysupermarket-car-insurance",
@@ -8703,7 +8761,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "ups-rate-service-guide",
@@ -8735,7 +8795,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "fedex-rate-finder",
@@ -8767,7 +8829,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "dhl-rate-time-finder",
@@ -8799,7 +8863,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "royal-mail-price-finder",
@@ -8831,7 +8897,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "goodrx-drug-price-lookup",
@@ -8895,7 +8963,9 @@
           ],
           "auth_required": false
         }
-      ]
+      ],
+      "skip_capture": true,
+      "skip_reason": "login-free lane exhausted: 0-yield across passes (bot-defended / long-wizard / dud) -> auth/proxy lane"
     },
     {
       "name": "vaccines-gov-finder",
