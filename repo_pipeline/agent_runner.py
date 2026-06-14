@@ -13,6 +13,7 @@ with a graceful per-item fallback (instruction / think generation) leave it Fals
 text came back.
 """
 
+import asyncio
 import logging
 
 from claude_agent_sdk import AssistantMessage, RateLimitEvent, ResultMessage, query
@@ -20,6 +21,7 @@ from claude_agent_sdk import AssistantMessage, RateLimitEvent, ResultMessage, qu
 from repo_pipeline.schemas import FailureCategory, RetryableFailure
 from repo_pipeline.sdk_runner import (
     CLAUDE_CLI_PATH,
+    DEFAULT_QUERY_TIMEOUT_S,
     UsageLimitReached,
     cost_tracker,
     harden_options,
@@ -39,6 +41,7 @@ async def run_agent(
     purpose: str = "",
     capture_assistant_fallback: bool = False,
     raise_on_error: bool = False,
+    timeout_s: float = DEFAULT_QUERY_TIMEOUT_S,
 ) -> str:
     """Run one agent query, record telemetry, and return the model's text result.
 
@@ -58,21 +61,29 @@ async def run_agent(
     harden_options(options)
 
     try:
-        async for message in query(prompt=prompt, options=options):
-            if isinstance(message, RateLimitEvent):
-                rate_limit_tracker.observe(message.rate_limit_info)
-                continue
-            if capture_assistant_fallback and isinstance(message, AssistantMessage):
-                for block in getattr(message, "content", None) or []:
-                    if hasattr(block, "text"):
-                        last_assistant_text = block.text
-            if isinstance(message, ResultMessage):
-                result_msg = message
-                cost_tracker.add(getattr(message, "total_cost_usd", None))
-                if message.subtype == "success" and not message.is_error:
-                    result_text = message.result or ""
+        async with asyncio.timeout(timeout_s):
+            async for message in query(prompt=prompt, options=options):
+                if isinstance(message, RateLimitEvent):
+                    rate_limit_tracker.observe(message.rate_limit_info)
+                    continue
+                if capture_assistant_fallback and isinstance(message, AssistantMessage):
+                    for block in getattr(message, "content", None) or []:
+                        if hasattr(block, "text"):
+                            last_assistant_text = block.text
+                if isinstance(message, ResultMessage):
+                    result_msg = message
+                    cost_tracker.add(getattr(message, "total_cost_usd", None))
+                    if message.subtype == "success" and not message.is_error:
+                        result_text = message.result or ""
     except UsageLimitReached:
         raise
+    except TimeoutError:
+        # Wedged CLI subprocess: abandon the call (no ResultMessage arrived, so no telemetry row)
+        # and return whatever partial text exists. For the teacher this is a soft stop — its own
+        # finally block has already finalized the partial trajectory; for verify/think the caller
+        # falls back exactly as it does for an empty result.
+        logger.warning(f"agent[{purpose}] {full_name} exceeded {timeout_s}s — abandoning the call")
+        return result_text or last_assistant_text
     except Exception as e:
         # Budget is INFORMATIONAL ONLY — it must NEVER reject a repo or discard a trajectory.
         # The SDK surfaces a per-call budget cap as an exception ("...Reached maximum budget").
