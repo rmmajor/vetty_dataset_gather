@@ -95,6 +95,17 @@ def _wait_for_http_port(sandbox, preferred: int, timeout: int) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def app_is_up(sandbox, app_url: str) -> bool:
+    """True if the app server still answers HTTP (2xx/3xx) at app_url. Tasks share one long-lived
+    app server that can crash mid-session (an unhandled error, an OOM, a route that kills the dev
+    server) — after which every remaining task fails with CONNECTION_REFUSED. Cheap in-container
+    curl probe so the caller can restart the app before the next task."""
+    out, _, _ = sandbox.exec_command(
+        f"curl -s -o /dev/null -w '%{{http_code}}' -m 5 '{app_url}/' 2>/dev/null"
+    )
+    return out.strip()[:1] in ("2", "3")
+
+
 def start_app(sandbox, profile) -> str | None:
     """Detect, build, and daemonize the repo's bundled app; return its base URL or None.
 

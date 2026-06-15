@@ -43,6 +43,11 @@ AGENT_TASK_TIME_RESERVE = int(os.environ.get("AGENT_TASK_TIME_RESERVE", "900"))
 # At most this many verified trajectories are kept per repo — diversity guard so one prolific
 # app cannot dominate the corpus the way Booking.com did.
 AGENT_MAX_KEPT = int(os.environ.get("AGENT_MAX_KEPT_PER_REPO", "10"))
+# Early-abort: stop a repo after this many CONSECUTIVE unproductive tasks (teacher reported
+# failure, or the task aborted on an exception). A repo whose backend never came up or whose
+# auth wall blocks every flow (e.g. TREK) otherwise grinds through its whole task list — minutes
+# per doomed task. A productive task resets the counter.
+AGENT_MAX_CONSECUTIVE_FAILS = int(os.environ.get("AGENT_MAX_CONSECUTIVE_FAILS", "3"))
 
 INSTRUCTION_PROMPT = """You are reading an automated browser test for a web application.
 Your job is to write a one-sentence INSTRUCTION describing what user-facing scenario the
@@ -292,6 +297,7 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
 
         # Tasks share one app server (state accumulates realistically) but each gets a fresh
         # browser context, so login/session state never leaks between trajectories.
+        consecutive_fails = 0
         for i, task in enumerate(tasks):
             if _is_valid_trajectory(repo_traj_dir / f"task_{_safe_task_id(task['id'])}"):
                 rlog.info(f"task '{task['id']}': already recorded, skipping")
@@ -304,6 +310,16 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                     f"stopping after {i} of {len(tasks)} tasks"
                 )
                 break
+            # App-health gate: the shared server can crash mid-session (an unhandled error, OOM,
+            # a deploy action that kills the dev server), after which every remaining task fails
+            # with CONNECTION_REFUSED. Probe and restart before the task so the list isn't wasted.
+            if not driver_session.app_is_up(sandbox, app_url):
+                rlog.warning(f"app at {app_url} unresponsive before task '{task['id']}'; restarting")
+                restarted = await _run(driver_session.start_app, sandbox, profile)
+                if restarted is None:
+                    rlog.warning(f"app restart failed; stopping after {i} of {len(tasks)} tasks")
+                    break
+                app_url = restarted
             # Set before the task runs: a mid-task abort (usage limit, SDK crash) must still
             # copy whatever steps the driver already recorded for this task.
             captured_anything = True
@@ -311,12 +327,14 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
             # tasks we most want are the priciest), an SDK error, or a browser crash — must
             # NEVER discard the repo's already-captured trajectories. The repo is judged on
             # what it captured, in post-processing. Only a global usage-limit stop propagates.
+            unproductive = False
             try:
                 state = await run_teacher_task(client, task, app_url, registry=registry, full_name=repo_name)
                 rlog.info(
                     f"task '{task['id']}': {state['actions']} actions, "
                     f"outcome={state['agent_outcome'] or 'none'}"
                 )
+                unproductive = (state.get("agent_outcome") or "") == "failed"
             except UsageLimitReached:
                 raise
             except Exception as e:
@@ -324,6 +342,8 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                     f"task '{task['id']}' aborted ({type(e).__name__}: {str(e)[:120]}); "
                     f"keeping prior captures and continuing"
                 )
+                unproductive = True
+            consecutive_fails = consecutive_fails + 1 if unproductive else 0
             # Incremental copy-out: teacher turns can be slow under rate-limit waits, and a
             # container-timeout mid-task must never cost the tasks already recorded.
             repo_traj_dir.mkdir(parents=True, exist_ok=True)
@@ -331,6 +351,12 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                 await _run(sandbox.copy_out, RESULTS_DIR, str(repo_traj_dir))
             except Exception as e:
                 logger.warning(f"incremental copy_out failed for {repo_name}: {e}")
+            if consecutive_fails >= AGENT_MAX_CONSECUTIVE_FAILS:
+                rlog.warning(
+                    f"early-abort: {consecutive_fails} consecutive unproductive tasks "
+                    f"(stopped after {i + 1} of {len(tasks)}) — likely a dead backend or auth wall"
+                )
+                break
     finally:
         if captured_anything:
             repo_traj_dir.mkdir(parents=True, exist_ok=True)
