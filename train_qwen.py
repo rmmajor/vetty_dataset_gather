@@ -97,6 +97,36 @@ def format_action_summary(action):
 # bloat the prompt, and at inference the runtime keeps a bounded history too.
 HISTORY_WINDOW = 10
 
+# Step-level waste filter (opt-in via --exclude-waste-steps). A single-click step whose target
+# lands within WASTE_CLICK_RADIUS_PX of a click in the previous WASTE_LOOKBACK_STEPS is a
+# retry/backtrack — the "click didn't register, click again" pattern that survives the stuck-loop
+# gate (which only drops >=3 IDENTICAL consecutive actions). These steps are dropped as TRAINING
+# TARGETS only; they stay in the text history so later steps' context — and their post-retry
+# screenshots — remain coherent. Geometry-based, like the loop/viewport gates, not thought-text.
+WASTE_CLICK_RADIUS_PX = int(os.environ.get("WASTE_CLICK_RADIUS_PX", "10"))
+WASTE_LOOKBACK_STEPS = int(os.environ.get("WASTE_LOOKBACK_STEPS", "4"))
+
+
+def _waste_step_indices(steps, radius_px=WASTE_CLICK_RADIUS_PX, lookback=WASTE_LOOKBACK_STEPS):
+    """Indices of single-click steps that merely retry a recent click (within radius_px of a click
+    in the previous `lookback` steps). Only PURE single-click steps qualify — a step that also
+    types/scrolls/keypresses does real work and is never waste; scrolls (which legitimately repeat
+    x,y with different deltas) are never considered. A step's own click is recorded only after it
+    is checked, so a step never matches itself."""
+    waste = set()
+    recent = []
+    for i, step in enumerate(steps):
+        actions = step.get("actions") or ([step["action"]] if "action" in step else [])
+        clicks = [a for a in actions if a.get("type") == "click" and a.get("x") is not None]
+        if len(actions) == 1 and len(clicks) == 1:
+            x, y = clicks[0]["x"], clicks[0]["y"]
+            if any(i - j <= lookback and abs(x - px) <= radius_px and abs(y - py) <= radius_px
+                   for px, py, j in recent):
+                waste.add(i)
+        for a in clicks:
+            recent.append((a["x"], a["y"], i))
+    return waste
+
 
 def _maybe_synthesize_done_step(trajectory, trajectory_dir, capture_meta):
     """Terminal supervision for agent trajectories recorded before the driver emitted `done`
@@ -120,29 +150,38 @@ def _maybe_synthesize_done_step(trajectory, trajectory_dir, capture_meta):
     })
 
 
-def convert_trajectory_to_examples(trajectory, trajectory_dir):
+def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_steps=False):
     """One training example PER STEP: current screenshot + task + windowed text history ->
     <think> + action(s). A whole trajectory as one multi-turn example packs every screenshot
     (~300 visual tokens each) into a single sequence — a 21-step trajectory is ~9k tokens
     against max_length 4096, so the trainer silently truncated exactly the long-horizon tails
     this dataset exists for. Per-step examples match inference conditions (one screenshot +
-    text history) and supervise every step uniformly."""
+    text history) and supervise every step uniformly.
+
+    Returns (examples, waste_dropped). With exclude_waste_steps, retry/backtrack clicks are
+    omitted as TARGETS but still flow into action_history, so the trajectory keeps all its steps
+    and downstream context stays intact — only the bad supervision target is removed."""
     instruction = trajectory["instruction"]
     steps = trajectory["steps"]
     if not steps:
-        return []
+        return [], 0
 
     examples = []
     action_history = []
+    waste = _waste_step_indices(steps) if exclude_waste_steps else set()
+    waste_dropped = 0
 
-    for step in steps:
+    for i, step in enumerate(steps):
         screenshot_path = (trajectory_dir / step["screenshot"]).resolve()
         thought = step.get("thought", "")
         actions = step.get("actions", [])
         if not actions and "action" in step:
             actions = [step["action"]]
 
-        if screenshot_path.exists() and actions:
+        emit = screenshot_path.exists() and bool(actions)
+        if emit and i in waste:
+            waste_dropped += 1
+        elif emit:
             user_text = f"Task: {instruction}"
             if action_history:
                 window = action_history[-HISTORY_WINDOW:]
@@ -168,10 +207,11 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir):
         for a in actions:
             action_history.append(format_action_summary(a))
 
-    return examples
+    return examples, waste_dropped
 
 
-def convert_trajectories(input_dir, output_dir, val_split, include_replay=False, exclude_meandering=False):
+def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
+                         exclude_meandering=False, exclude_waste_steps=False):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -182,6 +222,7 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     report = {
         "trajectories": 0, "by_source": {}, "actions": {}, "lengths": [],
         "domains": {}, "done_steps": 0, "thought_sources": {}, "meandering": 0,
+        "waste_steps_dropped": 0,
     }
 
     trajectory_dirs = sorted(
@@ -259,7 +300,9 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
         if source == "agent":
             _maybe_synthesize_done_step(trajectory, traj_dir, capture_meta)
 
-        examples = convert_trajectory_to_examples(trajectory, traj_dir)
+        examples, waste_dropped = convert_trajectory_to_examples(
+            trajectory, traj_dir, exclude_waste_steps=exclude_waste_steps)
+        report["waste_steps_dropped"] += waste_dropped
         if not examples:
             skipped["empty"] += 1
             continue
@@ -303,6 +346,7 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     ))
     print(f"Terminal done() steps: {report['done_steps']}/{report['trajectories']} trajectories")
     print(f"Meandering (tagged, included; pass --exclude-meandering to drop): {report['meandering']}")
+    print(f"Waste steps dropped as targets (--exclude-waste-steps): {report['waste_steps_dropped']}")
     print("Domains: " + ", ".join(f"{d}={n}" for d, n in sorted(report["domains"].items(), key=lambda kv: -kv[1])[:10]))
     print(f"Skipped: {skipped}")
     print("======================\n")
@@ -399,6 +443,9 @@ def main():
     convert_parser.add_argument("--input", type=str, required=True, help="Input trajectories directory")
     convert_parser.add_argument("--output", type=str, default="training_data/", help="Output directory")
     convert_parser.add_argument("--val-split", type=float, default=0.1, help="Validation split fraction")
+    convert_parser.add_argument("--exclude-waste-steps", action="store_true",
+                                help="Drop retry/backtrack click steps as training targets (kept in "
+                                     "history); non-destructive, trajectory files untouched")
     convert_parser.add_argument("--exclude-meandering", action="store_true",
                                 help="Drop trajectories the verifier graded 'meandering' (kept by default)")
     convert_parser.add_argument("--include-replay", action="store_true",
@@ -415,7 +462,8 @@ def main():
 
     if args.command == "convert":
         convert_trajectories(args.input, args.output, args.val_split, include_replay=args.include_replay,
-                             exclude_meandering=args.exclude_meandering)
+                             exclude_meandering=args.exclude_meandering,
+                             exclude_waste_steps=args.exclude_waste_steps)
     elif args.command == "train":
         train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size)
 
