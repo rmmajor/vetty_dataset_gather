@@ -49,11 +49,13 @@ record: $(TASKS_FILE) ## Record trajectories via GPT-5.4 CUA
 		--viewport $(VIEWPORT) \
 		--resume
 
-convert: ## Convert trajectories to ms-swift SFT format
+convert: ## Convert trajectories to ms-swift SFT format (clean cut: drops meandering trajectories + waste-click steps)
 	python train_qwen.py convert \
 		--input $(TRAJ_DIR)/ \
 		--output $(TRAIN_DIR)/ \
-		--val-split $(VAL_SPLIT)
+		--val-split $(VAL_SPLIT) \
+		--exclude-waste-steps \
+		--exclude-meandering
 
 train: $(TRAIN_DIR)/sft_dataset.jsonl ## Launch ms-swift LoRA fine-tuning
 	python train_qwen.py train \
