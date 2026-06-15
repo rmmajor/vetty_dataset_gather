@@ -19,13 +19,12 @@ GITHUB_EPOCH = date(2008, 1, 1)
 DEFAULT_STAR_FLOOR = 5
 
 SEARCH_QUERIES = [
-    # ---- Broad supersets ----
-    # These intentionally omit narrowing terms/star filters: the windowing engine
-    # partitions them (stars buckets + created-date splits) to capture EVERY >=5-star
-    # repo per language. They're the real yield; the narrower queries below mostly dedupe.
-    "playwright language:TypeScript",
-    "playwright language:JavaScript",
-    "playwright language:Python",
+    # ---- Broad supersets: REMOVED 2026-06-15 ----
+    # `playwright language:{TS,JS,Python}` windowed to EVERY >=5-star playwright repo — the flood
+    # that buried the funnel in un-bootable test suites (agent mode wants bootable APPS, not repos
+    # that merely contain a test). The stage-2 bootable-app gate would reject most of them anyway,
+    # but not discovering them at all saves the discovery API budget + DB bloat + gate probes.
+    # The named-app / topic / bootable-app queries below are the agent-mode yield.
 
     # ---- Real product test suites (large projects using Playwright for CI) ----
     "playwright e2e test language:TypeScript stars:>500",
@@ -210,12 +209,9 @@ SEARCH_QUERIES = [
 # non-Python Selenium repos would just be rejected at stage 4. Framework detection
 # (Playwright vs Selenium) happens later in stage 4.
 SELENIUM_SEARCH_QUERIES = [
-    # ---- Broad supersets ----
-    # Windowing partitions these to capture every >=5-star Python Selenium repo;
-    # the narrower queries below then mostly dedupe.
-    "selenium language:Python",
-    "selenium webdriver language:Python",
-    "pytest selenium language:Python",
+    # ---- Broad supersets: REMOVED 2026-06-15 (same flood reason as the Playwright supersets) ----
+    # `selenium language:Python` windowed to every >=5-star Python Selenium repo — almost all pure
+    # test suites, which agent mode (Node-app boot) rejects. The named/topic queries below remain.
 
     # ---- Real product test suites (Python star tiers) ----
     "selenium e2e test language:Python stars:>500",
