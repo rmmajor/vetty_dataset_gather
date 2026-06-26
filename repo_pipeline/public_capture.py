@@ -25,7 +25,7 @@ from repo_pipeline import driver_session
 from repo_pipeline.agent_capture import run_teacher_task, verify_trajectory
 from repo_pipeline.instrumentation import RESULTS_DIR
 from repo_pipeline.registry import RepoRegistry
-from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler
+from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler, safe_parallel_sandboxes
 from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 from repo_pipeline.stage6_generate import _is_valid_trajectory, _load_proposed_tasks, _safe_task_id
 from repo_pipeline.task_proposer import propose_tasks
@@ -230,9 +230,12 @@ async def main():
 
     registry = RepoRegistry("pipeline_data/registry.db")
     results = []
-    # Sites are independent (one sandbox each, browser-only ~0.5GB real) — run a few
-    # concurrently. Keep this below the Docker VM headroom shared with funnel stages.
-    semaphore = asyncio.Semaphore(int(args.parallel))
+    # Sites are independent (one sandbox each) — run a few concurrently, but never more than the
+    # Docker VM's RAM can hold: each sandbox can claim its mem cap + RAM-backed tmpfs, so an
+    # over-subscribed VM thrashes and strangles every sandbox. Auto-clamp to what fits.
+    parallel = safe_parallel_sandboxes(int(args.parallel))
+    semaphore = asyncio.Semaphore(parallel)
+    logger.info(f"Running {parallel} site(s) concurrently (requested {args.parallel})")
 
     async def run_site(site):
         async with semaphore:

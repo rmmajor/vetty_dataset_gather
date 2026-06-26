@@ -25,6 +25,53 @@ SANDBOX_PIDS_LIMIT = int(os.environ.get("SANDBOX_PIDS_LIMIT", "1024"))
 SANDBOX_CPUS = float(os.environ.get("SANDBOX_CPUS", "2"))
 SANDBOX_TMP_SIZE = os.environ.get("SANDBOX_TMP_SIZE", "1g")
 SANDBOX_SHM_SIZE = os.environ.get("SANDBOX_SHM_SIZE", "256m")
+# Headroom left for the Docker daemon and any co-running containers when auto-sizing how many
+# sandboxes may run at once. Bump it if a heavy non-pipeline stack shares the VM.
+SANDBOX_VM_RESERVE = os.environ.get("SANDBOX_VM_RESERVE", "1.5g")
+
+
+def _parse_size(s) -> int:
+    """'2g' / '512m' / '1.5g' / '1024' -> bytes. 0 on garbage (callers treat 0 as 'unknown')."""
+    s = str(s).strip().lower()
+    mult = 1
+    if s and s[-1] in "gmkb":
+        mult = {"g": 1024**3, "m": 1024**2, "k": 1024, "b": 1}[s[-1]]
+        s = s[:-1]
+    try:
+        return int(float(s) * mult)
+    except ValueError:
+        return 0
+
+
+def _safe_parallel(mem_total_bytes: int, requested: int, per_bytes: int, reserve_bytes: int) -> int:
+    """How many sandboxes fit in RAM: floor((MemTotal - reserve) / per_sandbox), clamped to
+    [1, requested]. Unknown memory (<=0) leaves `requested` untouched — never makes it worse."""
+    if mem_total_bytes <= 0 or per_bytes <= 0:
+        return requested
+    return max(1, min(requested, int((mem_total_bytes - reserve_bytes) / per_bytes)))
+
+
+def safe_parallel_sandboxes(requested: int, container_mem_limit: str | None = None) -> int:
+    """Clamp concurrent-sandbox count so peak RAM — parallel * (mem cap + RAM-backed tmpfs) —
+    fits the Docker VM, leaving SANDBOX_VM_RESERVE for the daemon and co-running stacks. This is
+    the guard against VM memory over-subscription (e.g. 3 * 3g on a 7.7g VM), which thrashes the
+    whole VM and strangles every sandbox's exec throughput. Returns `requested` unchanged if the
+    VM's memory can't be read, so it can never make a working setup worse."""
+    try:
+        mem_total = docker.from_env().info().get("MemTotal", 0)
+    except Exception as e:
+        logger.warning(f"could not read Docker MemTotal ({e}); leaving parallelism at {requested}")
+        return requested
+    per = _parse_size(container_mem_limit or SANDBOX_MEM_LIMIT) + _parse_size(SANDBOX_TMP_SIZE)
+    reserve = _parse_size(SANDBOX_VM_RESERVE)
+    safe = _safe_parallel(mem_total, requested, per, reserve)
+    if safe < requested:
+        logger.warning(
+            f"reducing sandbox parallelism {requested} -> {safe}: Docker VM has "
+            f"{mem_total / 1024**3:.1f}g, each sandbox needs ~{per / 1024**3:.1f}g + "
+            f"{reserve / 1024**3:.1f}g reserve. Raise the VM's memory or SANDBOX_VM_RESERVE to tune."
+        )
+    return safe
 
 
 class DockerSandbox:
