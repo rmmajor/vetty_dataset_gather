@@ -201,6 +201,8 @@ class DockerSandbox:
         return [line for line in stdout.strip().split("\n") if line]
 
     def copy_out(self, container_path: str, host_path: str):
+        if self.container_id is None:
+            raise RuntimeError("Sandbox container not started — nothing to copy out")
         host_dir = Path(host_path)
         host_dir.mkdir(parents=True, exist_ok=True)
 

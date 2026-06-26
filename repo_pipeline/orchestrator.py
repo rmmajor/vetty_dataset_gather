@@ -9,6 +9,7 @@ from pathlib import Path
 
 from repo_pipeline import schemas
 from repo_pipeline.registry import RepoRegistry
+from repo_pipeline.sandbox import safe_parallel_sandboxes
 from repo_pipeline.schemas import (
     NON_QUALITY_CATEGORIES,
     STAGE_BEHAVIOR_CUTOFFS,
@@ -235,7 +236,8 @@ async def run_stage(
         # its containers are light — the 3-worker default is conservative. Raise via env when
         # you want to blast the scored backlog and have RAM headroom.
         stage4_cap = int(os.environ.get("STAGE4_WORKERS", "3"))
-        return await run_deep_analyze(registry, limit=limit, workers=min(workers, stage4_cap), budget_remaining=budget_remaining)
+        stage4_workers = safe_parallel_sandboxes(min(workers, stage4_cap))
+        return await run_deep_analyze(registry, limit=limit, workers=stage4_workers, budget_remaining=budget_remaining)
 
     elif stage == 5:
         from repo_pipeline.stage5_trial_run import run_trial
@@ -243,7 +245,8 @@ async def run_stage(
         # safe alongside capture; raise via env when running stage 5 on its own (no concurrent
         # stage-6 capture eating RAM) to drain the analyzed backlog faster.
         stage5_cap = int(os.environ.get("STAGE5_WORKERS", "2"))
-        return await run_trial(registry, limit=limit, workers=min(workers, stage5_cap), budget_remaining=budget_remaining)
+        stage5_workers = safe_parallel_sandboxes(min(workers, stage5_cap))
+        return await run_trial(registry, limit=limit, workers=stage5_workers, budget_remaining=budget_remaining)
 
     elif stage == 6:
         from repo_pipeline.stage6_generate import run_generate
@@ -251,7 +254,8 @@ async def run_stage(
         # real). Default 2 fits alongside the other stages in an ~8GB Docker VM; raise via
         # env when the VM has headroom or other lanes are idle.
         stage6_cap = int(os.environ.get("STAGE6_WORKERS", "2"))
-        return await run_generate(registry, trajectory_dir, limit=limit, workers=min(workers, stage6_cap), budget_remaining=budget_remaining)
+        stage6_workers = safe_parallel_sandboxes(min(workers, stage6_cap))
+        return await run_generate(registry, trajectory_dir, limit=limit, workers=stage6_workers, budget_remaining=budget_remaining)
 
     elif stage == 7:
         from repo_pipeline.stage7_think import run_think

@@ -242,8 +242,12 @@ async def main():
             if rate_limit_tracker.limit_reached():
                 return
             try:
-                results.append(await capture_site(
-                    site, Path(args.traj_dir), registry, args.max_tasks, propose=not args.no_propose))
+                r = await capture_site(
+                    site, Path(args.traj_dir), registry, args.max_tasks, propose=not args.no_propose)
+                results.append(r)
+                # Log per-site as it finishes (not all at the end) so a long run is observable.
+                logger.info(f"[{r['site']}] done ({len(results)}/{len(sites)} sites): "
+                            f"{r['captured']} captured, {r['verified']} verified, {r['skipped']} already on disk")
             except UsageLimitReached:
                 logger.warning(f"[{site['name']}] usage limit reached — captures so far are kept")
             except Exception as e:
@@ -254,8 +258,9 @@ async def main():
     finally:
         registry.close()
 
-    for r in results:
-        logger.info(f"  {r['site']}: {r['captured']} captured, {r['verified']} verified, {r['skipped']} already on disk")
+    logger.info(f"Done: {len(results)}/{len(sites)} sites — "
+                f"{sum(r['captured'] for r in results)} captured, "
+                f"{sum(r['verified'] for r in results)} verified")
 
 
 if __name__ == "__main__":
