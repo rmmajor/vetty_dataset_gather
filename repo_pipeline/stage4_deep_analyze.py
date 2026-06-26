@@ -366,12 +366,16 @@ async def run_deep_analyze(
 
     async def process_with_semaphore(repo):
         nonlocal cost_estimate
-        if rate_limit_tracker.limit_reached():
-            return
-        if budget_remaining is not None and cost_estimate > budget_remaining:
-            logger.warning("Budget limit reached, stopping")
-            return
+        # Guards live INSIDE the semaphore: all repo coroutines are gathered up front, so a check
+        # placed before `async with` is evaluated by every coroutine while cost_estimate is still
+        # ~0 — they all pass it, then queue past the gate, and the budget cap never fires. Re-checked
+        # here under the semaphore, the cap sees the cost accrued by already-finished repos and stops.
         async with semaphore:
+            if rate_limit_tracker.limit_reached():
+                return
+            if budget_remaining is not None and cost_estimate > budget_remaining:
+                logger.warning("Budget limit reached, stopping")
+                return
             try:
                 await run_repo(4, repo, registry, analyze_single_repo, progress)
             except UsageLimitReached:
