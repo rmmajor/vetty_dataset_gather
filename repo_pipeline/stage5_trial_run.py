@@ -3,6 +3,7 @@ import json
 import logging
 import re
 
+from repo_pipeline import app_runner
 from repo_pipeline._processing import run_repo
 from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import REPO_DIR, RESULTS_DIR, setup_repo_instrumentation
@@ -94,6 +95,11 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
 
         await _run(setup_repo_instrumentation, sandbox, profile)
 
+        # Start the repo's own app (if it bundles one) so its E2E tests have something to drive —
+        # the single biggest no_capture cause. None when there's no app / Playwright self-manages.
+        app_spec = await _run(app_runner.detect_app_start, sandbox, profile)
+        await _run(app_runner.build_app, sandbox, app_spec)
+
         # Locate test files via the profile's globs (skip vendored deps).
         test_files: list[str] = []
         for glob in profile.test_globs:
@@ -105,14 +111,17 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
 
         # Run up to MAX_TRIAL_FILES instrumented test files in code; stop once we capture coords.
         passed = failed = 0
+        trial_outputs: list[str] = []
         for test_file in test_files[:MAX_TRIAL_FILES]:
             rel = test_file.replace(REPO_DIR + "/", "")
             cmd = profile.test_command_single.format(
                 repo_name=repo_name, test_name_prefix=test_name_prefix,
                 framework=profile.test_framework, framework_language=profile.language,
             ).replace("<test_file>", rel)
+            cmd = app_runner.wrap_test_command(cmd, app_spec)
             out, err, _ = await _run(sandbox.exec_command, cmd, TEST_RUN_TIMEOUT)
             combined = out + err
+            trial_outputs.append(f"$ {rel}\n{combined}")
             if (m := _PASS_RE.search(combined)):
                 passed += int(m.group(1))
             if (m := _FAIL_RE.search(combined)):
@@ -130,6 +139,11 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
         weighted = metrics.weighted_score
 
         if metrics.valid_bounding_boxes < 1 or metrics.screenshots_captured < 1:
+            # Persist the tail of the test output so "why pass_rate=0" (app-needed vs install
+            # failed vs instrumentation broke) is diagnosable after the container is gone — the
+            # feedback loop for tuning app-start and selection. The container is ephemeral.
+            tail = "\n".join("\n".join(trial_outputs).splitlines()[-40:])[-4000:]
+            metrics.notes += f"\n--- test output tail ---\n{tail}"
             raise QualityReject(
                 FailureCategory.NO_CAPTURE,
                 (

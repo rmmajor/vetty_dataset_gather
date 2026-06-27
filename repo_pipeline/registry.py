@@ -253,10 +253,14 @@ class RepoRegistry:
             params.append(language)
 
         if stage >= 4:
-            # Favor real products (higher production_complexity, stored inside the shallow_scores
-            # JSON) over generic practice repos, then by overall shallow score.
+            # Prefer the most capturable first: deep_score (set in stage 4) now encodes
+            # capturability — self-hostable apps and public-URL suites score higher, external-
+            # backend repos lower — so post-analysis stages (5+) drain the repos most likely to
+            # yield trajectories first. For stage 4 itself deep_score is still NULL (→0), so this
+            # degrades to the prior production_complexity / shallow_total ordering.
             query += (
-                " ORDER BY CAST(json_extract(shallow_scores, '$.production_complexity') AS INTEGER) DESC,"
+                " ORDER BY COALESCE(deep_score, 0) DESC,"
+                " CAST(json_extract(shallow_scores, '$.production_complexity') AS INTEGER) DESC,"
                 " COALESCE(shallow_total, 0) DESC, stars DESC"
             )
             if limit:

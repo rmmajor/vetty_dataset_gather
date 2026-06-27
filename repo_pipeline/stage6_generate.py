@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from claude_agent_sdk import ClaudeAgentOptions
 
+from repo_pipeline import app_runner
 from repo_pipeline._processing import run_repo
 from repo_pipeline.agent_runner import run_agent
 from repo_pipeline.frameworks import resolve_profile
@@ -125,6 +126,10 @@ async def _capture_suite(rlog, repo: dict, profile, repo_traj_dir: Path, test_na
 
         await _run(setup_repo_instrumentation, sandbox, profile)
 
+        # Start the repo's bundled app (if any) so the suite has something to drive; mirrors stage 5.
+        app_spec = await _run(app_runner.detect_app_start, sandbox, profile)
+        await _run(app_runner.build_app, sandbox, app_spec)
+
         # Run the full instrumented test suite directly (no agent — install/wiring/viewport are
         # all handled in code). Whatever the suite executes is captured to /workspace/results;
         # a timeout just yields partial trajectories, which is fine.
@@ -132,6 +137,7 @@ async def _capture_suite(rlog, repo: dict, profile, repo_traj_dir: Path, test_na
             repo_name=repo_name, test_name_prefix=test_name_prefix,
             framework=profile.test_framework, framework_language=profile.language,
         )
+        suite_cmd = app_runner.wrap_test_command(suite_cmd, app_spec)
         out, err, code = await _run(sandbox.exec_command, suite_cmd, SUITE_RUN_TIMEOUT)
         rlog.info(f"suite run exit={code}; {(out or err)[-300:].strip()[:300]}")
 

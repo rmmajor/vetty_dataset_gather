@@ -309,7 +309,8 @@ _SHALLOW_DIMS = [
     "production_complexity", "ui_difficulty", "interaction_richness", "test_count",
     "multi_page_flows", "runnability", "framework_clarity", "application_vs_library",
 ]
-_DEEP_FIELDS = ["test_file_count", "test_case_count", "is_self_contained", "estimated_trajectories"]
+_DEEP_FIELDS = ["test_file_count", "test_case_count", "is_self_contained", "estimated_trajectories",
+                "test_framework", "framework_language"]
 
 
 def _json_get(blob, key):
