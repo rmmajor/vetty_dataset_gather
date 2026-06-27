@@ -223,6 +223,12 @@ class RepoRegistry:
 
         query = """SELECT *,
             CASE
+                WHEN source_query LIKE 'topic:self-hosted%' OR source_query LIKE 'topic:selfhosted%'
+                     OR source_query LIKE 'topic:kanban%' OR source_query LIKE 'topic:webapp%'
+                     OR source_query LIKE 'topic:dashboard%' OR source_query LIKE 'topic:admin-dashboard%'
+                     OR source_query LIKE 'topic:project-management%' OR source_query LIKE 'topic:crm%'
+                     OR source_query LIKE 'topic:inventory%' OR source_query LIKE 'topic:notes-app%'
+                     OR source_query LIKE 'topic:todo topic:fullstack%' THEN 1
                 WHEN source_query LIKE '%stars:>%' THEN 1
                 WHEN source_query LIKE '%stars:%' THEN 2
                 WHEN source_query LIKE 'playwright test %' AND source_query NOT LIKE '%demo%'
@@ -253,14 +259,17 @@ class RepoRegistry:
             params.append(language)
 
         if stage >= 4:
-            # Prefer the most capturable first: deep_score (set in stage 4) now encodes
-            # capturability — self-hostable apps and public-URL suites score higher, external-
-            # backend repos lower — so post-analysis stages (5+) drain the repos most likely to
-            # yield trajectories first. For stage 4 itself deep_score is still NULL (→0), so this
-            # degrades to the prior production_complexity / shallow_total ordering.
+            # Drain order: bootability first (deep_score, set in stage 4 — NULL→0 for stage 4's
+            # own input, where the richness term then dominates), then UI sophistication. The
+            # richness term double-weights ui_difficulty + interaction_richness so apps with
+            # drag-and-drop / editors / data grids reach agent capture before plain click+type
+            # apps — selection, not rejection: plain apps still drain, just later.
             query += (
                 " ORDER BY COALESCE(deep_score, 0) DESC,"
-                " CAST(json_extract(shallow_scores, '$.production_complexity') AS INTEGER) DESC,"
+                " (2 * COALESCE(CAST(json_extract(shallow_scores, '$.ui_difficulty') AS INTEGER), 0)"
+                "  + 2 * COALESCE(CAST(json_extract(shallow_scores, '$.interaction_richness') AS INTEGER), 0)"
+                "  + COALESCE(CAST(json_extract(shallow_scores, '$.production_complexity') AS INTEGER), 0)"
+                "  + COALESCE(CAST(json_extract(shallow_scores, '$.multi_page_flows') AS INTEGER), 0)) DESC,"
                 " COALESCE(shallow_total, 0) DESC, stars DESC"
             )
             if limit:
@@ -383,6 +392,18 @@ class RepoRegistry:
         if row:
             return dict(row)
         return None
+
+    def get_repos_by_status(self, statuses: list[str]) -> list[dict]:
+        """All repos whose status is in ``statuses``. Generic selector for cross-stage operations
+        (e.g. the unfit-prune cleanup, which re-judges everything past stage 4 still awaiting an
+        expensive capture) that don't fit the single-input-status get_repos_for_stage shape."""
+        if not statuses:
+            return []
+        placeholders = ",".join("?" * len(statuses))
+        rows = self.conn.execute(
+            f"SELECT * FROM repos WHERE status IN ({placeholders})", statuses
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def get_stats(self) -> dict:
         rows = self.conn.execute(
@@ -520,9 +541,12 @@ class RepoRegistry:
             for row in rows
         }
 
-    def count_total_trajectories(self) -> int:
+    def count_total_trajectories(self, status: str = None) -> int:
+        """Sum trajectory_count over repos in a status (default: completed = finalized/trainable).
+        Pass RepoStatus.CAPTURED.value to count trajectories captured but pending stage-7 finalize —
+        these exist on disk and verified but are not yet counted as 'generated'."""
         row = self.conn.execute(
             "SELECT COALESCE(SUM(trajectory_count), 0) as total FROM repos WHERE status = ?",
-            (RepoStatus.COMPLETED.value,),
+            (status or RepoStatus.COMPLETED.value,),
         ).fetchone()
         return row["total"]

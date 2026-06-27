@@ -1,15 +1,17 @@
 import asyncio
 import json
 import logging
+import os
 import re
 
-from repo_pipeline import app_runner
+from repo_pipeline import app_runner, driver_session
 from repo_pipeline._processing import run_repo
 from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import REPO_DIR, RESULTS_DIR, setup_repo_instrumentation
 from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
+from repo_pipeline import schemas
 from repo_pipeline.schemas import (
     FailureCategory,
     QualityReject,
@@ -24,6 +26,10 @@ logger = logging.getLogger(__name__)
 # How many test files to try (a POC trial — stop early once we capture real coordinates).
 MAX_TRIAL_FILES = 3
 TEST_RUN_TIMEOUT = 240
+
+# Fewer interactive elements than this on the booted homepage means there is nothing for an
+# agent to meaningfully do (blank page, build splash, bare error page).
+MIN_INTERACTIVE_ELEMENTS = int(os.environ.get("BOOT_GATE_MIN_ELEMENTS", "5"))
 
 _PASS_RE = re.compile(r"(\d+)\s+passed")
 _FAIL_RE = re.compile(r"(\d+)\s+failed")
@@ -61,6 +67,92 @@ def _collect_metrics(sandbox) -> TrialResults:
         total_actions_captured=total_actions,
         screenshots_captured=len(screenshots),
     )
+
+
+async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
+    """Agent-mode stage 5: gate on what agent capture actually needs — the repo's app boots in
+    the sandbox and renders a non-trivial UI through the browser driver. No instrumentation is
+    injected and no tests run, so the entire legacy `no_capture` failure class (instrumentation
+    hooks not firing) cannot occur here. Repos whose tests only target public URLs are rejected:
+    agent capture drives locally booted apps (real-site trajectories are Path A's job)."""
+    repo_name = repo["full_name"]
+
+    if repo.get("current_stage", 0) >= 5:
+        return
+
+    rlog = repo_logger(5, repo_name)
+    rlog.info("boot gate")
+
+    deep_analysis = {}
+    if repo.get("deep_analysis"):
+        try:
+            deep_analysis = json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    profile = resolve_profile(deep_analysis.get("test_framework"), deep_analysis.get("framework_language"))
+
+    # Always the default Playwright image: agent capture never runs the repo's tests, and the
+    # browser driver needs the /ms-playwright browsers that only this image ships.
+    sandbox = DockerSandbox()
+    try:
+        await _run(sandbox.start, repo_name)
+
+        _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
+        if exit_code != 0:
+            raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
+
+        # start_app owns the dependency install now: it picks the repo's own package manager
+        # (npm/pnpm/yarn) in the app's actual dir, which a blind root `npm install` got wrong.
+        app_url = await _run(driver_session.start_app, sandbox, profile)
+        if app_url is None:
+            app_log, _, _ = await _run(sandbox.exec_command, f"tail -20 {driver_session.APP_LOG} 2>/dev/null")
+            detail = app_log.strip() or "no recognizable start script / no bootable Node app"
+            raise QualityReject(
+                FailureCategory.NO_BOOT,
+                f"app did not boot (public_url_tests={bool(deep_analysis.get('tests_public_url'))}); {detail[-300:]}",
+            )
+
+        await _run(driver_session.install_driver, sandbox)
+        await _run(driver_session.start_driver, sandbox)
+        client = driver_session.DriverClient(sandbox)
+        probe = await _run(client.session, "boot_probe", app_url)
+        n_elements = driver_session.count_interactive_elements(probe.get("snapshot", ""))
+
+        if n_elements < MIN_INTERACTIVE_ELEMENTS:
+            raise QualityReject(
+                FailureCategory.QUALITY_GATE,
+                f"booted UI too trivial: {n_elements} interactive elements "
+                f"(< {MIN_INTERACTIVE_ELEMENTS}); snapshot head: {probe.get('snapshot', '')[:200]}",
+            )
+
+        try:
+            affordances = await _run(client.affordances)
+        except Exception:
+            affordances = {}
+
+        metrics = TrialResults(
+            pass_rate=1.0,
+            action_diversity_score=min(n_elements / 30.0, 1.0),
+            domain_relevance_score=0.8,
+            trajectory_count_estimate=0,
+            setup_complexity_score=0.2,
+            valid_bounding_boxes=n_elements,
+            screenshots_captured=1,
+            notes=f"boot gate: app served at {app_url}, {n_elements} interactive elements on homepage",
+            affordances=affordances,
+        )
+        rich = {k: v for k, v in affordances.items() if v}
+        rlog.info(f"boot OK at {app_url}: {n_elements} interactive elements; affordances: {rich or 'basic'}")
+        registry.update_status(
+            repo_name,
+            RepoStatus.VALIDATED.value,
+            stage=5,
+            trial_results=metrics.model_dump(),
+            trial_score=metrics.weighted_score,
+        )
+    finally:
+        await _run(sandbox.stop)
 
 
 async def trial_single_repo(registry: RepoRegistry, repo: dict):
@@ -174,9 +266,12 @@ async def run_trial(
     limit: int = None,
     workers: int = 2,
     budget_remaining: float = None,
+    trial_mode: str = None,
 ):
+    trial_mode = trial_mode or schemas.CAPTURE_MODE
+    core_fn = boot_gate_single_repo if trial_mode == "agent" else trial_single_repo
     repos = registry.get_repos_for_stage(5, limit=limit)
-    logger.info(f"Trial running {len(repos)} repos with {workers} workers")
+    logger.info(f"Trial running {len(repos)} repos with {workers} workers (mode: {trial_mode})")
 
     semaphore = asyncio.Semaphore(workers)
     progress = StageProgress(5, len(repos))
@@ -185,7 +280,7 @@ async def run_trial(
         if rate_limit_tracker.limit_reached():
             return
         async with semaphore:
-            await run_repo(5, repo, registry, trial_single_repo, progress)
+            await run_repo(5, repo, registry, core_fn, progress)
 
     await asyncio.gather(*[process_with_semaphore(repo) for repo in repos])
 

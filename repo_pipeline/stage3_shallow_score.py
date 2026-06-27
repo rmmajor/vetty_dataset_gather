@@ -23,7 +23,7 @@ from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 
 logger = logging.getLogger(__name__)
 
-SCORE_BUDGET_USD = float(os.environ.get("STAGE3_BUDGET_USD", "0.15"))
+SCORE_BUDGET_USD = float(os.environ.get("STAGE3_BUDGET_USD", "2.0"))
 
 # Gate minimums (each dimension is 1-5). Env-overridable so they can be tuned from the dashboard's
 # score distributions without a code edit. runnability defaults to 2 (reject only score-1 "requires
@@ -33,7 +33,7 @@ GATE_APP_VS_LIBRARY_MIN = int(os.environ.get("STAGE3_GATE_APP_MIN", "3"))
 GATE_RUNNABILITY_MIN = int(os.environ.get("STAGE3_GATE_RUNNABILITY_MIN", "2"))
 GATE_INTERACTION_MIN = int(os.environ.get("STAGE3_GATE_INTERACTION_MIN", "2"))
 
-SCORING_PROMPT = """You are evaluating a GitHub repository for its suitability as a source of browser test trajectories (Playwright or Selenium). We need trajectories from PRODUCTION apps with complex UIs — not demos, tutorials, or practice repos.
+SCORING_PROMPT = """You are evaluating a GitHub repository as a source of browser-use trajectories. An agent will BOOT THE REPO'S OWN WEB APP locally and operate its UI to accomplish user goals — the test suite serves as feature hints, not as the trajectory generator. We need PRODUCTION apps with complex UIs that live inside the repo — not demos, tutorials, practice repos, or test suites pointed at someone else's hosted site.
 
 Repository: {repo_name}
 URL: {repo_url}
@@ -62,14 +62,14 @@ Score this repository on each dimension from 1-5:
    - 4: Medium-complexity production app (CRM, CMS, e-commerce)
    - 5: Complex production app (admin dashboards, data-heavy UIs, workflow builders)
 
-2. UI_DIFFICULTY (1-5): How confusing/complex are the UI elements being tested?
+2. UI_DIFFICULTY (1-5): How complex is the UI the app offers? (Judge the APP — tests, file tree, and dependencies like dnd/editor/grid libraries are your evidence.)
    - 1: Just basic clicks on obvious buttons and text inputs
    - 2: Simple forms with dropdowns and checkboxes
    - 3: Tables with sorting/filtering, multi-step forms
    - 4: Data grids, drag-and-drop, rich text editors, nested menus
    - 5: Spreadsheet-like UIs, workflow builders, calendar drag, canvas interactions
 
-3. INTERACTION_RICHNESS (1-5): Do tests perform diverse UI actions?
+3. INTERACTION_RICHNESS (1-5): How diverse are the interactions the app supports? (Test actions are the strongest evidence, but a drag-and-drop or rich-editor dependency counts even if tests don't exercise it.)
    - 1: Only navigate and assert
    - 2: Click + type only
    - 3: Click, type, select, check
@@ -93,12 +93,12 @@ Score this repository on each dimension from 1-5:
 
 7. FRAMEWORK_CLARITY (1-5): Standard Playwright or Selenium project structure? Clear config, proper imports, organized test files?
 
-8. APPLICATION_VS_LIBRARY (1-5): Does the suite drive a real web application's UI, or does it test the repo's OWN library/framework/tool code? This is the most important signal — a library testing itself yields no useful web-UI trajectories.
+8. APPLICATION_VS_LIBRARY (1-5): Does this repo CONTAIN a real, bootable web application? This is the most important signal — a library testing itself yields nothing, and a test suite that only targets an externally hosted site gives the agent no app to boot.
    - 1: A testing library/framework/tool whose tests exercise its own code (e.g. Playwright itself, CodeceptJS, SeleniumBase, test reporters, browser-automation libraries, IDE/editor extensions)
-   - 2: A library/SDK with example or integration tests that open a browser only incidentally
-   - 3: A real app's UI tests embedded in a larger monorepo, OR a small standalone app
-   - 4: A standalone web application with a dedicated end-to-end suite driving its pages
-   - 5: A standalone/deployable web app (or tests against a hosted public site) with a rich end-to-end UI suite
+   - 2: A library/SDK with incidental browser tests, OR a tests-only repo whose suite targets a hosted public site without shipping the app itself
+   - 3: A real app's UI tests embedded in a larger monorepo, OR a small standalone app that boots locally
+   - 4: A standalone bootable web application (dev server / docker-compose in the repo) with real pages to operate
+   - 5: A standalone bootable web app with a rich, multi-section UI (the kind a user could spend minutes accomplishing varied goals in)
 
 Respond with ONLY a JSON object (no markdown, no explanation):
 {{"production_complexity": N, "ui_difficulty": N, "interaction_richness": N, "test_count": N, "multi_page_flows": N, "runnability": N, "framework_clarity": N, "application_vs_library": N}}
@@ -314,13 +314,16 @@ async def run_shallow_score(
     async def process_with_semaphore(repo):
         nonlocal cost_estimate
 
-        if rate_limit_tracker.limit_reached():
-            return
-        if budget_remaining is not None and cost_estimate > budget_remaining:
-            logger.warning("Budget limit reached, stopping")
-            return
-
+        # Guards live INSIDE the semaphore: all repo coroutines are gathered up front, so a check
+        # placed before `async with` is evaluated by every coroutine while cost_estimate is still
+        # ~0 — they all pass it, then queue past the gate, and the budget cap never fires. Re-checked
+        # here under the semaphore, the cap sees the cost accrued by already-finished repos and stops.
         async with semaphore:
+            if rate_limit_tracker.limit_reached():
+                return
+            if budget_remaining is not None and cost_estimate > budget_remaining:
+                logger.warning("Budget limit reached, stopping")
+                return
             try:
                 await run_repo(3, repo, registry, process_repo, progress)
             except UsageLimitReached:

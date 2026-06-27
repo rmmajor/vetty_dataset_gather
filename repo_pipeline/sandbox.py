@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 import logging
 import os
 import subprocess
@@ -23,14 +25,64 @@ SANDBOX_PIDS_LIMIT = int(os.environ.get("SANDBOX_PIDS_LIMIT", "1024"))
 SANDBOX_CPUS = float(os.environ.get("SANDBOX_CPUS", "2"))
 SANDBOX_TMP_SIZE = os.environ.get("SANDBOX_TMP_SIZE", "1g")
 SANDBOX_SHM_SIZE = os.environ.get("SANDBOX_SHM_SIZE", "256m")
+# Headroom left for the Docker daemon and any co-running containers when auto-sizing how many
+# sandboxes may run at once. Bump it if a heavy non-pipeline stack shares the VM.
+SANDBOX_VM_RESERVE = os.environ.get("SANDBOX_VM_RESERVE", "1.5g")
+
+
+def _parse_size(s) -> int:
+    """'2g' / '512m' / '1.5g' / '1024' -> bytes. 0 on garbage (callers treat 0 as 'unknown')."""
+    s = str(s).strip().lower()
+    mult = 1
+    if s and s[-1] in "gmkb":
+        mult = {"g": 1024**3, "m": 1024**2, "k": 1024, "b": 1}[s[-1]]
+        s = s[:-1]
+    try:
+        return int(float(s) * mult)
+    except ValueError:
+        return 0
+
+
+def _safe_parallel(mem_total_bytes: int, requested: int, per_bytes: int, reserve_bytes: int) -> int:
+    """How many sandboxes fit in RAM: floor((MemTotal - reserve) / per_sandbox), clamped to
+    [1, requested]. Unknown memory (<=0) leaves `requested` untouched — never makes it worse."""
+    if mem_total_bytes <= 0 or per_bytes <= 0:
+        return requested
+    return max(1, min(requested, int((mem_total_bytes - reserve_bytes) / per_bytes)))
+
+
+def safe_parallel_sandboxes(requested: int, container_mem_limit: str | None = None) -> int:
+    """Clamp concurrent-sandbox count so peak RAM — parallel * (mem cap + RAM-backed tmpfs) —
+    fits the Docker VM, leaving SANDBOX_VM_RESERVE for the daemon and co-running stacks. This is
+    the guard against VM memory over-subscription (e.g. 3 * 3g on a 7.7g VM), which thrashes the
+    whole VM and strangles every sandbox's exec throughput. Returns `requested` unchanged if the
+    VM's memory can't be read, so it can never make a working setup worse."""
+    try:
+        mem_total = docker.from_env().info().get("MemTotal", 0)
+    except Exception as e:
+        logger.warning(f"could not read Docker MemTotal ({e}); leaving parallelism at {requested}")
+        return requested
+    per = _parse_size(container_mem_limit or SANDBOX_MEM_LIMIT) + _parse_size(SANDBOX_TMP_SIZE)
+    reserve = _parse_size(SANDBOX_VM_RESERVE)
+    safe = _safe_parallel(mem_total, requested, per, reserve)
+    if safe < requested:
+        logger.warning(
+            f"reducing sandbox parallelism {requested} -> {safe}: Docker VM has "
+            f"{mem_total / 1024**3:.1f}g, each sandbox needs ~{per / 1024**3:.1f}g + "
+            f"{reserve / 1024**3:.1f}g reserve. Raise the VM's memory or SANDBOX_VM_RESERVE to tune."
+        )
+    return safe
 
 
 class DockerSandbox:
-    def __init__(self, image=DEFAULT_IMAGE, platform=None):
+    def __init__(self, image=DEFAULT_IMAGE, platform=None, container_timeout=CONTAINER_TIMEOUT_SECONDS):
         self.image = image
         # Set for images that only exist for a non-host architecture (the Selenium image
         # is linux/amd64-only); None lets Docker pick the host-native variant.
         self.platform = platform
+        # Agent-capture sessions (stage 6 agent mode) hold one container across many tasks and
+        # need longer than the default 30 minutes; everything else keeps the default.
+        self.container_timeout = container_timeout
         self.client = docker.from_env()
         self.container = None
         self.container_id = None
@@ -44,13 +96,27 @@ class DockerSandbox:
         create_kwargs = dict(
             image=self.image,
             name=f"sandbox_{safe_name}_{int(time.time())}",
-            command="sleep infinity",
+            # Self-expiring + auto-removing: the container's main process sleeps exactly the
+            # container timeout, then exits, and Docker removes it. Host-side cleanup (stop()
+            # in finally blocks) is the normal path, but it never runs when the pipeline
+            # process is SIGKILLed or crashes — this guarantees no orphan outlives its
+            # timeout even with a dead owner.
+            command=["sleep", str(self.container_timeout)],
+            auto_remove=True,
             mem_limit=SANDBOX_MEM_LIMIT,
             memswap_limit=SANDBOX_MEMSWAP_LIMIT,
             pids_limit=SANDBOX_PIDS_LIMIT,
             shm_size=SANDBOX_SHM_SIZE,
             nano_cpus=int(SANDBOX_CPUS * 1_000_000_000),
             cap_drop=["ALL"],
+            # Grant back ONLY the file-ownership/permission caps that dependency installs need:
+            # npm/pnpm/yarn extract tarballs preserving ownership (fchown) and run postinstall
+            # scripts that chmod/chown — with cap_drop=ALL these die with "EPERM: operation not
+            # permitted, fchown", leaving node_modules empty so the dev binary is "not found" and
+            # the app reads as NO_BOOT. These caps are container-local; the dangerous ones
+            # (SYS_ADMIN, NET_ADMIN, SYS_PTRACE, MKNOD, …) stay dropped, and no-new-privileges +
+            # ephemeral + resource caps + no host bind-mounts keep isolation strong.
+            cap_add=["CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "SETUID", "SETGID"],
             security_opt=["no-new-privileges:true"],
             tmpfs={"/tmp": f"size={SANDBOX_TMP_SIZE}"},
             detach=True,
@@ -66,14 +132,20 @@ class DockerSandbox:
         logger.info(f"Started sandbox container {self.container_id[:12]} for {repo_full_name}")
         return self.container_id
 
-    def _check_timeout(self):
-        if self.start_time and (time.time() - self.start_time) > CONTAINER_TIMEOUT_SECONDS:
-            cid = (self.container_id or "unknown")[:12]
-            logger.error(f"Container {cid} exceeded {CONTAINER_TIMEOUT_SECONDS}s timeout")
-            self.stop()
-            raise TimeoutError(f"Sandbox container exceeded {CONTAINER_TIMEOUT_SECONDS}s timeout")
+    def remaining_seconds(self) -> float:
+        if self.start_time is None:
+            return 0.0
+        return self.container_timeout - (time.time() - self.start_time)
 
-    def exec_command(self, command: str, timeout: int = EXEC_TIMEOUT_SECONDS) -> tuple[str, str, int]:
+    def _check_timeout(self):
+        if self.start_time and (time.time() - self.start_time) > self.container_timeout:
+            cid = (self.container_id or "unknown")[:12]
+            logger.error(f"Container {cid} exceeded {self.container_timeout}s timeout")
+            self.stop()
+            raise TimeoutError(f"Sandbox container exceeded {self.container_timeout}s timeout")
+
+    def exec_command(self, command: str, timeout: int = EXEC_TIMEOUT_SECONDS,
+                     max_output: int = 50000) -> tuple[str, str, int]:
         self._check_timeout()
         if self.container is None:
             raise RuntimeError("Sandbox container not started")
@@ -92,10 +164,10 @@ class DockerSandbox:
             stderr = (exec_result.output[1] or b"").decode("utf-8", errors="replace") if exec_result.output else ""
             exit_code = exec_result.exit_code
 
-            if len(stdout) > 50000:
-                stdout = stdout[:50000] + "\n... (truncated)"
-            if len(stderr) > 50000:
-                stderr = stderr[:50000] + "\n... (truncated)"
+            if len(stdout) > max_output:
+                stdout = stdout[:max_output] + "\n... (truncated)"
+            if len(stderr) > max_output:
+                stderr = stderr[:max_output] + "\n... (truncated)"
 
             return stdout, stderr, exit_code
         except Exception as e:
@@ -117,14 +189,20 @@ class DockerSandbox:
             raise IOError(f"Cannot write {path}: {stderr}")
 
     def list_files(self, pattern: str = "*", directory: str = "/workspace") -> list[str]:
+        # Prune node_modules / .git before matching: an installed repo holds thousands of vendored
+        # package.json files that no caller wants, and the `head -500` cap would otherwise be spent
+        # on them — silently dropping the real project files (the app's own package.json included).
         stdout, _, exit_code = self.exec_command(
-            f"find '{directory}' -maxdepth 5 -name '{pattern}' -type f 2>/dev/null | head -500"
+            f"find '{directory}' -maxdepth 5 \\( -name node_modules -o -name .git \\) -prune -o "
+            f"-name '{pattern}' -type f -print 2>/dev/null | head -500"
         )
         if exit_code != 0:
             return []
         return [line for line in stdout.strip().split("\n") if line]
 
     def copy_out(self, container_path: str, host_path: str):
+        if self.container_id is None:
+            raise RuntimeError("Sandbox container not started — nothing to copy out")
         host_dir = Path(host_path)
         host_dir.mkdir(parents=True, exist_ok=True)
 
@@ -146,6 +224,8 @@ class DockerSandbox:
             try:
                 self.container.remove(force=True)
                 logger.info(f"Destroyed sandbox container {self.container_id[:12]}")
+            except docker.errors.NotFound:
+                pass  # auto_remove already reaped it (self-expired)
             except Exception as e:
                 logger.warning(f"Failed to remove container: {e}")
             self.container = None
@@ -175,6 +255,54 @@ class DockerSandbox:
             if exit_code2 == 0:
                 return stdout2, stderr2, exit_code2
         return stdout, stderr, exit_code
+
+    def start_background(self, command: str, log_path: str) -> tuple[str, str, int]:
+        """Start a long-lived process inside the container that survives across exec calls.
+
+        Each exec_command runs in an independent shell, so a plainly-backgrounded process dies
+        with it. `setsid` + full stdio detachment re-parents the process to the container's
+        PID 1, where it keeps running until the container is destroyed (there is deliberately
+        no stop: containers are ephemeral). Used for the agent-capture app server and the
+        browser driver.
+        """
+        escaped = command.replace("'", "'\\''")
+        return self.exec_command(
+            f"setsid nohup bash -c '{escaped}' > '{log_path}' 2>&1 < /dev/null & echo $!",
+            timeout=30,
+        )
+
+    def wait_for_port(self, port: int, timeout_seconds: int = 60) -> bool:
+        """Poll an in-container TCP port until it accepts connections (bash /dev/tcp, no curl)."""
+        stdout, _, _ = self.exec_command(
+            f"for i in $(seq 1 {timeout_seconds}); do "
+            f"(exec 3<>/dev/tcp/127.0.0.1/{port}) 2>/dev/null && echo OPEN && break; sleep 1; done",
+            timeout=timeout_seconds + 15,
+        )
+        return "OPEN" in stdout
+
+    def http_json(self, method: str, url: str, payload: dict | None = None, timeout: int = 120) -> dict:
+        """One JSON request to an in-container HTTP server, returning the parsed response.
+
+        The payload travels base64-encoded through the exec shell so arbitrary text (quotes,
+        newlines, unicode in agent thoughts) survives without quoting issues, in a single exec.
+        """
+        if payload is not None:
+            encoded = base64.b64encode(json.dumps(payload).encode()).decode()
+            cmd = (
+                f"echo {encoded} | base64 -d | "
+                f"curl -s -m {timeout - 5} -X {method} -H 'Content-Type: application/json' "
+                f"--data-binary @- '{url}'"
+            )
+        else:
+            cmd = f"curl -s -m {timeout - 5} -X {method} '{url}'"
+        # Screenshot responses carry ~hundreds of KB of base64 — far past the default cap.
+        stdout, stderr, exit_code = self.exec_command(cmd, timeout=timeout, max_output=4_000_000)
+        if exit_code != 0:
+            raise ConnectionError(f"http_json {method} {url} failed (exit {exit_code}): {stderr[:300]}")
+        try:
+            return json.loads(stdout)
+        except json.JSONDecodeError:
+            raise ConnectionError(f"http_json {method} {url}: non-JSON response: {stdout[:300]}")
 
     def __enter__(self):
         return self
@@ -207,6 +335,19 @@ class DockerSandbox:
             return False
         finally:
             sandbox.stop()
+
+
+def install_sigterm_handler():
+    """pkill sends SIGTERM, which by default terminates Python WITHOUT running finally
+    blocks — leaking every live sandbox until its self-expiry reaps it. Converting to
+    SystemExit lets the normal cleanup paths run on graceful restarts. Best-effort:
+    SIGKILL and crashes are covered by the containers' auto_remove self-expiry instead."""
+    import signal
+
+    def _terminate(signum, frame):
+        raise SystemExit(143)
+
+    signal.signal(signal.SIGTERM, _terminate)
 
 
 def build_sandbox_mcp_server(sandbox: DockerSandbox, server_name: str = "sandbox"):

@@ -49,11 +49,13 @@ record: $(TASKS_FILE) ## Record trajectories via GPT-5.4 CUA
 		--viewport $(VIEWPORT) \
 		--resume
 
-convert: ## Convert trajectories to ms-swift SFT format
+convert: ## Convert trajectories to ms-swift SFT format (clean cut: drops meandering trajectories + waste-click steps)
 	python train_qwen.py convert \
 		--input $(TRAJ_DIR)/ \
 		--output $(TRAIN_DIR)/ \
-		--val-split $(VAL_SPLIT)
+		--val-split $(VAL_SPLIT) \
+		--exclude-waste-steps \
+		--exclude-meandering
 
 train: $(TRAIN_DIR)/sft_dataset.jsonl ## Launch ms-swift LoRA fine-tuning
 	python train_qwen.py train \
@@ -90,6 +92,15 @@ build-sandbox-selenium: ## Build Selenium sandbox image (linux/amd64; needed for
 
 test-sandbox: build-sandbox ## Test sandbox container lifecycle
 	python -m repo_pipeline.sandbox --test
+
+test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
+	python -m repo_pipeline.driver_smoke
+
+audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on defects)
+	python -m repo_pipeline.corpus_audit trajectories/
+
+capture-public: ## Teacher capture on curated public sites (real-web diversity lane)
+	python -m repo_pipeline.public_capture $(if $(PUBLIC_SITES),--sites $(PUBLIC_SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
 
 pipeline-discover: ## Stage 1: Discover QA repos on GitHub
 	@test -n "$$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN not set" && exit 1)

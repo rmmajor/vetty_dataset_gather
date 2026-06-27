@@ -8,12 +8,25 @@ from pathlib import Path
 
 import yaml
 
+from repo_pipeline.corpus_audit import LOOP_RUN_LIMIT, _action_signature
 
-SYSTEM_PROMPT = (
-    "You are a GUI agent that interacts with web browsers. "
-    "Given a screenshot and a task, reason about the current state "
-    "and output a structured action to complete the task."
-)
+
+SYSTEM_PROMPT = """You are a GUI agent that operates a web browser at a 1280x720 resolution. \
+Given a task, a screenshot of the current page, and your previous actions, reason about the \
+state in <think>...</think>, then output one or more actions, one per line.
+
+Available actions (coordinates are absolute pixels on the screenshot):
+action: click(<ref>(x, y)</ref>, button=left|right)
+action: double_click(<ref>(x, y)</ref>)
+action: move(<ref>(x, y)</ref>)
+action: type("text")
+action: keypress(["Enter"])
+action: scroll(<ref>(x, y)</ref>, scrollX=0, scrollY=500)
+action: drag(<ref>(x1, y1)</ref> -> <ref>(x2, y2)</ref>)
+action: wait()
+action: done()
+
+Use done() only when the task is fully accomplished and the screen confirms it."""
 
 
 def format_action_for_training(action):
@@ -54,6 +67,9 @@ def format_action_for_training(action):
     elif action_type == "wait":
         return "action: wait()"
 
+    elif action_type == "done":
+        return "action: done()"
+
     elif action_type == "screenshot":
         return "action: screenshot()"
 
@@ -77,68 +93,137 @@ def format_action_summary(action):
     return action_type
 
 
-def convert_trajectory_to_messages(trajectory, trajectory_dir):
+# Text history shown to the model for each step. Windowed: long trajectories would otherwise
+# bloat the prompt, and at inference the runtime keeps a bounded history too.
+HISTORY_WINDOW = 10
+
+# Step-level waste filter (opt-in via --exclude-waste-steps). A single-click step whose target
+# lands within WASTE_CLICK_RADIUS_PX of a click in the previous WASTE_LOOKBACK_STEPS is a
+# retry/backtrack — the "click didn't register, click again" pattern that survives the stuck-loop
+# gate (which only drops >=3 IDENTICAL consecutive actions). These steps are dropped as TRAINING
+# TARGETS only; they stay in the text history so later steps' context — and their post-retry
+# screenshots — remain coherent. Geometry-based, like the loop/viewport gates, not thought-text.
+WASTE_CLICK_RADIUS_PX = int(os.environ.get("WASTE_CLICK_RADIUS_PX", "10"))
+WASTE_LOOKBACK_STEPS = int(os.environ.get("WASTE_LOOKBACK_STEPS", "4"))
+
+
+def _waste_step_indices(steps, radius_px=WASTE_CLICK_RADIUS_PX, lookback=WASTE_LOOKBACK_STEPS):
+    """Indices of single-click steps that merely retry a recent click (within radius_px of a click
+    in the previous `lookback` steps). Only PURE single-click steps qualify — a step that also
+    types/scrolls/keypresses does real work and is never waste; scrolls (which legitimately repeat
+    x,y with different deltas) are never considered. A step's own click is recorded only after it
+    is checked, so a step never matches itself."""
+    waste = set()
+    recent = []
+    for i, step in enumerate(steps):
+        actions = step.get("actions") or ([step["action"]] if "action" in step else [])
+        clicks = [a for a in actions if a.get("type") == "click" and a.get("x") is not None]
+        if len(actions) == 1 and len(clicks) == 1:
+            x, y = clicks[0]["x"], clicks[0]["y"]
+            if any(i - j <= lookback and abs(x - px) <= radius_px and abs(y - py) <= radius_px
+                   for px, py, j in recent):
+                waste.add(i)
+        for a in clicks:
+            recent.append((a["x"], a["y"], i))
+    return waste
+
+
+def _maybe_synthesize_done_step(trajectory, trajectory_dir, capture_meta):
+    """Terminal supervision for agent trajectories recorded before the driver emitted `done`
+    steps: when the teacher honestly reported completion and the final screenshot exists,
+    append a {type:"done"} step whose thought is the teacher's own completion summary. Without
+    a terminal step the model is never taught to STOP — it would act forever at inference."""
+    steps = trajectory.get("steps", [])
+    if any(a.get("type") == "done" for s in steps for a in s.get("actions", [])):
+        return
+    if capture_meta.get("agent_outcome") != "completed":
+        return
+    summary = (capture_meta.get("agent_summary") or "").strip()
+    final_screenshot = trajectory_dir / "final_screenshot.png"
+    if not summary or not final_screenshot.exists():
+        return
+    steps.append({
+        "step": (steps[-1]["step"] + 1) if steps else 1,
+        "screenshot": "final_screenshot.png",
+        "thought": summary,
+        "actions": [{"type": "done"}],
+    })
+
+
+def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_steps=False):
+    """One training example PER STEP: current screenshot + task + windowed text history ->
+    <think> + action(s). A whole trajectory as one multi-turn example packs every screenshot
+    (~300 visual tokens each) into a single sequence — a 21-step trajectory is ~9k tokens
+    against max_length 4096, so the trainer silently truncated exactly the long-horizon tails
+    this dataset exists for. Per-step examples match inference conditions (one screenshot +
+    text history) and supervise every step uniformly.
+
+    Returns (examples, waste_dropped). With exclude_waste_steps, retry/backtrack clicks are
+    omitted as TARGETS but still flow into action_history, so the trajectory keeps all its steps
+    and downstream context stays intact — only the bad supervision target is removed."""
     instruction = trajectory["instruction"]
     steps = trajectory["steps"]
-
     if not steps:
-        return None
+        return [], 0
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
+    examples = []
     action_history = []
+    waste = _waste_step_indices(steps) if exclude_waste_steps else set()
+    waste_dropped = 0
 
-    for step in steps:
-        screenshot_filename = step["screenshot"]
-        screenshot_path = str((trajectory_dir / screenshot_filename).resolve())
-
-        if not Path(screenshot_path).exists():
-            continue
-
-        user_text = f"Task: {instruction}"
-        if action_history:
-            history_str = ", ".join(action_history)
-            user_text += f"\nPrevious actions: [{history_str}]"
-        user_text += "\nWhat action should you take?"
-
-        user_content = [
-            {"type": "image", "image": screenshot_path},
-            {"type": "text", "text": user_text},
-        ]
-        messages.append({"role": "user", "content": user_content})
-
+    for i, step in enumerate(steps):
+        screenshot_path = (trajectory_dir / step["screenshot"]).resolve()
         thought = step.get("thought", "")
         actions = step.get("actions", [])
         if not actions and "action" in step:
             actions = [step["action"]]
 
-        action_strs = [format_action_for_training(a) for a in actions]
-        action_str = "\n".join(action_strs)
+        emit = screenshot_path.exists() and bool(actions)
+        if emit and i in waste:
+            waste_dropped += 1
+        elif emit:
+            user_text = f"Task: {instruction}"
+            if action_history:
+                window = action_history[-HISTORY_WINDOW:]
+                omitted = len(action_history) - len(window)
+                prefix = f"... {omitted} earlier actions, " if omitted > 0 else ""
+                user_text += f"\nPrevious actions: [{prefix}{', '.join(window)}]"
+            user_text += "\nWhat action should you take?"
 
-        if thought:
-            assistant_content = f"<think>{thought}</think>\n{action_str}"
-        else:
-            assistant_content = action_str
+            action_str = "\n".join(format_action_for_training(a) for a in actions)
+            assistant_content = f"<think>{thought}</think>\n{action_str}" if thought else action_str
 
-        messages.append({"role": "assistant", "content": assistant_content})
+            examples.append({
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": [
+                        {"type": "image", "image": str(screenshot_path)},
+                        {"type": "text", "text": user_text},
+                    ]},
+                    {"role": "assistant", "content": assistant_content},
+                ]
+            })
 
         for a in actions:
             action_history.append(format_action_summary(a))
 
-    if len(messages) <= 1:
-        return None
-
-    return {"messages": messages}
+    return examples, waste_dropped
 
 
-def convert_trajectories(input_dir, output_dir, val_split):
+def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
+                         exclude_meandering=False, exclude_waste_steps=False):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     all_examples = []
-    included_from_failed = 0
-    skipped_empty = 0
+    examples_by_group = {}
+    skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0, "meandering": 0, "stuck_loop": 0}
+    report = {
+        "trajectories": 0, "by_source": {}, "actions": {}, "lengths": [],
+        "domains": {}, "done_steps": 0, "thought_sources": {}, "meandering": 0,
+        "waste_steps_dropped": 0,
+    }
 
     trajectory_dirs = sorted(
         d for d in input_path.glob("**/task_*")
@@ -147,34 +232,140 @@ def convert_trajectories(input_dir, output_dir, val_split):
     print(f"Found {len(trajectory_dirs)} trajectory directories")
 
     for traj_dir in trajectory_dirs:
-        trajectory_file = traj_dir / "trajectory.json"
-        if not trajectory_file.exists():
-            continue
-
-        with open(trajectory_file) as f:
+        with open(traj_dir / "trajectory.json") as f:
             trajectory = json.load(f)
 
-        # Keep trajectories regardless of the test's pass/fail `success` flag — a test that
-        # performed real actions then failed an assertion still yields a usable trajectory.
-        # convert_trajectory_to_messages drops missing-screenshot steps and empty trajectories.
-        if not trajectory.get("success", True):
-            included_from_failed += 1
+        metadata = {}
+        metadata_file = traj_dir / "metadata.json"
+        if metadata_file.exists():
+            try:
+                with open(metadata_file) as f:
+                    metadata = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
 
-        example = convert_trajectory_to_messages(trajectory, traj_dir)
-        if example is None:
-            skipped_empty += 1
+        capture_meta = {}
+        capture_meta_file = traj_dir / "capture_meta.json"
+        if capture_meta_file.exists():
+            try:
+                with open(capture_meta_file) as f:
+                    capture_meta = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        source = metadata.get("capture_source") or (
+            "path_a" if "mind2web" in traj_dir.name else "replay"
+        )
+
+        # An explicit exclusion (quality audit, dedup, per-repo cap, contamination) overrides
+        # everything below — these are KNOWN-BAD recordings, regardless of provenance.
+        if metadata.get("excluded_reason"):
+            skipped["excluded"] += 1
             continue
 
-        all_examples.append(example)
+        # Replay trajectories carry QA-style supervision (test-assertion instructions,
+        # retrofitted thoughts) — the exact style the agent pipeline replaced. They train
+        # only on explicit opt-in.
+        if source == "replay" and not include_replay:
+            skipped["replay_gated"] += 1
+            continue
 
-    print(f"Converted {len(all_examples)} trajectories")
-    print(f"Included {included_from_failed} trajectories from failed tests (success=false, kept for usable steps)")
-    print(f"Skipped {skipped_empty} empty/invalid trajectories")
+        # Agent captures: `success` is the VERIFIER's verdict — false marks unverified
+        # trajectories that must never train.
+        if not trajectory.get("success", True) and source == "agent":
+            skipped["unverified"] += 1
+            continue
 
-    random.shuffle(all_examples)
-    val_count = int(len(all_examples) * val_split)
-    val_examples = all_examples[:val_count]
-    train_examples = all_examples[val_count:]
+        # Efficiency is a quality tag, not a gate: meandering goal-completions train by default but
+        # can be dropped for a clean run. `success` already means the goal was met.
+        is_meandering = ((capture_meta.get("verifier") or {}).get("efficiency") == "meandering"
+                         or metadata.get("efficiency") == "meandering")
+        if exclude_meandering and is_meandering:
+            skipped["meandering"] += 1
+            continue
+
+        # Stuck loops (>= LOOP_RUN_LIMIT identical consecutive actions) are bad supervision —
+        # auto-excluded (same detection as corpus_audit) so the corpus self-cleans as capture scales.
+        max_run = run = 0
+        prev = None
+        for step in trajectory.get("steps", []):
+            sig = _action_signature(step)
+            run = run + 1 if sig == prev and sig else 1
+            prev = sig
+            max_run = max(max_run, run)
+        if max_run >= LOOP_RUN_LIMIT:
+            skipped["stuck_loop"] += 1
+            continue
+
+        if source == "agent":
+            _maybe_synthesize_done_step(trajectory, traj_dir, capture_meta)
+
+        examples, waste_dropped = convert_trajectory_to_examples(
+            trajectory, traj_dir, exclude_waste_steps=exclude_waste_steps)
+        report["waste_steps_dropped"] += waste_dropped
+        if not examples:
+            skipped["empty"] += 1
+            continue
+
+        all_examples.extend(examples)
+        # Split unit: the APP/SITE, not the step. Steps of one trajectory (and trajectories of
+        # one app) share screenshots and layout — splitting below app level leaks pixels into
+        # val and turns val loss into a memorization check.
+        parent = traj_dir.parent.name
+        group = parent if parent.startswith(("repo_", "site_")) else traj_dir.name
+        examples_by_group.setdefault(group, []).extend(examples)
+        report["trajectories"] += 1
+        if is_meandering:
+            report["meandering"] += 1
+        report["by_source"][source] = report["by_source"].get(source, 0) + 1
+        report["lengths"].append(len(trajectory.get("steps", [])))
+        domain = metadata.get("website") or metadata.get("domain") or "unknown"
+        report["domains"][domain] = report["domains"].get(domain, 0) + 1
+        ts = metadata.get("thought_source", "unknown")
+        report["thought_sources"][ts] = report["thought_sources"].get(ts, 0) + 1
+        for step in trajectory.get("steps", []):
+            for a in step.get("actions", []):
+                t = a.get("type", "?")
+                report["actions"][t] = report["actions"].get(t, 0) + 1
+                if t == "done":
+                    report["done_steps"] += 1
+
+    # ---- Corpus report: the at-a-glance health check that catches a Booking.com-style
+    # regression at convert time instead of in a JSON file weeks later. ----
+    lengths = sorted(report["lengths"])
+    total_actions = sum(report["actions"].values()) or 1
+    print(f"\n=== Corpus report ===")
+    print(f"Trajectories trained on: {report['trajectories']}  (examples: {len(all_examples)})")
+    print(f"By source: {report['by_source']}")
+    print(f"Thought sources: {report['thought_sources']}")
+    if lengths:
+        mid = lengths[len(lengths) // 2]
+        print(f"Steps/trajectory: min={lengths[0]} median={mid} p90={lengths[int(len(lengths)*0.9)]} max={lengths[-1]}")
+    print("Action mix: " + ", ".join(
+        f"{t}={n} ({n / total_actions:.0%})" for t, n in sorted(report["actions"].items(), key=lambda kv: -kv[1])
+    ))
+    print(f"Terminal done() steps: {report['done_steps']}/{report['trajectories']} trajectories")
+    print(f"Meandering (tagged, included; pass --exclude-meandering to drop): {report['meandering']}")
+    print(f"Waste steps dropped as targets (--exclude-waste-steps): {report['waste_steps_dropped']}")
+    print("Domains: " + ", ".join(f"{d}={n}" for d, n in sorted(report["domains"].items(), key=lambda kv: -kv[1])[:10]))
+    print(f"Skipped: {skipped}")
+    print("======================\n")
+
+    # Group-wise split: whole apps go to val, never individual steps.
+    groups = list(examples_by_group.items())
+    random.shuffle(groups)
+    val_target = int(len(all_examples) * val_split)
+    val_examples, train_examples, val_groups = [], [], []
+    for group, examples in groups:
+        if val_target and len(val_examples) < val_target and len(groups) > 1:
+            val_examples.extend(examples)
+            val_groups.append(group)
+        else:
+            train_examples.extend(examples)
+    random.shuffle(train_examples)
+    random.shuffle(val_examples)
+    if val_groups:
+        print(f"Validation groups (held-out apps): {', '.join(val_groups)}")
 
     train_path = output_path / "sft_dataset.jsonl"
     with open(train_path, "w") as f:
@@ -252,6 +443,13 @@ def main():
     convert_parser.add_argument("--input", type=str, required=True, help="Input trajectories directory")
     convert_parser.add_argument("--output", type=str, default="training_data/", help="Output directory")
     convert_parser.add_argument("--val-split", type=float, default=0.1, help="Validation split fraction")
+    convert_parser.add_argument("--exclude-waste-steps", action="store_true",
+                                help="Drop retry/backtrack click steps as training targets (kept in "
+                                     "history); non-destructive, trajectory files untouched")
+    convert_parser.add_argument("--exclude-meandering", action="store_true",
+                                help="Drop trajectories the verifier graded 'meandering' (kept by default)")
+    convert_parser.add_argument("--include-replay", action="store_true",
+                                help="Also train on legacy test-replay trajectories (QA-style supervision; off by default)")
 
     train_parser = subparsers.add_parser("train", help="Launch ms-swift SFT training")
     train_parser.add_argument("--config", type=str, required=True, help="Path to config.yaml")
@@ -263,7 +461,9 @@ def main():
     args = parser.parse_args()
 
     if args.command == "convert":
-        convert_trajectories(args.input, args.output, args.val_split)
+        convert_trajectories(args.input, args.output, args.val_split, include_replay=args.include_replay,
+                             exclude_meandering=args.exclude_meandering,
+                             exclude_waste_steps=args.exclude_waste_steps)
     elif args.command == "train":
         train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size)
 

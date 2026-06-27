@@ -62,6 +62,8 @@ class FailureCategory(str, Enum):
     QUALITY_GATE = "quality_gate"      # score / gate below threshold
     NO_TESTS = "no_tests"              # no test files matched the framework globs
     NO_CAPTURE = "no_capture"          # tests ran but produced no usable bbox/screenshot
+    NO_BOOT = "no_boot"                # boot gate: the repo's app never opened its port
+    NOT_BOOTABLE = "not_bootable"      # stage-2 gate: not a bootable interactive web app (test suite / non-app)
     DEDUP = "dedup"                    # fork / duplicate-description clone
     EMPTY_REPO = "empty_repo"
     TOO_LARGE = "too_large"
@@ -100,6 +102,12 @@ NON_QUALITY_CATEGORIES = RETRYABLE_CATEGORIES | {
 }
 
 MAX_RETRIES = int(os.environ.get("PIPELINE_MAX_RETRIES", "3"))
+
+# How stages 4-6 produce trajectories. "agent": a Claude teacher pursues proposed user goals in
+# the repo's booted app (the browser driver records coordinates; framework-independent).
+# "replay": the legacy instrumented-test-suite path. Defined here — next to the state machine it
+# shapes — so every stage reads the same switch instead of each re-reading the environment.
+CAPTURE_MODE = os.environ.get("PIPELINE_CAPTURE_MODE", "agent")
 
 
 class PipelineFailure(Exception):
@@ -182,6 +190,12 @@ class DeepAnalysis(BaseModel):
     deps_install_success: bool = False
     estimated_trajectories: int = 0
     notes: str = ""
+    # Stage-4 fit verdict. The holistic "is this worth capturing at all?" judgment, set by the
+    # deep-analysis prompt (agent mode) or by judge_fit over a stored analysis. Defaults keep
+    # analyses recorded before the verdict existed parsing cleanly — good_fit=True means "the
+    # holistic layer did not veto it" (the deterministic fit_veto rules still apply on top).
+    good_fit: bool = True
+    veto_reason: str = ""
 
 
 class TrialResults(BaseModel):
@@ -194,6 +208,10 @@ class TrialResults(BaseModel):
     total_actions_captured: int = 0
     screenshots_captured: int = 0
     notes: str = ""
+    # Boot-gate UI sophistication profile (agent mode): counts of draggables, sliders,
+    # canvases, rich-text editors etc. from the driver's /affordances endpoint. Drives the
+    # task proposer's drag/complex-input quotas and the dashboard's sophistication view.
+    affordances: dict = Field(default_factory=dict)
 
     @property
     def weighted_score(self) -> float:

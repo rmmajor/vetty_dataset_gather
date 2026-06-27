@@ -8,7 +8,10 @@ both into a process-global signal (`rate_limit_tracker`) that the orchestrator c
 between stages, and we raise `UsageLimitReached` so a quota-exhausted call NEVER causes a
 repo to be rejected — the repo stays in its input status and is retried on the next run.
 """
+import asyncio
 import logging
+import os
+import shutil
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -19,6 +22,31 @@ from claude_agent_sdk import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The SDK always prefers its bundled CLI, which can lag the system install and has wedged on
+# subprocess spawn. Pin to the (newer, session-proven) system `claude` when available; override
+# with CLAUDE_CLI_PATH. None -> fall back to the SDK's default (bundled) discovery.
+CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH") or shutil.which("claude")
+
+# Hard wall-clock cap on a single SDK query. The SDK can spawn a CLI subprocess that wedges
+# (blocks in waitpid forever, producing no ResultMessage); without this, one such wedge stalls an
+# entire stage run indefinitely (observed: a verify call hung a stage-6 run for 2h). The default
+# comfortably exceeds the longest legitimate call — a multi-turn teacher session, ~25 min observed
+# — while staying finite. Tune with SDK_QUERY_TIMEOUT; override per-call via run_query/run_agent.
+DEFAULT_QUERY_TIMEOUT_S = int(os.environ.get("SDK_QUERY_TIMEOUT", "2400"))
+
+
+def harden_options(options) -> None:
+    """Apply pipeline-wide option defaults in place: pin the system CLI, and strip filesystem
+    settings from headless calls. Without `setting_sources=[]` the spawned CLI loads the
+    OPERATOR'S user-level plugins/skills into every call's system prompt — measured at +20k
+    cache-creation tokens per call after a plugin install (bare `claude -p pong` = $0.19),
+    which silently tripled the fixed cost of every query and blew through per-call budgets.
+    Pipeline prompts are self-contained; they must not inherit the operator's environment."""
+    if CLAUDE_CLI_PATH and not getattr(options, "cli_path", None):
+        options.cli_path = CLAUDE_CLI_PATH
+    if getattr(options, "setting_sources", None) is None:
+        options.setting_sources = []
 
 
 class UsageLimitReached(Exception):
@@ -89,12 +117,39 @@ class RateLimitTracker:
 rate_limit_tracker = RateLimitTracker()
 
 
+class CostTracker:
+    """Process-global accumulator of ACTUAL spend, fed by every recorded ResultMessage's
+    total_cost_usd. The orchestrator's --budget used to be paced by per-repo guesses
+    (STAGE_COST_ESTIMATES), which drifted badly from reality — a 200-repo stage-3 pass
+    'spent' $30 of estimate while the subscription window sat at 10% — and stopped runs
+    that had barely started. Budget checks now read this; estimates only pre-size batches.
+
+    Synchronous, no awaits — atomic under the single asyncio event loop."""
+
+    def __init__(self):
+        self.total_usd = 0.0
+        self.call_count = 0
+
+    def add(self, cost_usd) -> None:
+        if cost_usd:
+            self.total_usd += float(cost_usd)
+            self.call_count += 1
+
+    def reset(self) -> None:
+        self.total_usd = 0.0
+        self.call_count = 0
+
+
+cost_tracker = CostTracker()
+
+
 async def run_query(
     prompt,
     options,
     *,
     label: str = "",
     fallback_to_assistant_text: bool = False,
+    timeout_s: float = DEFAULT_QUERY_TIMEOUT_S,
 ) -> str:
     """Run one SDK `query()` and return its success result text.
 
@@ -111,30 +166,39 @@ async def run_query(
     if rate_limit_tracker.limit_reached():
         raise UsageLimitReached(f"usage limit reached before query ({label})")
 
+    harden_options(options)
+
     result_text = ""
     last_assistant_text = ""
 
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, RateLimitEvent):
-            rate_limit_tracker.observe(message.rate_limit_info)
-            continue
+    try:
+        async with asyncio.timeout(timeout_s):
+            async for message in query(prompt=prompt, options=options):
+                if isinstance(message, RateLimitEvent):
+                    rate_limit_tracker.observe(message.rate_limit_info)
+                    continue
 
-        if fallback_to_assistant_text and isinstance(message, AssistantMessage) and hasattr(message, "content"):
-            for block in message.content:
-                if hasattr(block, "text"):
-                    last_assistant_text = block.text
+                if fallback_to_assistant_text and isinstance(message, AssistantMessage) and hasattr(message, "content"):
+                    for block in message.content:
+                        if hasattr(block, "text"):
+                            last_assistant_text = block.text
 
-        if isinstance(message, ResultMessage):
-            if message.subtype == "success" and not message.is_error:
-                result_text = message.result or ""
-            else:
-                status = getattr(message, "api_error_status", None)
-                logger.warning(
-                    f"query ({label}) ended with subtype={message.subtype} api_error_status={status}"
-                )
-                if status == 429:
-                    rate_limit_tracker.mark_rejected()
-                    raise UsageLimitReached(f"HTTP 429 from query ({label})")
+                if isinstance(message, ResultMessage):
+                    cost_tracker.add(getattr(message, "total_cost_usd", None))
+                    if message.subtype == "success" and not message.is_error:
+                        result_text = message.result or ""
+                    else:
+                        status = getattr(message, "api_error_status", None)
+                        logger.warning(
+                            f"query ({label}) ended with subtype={message.subtype} api_error_status={status}"
+                        )
+                        if status == 429:
+                            rate_limit_tracker.mark_rejected()
+                            raise UsageLimitReached(f"HTTP 429 from query ({label})")
+    except TimeoutError:
+        # A wedged CLI subprocess: abandon the call and return whatever (if anything) arrived.
+        # The caller's existing empty-result fallback/parse handles it as a soft failure.
+        logger.warning(f"query ({label}) exceeded {timeout_s}s — abandoning the call")
 
     if not result_text and fallback_to_assistant_text and last_assistant_text:
         result_text = last_assistant_text
