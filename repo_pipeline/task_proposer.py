@@ -84,11 +84,59 @@ Export". Only propose goals the app genuinely supports (use the README/tests as 
 - Vary instruction PHRASING across tasks like real users would: some imperative and precise, \
 some terse ("dark mode on, then find the oldest entry"), some conversational ("I need a list \
 of everything I finished this week"). Never test/QA voice.
-{avoid_block}
+{avoid_block}{auth_flow_block}
 Output ONLY a JSON object (no markdown fence, no prose):
 {{"app_health": {{"usable": <true|false>, "notes": "<one sentence: what works / what is broken>"}},
  "tasks": [{{"id": "<kebab-slug>", "instruction": "<the user goal>", "difficulty": "easy|medium|hard",
             "expected_actions": <int>, "action_kinds": ["click", "type", ...]}}, ...]}}"""
+
+
+# Opt-in block (auth-flow capture): lifts the "no email verification" restriction, asks for the
+# account/auth flows the agent can now complete end-to-end (it has a disposable inbox it opens in
+# the browser), and has the proposer CLASSIFY each task's auth need so login appears organically —
+# a minority of trajectories — rather than as a forced prefix on every one.
+_AUTH_FLOW_BLOCK = """
+EMAIL-BASED FLOWS ARE ENABLED for this run. The agent has its own disposable email address and a \
+webmail inbox it can open in the browser. OVERRIDING the "no email verification" guidance above:
+
+Tag EVERY task with an "auth" field describing how it relates to signing in:
+- "none": the task works without being signed in.
+- "account": the task REQUIRES being signed in to do it (an ordinary in-app action behind login).
+- "login": signing in is itself the GOAL of the task.
+- "register": creating a new account (and verifying the email) is the GOAL of the task.
+
+Most tasks should be "none" or "account". Keep explicit "login"/"register" tasks a SMALL minority \
+(the agent will be started already-signed-in for most "account" tasks, so don't make every task a \
+login). IF — and only if — this app visibly supports accounts (judge from the page/README), ALSO \
+include, ordered FIRST:
+- ONE "register" task: "Register a new account and verify the email address." (hard, 10+ actions).
+- If there is a forgot/reset-password link, ONE "login" task: "Reset the account password using the \
+link emailed to you, then sign in." (hard).
+Do NOT invent account flows if the app has no visible sign-up or login.
+"""
+
+_AUTH_VALUES = {"none", "account", "login", "register"}
+
+
+# Opt-in block (known-account capture): the app already has a working, pre-verified login and there
+# is NO readable inbox in the sandbox (its mail leaves to a cloud provider, or it's a demo account).
+# So the proposer must NOT generate registration / email-verification / reset-via-email / invite-via-
+# email tasks — they can never be completed without an inbox — and should focus on signed-in usage.
+_KNOWN_ACCOUNT_BLOCK = """
+YOU ALREADY HAVE A WORKING ACCOUNT for this app and can sign in with it. There is NO email inbox \
+available in this environment, so any flow that depends on reading an email CANNOT be completed.
+
+Tag EVERY task with an "auth" field:
+- "none": works without being signed in.
+- "account": requires being signed in (an ordinary in-app action behind the login).
+- "login": signing in with the existing account is itself the GOAL of the task.
+
+Rules:
+- Most tasks should be "account". You MAY include ONE "login" task (sign in with the account).
+- Do NOT propose account REGISTRATION, email VERIFICATION, password RESET-via-email, or \
+email-INVITATION tasks, or anything else that needs to read an email — there is no inbox.
+- Focus on what a signed-in user does inside the app (create/edit/find/configure/manage).
+"""
 
 
 # Affordance count -> a hard quota line in the proposal prompt. Generic: a new sophistication
@@ -180,13 +228,21 @@ def parse_proposal(text: str) -> dict | None:
         if not isinstance(item, dict) or not (item.get("instruction") or "").strip():
             continue
         slug = (item.get("id") or f"task-{i + 1}").strip().replace(" ", "-")[:60]
+        auth = (item.get("auth") or "none").strip().lower()
+        if auth not in _AUTH_VALUES:
+            auth = "none"
         tasks.append({
             "id": slug,
             "instruction": item["instruction"].strip(),
             "difficulty": item.get("difficulty", "medium"),
             "expected_actions": int(item.get("expected_actions", 8) or 8),
             "action_kinds": item.get("action_kinds", []),
+            "auth": auth,
         })
+    # register/login tasks must run FIRST: they MINT the account whose captured session the later
+    # "account" tasks reuse (auth_mode=pre_session). Stable sort preserves the proposer's order
+    # within each bucket.
+    tasks.sort(key=lambda t: {"register": 0, "login": 1}.get(t["auth"], 2))
     health = raw.get("app_health") if isinstance(raw.get("app_health"), dict) else {"usable": True, "notes": ""}
     return {"app_health": health, "tasks": tasks}
 
@@ -201,10 +257,14 @@ async def propose_tasks(
     registry=None,
     affordances: dict | None = None,
     avoid_instructions: list[str] | None = None,
+    auth_flow: bool = False,
+    inbox: bool = True,
 ) -> dict | None:
     """Returns {"app_health": {"usable", "notes"}, "tasks": [...]} or None on SDK/parse failure
     (retryable). An unusable app comes back as usable=False with an empty task list — the
-    caller rejects the repo without spending a single teacher call."""
+    caller rejects the repo without spending a single teacher call. `auth_flow=True` enables auth
+    task classification; `inbox=False` (a known pre-verified account, no readable sandbox inbox)
+    switches to the known-account block so no email-dependent tasks are proposed."""
     n_tasks = n_tasks or TASKS_PER_REPO
     affordances_block, affordance_quotas = render_affordances(affordances)
     prompt_text = PROPOSE_PROMPT.format(
@@ -218,6 +278,7 @@ async def propose_tasks(
         affordances_block=affordances_block,
         affordance_quotas=affordance_quotas,
         avoid_block=render_avoid(avoid_instructions),
+        auth_flow_block=("" if not auth_flow else (_AUTH_FLOW_BLOCK if inbox else _KNOWN_ACCOUNT_BLOCK)),
     )
 
     try:

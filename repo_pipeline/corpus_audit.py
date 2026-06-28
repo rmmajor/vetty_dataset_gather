@@ -37,6 +37,7 @@ def _action_signature(step: dict) -> tuple:
             a.get("type"), a.get("x"), a.get("y"), a.get("text"), tuple(a.get("keys") or []),
             a.get("scroll_x"), a.get("scroll_y"),
             json.dumps(a.get("path")) if a.get("path") else None,
+            a.get("url"),
         )
         for a in step.get("actions", [])
         if a.get("type") not in _CONTROL_TYPES

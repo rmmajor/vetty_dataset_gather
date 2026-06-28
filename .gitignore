@@ -9,3 +9,6 @@ pipeline_data/
 .venv*/
 videos/
 notes/
+
+# Test-account credentials + saved sessions (never commit real logins)
+credentials/

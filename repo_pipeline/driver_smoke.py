@@ -43,6 +43,8 @@ TEST_PAGE = """<!doctype html>
       ondrop="var s=document.getElementById(event.dataTransfer.getData('text'));this.parentNode.insertBefore(s,this.nextSibling);document.getElementById('status').innerText='reordered'">Beta</li>
 </ul>
 
+<iframe id="embed" width="320" height="90" srcdoc="<button id='ibtn' onclick='document.body.innerHTML=&quot;<h2>iframe action done</h2>&quot;'>Inside-frame button</button>"></iframe>
+
 <div style="height: 1500px"></div>
 <a href="#bottom" id="bottom-link">Bottom link</a>
 </body></html>"""
@@ -117,6 +119,17 @@ def run_smoke() -> bool:
             "thought": "Reordering the list by dragging Alpha below Beta.",
         })
         assert "reordered" in result["snapshot"], f"drag (html5 fallback) had no effect: {result['snapshot'][:300]}"
+
+        # Cross-iframe resolution: an element inside a same-origin iframe must be snapshot-visible
+        # and clickable by ref (the path that lets the agent click a verification/reset link inside
+        # a webmail message body).
+        snapshot = client.snapshot()["snapshot"]
+        result = client.act({
+            "kind": "click", "ref": ref_for("Inside-frame button"),
+            "thought": "Clicking the button inside the embedded frame to test iframe interaction.",
+        })
+        assert "iframe action done" in result["snapshot"], \
+            f"iframe element was not reachable/clickable: {result['snapshot'][:300]}"
 
         # Coordinate tools for canvas surfaces + a recorded wait.
         client.act({"kind": "click_xy", "x": 200, "y": 400,

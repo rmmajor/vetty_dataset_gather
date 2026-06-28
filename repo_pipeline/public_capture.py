@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 
-from repo_pipeline import driver_session
+from repo_pipeline import app_secrets, driver_session
 from repo_pipeline.agent_capture import run_teacher_task, verify_trajectory
 from repo_pipeline.instrumentation import RESULTS_DIR
 from repo_pipeline.registry import RepoRegistry
@@ -127,6 +127,43 @@ async def _propose_for_site(client, sandbox, site: dict, avoid: list[str], regis
     )
 
 
+def _resolve_site_auth(site: dict):
+    """Resolve a site's login posture, FAIL-CLOSED. Returns
+    (autonomy, auth_mode, secrets, auth_config), or None when the site needs auth but has no
+    registered burner / a missing storage_state — in which case the caller skips the site entirely
+    rather than touch a real login with an unvetted identity.
+
+    Per-site config (all optional; absent ⇒ the existing login-free autonomous behaviour):
+      autonomy: "autonomous" | "guarded"   (guarded ⇒ confirm/handoff, human owns secrets)
+      auth_mode: "none" | "pre_session"     (pre_session ⇒ start signed in via a saved session)
+      burner_account_id: id into credentials/burner_accounts.json (required if auth is needed)
+      storage_state_ref: name of credentials/storage_state/<ref>.json (required for pre_session)
+    """
+    autonomy = site.get("autonomy", "autonomous")
+    auth_mode = site.get("auth_mode", "none")
+    if autonomy == "autonomous" and auth_mode == "none":
+        return autonomy, auth_mode, None, None
+
+    burner_id = site.get("burner_account_id")
+    if not app_secrets.is_registered_burner(burner_id):
+        logger.warning(f"[{site['name']}] FAIL-CLOSED: needs auth ({autonomy}/{auth_mode}) but burner "
+                       f"'{burner_id}' is not a registered burner — skipping site")
+        return None
+    auth_config = None
+    if auth_mode == "pre_session":
+        storage_state = app_secrets.load_storage_state(site.get("storage_state_ref"))
+        if storage_state is None:
+            logger.warning(f"[{site['name']}] FAIL-CLOSED: pre_session but storage_state "
+                           f"'{site.get('storage_state_ref')}' is missing — skipping site")
+            return None
+        auth_config = {"auth_mode": "pre_session", "storage_state": storage_state}
+    # Guarded capture NEVER types the password: the agent hands off at a login/secret wall and a
+    # human supplies it. Credentials are passed (masked at type time) ONLY for autonomous runs.
+    burner = app_secrets.burner_account(burner_id)
+    secrets = None if autonomy == "guarded" else {"email": burner["email"], "password": burner["password"]}
+    return autonomy, auth_mode, secrets, auth_config
+
+
 async def capture_site(site: dict, trajectory_base_dir: Path, registry,
                        max_tasks: int | None = None, propose: bool = True) -> dict:
     """One sandbox per site (the driver's browser is in-container; no app boot needed).
@@ -136,6 +173,14 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry,
     stable and task-level resume (skip tasks already on disk) is meaningful — mirroring stage 6."""
     site_dir = trajectory_base_dir / f"site_{site['name']}"
     curated = site.get("tasks", [])
+
+    # Resolve login posture before doing any work; a guarded/authenticated site without a vetted
+    # burner (or its saved session) is skipped here, before a sandbox or any real-site hit.
+    resolved = _resolve_site_auth(site)
+    if resolved is None:
+        return {"site": site["name"], "captured": 0, "verified": 0, "skipped": 0, "fail_closed": True}
+    autonomy, auth_mode, site_secrets, site_auth_config = resolved
+
     persisted = _load_proposed_tasks(site_dir)
 
     # With a persisted proposal (or proposing disabled) the full task set is known without the
@@ -181,7 +226,9 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry,
             if rate_limit_tracker.limit_reached():
                 raise UsageLimitReached("usage limit reached during public capture")
             state = await run_teacher_task(
-                client, task, site["start_url"], registry=registry, full_name=f"site:{site['name']}"
+                client, task, site["start_url"], registry=registry, full_name=f"site:{site['name']}",
+                autonomy=autonomy, auth_mode=auth_mode, secrets=site_secrets,
+                auth_config=site_auth_config,
             )
             states[task["id"]] = state
             ran.append(task)

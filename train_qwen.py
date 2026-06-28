@@ -47,6 +47,7 @@ action: keypress(["Enter"])
 action: scroll(<ref>(x, y)</ref>, scrollX=0, scrollY=500)
 action: drag(<ref>(x1, y1)</ref> -> <ref>(x2, y2)</ref>)
 action: wait()
+action: navigate("https://...")
 action: handoff(reason=login)
 action: confirm(propose=click(<ref>(x, y)</ref>), risk=purchase)
 action: done()
@@ -95,6 +96,9 @@ def format_action_for_training(action):
     elif action_type == "wait":
         return "action: wait()"
 
+    elif action_type == "navigate":
+        return f'action: navigate("{action.get("url", "")}")'
+
     elif action_type == "handoff":
         return f'action: handoff(reason={action.get("reason", "login")})'
 
@@ -132,6 +136,8 @@ def format_action_summary(action):
     elif action_type == "drag":
         path = action["path"]
         return f'drag({path[0]["x"]},{path[0]["y"]} -> {path[-1]["x"]},{path[-1]["y"]})'
+    elif action_type == "navigate":
+        return f'navigate({action.get("url", "")})'
     elif action_type == "handoff":
         return f'handoff({action.get("reason", "")})'
     elif action_type == "confirm":

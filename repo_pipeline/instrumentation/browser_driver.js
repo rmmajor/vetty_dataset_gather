@@ -94,11 +94,15 @@ const state = {
 
 // Serialized into the page; walks the DOM, tags interactive elements with data-cua-ref and
 // returns {elements: [...], texts: [...]} for the compact text tree rendered host-side below.
-function pageCollectSnapshot(maxElements) {
+function pageCollectSnapshot(opts) {
+  // `startRef` offsets this frame's ref numbering so refs stay globally unique when the host
+  // collects across multiple frames (main page + iframes, e.g. a webmail message body).
+  const maxElements = (opts && opts.maxElements) || 60;
+  const startRef = (opts && opts.startRef) || 0;
   const INTERACTIVE = 'a[href], button, input, select, textarea, summary, [role], [onclick], '
     + '[contenteditable="true"], [tabindex], [draggable="true"], [data-rbd-draggable-id], canvas';
   const out = [];
-  let refCounter = 1;
+  let refCounter = startRef + 1;
   document.querySelectorAll('[data-cua-ref]').forEach((el) => el.removeAttribute('data-cua-ref'));
 
   function visible(el) {
@@ -243,8 +247,29 @@ async function scrubDevOverlays() {
 
 async function takeSnapshot() {
   await scrubDevOverlays();
-  const data = await state.page.evaluate(pageCollectSnapshot, SNAPSHOT_MAX_ELEMENTS);
-  return renderSnapshot(data);
+  // Collect across the main frame AND every child iframe, with a running ref offset so refs are
+  // globally unique. Elements inside iframes (e.g. a webmail message body with a verification or
+  // password-reset link) become first-class, ref-clickable targets — Playwright's frame locators
+  // and boundingBox() resolve them in main-frame coordinates, so clicks land correctly.
+  const frames = state.page.frames();
+  let startRef = 0;
+  let merged = null;
+  for (const frame of frames) {
+    let data;
+    try {
+      data = await frame.evaluate(pageCollectSnapshot, { maxElements: SNAPSHOT_MAX_ELEMENTS, startRef });
+    } catch (e) {
+      continue;  // detached or unreachable frame — skip
+    }
+    if (merged === null) {
+      merged = data;  // main frame: keep its scroll geometry + page text
+    } else {
+      merged.elements.push(...data.elements);
+      merged.texts.push(...data.texts);
+    }
+    startRef += data.elements.length;
+  }
+  return renderSnapshot(merged || { elements: [], texts: [], scrollY: 0, scrollHeight: 0, innerHeight: 0 });
 }
 
 /* ------------------------------ recording ------------------------------ */
@@ -296,13 +321,34 @@ async function recordStep(thought, actions, target, event) {
 /* ------------------------------ element resolution ------------------------------ */
 
 async function resolveRef(ref) {
-  const locator = state.page.locator(`[data-cua-ref="${ref}"]`).first();
-  if ((await locator.count()) === 0) {
+  // The ref may live in the main frame or any child iframe (page.locator does not pierce iframes,
+  // so search each frame). boundingBox() on a frame locator is already main-frame-relative, so the
+  // recorded coordinates and the page.mouse clicks line up regardless of which frame owns the ref.
+  let locator = null;
+  for (const frame of state.page.frames()) {
+    const cand = frame.locator(`[data-cua-ref="${ref}"]`).first();
+    try {
+      if ((await cand.count()) > 0) { locator = cand; break; }
+    } catch (e) {
+      continue;
+    }
+  }
+  if (locator === null) {
     throw new Error(`ref ${ref} not found on the current page — it may be stale. Take a new snapshot.`);
   }
   await locator.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
-  const box = await locator.boundingBox();
+  let box = await locator.boundingBox();
   if (!box) throw new Error(`ref ${ref} has no visible bounding box. Take a new snapshot.`);
+  // scrollIntoViewIfNeeded only scrolls within the element's OWN frame; an element inside an iframe
+  // (e.g. a link in a webmail message body) can still sit outside the MAIN viewport. boundingBox()
+  // is main-frame-relative, so if the center is off-screen, scroll the main window to it and re-read
+  // — otherwise the clamp below would push the click to the viewport edge and miss the element.
+  let centerY = box.y + box.height / 2;
+  if (centerY < 0 || centerY > VIEWPORT.height) {
+    await state.page.evaluate((dy) => window.scrollBy(0, dy), Math.round(centerY - VIEWPORT.height / 2)).catch(() => {});
+    await state.page.waitForTimeout(200);
+    box = (await locator.boundingBox()) || box;
+  }
   let cx = Math.round(box.x + box.width / 2);
   let cy = Math.round(box.y + box.height / 2);
   // Clamp the click point into the viewport for oversized elements (e.g. full-page sections).
@@ -433,8 +479,19 @@ async function handleAct(body) {
     const button = body.button === 'right' ? 'right' : 'left';
     actions = [{ type: 'click', x: target.cx, y: target.cy, button }];
     await recordStep(thought, actions, target);
-    if (body.dblclick) await state.page.mouse.dblclick(target.cx, target.cy, { button });
-    else await state.page.mouse.click(target.cx, target.cy, { button });
+    if (body.dblclick) {
+      await state.page.mouse.dblclick(target.cx, target.cy, { button });
+    } else {
+      // Prefer the locator click: it dispatches a real DOM click through nested iframes (e.g. a
+      // link in a webmail message body, which a raw coordinate click may not activate) and follows
+      // target=_blank into a new tab. Fall back to the coordinate click if the element isn't
+      // actionable (covered/animating) so behavior never regresses for the main page.
+      try {
+        await target.locator.click({ button, timeout: 4000 });
+      } catch (e) {
+        await state.page.mouse.click(target.cx, target.cy, { button });
+      }
+    }
   } else if (kind === 'type') {
     loopGuard(`type:${body.ref}:${body.text}`);
     if (typeof body.text !== 'string') throw new Error("kind 'type' requires 'text'");
@@ -526,6 +583,17 @@ async function handleAct(body) {
     await state.page.mouse.down();
     for (const p of path.slice(1)) await state.page.mouse.move(p.x, p.y, { steps: 8 });
     await state.page.mouse.up();
+  } else if (kind === 'navigate') {
+    // Recorded cross-site navigation: the agent deliberately goes somewhere — e.g. to its webmail
+    // to read a verification / reset email mid-flow. Unlike the setup-only POST /navigate, this IS
+    // a recorded step (the "before" screenshot is the page where the decision is made), so the
+    // student learns that checking email is part of the flow. The destination url is the target.
+    if (!body.url) throw new Error("kind 'navigate' requires a 'url'");
+    loopGuard(`navigate:${body.url}`);
+    actions = [{ type: 'navigate', url: String(body.url) }];
+    await recordStep(thought, actions, null);
+    await state.page.goto(String(body.url), { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await settle();
   } else if (kind === 'done') {
     // Terminal step: the screen state that justifies declaring the goal met, plus a
     // {type:"done"} action — the student must learn WHEN to stop, not just how to act.
@@ -616,6 +684,24 @@ async function ensureBrowser() {
   });
 }
 
+async function mailPreLogin(cfg) {
+  // Log the scenario mailbox into Roundcube (standard form: #rcmloginuser / #rcmloginpwd /
+  // #rcmloginsubmit). GreenMail has auth disabled, so any password authenticates the address.
+  // Best-effort: on any failure the agent can still drive the webmail login itself.
+  try {
+    await state.page.goto(cfg.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await state.page.fill('#rcmloginuser', cfg.address, { timeout: 8000 }).catch(() => {});
+    await state.page.fill('#rcmloginpwd', cfg.password || 'qa', { timeout: 8000 }).catch(() => {});
+    await Promise.all([
+      state.page.waitForLoadState('domcontentloaded').catch(() => {}),
+      state.page.click('#rcmloginsubmit, button[type=submit], input[type=submit]', { timeout: 8000 }).catch(() => {}),
+    ]);
+    await state.page.waitForTimeout(1200);
+  } catch (e) {
+    console.error(`mail pre-login failed (continuing): ${e.message}`);
+  }
+}
+
 async function handleSession(body) {
   if (!body.task_id || !body.start_url) throw new Error('/session requires task_id and start_url');
   await ensureBrowser();
@@ -657,6 +743,14 @@ async function handleSession(body) {
     },
     recentActions: [],
   };
+
+  // Auth-flow capture: pre-authenticate the scenario webmail so the agent finds a ready inbox when
+  // it navigates there to verify an email or reset a password. Non-recorded setup, like the goto
+  // below; the resulting Roundcube session cookie lives in this context for the whole task.
+  if (body.mail_config && body.mail_config.url && body.mail_config.address) {
+    await mailPreLogin(body.mail_config);
+    state.task.meta.mail_webmail_url = body.mail_config.url;
+  }
 
   await state.page.goto(body.start_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   // SPAs (React/Vue/Vite/Next) render their UI only after hydration, which lands well after
@@ -774,6 +868,13 @@ const routes = {
     const seconds = Math.min(Math.max(Number(body.seconds) || 1, 0.2), 10);
     await state.page.waitForTimeout(seconds * 1000);
     return { ok: true, url: state.page.url(), snapshot: (await takeSnapshot()).slice(0, 8000) };
+  },
+  'POST /storage_state': async () => {
+    // Export the current context's cookies + localStorage so a register/login trajectory's
+    // authenticated session can be injected into later tasks (auth_mode=pre_session) — letting
+    // most downstream tasks start already signed in instead of repeating a login.
+    if (!state.context) throw new Error('no active session');
+    return { ok: true, storage_state: await state.context.storageState() };
   },
   'GET /status': async () => ({
     ok: true,

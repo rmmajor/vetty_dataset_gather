@@ -150,9 +150,23 @@ done then undone, or step count far beyond need); a purposeful indirect route is
 - Judge only from the attached screenshots and the step summary; the agent's outcome claim is a hint."""
 
 
-def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str]) -> str:
-    """The operating-mode instructions injected into TEACHER_PROMPT. Empty for the default
-    autonomous-without-credentials case, so pre-existing repo captures are unchanged."""
+_SECRET_KEY_DESC = {
+    "email": "<secret:email> = your email address",
+    "password": "<secret:password> = your password",
+    "new_password": "<secret:new_password> = a new password to set whenever you must choose one "
+                    "(e.g. when resetting or changing your password)",
+    "username": "<secret:username> = your username",
+}
+
+
+def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str],
+                        webmail_url: str = "", webmail_preauthed: bool = True) -> str:
+    """The operating-mode instructions injected into TEACHER_PROMPT. This describes the agent's
+    RESOURCES (it has credentials, it has an email inbox) and its stop condition — NOT a step-by-step
+    procedure. The recorded `instruction` stays a terse user goal; the agent figures out the process.
+    Empty for the default autonomous-without-credentials case, so pre-existing repo captures are
+    unchanged. `webmail_preauthed` distinguishes the sandbox webmail (Roundcube, already signed in)
+    from a real disposable inbox (mail.tm) the agent must sign into itself."""
     if autonomy == "guarded":
         return (
             "\nOPERATING MODE — guarded (a real person is supervising a live account):\n"
@@ -166,16 +180,50 @@ def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str]) -
             "- Everything safe and reversible (browse, search, fill non-sensitive forms, add-to-cart, "
             "create drafts) you do normally.\n"
         )
-    if secret_keys:
-        placeholders = ", ".join(f"<secret:{k}>" for k in secret_keys)
-        return (
-            "\nOPERATING MODE — autonomous QA (disposable test environment):\n"
-            "- Complete the task end-to-end, including logging in and committing actions; the "
-            "environment resets after the run, so finishing real flows is safe.\n"
-            f"- To authenticate, type these placeholders EXACTLY into the matching fields: "
-            f"{placeholders}. The system substitutes the real test values — never invent or guess "
-            "credentials, and never type a real password.\n"
+    cred_items = "; ".join(_SECRET_KEY_DESC.get(k, f"<secret:{k}>") for k in secret_keys)
+    creds_line = (
+        "- You are provisioned with these credentials — type the placeholder EXACTLY into the field "
+        "it belongs in and the system fills in the real value; never invent or type a real "
+        f"credential yourself: {cred_items}.\n" if secret_keys else ""
+    )
+    if not webmail_url:
+        mail_line = ""
+    elif webmail_preauthed:
+        mail_line = (
+            f"- You have an email inbox at {webmail_url} (already signed in). If a step needs an email "
+            "— a confirmation link/code at sign-up, or a password-reset message — `navigate` there, "
+            "open the newest message, use its link or code, and return.\n"
         )
+    else:
+        mail_line = (
+            f"- You have your own email inbox at {webmail_url}. If — and only if — a step needs an "
+            "email (a sign-up confirmation, or a password reset), `navigate` there, sign in with your "
+            "email and password, open the newest message, use its link or code, and return.\n"
+        )
+    done_line = ("- You are finished as soon as the goal is met (e.g. the account exists and you are "
+                 "signed in). Do not keep hunting for a confirmation email if the site already let "
+                 "you in.\n")
+
+    if auth_mode == "pre_session":
+        # The session is injected — the agent is ALREADY signed in. No login ritual: just do the task.
+        return ("\nOPERATING MODE — autonomous QA (you are already signed in):\n"
+                "- You are signed in to the app. Pursue the goal directly; do NOT log out or look "
+                "for a login screen unless the task itself asks you to.\n")
+    if auth_mode == "discovered":
+        # Start signed out WITH credentials available — sign in only if the task can't proceed
+        # without it (the realistic 'hit the wall, then log in' pattern), otherwise just work.
+        return ("\nOPERATING MODE — autonomous QA (disposable test environment):\n"
+                "- Pursue the goal directly. ONLY if the app blocks you until you sign in should you "
+                "sign in (creating the account first with your credentials if you do not have one "
+                "yet), then continue toward the goal. Do not seek out a login if the task does "
+                "not require one.\n" + creds_line + mail_line)
+    if auth_mode == "login":
+        # Logging in / creating (or recovering) an account IS the goal of this task. The recorded
+        # instruction is a terse user goal; the agent works out the steps from these resources.
+        return ("\nOPERATING MODE — autonomous QA (disposable test environment):\n"
+                "- Pursue the goal end-to-end, including signing in / creating or recovering the "
+                "account; the environment resets after the run, so finishing real flows is safe.\n"
+                + creds_line + mail_line + done_line)
     return ""
 
 
@@ -413,16 +461,13 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
 
     @tool(
         "navigate",
-        "Load a URL directly. LAST RESORT — real users click through the UI; mid-task jumps "
-        "degrade the recording.",
-        {"url": str},
+        "Go to a URL (recorded as a step). Use it to reach a DIFFERENT site you legitimately "
+        "need — e.g. opening your email inbox to read a verification or password-reset message — "
+        "then act there normally. Do NOT use it to skip the app's own UI by jumping to deep links.",
+        action_schema({"url": {"type": "string"}}, ["url"]),
     )
     async def navigate_tool(args):
-        try:
-            result = await _run(client.navigate, args.get("url", ""))
-            return _text(f"URL: {result['url']}\n\n{result['snapshot']}")
-        except Exception as e:
-            return _text(f"navigate failed: {str(e)[:300]}", is_error=True)
+        return await _act({"kind": "navigate", "url": args.get("url", ""), "thought": args.get("thought", "")})
 
     @tool(
         "task_complete",
@@ -553,14 +598,20 @@ async def run_teacher_task(
     env: str = "live",
     secrets: dict | None = None,
     auth_config: dict | None = None,
+    mail_config: dict | None = None,
+    webmail_url: str = "",
+    webmail_preauthed: bool = True,
+    capture_session: bool = False,
 ) -> dict:
     """Run one task end-to-end: open a driver session, let the teacher act, ensure the
     trajectory is finalized in-container. Returns the per-task state record.
 
     `autonomy`/`auth_mode`/`env` select the operating mode (guarded vs autonomous QA); `secrets`
     is the session-scoped burner credential map (placeholders only ever reach the recording);
-    `auth_config` carries a pre_session `storage_state`. All default so existing callers (repo
-    capture) keep their current autonomous behavior."""
+    `auth_config` carries a pre_session `storage_state`; `mail_config` ({url,address,password})
+    pre-authenticates the scenario webmail so the agent can read verification/reset email in the
+    browser (auth-flow capture). All default so existing callers (repo capture) keep their current
+    autonomous behavior."""
     state = {
         "actions": 0, "completed": False, "agent_outcome": "", "agent_summary": "",
         "instruction": task["instruction"], "autonomy": autonomy, "auth_mode": auth_mode,
@@ -574,7 +625,7 @@ async def run_teacher_task(
     }
     session = await loop.run_in_executor(
         None, lambda: client.session(task["id"], app_url, task["instruction"], task_meta=task_meta,
-                                     auth_config=auth_config, secrets=secrets)
+                                     auth_config=auth_config, secrets=secrets, mail_config=mail_config)
     )
 
     server, allowed = build_driver_mcp_server(client, state, autonomy=autonomy)
@@ -583,7 +634,9 @@ async def run_teacher_task(
         url=session["url"],
         snapshot=session["snapshot"],
         max_actions=MAX_ACTIONS_PER_TASK,
-        policy_block=render_policy_block(autonomy, auth_mode, list((secrets or {}).keys())),
+        policy_block=render_policy_block(autonomy, auth_mode, list((secrets or {}).keys()),
+                                         webmail_url=((mail_config or {}).get("url") or webmail_url),
+                                         webmail_preauthed=webmail_preauthed),
     )
 
     final_text = ""
@@ -613,6 +666,14 @@ async def run_teacher_task(
         if not state["completed"]:
             state["agent_outcome"] = state["agent_outcome"] or "unreported"
             state["agent_summary"] = state["agent_summary"] or (final_text or "").strip()[:400]
+        # Capture the authenticated session (cookies + localStorage) BEFORE finish closes the
+        # context, so a register/login trajectory's login can be reused by later pre_session tasks.
+        if capture_session:
+            try:
+                state["storage_state"] = await loop.run_in_executor(None, client.storage_state)
+            except Exception as e:
+                logger.warning(f"session capture failed for {task['id']}: {e}")
+                state["storage_state"] = None
         try:
             await loop.run_in_executor(
                 None, client.finish, state["agent_outcome"], state["agent_summary"]
@@ -803,3 +864,75 @@ async def verify_trajectory(
     trajectory_file.write_text(json.dumps(traj, indent=2))
     meta_file.write_text(json.dumps(capture_meta, indent=2))
     return {**verdict, "relabeled": relabeled, "final_success": traj["success"]}
+
+
+SESSION_PROBE_PROMPT = """An automated agent just attempted to register and/or sign in on {site}, \
+then act. The images are sampled frames ending in the FINAL screen. The agent's own report: \
+"{agent_summary}"
+
+Recent steps:
+{step_summary}
+
+Decide whether this browser session is now AUTHENTICATED — i.e. the agent is operating INSIDE the \
+app as a signed-in user: it reached the user's own workspace / dashboard / account area, OR it \
+created or modified the user's own content (a saved document, list, item, post, profile change), OR \
+it is on a per-user resource URL. Answer NO only if the final screen is a login / signup / \
+email-verification / landing / pricing page, a blank or black page, or an error, and the agent \
+never got into the signed-in app. Creating real content (even without a visible account menu) means \
+YES — anonymous visitors cannot persist content.
+
+Reply with ONLY a JSON object: {{"authenticated": true or false, "reason": "<one short sentence>"}}"""
+
+
+async def session_authenticated(
+    traj_dir: Path,
+    site_name: str,
+    agent_summary: str = "",
+    registry=None,
+    full_name: str = "",
+) -> bool:
+    """Did a register/login task leave a reusable authenticated session? Judged from the SAME
+    evidence the verifier sees (final + sampled mid-run frames + the step trail), NOT from whether
+    the bundled goal completed — a slow email-verify login can establish a valid session yet exhaust
+    its action budget before finishing the task, and that session is still reusable for the site's
+    remaining tasks. Keying session reuse on goal-completion silently discards those sessions and
+    mis-files working sites as needs-human; the step trail (e.g. navigating to a per-user resource
+    and creating content) catches authenticated runs whose final frame alone looks ambiguous."""
+    try:
+        traj = json.loads((traj_dir / "trajectory.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    steps = traj.get("steps", [])
+    if not steps:
+        return False
+    screenshots, _ = _verification_screenshots(traj_dir, steps)
+    screenshots = [p for p in screenshots if p.exists()]
+    if not screenshots:
+        return False
+    prompt = SESSION_PROBE_PROMPT.format(
+        site=site_name,
+        agent_summary=(agent_summary or "(none)")[:400],
+        step_summary=_step_summary(traj),
+    )
+    try:
+        result_text = await run_agent(
+            _verify_prompt_stream(prompt, screenshots),
+            ClaudeAgentOptions(
+                model=MODEL_FOR_REASONING,
+                max_turns=1,
+                max_budget_usd=VERIFY_BUDGET_USD,
+                permission_mode="bypassPermissions",
+            ),
+            registry=registry,
+            full_name=full_name,
+            stage=6,
+            purpose="auth_probe",
+            raise_on_error=False,
+        )
+        if result_text.find("{") != -1:
+            return bool(_parse_first_json_object(result_text).get("authenticated", False))
+    except UsageLimitReached:
+        raise
+    except Exception as e:
+        logger.warning(f"session auth probe failed for {traj_dir.name}: {e}")
+    return False

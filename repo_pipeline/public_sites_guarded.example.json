@@ -1,0 +1,42 @@
+{
+  "_README": "Guarded/login lane example for public_capture.py. Run with --config this file. A guarded site is captured ONLY if its burner_account_id is a REGISTERED burner in credentials/burner_accounts.json (fail-closed); otherwise the site is skipped. NEVER use a real personal account here.",
+  "_burner_accounts_format": "credentials/burner_accounts.json (gitignored): {\"<burner_account_id>\": {\"email\": \"...\", \"password\": \"...\", \"provisioning_mode\": \"human_provisioned|generated\", \"registered\": true}}",
+  "_storage_state_format": "credentials/storage_state/<storage_state_ref>.json (gitignored): a Playwright storageState() dump captured once from a manual burner login; used for auth_mode=pre_session so the run starts already signed in.",
+  "sites": [
+    {
+      "name": "example-guarded-handoff",
+      "skip_capture": true,
+      "start_url": "https://example.com/login",
+      "domain": "example_saas",
+      "autonomy": "guarded",
+      "auth_mode": "none",
+      "burner_account_id": "example-burner-1",
+      "tasks": [
+        {
+          "id": "compose-draft-then-confirm-send",
+          "instruction": "Compose a message to the support address and prepare to send it.",
+          "difficulty": "hard",
+          "note": "Guarded: the agent fills the draft autonomously, then emits `confirm` before the irreversible send and `handoff` at the login wall — it never types the password."
+        }
+      ]
+    },
+    {
+      "name": "example-guarded-presession",
+      "skip_capture": true,
+      "start_url": "https://example.com/app",
+      "domain": "example_saas",
+      "autonomy": "guarded",
+      "auth_mode": "pre_session",
+      "burner_account_id": "example-burner-1",
+      "storage_state_ref": "example-burner-1-example_saas",
+      "tasks": [
+        {
+          "id": "update-profile-display-name",
+          "instruction": "Open account settings and change the display name to a new value.",
+          "difficulty": "medium",
+          "note": "Starts already signed in via the saved burner session; reversible profile edit, no confirm needed."
+        }
+      ]
+    }
+  ]
+}
