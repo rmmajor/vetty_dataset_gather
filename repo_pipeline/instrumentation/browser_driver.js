@@ -265,7 +265,7 @@ function writeTrajectory(success) {
   fs.writeFileSync(path.join(t.dir, 'capture_meta.json'), JSON.stringify(t.meta, null, 2));
 }
 
-async function recordStep(thought, actions, target) {
+async function recordStep(thought, actions, target, event) {
   const t = state.task;
   const stepNum = t.steps.length + 1;
   const screenshotName = `step_${String(stepNum).padStart(3, '0')}_screenshot.png`;
@@ -278,6 +278,9 @@ async function recordStep(thought, actions, target) {
     step.name = target.name || null;
     step.bbox = target.bbox || null;
   }
+  // Watchdog verdict observation (login-gated capture): an event step has empty actions; convert
+  // excludes it as an SFT target but threads it into history.
+  if (event) step.event = event;
   t.steps.push(step);
   t.meta.steps[String(stepNum)] = {
     role: target ? target.role : null,
@@ -398,11 +401,22 @@ function loopGuard(signature) {
 
 /* ------------------------------ action handlers ------------------------------ */
 
+// Substitute `<secret:NAME>` placeholders with the session's real (burner) credential values at
+// TYPE time only. The placeholder is what gets recorded into the trajectory; the resolved value is
+// only ever keystroked into the page, never written to disk or returned. Unknown keys are left as
+// the literal placeholder (fail-visible, not fail-leak).
+function resolveSecrets(text) {
+  const secrets = state.secrets || {};
+  if (typeof text !== 'string') return text;
+  return text.replace(/<secret:([^>]+)>/g, (m, key) => (key in secrets ? secrets[key] : m));
+}
+
 async function handleAct(body) {
   if (!state.page) throw new Error('no active session — call /session first');
   const { kind, thought } = body;
-  // Upload is an unrecorded enabler (see below); every recorded action requires a thought.
-  if (kind !== 'upload' && (!thought || !String(thought).trim())) {
+  // Upload is an unrecorded enabler; approval_event is a watchdog observation, not an agent action.
+  // Every other recorded action requires a thought.
+  if (kind !== 'upload' && kind !== 'approval_event' && (!thought || !String(thought).trim())) {
     throw new Error("every action requires a non-empty 'thought' explaining the intent behind it");
   }
 
@@ -425,6 +439,8 @@ async function handleAct(body) {
     loopGuard(`type:${body.ref}:${body.text}`);
     if (typeof body.text !== 'string') throw new Error("kind 'type' requires 'text'");
     target = await resolveRef(body.ref);
+    // Record the placeholder (body.text); type the resolved real value. For non-secret text the
+    // two are identical.
     actions = [
       { type: 'click', x: target.cx, y: target.cy, button: 'left' },
       { type: 'type', text: body.text },
@@ -434,7 +450,7 @@ async function handleAct(body) {
     await state.page.mouse.click(target.cx, target.cy);
     // Clear any existing value the way a user would: select-all then retype.
     await state.page.keyboard.press('ControlOrMeta+a').catch(() => {});
-    await state.page.keyboard.type(body.text, { delay: 15 });
+    await state.page.keyboard.type(resolveSecrets(body.text), { delay: 15 });
     if (body.press_enter) await state.page.keyboard.press('Enter');
   } else if (kind === 'press') {
     const keys = Array.isArray(body.keys) ? body.keys : [body.keys];
@@ -546,6 +562,24 @@ async function handleAct(body) {
     await target.locator.selectOption(String(body.value));
     state.task.meta.steps[String(state.task.steps.length)].select_value = String(body.value);
     writeTrajectory(false);
+  } else if (kind === 'handoff') {
+    // Guarded mode: the agent yields control for login / a fresh secret / CAPTCHA / 2FA. Recorded
+    // as a student target; no page action (auth is provisioned out-of-band).
+    actions = [{ type: 'handoff', reason: String(body.reason || 'login') }];
+    await recordStep(thought, actions, null);
+  } else if (kind === 'confirm') {
+    // Guarded mode: the agent proposes a consequential action INSTEAD of executing it. Recorded as
+    // the student target; the watchdog verdict lands next as an approval_event step. No page action.
+    if (!body.proposed_action || typeof body.proposed_action !== 'object') {
+      throw new Error("kind 'confirm' requires a 'proposed_action' object");
+    }
+    actions = [{ type: 'confirm', proposed_action: body.proposed_action, risk_category: String(body.risk_category || '') }];
+    await recordStep(thought, actions, null);
+  } else if (kind === 'approval_event') {
+    // Host-internal observation (not an agent action): the watchdog verdict after a confirm. Empty
+    // actions + an `event` payload; convert excludes it as an SFT target and threads it into history.
+    await recordStep('', [], null, body.event || {});
+    return { ok: true, step: state.task.steps.length, url: state.page.url(), snapshot: '(verdict recorded)' };
   } else {
     throw new Error(`unknown action kind '${kind}'`);
   }
@@ -577,10 +611,15 @@ async function handleSession(body) {
   await ensureBrowser();
   if (state.context) await state.context.close().catch(() => {});
 
-  state.context = await state.browser.newContext({
-    viewport: VIEWPORT,
-    deviceScaleFactor: 1,
-  });
+  const contextOpts = { viewport: VIEWPORT, deviceScaleFactor: 1 };
+  // pre_session auth mode: inject a saved (burner) storage_state so the agent starts logged in.
+  if (body.auth_config && body.auth_config.storage_state) {
+    contextOpts.storageState = body.auth_config.storage_state;
+  }
+  state.context = await state.browser.newContext(contextOpts);
+  // Session-scoped burner credentials for masked typing (resolveSecrets); held in memory only,
+  // never written to a trajectory. Reset every session.
+  state.secrets = body.secrets || {};
   // Follow popups/new tabs, and auto-accept JS dialogs on every page (they block otherwise).
   state.context.on('page', (p) => {
     state.page = p;

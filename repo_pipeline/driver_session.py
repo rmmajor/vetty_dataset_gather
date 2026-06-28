@@ -157,11 +157,29 @@ class DriverClient:
     def status(self) -> dict:
         return self.sandbox.http_json("GET", f"{self.base}/status", timeout=30)
 
-    def session(self, task_id: str, start_url: str, instruction: str = "", task_meta: dict | None = None) -> dict:
-        return self._post("/session", {
+    def session(
+        self,
+        task_id: str,
+        start_url: str,
+        instruction: str = "",
+        task_meta: dict | None = None,
+        auth_config: dict | None = None,
+        secrets: dict | None = None,
+    ) -> dict:
+        # `auth_config` carries the pre_session `storage_state` (cookies) the driver injects at
+        # context creation; `secrets` is the session-scoped credential map the driver uses to
+        # substitute `<secret:NAME>` placeholders at type time (never recorded). Both are set once
+        # here rather than per /act, to keep the secret-transport surface minimal. Travels
+        # base64-encoded via http_json (not plaintext on any command line, not logged).
+        body = {
             "task_id": task_id, "start_url": start_url,
             "instruction": instruction, "task_meta": task_meta or {},
-        })
+        }
+        if auth_config:
+            body["auth_config"] = auth_config
+        if secrets:
+            body["secrets"] = secrets
+        return self._post("/session", body)
 
     def act(self, payload: dict) -> dict:
         return self._post("/act", payload)

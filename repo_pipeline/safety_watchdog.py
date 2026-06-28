@@ -59,13 +59,15 @@ Answer in JSON only (no fence, no prose):
 {{"decision": "approve"|"deny", "rationale": "<one sentence>"}}"""
 
 
-def _image_user_stream(text: str, screenshot_path: Path | None):
+def _image_user_stream(text: str, screenshot_b64: str | None, media_type: str, screenshot_path: Path | None):
     content = [{"type": "text", "text": text}]
-    if screenshot_path and Path(screenshot_path).exists():
+    b64 = screenshot_b64
+    mt = media_type
+    if b64 is None and screenshot_path and Path(screenshot_path).exists():
         b64 = base64.b64encode(Path(screenshot_path).read_bytes()).decode()
-        content.append(
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}}
-        )
+        mt = "image/png"
+    if b64:
+        content.append({"type": "image", "source": {"type": "base64", "media_type": mt, "data": b64}})
 
     async def stream():
         yield {
@@ -106,9 +108,11 @@ class ApprovalPolicy:
         self,
         *,
         goal: str,
-        screenshot_path: Path | None,
         proposed_action: dict,
         risk_category: str,
+        screenshot_b64: str | None = None,
+        media_type: str = "image/png",
+        screenshot_path: Path | None = None,
         autonomy: str = "guarded",
         auth_mode: str = "none",
         env: str = "live",
@@ -126,9 +130,11 @@ class LLMApprovalPolicy(ApprovalPolicy):
         self,
         *,
         goal: str,
-        screenshot_path: Path | None,
         proposed_action: dict,
         risk_category: str,
+        screenshot_b64: str | None = None,
+        media_type: str = "image/png",
+        screenshot_path: Path | None = None,
         autonomy: str = "guarded",
         auth_mode: str = "none",
         env: str = "live",
@@ -152,7 +158,7 @@ class LLMApprovalPolicy(ApprovalPolicy):
         )
         try:
             result_text = await run_agent(
-                _image_user_stream(prompt, screenshot_path),
+                _image_user_stream(prompt, screenshot_b64, media_type, screenshot_path),
                 ClaudeAgentOptions(
                     model=MODEL_FOR_SAFETY_JUDGE,
                     max_turns=1,
@@ -183,19 +189,7 @@ class StaticRuleApprovalPolicy(ApprovalPolicy):
 
     SAFE_ON_LIVE = {"account_create", "signup", "registration", "consent", "cookie_consent"}
 
-    async def get_approval(
-        self,
-        *,
-        goal: str,
-        screenshot_path: Path | None,
-        proposed_action: dict,
-        risk_category: str,
-        autonomy: str = "guarded",
-        auth_mode: str = "none",
-        env: str = "live",
-        registry=None,
-        full_name: str = "",
-    ) -> dict:
+    async def get_approval(self, *, risk_category: str, env: str = "live", **kwargs) -> dict:
         risk = (risk_category or "").strip().lower()
         if env == "test" or risk in self.SAFE_ON_LIVE:
             return {"decision": "approve", "risk_category": risk, "rationale": "static rule: safe class"}
