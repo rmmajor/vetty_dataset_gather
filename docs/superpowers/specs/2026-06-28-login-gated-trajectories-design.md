@@ -125,16 +125,20 @@ A pluggable approval authority — the LLM implementation of an out-of-model saf
 `confirm`, it sees `{goal, screenshot, proposed_action, risk_category, autonomy, auth_mode, env}`
 and returns `{decision: approve|deny, rationale, risk_category}`:
 
-- **approve** — only genuinely harmless actions (free registration with no card, reversible
-  actions, anything in a controlled test env). → record the verdict event, execute the real
-  action, capture the outcome.
-- **deny** — payment / credit-card / real send / publish-on-live / irreversible-on-live. →
-  record the verdict event, **terminate**; never execute.
+- **approve** — genuinely harmless actions: free registration (no card), reversible actions,
+  **publish via a reversible round-trip (post → delete)** — acceptable because capture runs only
+  on burner accounts (§8), so brief exposure is on a disposable identity that is immediately
+  cleaned up — and anything in a controlled test env. → record the verdict event, execute the
+  real action, capture the outcome (and, for round-trips, the cleanup).
+- **deny** — payment / credit-card / real money movement / sending to real recipients /
+  irreversible-or-non-undoable actions on live. → record the verdict event, **terminate**; never
+  execute.
 
 `ApprovalPolicy` is an interface; the LLM watchdog is the default implementation, with
 static-rule and human-in-the-loop implementations as drop-ins (per "generalize, don't
-special-case"). Configured in `llm_config.py` as `MODEL_FOR_SAFETY_JUDGE`. The same watchdog is
-reusable as the deployment-time safety service — it is not a data-generation-only trick.
+special-case"). Configured in `llm_config.py` as `MODEL_FOR_SAFETY_JUDGE` = `claude-sonnet-4-6`
+(consistent with the rest of the pipeline). The same watchdog is reusable as the deployment-time
+safety service — it is not a data-generation-only trick.
 
 ### 4.4 The approval event
 
@@ -229,11 +233,17 @@ behavior.**
 
 ## 8. Safety, secrets, reproducibility
 
-- **Secrets:** burner accounts only; secret store + `storage_state` files gitignored;
-  placeholders in all recorded text; a convert-time scan asserts no literal secret leaked
-  (fail-closed).
-- **Operational:** dedicated browser profile, no real PII, blocked categories (banking /
-  financial) refused outright — matching every production CUA.
+- **Burner accounts only — hard invariant.** The dataset is *never* gathered with the operator's
+  real/personal accounts. Capture runs in a dedicated, isolated browser profile with **no access
+  to the operator's real sessions** — we never import a personal browser profile or real cookies.
+  The secret store and every injected `storage_state` contain *only* purpose-created
+  burner-account credentials, tracked in a burner registry; capture **refuses to run against any
+  session/credential not registered as a burner** (fail-closed). This invariant is what makes the
+  publish round-trips of §4.3 acceptable.
+- **Secrets:** secret store + `storage_state` files gitignored; placeholders in all recorded
+  text; a convert-time scan asserts no literal secret leaked (fail-closed).
+- **Operational:** no real PII, blocked categories (banking / financial) refused outright —
+  matching every production CUA.
 - **Reproducibility:** the guarded lane never mutates real account state (confirm-terminal on
   irreversible); the autonomous lane is reset-able. Both are offline-stable for SFT.
 - **ToS:** the accepted cost of the "live sites" choice; mitigated by burner accounts, low rate,
@@ -256,10 +266,39 @@ behavior.**
 **Pilot scope:** shared core + ~5 guarded live sites from the 140 auth-tagged (safe categories:
 free signup, reversible actions) + ~2 autonomous test-env apps, before scaling.
 
-## 10. Open questions / future work
+## 10. Future phases (post-harvest)
 
-- The eval/deploy harness that *runs* the trained agent live by replaying the manifest (enabled
-  by §4.5, out of scope here).
-- Watchdog model choice / cost tuning (`MODEL_FOR_SAFETY_JUDGE`) and its risk taxonomy defaults.
-- Whether `publish`-class actions on live sites are ever approvable via reversible round-trips
-  (post→delete) or always denied.
+Deliberately deferred until login trajectories have been harvested. This is a rough outline to
+resume from, **not** a finished design — a detailed spec will follow.
+
+### Phase 2 — Evaluation / deployment harness
+
+**Purpose.** Take the trained model and *run it live* against a target, replaying a trajectory's
+precondition manifest (§4.5), to measure real task success — and, later, to deploy.
+
+**Inputs.** A trained checkpoint; a task + its precondition manifest (`auth_mode`, `session_ref`,
+`seed_state`, `start_url`, `env`).
+
+**Sketch.**
+1. *Reconstruct preconditions* — load the burner `storage_state` (`pre_session`) or be ready to
+   service a `handoff_login`; navigate to `start_url`; apply any `seed_state`.
+2. *Rollout loop* — screenshot → model predicts `<think>` + action → execute via the **same
+   driver** → repeat. The **watchdog** runs as the live safety service, gating sensitive actions
+   exactly as at capture (confirm → approve/deny).
+3. *Scoring* — a verifier (reuse the `verify_trajectory` judge) checks goal achievement: guarded
+   success = correctly reached confirm/handoff at the right step; autonomous success = task
+   completed.
+
+**Reuses everything from Phase 1** — driver, watchdog, verifier, manifest — so the marginal cost
+is the rollout loop + scoring, not new infrastructure.
+
+**Candidate metrics.** task success rate; confirm-precision (paused at the right steps?);
+handoff-recall (handed off at login walls?); over-/under-confirmation rate.
+
+This closes the loop from *trainable* → *deployable*. Out of scope for the current spec.
+
+### Resolved during review (folded into the spec above)
+
+- Watchdog model + cost: `MODEL_FOR_SAFETY_JUDGE` = `claude-sonnet-4-6` (§4.3).
+- `publish`-class actions: **approvable** via reversible round-trip on burner accounts (§4.3,
+  §8) — not always-denied.
