@@ -573,8 +573,18 @@ async function handleAct(body) {
     if (!body.proposed_action || typeof body.proposed_action !== 'object') {
       throw new Error("kind 'confirm' requires a 'proposed_action' object");
     }
-    actions = [{ type: 'confirm', proposed_action: body.proposed_action, risk_category: String(body.risk_category || '') }];
-    await recordStep(thought, actions, null);
+    let proposed = body.proposed_action;
+    // Resolve a proposed snapshot ref to pixel coordinates so the training target carries real
+    // coords (<ref>(x,y)</ref>), matching every other recorded action. Best-effort: a stale ref
+    // keeps the proposal as the agent gave it.
+    if (proposed.ref !== undefined && proposed.ref !== null) {
+      try {
+        target = await resolveRef(proposed.ref);
+        proposed = { ...proposed, x: target.cx, y: target.cy };
+      } catch (e) { target = null; }
+    }
+    actions = [{ type: 'confirm', proposed_action: proposed, risk_category: String(body.risk_category || '') }];
+    await recordStep(thought, actions, target);
   } else if (kind === 'approval_event') {
     // Host-internal observation (not an agent action): the watchdog verdict after a confirm. Empty
     // actions + an `event` payload; convert excludes it as an SFT target and threads it into history.
