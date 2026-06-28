@@ -27,3 +27,10 @@ MODEL_FOR_CLASSIFICATION = "claude-sonnet-4-6"
 """Single-label categorization (task-type tagging). Tight output schema, low-token in
 and out. Kept on Sonnet for consistency with the rest of the pipeline; if cost becomes
 a concern, this is the safest constant to drop to a smaller model."""
+
+MODEL_FOR_SAFETY_JUDGE = "claude-sonnet-4-6"
+"""The watchdog / approval authority that judges a proposed sensitive action before it is
+executed at a `confirm` step (login-gated capture). Sees the goal, the screenshot, the
+proposed action, its risk category, and the autonomy/auth/env context, and returns
+approve|deny with a rationale. Used at capture time and reusable as the deployment-time
+safety service. Kept on Sonnet for consistency."""

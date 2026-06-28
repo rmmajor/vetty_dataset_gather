@@ -234,6 +234,12 @@ class TrajectoryStep(BaseModel):
     bbox: Optional[dict] = None
     role: Optional[str] = None
     name: Optional[str] = None
+    # Watchdog verdict recorded after a `confirm` step (login-gated capture). An observation,
+    # not an action the student emits: a step carrying `event` has empty `actions`, is excluded
+    # from SFT targets, and is threaded into the next steps' action_history so the student learns
+    # to execute only after approval. Shape: {kind:"approval", decision:"approve"|"deny",
+    # rationale:str, by:"watchdog"}.
+    event: Optional[dict] = None
 
 
 class Trajectory(BaseModel):
@@ -272,6 +278,15 @@ class TrajectoryMetadata(BaseModel):
     thought_source: str = ""
     dedup_hash: str = ""
     task_type: str = ""
+    # Login-gated lane (additive; absent on every pre-existing trajectory). `autonomy` is the
+    # learned-behavior policy the trajectory was captured under; `auth_mode` how the session was
+    # provisioned; `risk_category` the terminal risk class (if any); `preconditions` the replay
+    # manifest an eval/deploy harness reads to reconstruct the conditions (the SFT converter
+    # ignores it). See docs/superpowers/specs/2026-06-28-login-gated-trajectories-design.md.
+    autonomy: str = "autonomous"          # "guarded" | "autonomous"
+    auth_mode: str = "none"               # "pre_session" | "handoff_login" | "none"
+    risk_category: str = ""
+    preconditions: dict = Field(default_factory=dict)
 
 
 class StepCaptureMeta(BaseModel):
