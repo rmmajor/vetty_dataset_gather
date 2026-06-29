@@ -21,7 +21,7 @@ class RemoteTrainConfig:
     min_vram_gb: int = 48
     num_gpus: int = 1
     max_price_per_hour: float = 2.0
-    min_reliability: float = 0.98
+    min_reliability: float = 0.90
     exclude_countries: tuple = DEFAULT_EXCLUDE_COUNTRIES
 
     instance_label: str = "roman.maior"

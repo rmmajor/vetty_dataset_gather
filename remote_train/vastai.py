@@ -6,11 +6,14 @@ logging, like `repo_pipeline/bootable_gate.py:probe_repo` and `train_qwen.py:tra
 File transfer and command execution go over the instance's `ssh_host:ssh_port` using the
 private key in `cfg.ssh_key_path` (its public half must be attached to the Vast.ai account).
 
-The exact `vastai` flag names and JSON field names are assumptions isolated to this module
-and read tolerantly (`.get` with fallbacks); validate them against the installed CLI with
-`make remote-train-dry` before a real run — the same "documented assumption behind a flag"
-posture as eval_screenspot.py's SwiftPredictor. Notably `gpu_ram` in the search DSL is GB
-but the raw offer field is MB; `_offer_from_raw` normalizes both.
+Schema validated against `vastai` CLI 1.1.3 (2026-06): search-DSL `gpu_ram`/`disk_space`
+are GB while the raw offer `gpu_ram` field is MB (`_offer_from_raw` normalizes by /1024);
+`geolocation` is `"Country, CC"` (the trailing code is the country); reliability lives in
+`reliability2`; `verified` is often `None` even on good hosts, so the query gates on
+`reliability` + `disk_space` rather than `verified=true`. The disk gate matters: large
+models (e.g. 27B ≈ 54GB of weights) won't fit hosts with tiny `disk_space`. Field reads
+stay tolerant (`.get` with fallbacks); re-confirm with `make remote-train-dry` if the CLI
+version changes.
 """
 import json
 import logging
@@ -46,7 +49,7 @@ class VastAIProvider(ComputeProvider):
         query = (
             f"reliability > {cfg.min_reliability} num_gpus={cfg.num_gpus} "
             f"gpu_ram >= {cfg.min_vram_gb} dph_total <= {cfg.max_price_per_hour} "
-            f"rentable=true verified=true"
+            f"disk_space >= {cfg.disk_gb} rentable=true"
         )
         if cfg.gpu_name:
             query += f" gpu_name={cfg.gpu_name}"

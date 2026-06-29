@@ -30,6 +30,7 @@ def _cli_overrides(args) -> dict:
         "provider": getattr(args, "provider", None),
         "gpu_name": getattr(args, "gpu", None),
         "min_vram_gb": getattr(args, "min_vram", None),
+        "disk_gb": getattr(args, "disk", None),
         "max_price_per_hour": getattr(args, "max_price", None),
         "max_runtime_hours": getattr(args, "max_hours", None),
         "run_eval": True if getattr(args, "eval", False) else None,
@@ -70,6 +71,7 @@ def _add_common(p) -> None:
     p.add_argument("--provider", default=None, choices=sorted(PROVIDERS), help="Compute provider")
     p.add_argument("--gpu", default=None, help="GPU name substring filter (e.g. A100)")
     p.add_argument("--min-vram", type=int, default=None, help="Minimum GPU VRAM in GB")
+    p.add_argument("--disk", type=int, default=None, help="Minimum/requested disk in GB (must hold model weights)")
     p.add_argument("--max-price", type=float, default=None, help="Max $/hr cap")
     p.add_argument("--max-hours", type=float, default=None, help="Max wall-clock hours (teardown watchdog)")
     p.add_argument("--verbose", action="store_true", help="Debug logging")
