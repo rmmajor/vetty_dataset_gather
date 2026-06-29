@@ -19,13 +19,12 @@ GITHUB_EPOCH = date(2008, 1, 1)
 DEFAULT_STAR_FLOOR = 5
 
 SEARCH_QUERIES = [
-    # ---- Broad supersets ----
-    # These intentionally omit narrowing terms/star filters: the windowing engine
-    # partitions them (stars buckets + created-date splits) to capture EVERY >=5-star
-    # repo per language. They're the real yield; the narrower queries below mostly dedupe.
-    "playwright language:TypeScript",
-    "playwright language:JavaScript",
-    "playwright language:Python",
+    # ---- Broad supersets: REMOVED 2026-06-15 ----
+    # `playwright language:{TS,JS,Python}` windowed to EVERY >=5-star playwright repo — the flood
+    # that buried the funnel in un-bootable test suites (agent mode wants bootable APPS, not repos
+    # that merely contain a test). The stage-2 bootable-app gate would reject most of them anyway,
+    # but not discovering them at all saves the discovery API budget + DB bloat + gate probes.
+    # The named-app / topic / bootable-app queries below are the agent-mode yield.
 
     # ---- Real product test suites (large projects using Playwright for CI) ----
     "playwright e2e test language:TypeScript stars:>500",
@@ -179,6 +178,29 @@ SEARCH_QUERIES = [
     "playwright e2e open source app stars:>100",
     "playwright integration test SaaS",
     '"npx playwright test" filename:.github/workflows',
+
+    # ---- Bootable web apps, TEST-INDEPENDENT ----
+    # Agent capture made the funnel test-agnostic everywhere downstream of here: the boot
+    # gate boots apps (no instrumentation), the proposer grounds in README + live homepage,
+    # the teacher never runs a test. Requiring a test framework at discovery was a vestige
+    # that excluded most of the bootable-app universe. These queries admit app-shaped repos
+    # directly; stage 3's bootable-interactive-app rubric does the judging.
+    "topic:self-hosted topic:webapp",
+    "topic:self-hosted language:TypeScript stars:>30",
+    "topic:self-hosted language:JavaScript stars:>30",
+    "topic:selfhosted web stars:>20",
+    "topic:webapp topic:docker stars:>20",
+    "topic:kanban stars:>20",
+    "topic:dashboard topic:react stars:>30",
+    "topic:admin-dashboard stars:>50",
+    "topic:project-management language:TypeScript stars:>30",
+    "topic:inventory-management web stars:>10",
+    "topic:crm language:TypeScript stars:>30",
+    "topic:notes-app stars:>20",
+    "topic:todo topic:fullstack stars:>20",
+    "web app docker-compose dev language:TypeScript stars:50..500",
+    "dashboard app language:TypeScript stars:30..300 in:description",
+    '"npm run dev" filename:docker-compose.yml stars:>20',
 ]
 
 # Selenium is a second trajectory source. The query set mirrors the Playwright one
@@ -187,12 +209,9 @@ SEARCH_QUERIES = [
 # non-Python Selenium repos would just be rejected at stage 4. Framework detection
 # (Playwright vs Selenium) happens later in stage 4.
 SELENIUM_SEARCH_QUERIES = [
-    # ---- Broad supersets ----
-    # Windowing partitions these to capture every >=5-star Python Selenium repo;
-    # the narrower queries below then mostly dedupe.
-    "selenium language:Python",
-    "selenium webdriver language:Python",
-    "pytest selenium language:Python",
+    # ---- Broad supersets: REMOVED 2026-06-15 (same flood reason as the Playwright supersets) ----
+    # `selenium language:Python` windowed to every >=5-star Python Selenium repo — almost all pure
+    # test suites, which agent mode (Node-app boot) rejects. The named/topic queries below remain.
 
     # ---- Real product test suites (Python star tiers) ----
     "selenium e2e test language:Python stars:>500",

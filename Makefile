@@ -1,5 +1,5 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
-       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-status \
+       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
        install-eval eval-screenspot test-eval
 
 # Configurable variables
@@ -17,6 +17,7 @@ BATCH_SIZE    ?=
 PIPELINE_BUDGET ?= 30
 PIPELINE_WORKERS ?= 5
 PIPELINE_LIMIT ?=
+PIPELINE_LIMIT_PCT ?= 100
 EVAL_MODELS      ?= eval_models.yaml
 EVAL_DATASET     ?= os-copilot/ScreenSpot-v2
 EVAL_SPLIT       ?= test
@@ -57,11 +58,13 @@ record: $(TASKS_FILE) ## Record trajectories via GPT-5.4 CUA
 		--viewport $(VIEWPORT) \
 		--resume
 
-convert: ## Convert trajectories to ms-swift SFT format
+convert: ## Convert trajectories to ms-swift SFT format (clean cut: drops meandering trajectories + waste-click steps)
 	python train_qwen.py convert \
 		--input $(TRAJ_DIR)/ \
 		--output $(TRAIN_DIR)/ \
-		--val-split $(VAL_SPLIT)
+		--val-split $(VAL_SPLIT) \
+		--exclude-waste-steps \
+		--exclude-meandering
 
 train: $(TRAIN_DIR)/sft_dataset.jsonl ## Launch ms-swift LoRA fine-tuning
 	python train_qwen.py train \
@@ -99,6 +102,15 @@ build-sandbox-selenium: ## Build Selenium sandbox image (linux/amd64; needed for
 test-sandbox: build-sandbox ## Test sandbox container lifecycle
 	python -m repo_pipeline.sandbox --test
 
+test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
+	python -m repo_pipeline.driver_smoke
+
+audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on defects)
+	python -m repo_pipeline.corpus_audit trajectories/
+
+capture-public: ## Teacher capture on curated public sites (real-web diversity lane)
+	python -m repo_pipeline.public_capture $(if $(PUBLIC_SITES),--sites $(PUBLIC_SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
+
 pipeline-discover: ## Stage 1: Discover QA repos on GitHub
 	@test -n "$$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN not set" && exit 1)
 	python -m repo_pipeline.orchestrator --stage 1
@@ -112,8 +124,20 @@ pipeline-score: ## Stage 3: Shallow score repos with Claude
 		--budget $(PIPELINE_BUDGET) \
 		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
 
-pipeline-overnight: ## Run stages 3-6 overnight with Telegram notification
+pipeline-overnight: ## Run stages 3-7 overnight with Telegram notification
 	python -m repo_pipeline.orchestrator --overnight \
+		--workers $(PIPELINE_WORKERS) \
+		--budget $(PIPELINE_BUDGET) \
+		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
+
+pipeline-until-limit: ## Loop stages 3-7 until Claude usage hits PIPELINE_LIMIT_PCT% (default 100)
+	python -m repo_pipeline.orchestrator --until-limit $(PIPELINE_LIMIT_PCT) \
+		--workers $(PIPELINE_WORKERS) \
+		--budget $(PIPELINE_BUDGET) \
+		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
+
+pipeline-think: ## Stage 7: fill <think> blocks for captured repos (decoupled from capture)
+	python -m repo_pipeline.orchestrator --stage 7 \
 		--workers $(PIPELINE_WORKERS) \
 		--budget $(PIPELINE_BUDGET) \
 		$(if $(PIPELINE_LIMIT),--limit $(PIPELINE_LIMIT))
@@ -142,3 +166,7 @@ eval-screenspot: ## Eval grounding for all models in EVAL_MODELS (before/after S
 
 test-eval: ## Smoke-test the eval harness (no model/GPU/network)
 	python eval_screenspot.py run --smoke-test
+# ---------- Dashboard ----------
+
+dashboard: ## Launch trajectory SFT-readiness dashboard (Streamlit, localhost:8501)
+	streamlit run repo_pipeline/dashboard/app.py

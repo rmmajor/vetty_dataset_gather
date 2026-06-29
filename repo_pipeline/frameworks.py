@@ -20,28 +20,19 @@ SANDBOX_IMAGE = "repo-pipeline-sandbox:latest"
 SANDBOX_IMAGE_SELENIUM = "repo-pipeline-sandbox-selenium:latest"
 
 # Shared pytest invocation: Selenium-Python and Playwright-Python both run under pytest,
-# so they share the same command shape. {repo_name}/{test_name_prefix} are filled by the
-# stage; <test_file> is a placeholder the agent substitutes for the chosen file.
-_PYTEST_SINGLE = (
+# so they share the same command shape. {repo_name}/{test_name_prefix}/{framework}/
+# {framework_language} are filled by the stage; <test_file> is a placeholder the agent
+# substitutes for the chosen file. FRAMEWORK/FRAMEWORK_LANGUAGE let the in-sandbox recorder
+# self-describe the capture_meta.json it writes.
+_ENV_PREFIX = (
     'cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" '
-    'TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a python3 -m pytest <test_file> '
-    "-v --timeout=60 2>&1 | head -100"
+    'TEST_NAME_PREFIX="{test_name_prefix}" FRAMEWORK="{framework}" '
+    'FRAMEWORK_LANGUAGE="{framework_language}" '
 )
-_PYTEST_SUITE = (
-    'cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" '
-    'TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a python3 -m pytest --timeout=120 '
-    "-v 2>&1 | tail -50"
-)
-_PW_TS_SINGLE = (
-    'cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" '
-    'TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a npx playwright test <test_file> '
-    "--reporter=list 2>&1 | head -100"
-)
-_PW_TS_SUITE = (
-    'cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" '
-    'TEST_NAME_PREFIX="{test_name_prefix}" xvfb-run -a npx playwright test '
-    "--reporter=list 2>&1 | tail -50"
-)
+_PYTEST_SINGLE = _ENV_PREFIX + "xvfb-run -a python3 -m pytest <test_file> -v --timeout=60 2>&1 | head -100"
+_PYTEST_SUITE = _ENV_PREFIX + "xvfb-run -a python3 -m pytest --timeout=120 -v 2>&1 | tail -50"
+_PW_TS_SINGLE = _ENV_PREFIX + "xvfb-run -a npx playwright test <test_file> --reporter=list 2>&1 | head -100"
+_PW_TS_SUITE = _ENV_PREFIX + "xvfb-run -a npx playwright test --reporter=list 2>&1 | tail -50"
 
 
 @dataclass(frozen=True)
@@ -148,6 +139,31 @@ def resolve_profile(test_framework: str | None, framework_language: str | None) 
     if lang == "python":
         return PROFILES["playwright-python"]
     return _DEFAULT_PROFILE
+
+
+# (framework, language) pairs we have a working capture hook for. The playwright-ts profile
+# also handles JavaScript (its test_globs match *.spec.js / *.test.js and the fixture re-export
+# works for JS), so javascript is listed even though the profile's primary `language` is
+# typescript. Extend this when adding a framework/language (alongside its profile + hook).
+SUPPORTED_COMBOS = frozenset({
+    ("playwright", "python"),
+    ("playwright", "typescript"),
+    ("playwright", "javascript"),
+    ("selenium", "python"),
+})
+
+
+def is_supported_profile(test_framework: str | None, framework_language: str | None) -> bool:
+    """True iff the (framework, language) pair has a real capture hook.
+
+    Unlike `resolve_profile` (which silently falls back to playwright-ts for unknown inputs),
+    this returns False for unsupported combinations — e.g. Java Playwright or non-Python
+    Selenium — so stage 4 can reject them up front instead of burning a sandbox on a run that
+    has no instrumentation hook and is guaranteed to produce no capture.
+    """
+    fw = (test_framework or "").strip().lower()
+    lang = (framework_language or "").strip().lower()
+    return (fw, lang) in SUPPORTED_COMBOS
 
 
 def all_interactive_actions() -> set[str]:

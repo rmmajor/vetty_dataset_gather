@@ -106,15 +106,19 @@ Or use the CLI directly:
     python -m repo_pipeline.orchestrator --stage 2
     python -m repo_pipeline.orchestrator --stage 3-6 --limit 10 --budget 5
     python -m repo_pipeline.orchestrator --overnight --budget 30 --workers 5
+    python -m repo_pipeline.orchestrator --until-limit 75 --budget 30
     python -m repo_pipeline.orchestrator --status
 
 CLI options:
 - `--stage N` or `--stage N-M` — run specific stage(s)
-- `--overnight` — run stages 3–6, send Telegram report when done
+- `--overnight` — run stages 3–6 once, send Telegram report when done
+- `--until-limit [PCT]` — loop stages 3–6 until Claude subscription usage hits PCT% of the limit (bare flag = 100). Keeps draining the funnel across passes until the threshold, the `--budget`, or no pending repos remain — whichever comes first. Reads the SDK's `RateLimitEvent.utilization`; if no usage events are observed (possible under headless OAuth), it degrades to "until a hard 429 / funnel drained".
 - `--status` — print registry stats
 - `--limit N` — max repos per stage
 - `--workers N` — parallel workers for LLM stages (default: 5)
 - `--budget N` — max USD for the run (default: 50)
+
+Rate-limit safety (all modes): a hard 429 from Claude stops the run cleanly and leaves the affected repo in its input status (it is **not** rejected), so the next run resumes it.
 
 ### Cron Setup
 

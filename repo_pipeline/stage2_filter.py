@@ -1,22 +1,59 @@
+import concurrent.futures
 import hashlib
 import logging
+import os
 
+from repo_pipeline.bootable_gate import ProbeError, gate_repo, is_hard_reject
 from repo_pipeline.registry import RepoRegistry
-from repo_pipeline.schemas import RepoStatus
+from repo_pipeline.schemas import FailureCategory, RepoStatus
 
 logger = logging.getLogger(__name__)
 
 MAX_SIZE_KB = 500_000
 
+# No-LLM bootable-app gate: reject test-suite / non-app repos before any LLM stage. On by default;
+# set BOOTABLE_GATE=0 to fall back to the old metadata-only filter. Probes are network I/O, run in
+# a small thread pool. A probe error never rejects (infra) — the repo stays `discovered` to retry.
+# Conservative by default: only HARD rejects (clearly non-app / test-suite) drop here; ambiguous
+# "no framework" repos pass to the LLM. BOOTABLE_GATE_AGGRESSIVE=1 rejects those too.
+BOOTABLE_GATE = os.environ.get("BOOTABLE_GATE", "1") != "0"
+BOOTABLE_GATE_AGGRESSIVE = os.environ.get("BOOTABLE_GATE_AGGRESSIVE", "0") == "1"
+BOOTABLE_GATE_WORKERS = int(os.environ.get("BOOTABLE_GATE_WORKERS", "8"))
 
-def check_filter(repo: dict) -> tuple[bool, str]:
+
+def run_bootable_gate(registry: RepoRegistry, repos: list[dict]) -> tuple[list[dict], int, int]:
+    """Probe each repo (no LLM) and split into kept vs rejected. Returns
+    (kept, n_rejected, n_probe_errors). A soft reject is kept (passed to the LLM) unless aggressive;
+    probe errors are left at their input status (retryable)."""
+    def probe(repo):
+        try:
+            accept, reason = gate_repo(repo["full_name"])
+            return repo, accept, reason
+        except ProbeError as e:
+            return repo, None, str(e)[:160]
+
+    kept, rejected, errors = [], 0, 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=BOOTABLE_GATE_WORKERS) as ex:
+        for repo, accept, reason in ex.map(probe, repos):
+            if accept is None:
+                errors += 1  # probe error: leave at input status, retry next run
+            elif accept or not (is_hard_reject(reason) or BOOTABLE_GATE_AGGRESSIVE):
+                kept.append(repo)  # bootable, or a soft reject we defer to the LLM
+            else:
+                registry.reject(repo["full_name"], stage=2, reason=f"not a bootable app: {reason}",
+                                category=FailureCategory.NOT_BOOTABLE)
+                rejected += 1
+    return kept, rejected, errors
+
+
+def check_filter(repo: dict) -> tuple[bool, str, FailureCategory | None]:
     if repo.get("size_kb", 0) == 0:
-        return False, "empty repo"
+        return False, "empty repo", FailureCategory.EMPTY_REPO
 
     if repo.get("size_kb", 0) > MAX_SIZE_KB:
-        return False, "too large (>500MB, likely monorepo)"
+        return False, "too large (>500MB, likely monorepo)", FailureCategory.TOO_LARGE
 
-    return True, ""
+    return True, "", None
 
 
 def deduplicate_forks(registry: RepoRegistry, repos: list[dict]) -> tuple[list[dict], int]:
@@ -30,7 +67,7 @@ def deduplicate_forks(registry: RepoRegistry, repos: list[dict]) -> tuple[list[d
 
         parent_name = repo.get("parent_repo")
         if parent_name and registry.has_repo(parent_name):
-            registry.reject(repo["full_name"], stage=2, reason=f"fork of {parent_name} (parent already in registry)")
+            registry.reject(repo["full_name"], stage=2, reason=f"fork of {parent_name} (parent already in registry)", category=FailureCategory.DEDUP)
             deduped += 1
             continue
 
@@ -66,7 +103,7 @@ def deduplicate_clones(registry: RepoRegistry, repos: list[dict]) -> tuple[list[
     deduped = 0
     for repo in repos:
         if repo["full_name"] in duplicates_to_reject:
-            registry.reject(repo["full_name"], stage=2, reason="duplicate description (likely clone)")
+            registry.reject(repo["full_name"], stage=2, reason="duplicate description (likely clone)", category=FailureCategory.DEDUP)
             deduped += 1
         else:
             kept.append(repo)
@@ -83,11 +120,11 @@ def run_filter(registry: RepoRegistry, limit: int = None):
 
     basic_passed = []
     for repo in repos:
-        passes, reason = check_filter(repo)
+        passes, reason, category = check_filter(repo)
         if passes:
             basic_passed.append(repo)
         else:
-            registry.reject(repo["full_name"], stage=2, reason=reason)
+            registry.reject(repo["full_name"], stage=2, reason=reason, category=category)
             rejected += 1
 
     logger.info(f"Basic filter: {len(basic_passed)} passed, {rejected} rejected")
@@ -98,7 +135,15 @@ def run_filter(registry: RepoRegistry, limit: int = None):
     after_clone_dedup, clone_deduped = deduplicate_clones(registry, after_fork_dedup)
     logger.info(f"Clone dedup: removed {clone_deduped} repos with identical descriptions")
 
-    for repo in after_clone_dedup:
+    gate_rejected = gate_errors = 0
+    if BOOTABLE_GATE:
+        survivors, gate_rejected, gate_errors = run_bootable_gate(registry, after_clone_dedup)
+        logger.info(f"Bootable-app gate: {len(survivors)} bootable, {gate_rejected} not-bootable "
+                    f"rejected (no LLM), {gate_errors} probe errors left for retry")
+    else:
+        survivors = after_clone_dedup
+
+    for repo in survivors:
         registry.update_status(
             repo["full_name"],
             RepoStatus.FILTERED.value,
@@ -106,6 +151,7 @@ def run_filter(registry: RepoRegistry, limit: int = None):
         )
         passed += 1
 
-    rejected += fork_deduped + clone_deduped
+    rejected += fork_deduped + clone_deduped + gate_rejected
     logger.info(f"Filter complete: {passed} passed, {rejected} rejected total")
-    return {"passed": passed, "rejected": rejected, "fork_deduped": fork_deduped, "clone_deduped": clone_deduped}
+    return {"passed": passed, "rejected": rejected, "fork_deduped": fork_deduped,
+            "clone_deduped": clone_deduped, "gate_rejected": gate_rejected, "gate_errors": gate_errors}

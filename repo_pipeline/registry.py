@@ -5,9 +5,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from repo_pipeline.schemas import (
+    MAX_RETRIES,
+    RETRYABLE_CATEGORIES,
     STAGE_TO_INPUT_STATUS,
     STAGE_TO_PASSED_STATUS,
     STAGE_TO_REJECTED_STATUS,
+    FailureCategory,
     RepoStatus,
 )
 
@@ -33,6 +36,8 @@ CREATE TABLE IF NOT EXISTS repos (
     source_query    TEXT,
 
     filter_reason   TEXT,
+    failure_category TEXT,
+    retry_count     INTEGER DEFAULT 0,
 
     shallow_scores  TEXT,
     shallow_total   INTEGER,
@@ -52,6 +57,29 @@ CREATE TABLE IF NOT EXISTS repos (
 
 CREATE INDEX IF NOT EXISTS idx_repos_status ON repos(status);
 CREATE INDEX IF NOT EXISTS idx_repos_current_stage ON repos(current_stage);
+
+-- One row per Claude Agent SDK call, across every agent-driven stage. Lets the dashboard show
+-- turn / cost / token distributions per stage so max_turns and budgets can be tuned from data.
+CREATE TABLE IF NOT EXISTS agent_calls (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name     TEXT,
+    stage         INTEGER,
+    purpose       TEXT,
+    model         TEXT,
+    num_turns     INTEGER,
+    cost_usd      REAL,
+    input_tokens  INTEGER,
+    output_tokens INTEGER,
+    cache_read_tokens     INTEGER,
+    cache_creation_tokens INTEGER,
+    subtype       TEXT,
+    is_error      BOOLEAN,
+    duration_ms   INTEGER,
+    ts            TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_calls_stage ON agent_calls(stage);
+CREATE INDEX IF NOT EXISTS idx_agent_calls_full_name ON agent_calls(full_name);
 """
 
 
@@ -90,6 +118,19 @@ class RepoRegistry:
         if "domain" not in columns:
             self.conn.execute("ALTER TABLE repos ADD COLUMN domain TEXT")
             self._backfill_domain()
+        if "failure_category" not in columns:
+            self.conn.execute("ALTER TABLE repos ADD COLUMN failure_category TEXT")
+        if "retry_count" not in columns:
+            self.conn.execute("ALTER TABLE repos ADD COLUMN retry_count INTEGER DEFAULT 0")
+
+        call_columns = {
+            row[1]
+            for row in self.conn.execute("PRAGMA table_info(agent_calls)").fetchall()
+        }
+        if "cache_read_tokens" not in call_columns:
+            self.conn.execute("ALTER TABLE agent_calls ADD COLUMN cache_read_tokens INTEGER")
+        if "cache_creation_tokens" not in call_columns:
+            self.conn.execute("ALTER TABLE agent_calls ADD COLUMN cache_creation_tokens INTEGER")
 
     @staticmethod
     def _check_is_demo(source_query: str) -> bool:
@@ -182,6 +223,12 @@ class RepoRegistry:
 
         query = """SELECT *,
             CASE
+                WHEN source_query LIKE 'topic:self-hosted%' OR source_query LIKE 'topic:selfhosted%'
+                     OR source_query LIKE 'topic:kanban%' OR source_query LIKE 'topic:webapp%'
+                     OR source_query LIKE 'topic:dashboard%' OR source_query LIKE 'topic:admin-dashboard%'
+                     OR source_query LIKE 'topic:project-management%' OR source_query LIKE 'topic:crm%'
+                     OR source_query LIKE 'topic:inventory%' OR source_query LIKE 'topic:notes-app%'
+                     OR source_query LIKE 'topic:todo topic:fullstack%' THEN 1
                 WHEN source_query LIKE '%stars:>%' THEN 1
                 WHEN source_query LIKE '%stars:%' THEN 2
                 WHEN source_query LIKE 'playwright test %' AND source_query NOT LIKE '%demo%'
@@ -212,10 +259,17 @@ class RepoRegistry:
             params.append(language)
 
         if stage >= 4:
-            # Favor real products (higher production_complexity, stored inside the shallow_scores
-            # JSON) over generic practice repos, then by overall shallow score.
+            # Drain order: bootability first (deep_score, set in stage 4 — NULL→0 for stage 4's
+            # own input, where the richness term then dominates), then UI sophistication. The
+            # richness term double-weights ui_difficulty + interaction_richness so apps with
+            # drag-and-drop / editors / data grids reach agent capture before plain click+type
+            # apps — selection, not rejection: plain apps still drain, just later.
             query += (
-                " ORDER BY CAST(json_extract(shallow_scores, '$.production_complexity') AS INTEGER) DESC,"
+                " ORDER BY COALESCE(deep_score, 0) DESC,"
+                " (2 * COALESCE(CAST(json_extract(shallow_scores, '$.ui_difficulty') AS INTEGER), 0)"
+                "  + 2 * COALESCE(CAST(json_extract(shallow_scores, '$.interaction_richness') AS INTEGER), 0)"
+                "  + COALESCE(CAST(json_extract(shallow_scores, '$.production_complexity') AS INTEGER), 0)"
+                "  + COALESCE(CAST(json_extract(shallow_scores, '$.multi_page_flows') AS INTEGER), 0)) DESC,"
                 " COALESCE(shallow_total, 0) DESC, stars DESC"
             )
             if limit:
@@ -254,6 +308,8 @@ class RepoRegistry:
 
         field_map = {
             "filter_reason": "filter_reason",
+            "failure_category": "failure_category",
+            "retry_count": "retry_count",
             "shallow_scores": "shallow_scores",
             "shallow_total": "shallow_total",
             "deep_analysis": "deep_analysis",
@@ -277,16 +333,57 @@ class RepoRegistry:
         self.conn.execute(query, params)
         self.conn.commit()
 
-    def reject(self, full_name: str, stage: int, reason: str):
+    def reject(self, full_name: str, stage: int, reason: str, category=None, **extra_fields):
+        """Terminal rejection. ``category`` (a FailureCategory) records *why* it failed, distinct
+        from the stage-scoped status. ``**extra_fields`` (e.g. shallow_scores, deep_score,
+        trial_results, retry_count) are persisted so the scores behind a rejection are no longer
+        thrown away — the dashboard needs them to tune thresholds."""
         rejected_status = STAGE_TO_REJECTED_STATUS.get(stage)
         if rejected_status is None:
             raise ValueError(f"No rejection status for stage {stage}")
+        fields = dict(extra_fields)
+        fields["filter_reason"] = reason
+        if category is not None:
+            fields["failure_category"] = category.value if isinstance(category, FailureCategory) else category
+        self.update_status(full_name, rejected_status.value, stage, **fields)
+
+    def record_retry(self, full_name: str, stage: int, category, reason: str, attempt: int):
+        """Note a transient/infra failure that will be retried rather than rejected. Keeps the
+        repo at its stage-input status (so a re-run still selects it after a crash) and bumps
+        retry_count — does NOT move it to a rejected_* bucket."""
+        input_status = STAGE_TO_INPUT_STATUS.get(stage)
+        if input_status is None:
+            raise ValueError(f"No input status for stage {stage}")
+        cat = category.value if isinstance(category, FailureCategory) else category
         self.update_status(
             full_name,
-            rejected_status.value,
-            stage,
+            input_status.value,
+            stage - 1,
             filter_reason=reason,
+            failure_category=cat,
+            retry_count=attempt,
         )
+
+    def record_agent_call(self, full_name: str, stage: int, purpose: str, model: str,
+                          num_turns: int, cost_usd, usage, subtype: str, is_error: bool,
+                          duration_ms: int):
+        usage = usage or {}
+        self.conn.execute(
+            """INSERT INTO agent_calls
+               (full_name, stage, purpose, model, num_turns, cost_usd, input_tokens,
+                output_tokens, cache_read_tokens, cache_creation_tokens, subtype, is_error,
+                duration_ms, ts)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                full_name, stage, purpose, model, num_turns, cost_usd,
+                usage.get("input_tokens", 0), usage.get("output_tokens", 0),
+                usage.get("cache_read_input_tokens", 0),
+                usage.get("cache_creation_input_tokens", 0),
+                subtype, is_error, duration_ms,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        self.conn.commit()
 
     def get_repo(self, full_name: str) -> dict | None:
         row = self.conn.execute(
@@ -295,6 +392,18 @@ class RepoRegistry:
         if row:
             return dict(row)
         return None
+
+    def get_repos_by_status(self, statuses: list[str]) -> list[dict]:
+        """All repos whose status is in ``statuses``. Generic selector for cross-stage operations
+        (e.g. the unfit-prune cleanup, which re-judges everything past stage 4 still awaiting an
+        expensive capture) that don't fit the single-input-status get_repos_for_stage shape."""
+        if not statuses:
+            return []
+        placeholders = ",".join("?" * len(statuses))
+        rows = self.conn.execute(
+            f"SELECT * FROM repos WHERE status IN ({placeholders})", statuses
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def get_stats(self) -> dict:
         rows = self.conn.execute(
@@ -309,17 +418,34 @@ class RepoRegistry:
         ).fetchall()
         return {row["domain"]: row["count"] for row in rows}
 
-    def get_rejection_reasons(self, limit=10) -> list[tuple[str, int]]:
+    def get_rejection_reasons(self, limit=10, status: str = None) -> list[tuple[str, int]]:
+        """Top rejection reasons, aggregated across all stages by default.
+
+        Pass ``status`` (e.g. ``RepoStatus.REJECTED_SCORE.value``) to restrict to one
+        stage's rejection bucket — used by --stage runs to show what just got rejected
+        at that stage instead of the all-time, all-stages aggregate.
+        """
+        where = "filter_reason IS NOT NULL AND filter_reason != ''"
+        params: list = []
+        if status:
+            where += " AND status = ?"
+            params.append(status)
+        params.append(limit)
         rows = self.conn.execute(
-            """SELECT filter_reason, COUNT(*) as count
-               FROM repos
-               WHERE filter_reason IS NOT NULL AND filter_reason != ''
-               GROUP BY filter_reason
-               ORDER BY count DESC
-               LIMIT ?""",
-            (limit,),
+            f"SELECT filter_reason, COUNT(*) as count FROM repos WHERE {where} "
+            f"GROUP BY filter_reason ORDER BY count DESC LIMIT ?",
+            params,
         ).fetchall()
         return [(row["filter_reason"], row["count"]) for row in rows]
+
+    def get_failure_category_distribution(self) -> list[tuple[str, int]]:
+        """(failure_category, count) across all rejected repos, most common first — the
+        quality-vs-infra split that the opaque single bucket used to hide."""
+        rows = self.conn.execute(
+            "SELECT COALESCE(failure_category, '(uncategorized)') AS cat, COUNT(*) AS count "
+            "FROM repos WHERE status LIKE 'rejected_%' GROUP BY cat ORDER BY count DESC"
+        ).fetchall()
+        return [(row["cat"], row["count"]) for row in rows]
 
     def get_pending_counts(self) -> dict:
         result = {}
@@ -331,21 +457,68 @@ class RepoRegistry:
             result[stage] = row["count"]
         return result
 
-    def reset_rejected(self, stage: int = None):
-        if stage is not None:
-            rejected_status = STAGE_TO_REJECTED_STATUS.get(stage)
-            if rejected_status is None:
-                raise ValueError(f"No rejection status for stage {stage}")
-            input_status = STAGE_TO_INPUT_STATUS.get(stage)
-            previous_stage = stage - 1
-            self.conn.execute(
-                "UPDATE repos SET status = ?, current_stage = ?, filter_reason = NULL WHERE status = ?",
-                (input_status.value, previous_stage, rejected_status.value),
+    # Stage -> the column holding its gate score, so a re-queue can target rejections that a
+    # lowered threshold would now accept (e.g. reset stage-4 rejects with deep_score >= 4).
+    STAGE_SCORE_COLUMN = {3: "shallow_total", 4: "deep_score", 5: "trial_score"}
+
+    def reset_rejected(self, stage: int = None, before: str = None, category_in=None,
+                       min_score: float = None, dry_run: bool = False) -> int:
+        """Re-queue rejected repos back to a stage's input status so the (now-fixed) stage retries
+        them. Returns the number of repos affected.
+
+        ``before`` (ISO timestamp) limits to rejections recorded before that instant — used to
+        re-queue stale rejections from superseded code. ``category_in`` (FailureCategory iterable)
+        limits to specific failure categories — used to re-queue infra/flaky failures while leaving
+        genuine quality rejections alone. ``min_score`` keeps only rejections whose stored gate
+        score (per STAGE_SCORE_COLUMN) is >= the value — used after lowering a threshold to re-queue
+        exactly the now-passing repos (requires ``stage``). ``dry_run`` counts without modifying.
+        """
+        if min_score is not None and stage is None:
+            raise ValueError("min_score requires an explicit stage")
+        stages = [stage] if stage is not None else sorted(STAGE_TO_REJECTED_STATUS.keys())
+        cats = None
+        if category_in:
+            cats = [c.value if isinstance(c, FailureCategory) else c for c in category_in]
+
+        total = 0
+        for s in stages:
+            rejected_status = STAGE_TO_REJECTED_STATUS.get(s)
+            input_status = STAGE_TO_INPUT_STATUS.get(s)
+            if rejected_status is None or input_status is None:
+                raise ValueError(f"No rejection/input status for stage {s}")
+
+            where = ["status = ?"]
+            params: list = [rejected_status.value]
+            if before:
+                where.append("updated_at < ?")
+                params.append(before)
+            if cats:
+                where.append(f"failure_category IN ({','.join('?' * len(cats))})")
+                params.extend(cats)
+            if min_score is not None:
+                score_col = self.STAGE_SCORE_COLUMN.get(s)
+                if score_col is None:
+                    raise ValueError(f"No score column for stage {s}")
+                where.append(f"{score_col} >= ?")
+                params.append(min_score)
+            clause = " AND ".join(where)
+
+            if dry_run:
+                row = self.conn.execute(
+                    f"SELECT COUNT(*) AS c FROM repos WHERE {clause}", params
+                ).fetchone()
+                total += row["c"]
+                continue
+
+            cursor = self.conn.execute(
+                f"UPDATE repos SET status = ?, current_stage = ?, filter_reason = NULL, "
+                f"failure_category = NULL, retry_count = 0 WHERE {clause}",
+                [input_status.value, s - 1] + params,
             )
-        else:
-            for s in sorted(STAGE_TO_REJECTED_STATUS.keys()):
-                self.reset_rejected(stage=s)
-        self.conn.commit()
+            total += cursor.rowcount
+        if not dry_run:
+            self.conn.commit()
+        return total
 
     def has_repo(self, full_name: str) -> bool:
         row = self.conn.execute(
@@ -368,9 +541,12 @@ class RepoRegistry:
             for row in rows
         }
 
-    def count_total_trajectories(self) -> int:
+    def count_total_trajectories(self, status: str = None) -> int:
+        """Sum trajectory_count over repos in a status (default: completed = finalized/trainable).
+        Pass RepoStatus.CAPTURED.value to count trajectories captured but pending stage-7 finalize —
+        these exist on disk and verified but are not yet counted as 'generated'."""
         row = self.conn.execute(
             "SELECT COALESCE(SUM(trajectory_count), 0) as total FROM repos WHERE status = ?",
-            (RepoStatus.COMPLETED.value,),
+            (status or RepoStatus.COMPLETED.value,),
         ).fetchone()
         return row["total"]
