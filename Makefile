@@ -1,5 +1,6 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
-       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard
+       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
+       install-remote remote-train remote-train-dry remote-train-cleanup test-remote
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -143,3 +144,23 @@ test-notifier: ## Test Telegram bot notification
 
 dashboard: ## Launch trajectory SFT-readiness dashboard (Streamlit, localhost:8501)
 	streamlit run repo_pipeline/dashboard/app.py
+
+# ---------- Remote training (Vast.ai; provider-pluggable) ----------
+
+install-remote: ## Install the vastai CLI (local controller deps)
+	pip install vastai
+
+remote-train: ## Rent a GPU, train, pull adapter, and ALWAYS destroy the instance (needs VAST_API_KEY)
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train run $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+
+remote-train-dry: ## Dry run: print the cheapest geo-allowed offer, provision nothing
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train search
+
+remote-train-cleanup: ## Destroy any leftover instance (state file + label 'roman.maior' orphans)
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train cleanup
+
+test-remote: ## No-cost self-test of the remote-train lifecycle (mock provider; asserts teardown)
+	python -m remote_train run --smoke

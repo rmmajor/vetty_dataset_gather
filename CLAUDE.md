@@ -111,3 +111,13 @@ Sandbox resource caps (per Docker container, `repo_pipeline/sandbox.py`) are env
 ## Training
 
 `config.yaml` holds hyperparameters from the blueprint (Qwen3.5-9B-Base, LoRA r64/α128, lr 5e-5, 3 epochs, max_length 4096, `freeze_vit: true`, `max_pixels` exported as `MAX_PIXELS`). `train_qwen.py train` maps these keys to `swift sft` CLI flags; CLI overrides (`--epochs/--lr/--batch-size`) win over the config.
+
+## Remote training (`remote_train/`, Vast.ai; provider-pluggable)
+
+`make remote-train` runs the whole SFT on a rented cloud GPU instead of a hand-managed box: rent a GPU → ship `trajectories/` + the training code → run the **unchanged** `train_qwen.py convert` + `train_qwen.py train` on the box → pull the LoRA adapter back to `./output` → **destroy the instance**. No training logic is duplicated — the cloud layer only orchestrates.
+
+- **Provider-pluggable by design.** `remote_train/base.py` defines a `ComputeProvider` interface and a `PROVIDERS` registry of factory functions (same idiom as `eval_screenspot.py`'s `PREDICTOR_BACKENDS`). Vast.ai (`remote_train/vastai.py`, shells out to the `vastai` CLI) is impl #1; a second provider is a new module implementing 8 methods + one line appending its factory to `PROVIDERS` — `lifecycle.py`/CLI/Makefile never change. Offer selection (geo/price/VRAM policy) is the pure shared `base.select_cheapest_allowed`.
+- **Teardown is the #1 invariant** (never waste credits): `lifecycle.run_remote_training` destroys in `try/finally`, on SIGINT/SIGTERM/SIGHUP, via a `destroy` that polls until the box is **confirmed gone**, via a crash-safe `.remote_train_state.json` + the `cleanup` orphan sweep (by instance label), and via an independent max-runtime watchdog thread. `make remote-train-cleanup` force-destroys leftovers.
+- **Constraints baked in:** offers in `exclude_countries` (default `RU, CN`) are never rented; every instance is labeled `roman.maior` (also the orphan-sweep key). Both configurable in `remote_train.yaml` / env.
+- **Config:** `remote_train.yaml` (defaults < env < CLI), secrets via env only — `VAST_API_KEY` (required), `HF_TOKEN` (optional). Optional post-train flags (default off): `--eval` (PR #12's `eval_screenspot.py` before/after), `--push-hf`, `--notify` (reuses `repo_pipeline/notifier.py`).
+- **Verify:** `make test-remote` (no-cost mock-provider self-test whose central assertion is "destroy ran in every exit path: success, exception, SIGINT"); `make remote-train-dry` (real API, prints the cheapest geo-allowed offer, provisions nothing). The exact `vastai` CLI flags / JSON fields are documented assumptions isolated in `vastai.py` — validate with the dry run before a real run.

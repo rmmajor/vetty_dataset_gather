@@ -185,6 +185,22 @@ Or use Make:
     make convert
     make train
 
+### Remote training on a rented GPU (Vast.ai)
+
+`make train` assumes a GPU box you manage. To run the whole SFT on a rented cloud GPU instead — rent → ship data → train → pull the adapter → **destroy the instance** — use the provider-pluggable `remote_train/` package:
+
+    make install-remote                 # one-time: pip install the vastai CLI
+    export VAST_API_KEY=...             # required; HF_TOKEN optional for --push-hf
+    make remote-train-dry               # dry run: prints the cheapest geo-allowed offer, rents nothing
+    make remote-train                   # full lifecycle, then ALWAYS destroys the instance
+    make remote-train-cleanup           # safety net: destroy any leftover instance
+
+Defaults live in `remote_train.yaml` (GPU/VRAM/price caps, image, `max_runtime_hours`). Two constraints are built in: instances in `exclude_countries` (default `RU, CN`) are never rented, and every instance is labeled `roman.maior`.
+
+**Teardown is guaranteed** (so credits are never wasted): the instance is destroyed in a `finally` block, on Ctrl-C / SIGTERM, by a `destroy` that polls until the box is confirmed gone, by a crash-safe state file + the `cleanup` orphan sweep, and by an independent max-runtime watchdog. Validate the harness with no cost via `make test-remote` (mock provider; asserts teardown runs in every exit path). The `vastai` CLI flag/JSON specifics are isolated in `remote_train/vastai.py` and should be confirmed with `make remote-train-dry` before the first real run.
+
+To add another provider (RunPod, Lambda, …): implement `remote_train/base.py`'s `ComputeProvider` in a new module and append its factory to `PROVIDERS` — nothing else changes (`--provider <name>`).
+
 ## Output Structure
 
     trajectories/
