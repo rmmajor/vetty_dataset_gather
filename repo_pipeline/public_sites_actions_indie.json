@@ -1,0 +1,4527 @@
+{
+  "_comment": "Curated INDIE / open-source / self-hostable login-gated SaaS (no enterprise WAF) for autonomous CUA capture. Built 2026-06-29 to replace the major-brand login-gated list that was ~70-80% anti-bot-walled.",
+  "sites": [
+    {
+      "name": "vikunja",
+      "start_url": "https://try.vikunja.io/register",
+      "domain": "vikunja",
+      "category": "project-management",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "apartment-move-kanban",
+          "instruction": "Plan my apartment move in Vikunja with a proper board and deadlines.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "content-calendar-saved-filter",
+          "instruction": "Set up my editorial content calendar in Vikunja and give me a view of just what's urgent and due soon.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "reading-list-board",
+          "instruction": "Organize my reading list in Vikunja so I can track what I'm reading and have finished.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "sprint-backlog-subtasks",
+          "instruction": "Break the checkout redesign down into a sprint backlog in Vikunja with deadlines and priorities.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "renovation-milestones",
+          "instruction": "Set up my home renovation in Vikunja with phases, tasks and reminders so nothing slips.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "plane",
+      "start_url": "https://app.plane.so/sign-up/",
+      "domain": "plane",
+      "category": "project-management",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "mobile-app-backlog-board",
+          "instruction": "Spin up my mobile-app project in Plane and load the starting backlog onto a prioritized board.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "two-week-cycle",
+          "instruction": "Plan a two-week sprint in Plane with a cycle and the work scoped into it.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "modules-feature-areas",
+          "instruction": "Organize my product work in Plane into modules for auth, billing and dashboard with issues under each.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "bug-triage-view",
+          "instruction": "Set up a bug-triage project in Plane and give me a saved view of the high-priority open ones.",
+          "difficulty": "hard",
+          "expected_actions": 21,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "feature-sub-issues",
+          "instruction": "Break the Checkout v2 feature into sub-issues with deadlines in Plane and get it moving.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "taiga",
+      "start_url": "https://tree.taiga.io/register",
+      "domain": "taiga",
+      "category": "project-management",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "scrum-backlog-sprint",
+          "instruction": "Kick off a Scrum project in Taiga, fill the backlog with estimated stories and start a sprint.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "blog-kanban-flow",
+          "instruction": "Set up a Kanban project for my blog in Taiga and move a couple of posts down the pipeline.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "user-story-tasks",
+          "instruction": "Add a user onboarding story to my Taiga project and break it into the tasks needed to ship it.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "release-two-sprints",
+          "instruction": "Build a release plan in Taiga spread across two sprints with the stories sorted by area.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "issue-tracking-sprint",
+          "instruction": "Log my open issues in Taiga with severities and priorities and pull a couple into the current sprint.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "huly",
+      "start_url": "https://huly.app/",
+      "domain": "huly",
+      "category": "project-management",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "saas-launch-tracker",
+          "instruction": "Set up a tracker project in Huly for our SaaS launch and load a prioritized board of work.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "beta-milestone",
+          "instruction": "Create a beta-release milestone in Huly and line up the issues it needs with components and priorities.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "onboarding-sub-issues",
+          "instruction": "Break the onboarding flow into sub-issues in Huly with owners and due dates.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "bug-backlog-view",
+          "instruction": "Organize a bug backlog in Huly by severity and give me a saved view of the urgent ones.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "content-components",
+          "instruction": "Plan a content project in Huly split into blog, video and social with prioritized issues under each.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "worklenz",
+      "start_url": "https://app.worklenz.com/auth/signup",
+      "domain": "worklenz",
+      "category": "project-management",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "website-redesign-board",
+          "instruction": "Start a website-redesign project in Worklenz with a working board of prioritized, labelled tasks.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "campaign-phases",
+          "instruction": "Set up a marketing-campaign project in Worklenz organized into phases with owners and deadlines.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "landing-page-subtasks",
+          "instruction": "Break the landing-page task into subtasks in Worklenz with priorities and due dates.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "product-sprint-move",
+          "instruction": "Plan a product sprint in Worklenz, estimate the tasks and get a few moving.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "client-onboarding-checklist",
+          "instruction": "Build a client-onboarding project in Worklenz with a deadlined checklist and labels.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "leantime",
+      "start_url": "https://accounts.leantime.io/accounts/register",
+      "domain": "leantime",
+      "category": "project-management",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "product-launch-board",
+          "instruction": "Set up our product launch in Leantime with milestones and a deadlined kanban board.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "marketing-sprint-todos",
+          "instruction": "Plan a marketing sprint in Leantime with deadlined, tagged to-dos and move a couple into progress.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "idea-board-promote",
+          "instruction": "Capture a batch of ideas in a Leantime project and turn the best two into scheduled to-dos.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "release-milestones",
+          "instruction": "Build a release plan in Leantime with milestones, tasks under each and a final deadline.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "bug-backlog-filter",
+          "instruction": "Organize a bug backlog in Leantime by severity and priority and filter down to what's urgent.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "openproject",
+      "start_url": "https://start.openproject.com/",
+      "domain": "openproject",
+      "category": "project-management",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "backlog-board-types",
+          "instruction": "Set up a project in OpenProject and load a typed, prioritized backlog onto a board.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "version-release-plan",
+          "instruction": "Plan a release in OpenProject with a version and the deadlined work packages assigned to it.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "feature-parent-children",
+          "instruction": "Break the checkout feature into a parent work package with children, dates and priorities in OpenProject.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "bug-filtered-view",
+          "instruction": "Set up bug tracking in OpenProject and give me a filtered view of open high-priority bugs.",
+          "difficulty": "hard",
+          "expected_actions": 21,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "board-three-columns",
+          "instruction": "Build a project board in OpenProject with three columns and the work distributed across them.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "appflowy",
+      "start_url": "https://appflowy.com/app",
+      "domain": "appflowy",
+      "category": "project-management",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "roadmap-board-fields",
+          "instruction": "Build a product roadmap board in AppFlowy with priority and due-date fields set on every card.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "content-grid-to-board",
+          "instruction": "Set up a content calendar grid in AppFlowy, then flip it into a board grouped by status.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "select",
+            "navigate"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "weekly-tasks-board",
+          "instruction": "Plan my week as a task board in AppFlowy with labels, due dates and a couple of cards already moving.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "launch-grid-calendar",
+          "instruction": "Lay out a launch plan in AppFlowy as a grid of owned tasks, then add a calendar view by due date.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select",
+            "navigate"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "leads-grid-filter",
+          "instruction": "Make a lead-tracking grid in AppFlowy with status and value, then filter it down to the active leads.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "affine",
+      "start_url": "https://app.affine.pro/",
+      "domain": "affine",
+      "category": "project-management",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kanban-project-tracker",
+          "instruction": "Set up a project tracker in AFFiNE as a kanban database with priorities and a few due dates.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "content-table-kanban-view",
+          "instruction": "Build a content calendar in AFFiNE as a table, then add a kanban view grouped by status.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "select",
+            "navigate"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "launch-todo-doc",
+          "instruction": "Write a launch checklist doc in AFFiNE with a to-do list and a couple of nested sub-steps.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "weekly-kanban-tags",
+          "instruction": "Plan my week in AFFiNE on a tagged kanban board and shuffle a few cards between stages.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "reading-database-status",
+          "instruction": "Make a reading-list database in AFFiNE, switch it to kanban by status and mark a couple finished.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "quire",
+      "start_url": "https://quire.io/signup",
+      "domain": "quire",
+      "category": "project-management",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "product-launch-nested",
+          "instruction": "Plan my product launch in Quire with nested subtasks, deadlines, priorities and tags.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "kanban-board-flow",
+          "instruction": "Set up a kanban board in Quire and move a couple of tasks down the pipeline.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "content-calendar-sort",
+          "instruction": "Build a content calendar in Quire with owners and deadlines, tag the blog posts and sort by due date.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "feature-subtasks",
+          "instruction": "Break the checkout redesign into subtasks in Quire with priorities and due dates on each.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "bug-backlog-filter",
+          "instruction": "Organize a bug backlog in Quire by severity and priority and filter to the high-priority open ones.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "checkvist",
+      "start_url": "https://checkvist.com/auth/register",
+      "domain": "checkvist.com",
+      "category": "notes-knowledge",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "checkvist-product-launch-outline",
+          "instruction": "I'm planning a product launch — build me a nested outline with three top-level phases, several sub-tasks under each phase, two tags applied to key items, and a note attached to one task.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "checkvist-reading-list",
+          "instruction": "Set up a reading list for me with five books, mark two of them as done, and put a due date on the one I want to finish first.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "checkvist-trip-checklist",
+          "instruction": "Make me a weekend-trip checklist split into packing, bookings, and to-dos as separate sub-lists, then bump three of the items up in priority.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "checkvist-meeting-actions",
+          "instruction": "Capture my meeting notes as an outline with action items tagged followup, and give two of those action items due dates.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "checkvist-study-outline",
+          "instruction": "Build me a study outline with collapsible topics and sub-points, and attach a markdown note containing a small code snippet to one of the items.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "notesnook",
+      "start_url": "https://app.notesnook.com/signup",
+      "domain": "notesnook.com",
+      "category": "notes-knowledge",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "notesnook-research-notebook",
+          "instruction": "Set up a research notebook for me with three notes, tag two of them with a shared topic tag, and pin the most important note.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "notesnook-meeting-note",
+          "instruction": "Write me a meeting-notes note with a heading, a bulleted agenda, a checklist of action items, and a tag, then add it to my favorites.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "notesnook-recipes-notebook",
+          "instruction": "Create a Recipes notebook with two recipe notes, each one having an ingredients list and numbered steps, and tag both notes.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "notesnook-journal-entry",
+          "instruction": "Draft a journal entry note with a title and some formatted text, put it in a new Journal notebook, and add two tags to it.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "notesnook-project-move",
+          "instruction": "Make a project notebook with a note that has a to-do checklist, check off two items, then move that note into a different notebook.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "dynalist",
+      "start_url": "https://dynalist.io/signup",
+      "domain": "dynalist.io",
+      "category": "notes-knowledge",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "dynalist-project-outline",
+          "instruction": "Build me a nested project outline with three sections, sub-bullets under each, two hashtag tags, a due date on one item, and a note attached to one bullet.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "dynalist-weekly-plan",
+          "instruction": "Create a new document with a weekly plan — one bullet per day, sub-tasks nested under three of the days, and two of the tasks marked complete.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "dynalist-book-chapters",
+          "instruction": "Outline the chapters of a book with sub-points under each, then reorder two of the chapters and add a note to one.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "dynalist-brainstorm-doc",
+          "instruction": "Capture a brainstorm for me in a new document, group the ideas under three headings, tag two of the ideas, and bookmark the document.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "cryptpad",
+      "start_url": "https://cryptpad.fr/register/",
+      "domain": "cryptpad.fr",
+      "category": "notes-knowledge",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "cryptpad-meeting-agenda-doc",
+          "instruction": "Create a new rich-text document and write me a structured meeting agenda with headings and a bulleted list, then rename the document.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "cryptpad-kanban-board",
+          "instruction": "Make a Kanban board with three columns, add two cards to each column, then move one card from the first column to the last.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "cryptpad-todo-list",
+          "instruction": "Create a to-do list pad with several items, check off two of them, and give the pad a meaningful name.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "cryptpad-code-pad-drive",
+          "instruction": "Write a code/markdown pad with a titled note and a fenced code block, then organize it into a new folder in my CryptDrive.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "standard-notes",
+      "start_url": "https://app.standardnotes.com/",
+      "domain": "standardnotes.com",
+      "category": "notes-knowledge",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "standardnotes-project-tagged",
+          "instruction": "Create three project notes for me, tag them all with one shared tag, and pin the most important one to the top.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "standardnotes-meeting-star-archive",
+          "instruction": "Write a detailed meeting note, give it two tags and star it, then archive one of my older notes.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "standardnotes-tag-organization",
+          "instruction": "Set up a tag-based organization for me: create two tags, add three notes, and file each note under the right tag.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "standardnotes-journal-pin",
+          "instruction": "Capture a journal note with a title and a few paragraphs, tag it journal, and pin it so it stays at the top.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "walling",
+      "start_url": "https://walling.app/signup",
+      "domain": "walling.app",
+      "category": "notes-knowledge",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "walling-trip-wall",
+          "instruction": "Create a new wall for planning a trip with three sections, add note bricks and a to-do brick to each section, and drop in a link brick.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "walling-research-wall",
+          "instruction": "Build me a research wall with several note cards and a checklist card, then reorder two of the cards.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "walling-project-tasks",
+          "instruction": "Set up a project wall with a section of tasks as a checklist, mark two of them done, and add a note brick with the details.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "walling-reading-list-wall",
+          "instruction": "Create a reading-list wall with link bricks for three articles and a short note describing each one.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "workflowy",
+      "start_url": "https://workflowy.com/signup/",
+      "domain": "workflowy.com",
+      "category": "notes-knowledge",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "workflowy-research-outline",
+          "instruction": "Build me a nested research outline with three top-level topics, sub-bullets under each, two hashtag tags, and a note attached to one bullet.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "workflowy-weekly-todo",
+          "instruction": "Create a weekly to-do outline with a section per priority level, several tasks under each, and two of them marked complete.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "workflowy-blog-post-outline",
+          "instruction": "Outline a blog post for me with sections and sub-points, then add a draft tag and a note holding the thesis statement.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "workflowy-goals-nested",
+          "instruction": "Capture a list of my goals, nest the sub-steps under two of them, tag one urgent, and reorder two of the goals.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "supernotes",
+      "start_url": "https://my.supernotes.app/?signup=1",
+      "domain": "supernotes.app",
+      "category": "notes-knowledge",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "supernotes-kb-card-children",
+          "instruction": "Create a knowledge-base card with markdown headings and a checklist, then add two child cards beneath it and tag them.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "supernotes-project-subtasks",
+          "instruction": "Build me a project card with a description and three nested sub-task cards, then mark two of the sub-tasks complete.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "supernotes-meeting-linked",
+          "instruction": "Write a meeting-notes card with a bulleted agenda and action items, tag it, and link it to a new related card.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "supernotes-reading-notes",
+          "instruction": "Create a reading-notes card with a summary, a quote block, and two tags, then add a child card for follow-up thoughts.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "outline-wiki",
+      "start_url": "https://app.getoutline.com/create",
+      "domain": "getoutline.com",
+      "category": "notes-knowledge",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "outline-collection-nested-doc",
+          "instruction": "Create a new collection, add a document with headings and a bulleted list, and nest a sub-document under it.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "outline-howto-guide",
+          "instruction": "Write me a how-to guide document with numbered steps, a checklist, and a callout, then publish it into a collection.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "outline-team-wiki-structure",
+          "instruction": "Build a small team wiki: a collection holding two documents and one nested sub-document, each with a short body.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "outline-meeting-notes-doc",
+          "instruction": "Draft a meeting-notes document with an agenda list and an action-item checklist, add it to a collection, and star it.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "tiddlyhost",
+      "start_url": "https://tiddlyhost.com/users/sign_up",
+      "domain": "tiddlyhost.com",
+      "category": "notes-knowledge",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "tiddlyhost-new-wiki-linked-tiddlers",
+          "instruction": "Create a new TiddlyWiki site for me, then add three tiddlers with tags and link two of them together.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "tiddlyhost-index-knowledge-base",
+          "instruction": "On a fresh wiki, build a knowledge base with a main index tiddler that links out to three topic tiddlers, each one tagged.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "tiddlyhost-project-journal",
+          "instruction": "Create several journal tiddlers for a project, tag them by date, and edit one to add a bulleted list.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "tiddlyhost-tag-toc",
+          "instruction": "Set up a wiki with a tagged set of tiddlers and create a tag-based table-of-contents tiddler that pulls them together.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "habitica",
+      "start_url": "https://habitica.com/register",
+      "domain": "habitica.com",
+      "category": "habits-health",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "morning-routine-dailies",
+          "instruction": "Set up a morning routine of three daily habits - meditate, stretch and journal - that repeat every weekday, and check one of them off as done.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "weekly-todos-tags",
+          "instruction": "Add three to-dos for this week, each with a due date and a difficulty level, tag two of them, then mark one of them complete.",
+          "difficulty": "hard",
+          "expected_actions": 19,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "custom-reward-and-habit",
+          "instruction": "Create a custom reward I can buy for 40 gold and a positive habit for drinking water, then tap the habit a couple of times.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "customize-avatar-class",
+          "instruction": "Customize my avatar's hair and skin tone, pick a character class, and equip my starter gear.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "organize-tasks-with-tags",
+          "instruction": "Create three new tags for my tasks and reorganize my dailies under those tags.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "open-food-facts",
+      "start_url": "https://world.openfoodfacts.org/cgi/user.pl",
+      "domain": "openfoodfacts.org",
+      "category": "habits-health",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "complete-product-nutrition",
+          "instruction": "Open an existing food product that is missing data and fill in its energy, fat, sugar and salt values plus a category, then save.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-product-details",
+          "instruction": "Find a snack product and correct its name, brand, quantity and ingredients text, then submit the changes.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "add-product-to-new-list",
+          "instruction": "Search for a beverage, open it, add it to a new list I create, and tag it with two relevant labels.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "contributor-preferences",
+          "instruction": "Set up my contributor profile preferences - preferred language and country - and save my account settings.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "packaging-and-categories",
+          "instruction": "Open a product page and complete its missing packaging info, categories and a Nutri-Score nutrient, then save the edits.",
+          "difficulty": "hard",
+          "expected_actions": 21,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "beeminder",
+      "start_url": "https://www.beeminder.com/users/sign_up",
+      "domain": "beeminder.com",
+      "category": "habits-health",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "create-running-goal",
+          "instruction": "Create a 'do more' goal to run three times a week, set its target and rate, then log my first two data points.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "weight-whittle-goal",
+          "instruction": "Set up a weight-loss goal with a target weight and date and enter today's weight as my starting point.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "reading-goal-deadline",
+          "instruction": "Create a reading goal of twenty pages a day, set the daily deadline to 9pm, and add a data point for today.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "meditation-goal-custom-unit",
+          "instruction": "Create a meditation goal with a description and a custom unit, then log two sessions.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "adjust-goal-rate",
+          "instruction": "Open one of my goals, change its rate, add a note about why, and save the change.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "wger",
+      "start_url": "https://wger.de/en/user/registration",
+      "domain": "wger.de",
+      "category": "habits-health",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "build-ppl-routine",
+          "instruction": "Build a three-day push/pull/legs workout routine and add four exercises with sets and reps to the first day.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "create-nutrition-plan",
+          "instruction": "Create a nutrition plan with a daily calorie goal and add three meals, each with a food item, to it.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "log-weight-and-measurements",
+          "instruction": "Log my bodyweight for today and add two body measurements - waist and arm - with values.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "log-workout-session",
+          "instruction": "Record a workout session for today with the exercises I did, the weights and the reps, then save it.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "setup-fitness-profile",
+          "instruction": "Fill in my fitness profile - height and main goal - and create a new bodyweight entry.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "everyday-app",
+      "start_url": "https://app.everyday.app/signup",
+      "domain": "everyday.app",
+      "category": "habits-health",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "three-color-coded-habits",
+          "instruction": "Create three habits - read, exercise and drink water - each with its own color and weekly frequency, then mark today done on all three.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "meditate-with-reminder",
+          "instruction": "Add a habit to meditate five days a week, set a reminder time, and check off the last two days.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "avoid-sugar-habit",
+          "instruction": "Create a 'no sugar' habit I want to avoid, set it to daily, and mark today and yesterday as successful.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "custom-target-habit",
+          "instruction": "Set up a habit with a custom name and icon, give it a target of four times per week, and fill in this week's completed days.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "habitify",
+      "start_url": "https://app.habitify.me/signup/",
+      "domain": "habitify.me",
+      "category": "habits-health",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "morning-area-with-habits",
+          "instruction": "Create a 'Morning' area and add three habits to it - stretch, journal and take vitamins - each scheduled for the morning, then log one as done.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "water-goal-habit",
+          "instruction": "Add a 'drink eight glasses of water' habit with a numeric daily goal and a reminder, then log three glasses for today.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "mwf-habit-with-note",
+          "instruction": "Create a habit that repeats Monday, Wednesday and Friday, set a start date and reminder time, and mark today complete with a note.",
+          "difficulty": "hard",
+          "expected_actions": 17,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "evening-habits-streak",
+          "instruction": "Set up two evening habits and check them off for the past two days to start a streak.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "tandoor-recipes",
+      "start_url": "https://app.tandoor.dev/accounts/signup/",
+      "domain": "tandoor.dev",
+      "category": "habits-health",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "create-recipe-with-steps",
+          "instruction": "Create a new recipe with a name, two ingredients with amounts, and two preparation steps, then save it.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "meal-plan-shopping-list",
+          "instruction": "Add three recipes to my meal plan across this week and generate a shopping list from them.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "recipe-book-with-keyword",
+          "instruction": "Create a recipe book, add two recipes to it, and tag those recipes with a keyword.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "recipe-servings-favorite",
+          "instruction": "Create a recipe, set its servings and working time, and add it to my favorites.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "build-shopping-list",
+          "instruction": "Build a shopping list by adding five items with quantities and mark two of them as done.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "monica-hq",
+      "start_url": "https://app.monicahq.com/register",
+      "domain": "monicahq.com",
+      "category": "habits-health",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "add-contact-with-activity",
+          "instruction": "Add a new contact with their name, birthday and how we met, then log an activity we did together.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "two-contacts-relationship",
+          "instruction": "Create two contacts, set a family relationship between them, and add a note to one of them.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "contact-reminder-and-gift",
+          "instruction": "Add a contact, set a recurring monthly reminder to call them, and add a task to send them a gift.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "log-conversation-gift-idea",
+          "instruction": "Log a recent conversation with an existing contact and record a gift idea for them.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "contact-debt-and-job",
+          "instruction": "Create a contact, record a debt they owe me with an amount, and add their job title and company.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "workout-cool",
+      "start_url": "https://workout.cool/en/auth/signup",
+      "domain": "workout.cool",
+      "category": "habits-health",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "full-body-session",
+          "instruction": "Build a full-body workout by picking exercises for chest, back and legs, set the sets and reps for each, and start the session.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "select",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "arm-workout-log-set",
+          "instruction": "Create a workout targeting arms with three exercises, log the weight and reps for the first exercise, and finish the session.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "filter-equipment-save",
+          "instruction": "Filter exercises by dumbbell equipment, add two of them to a new workout, and save it.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "profile-and-leg-day",
+          "instruction": "Set my profile preferences and units, then create a quick leg-day workout with two exercises.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "wanderer",
+      "start_url": "https://demo.wanderer.to/register",
+      "domain": "wanderer.to",
+      "category": "habits-health",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "create-trail-waypoints",
+          "instruction": "Create a new trail with a name, description and category, add two waypoints, and save it.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "trail-list",
+          "instruction": "Make a list of trails, add two existing trails to it, and give the list a description.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "mark-trail-completed",
+          "instruction": "Open a trail, mark it as completed with today's date, and leave a comment on it.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "profile-and-day-hike",
+          "instruction": "Edit my profile with a location and bio, then create a trail tagged as a day hike.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "raindrop-io",
+      "start_url": "https://app.raindrop.io/sign/up",
+      "domain": "raindrop.io",
+      "category": "bookmarks-feeds",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "collection-tag-favorite",
+          "instruction": "Save three articles I want to read, group them into a brand-new collection called 'Reading List', tag two of them 'longread', and mark one as a favorite.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "nested-collection-move",
+          "instruction": "Set up a parent collection named 'Work' with a sub-collection 'Design' inside it, then move one of my saved bookmarks into the Design sub-collection.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "note-and-filter",
+          "instruction": "Save a link, add my own note/description to it, then filter my bookmarks so only favorites are showing.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "rename-collection-sort",
+          "instruction": "Add two bookmarks, rename one of my collections, change its icon, and sort that collection by title.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "bulk-move-trash",
+          "instruction": "Multi-select two of my saved bookmarks and move them together into a new collection, then permanently delete a different bookmark.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "karakeep-cloud",
+      "start_url": "https://cloud.karakeep.app/signup",
+      "domain": "cloud.karakeep.app",
+      "category": "bookmarks-feeds",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "list-with-tags",
+          "instruction": "Save two links and one text note, gather them into a new list called 'Research', and add a tag to each item.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "favorite-and-archive",
+          "instruction": "Bookmark an article, give it a manual tag and mark it as a favorite, then archive a different bookmark.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "build-and-rename-list",
+          "instruction": "Create a new list, add three of my saved items into it, then rename that list to something else.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-note-search-tag",
+          "instruction": "Save a link, edit its title and add a note to it, then find it again by searching for its tag.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "larder",
+      "start_url": "https://larder.io/",
+      "domain": "larder.io",
+      "category": "bookmarks-feeds",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "folder-tag-devlinks",
+          "instruction": "Add three developer links, file them into a new folder called 'Frontend', and tag two of them 'react'.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "folder-note-star",
+          "instruction": "Create a folder, add a bookmark with my own note into it, then apply a tag and star it.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "move-and-rename",
+          "instruction": "Add two links, move one of them into an existing folder, and rename the title of the other.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "nested-folder-multitag",
+          "instruction": "Make a folder nested inside another folder, add a bookmark to it, and give that bookmark several tags to organize it.",
+          "difficulty": "hard",
+          "expected_actions": 17,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "instapaper",
+      "start_url": "https://www.instapaper.com/user/register",
+      "domain": "instapaper.com",
+      "category": "bookmarks-feeds",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "save-folder-organize",
+          "instruction": "Save three articles to read later, create a new folder called 'Tech', and move two of the saved articles into it.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "highlight-note-like",
+          "instruction": "Save an article, open it, highlight a passage and attach a note to that highlight, then like the article.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "archive-and-delete",
+          "instruction": "Save two articles, archive one of them and delete the other, then open the Archive folder to confirm.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "folder-direct-save",
+          "instruction": "Create a folder, save an article straight into that folder, then sort the folder by how recently items were added.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "wallabag-cloud",
+      "start_url": "https://app.wallabag.it/register/",
+      "domain": "app.wallabag.it",
+      "category": "bookmarks-feeds",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "save-tag-favorite",
+          "instruction": "Save three web articles to read later, tag two of them 'tech', and mark one as a favorite.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "annotate-and-archive",
+          "instruction": "Save an article, open it, add an annotation with a note on a sentence, then archive it as read.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "tag-and-filter",
+          "instruction": "Save two articles, create a tag and apply it to both, then filter my list to show only that tag.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "reading-view-export",
+          "instruction": "Save an article, adjust the reading view font/size to my liking, favorite it, then export it as an EPUB.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "refind",
+      "start_url": "https://refind.com/signin",
+      "domain": "refind.com",
+      "category": "bookmarks-feeds",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "onboard-topics-save",
+          "instruction": "During onboarding pick at least three topics I'm interested in, then save two recommended articles to read later.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "save-like-share",
+          "instruction": "Save three links to my reading list, like one of them, and copy/share another out.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "follow-topics-save-feed",
+          "instruction": "Follow two new topics and one curator, then save an article that shows up in my feed.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "submit-link-comment",
+          "instruction": "Share a link into Refind with a short comment, then save it to my own reading list.",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "feedbin",
+      "start_url": "https://feedbin.com/signup",
+      "domain": "feedbin.com",
+      "category": "bookmarks-feeds",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "subscribe-tag-star",
+          "instruction": "Subscribe to three RSS feeds, group two of them under a new tag called 'News', and star an article.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "add-feed-star-search",
+          "instruction": "Add a feed by its URL, open an article and star it, mark another as unread, then search across my feeds.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "rename-feed-saved-search",
+          "instruction": "Subscribe to two feeds, rename one of them, then create a saved search I can reuse.",
+          "difficulty": "hard",
+          "expected_actions": 17,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "tag-unread-markall",
+          "instruction": "Add a feed, tag it, switch the view to unread-only, then mark everything in it as read.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "newsblur",
+      "start_url": "https://www.newsblur.com",
+      "domain": "newsblur.com",
+      "category": "bookmarks-feeds",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "subscribe-folder-save",
+          "instruction": "Subscribe to three news sites, put two of them into a new folder called 'Tech', and save one story for later.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "save-story-tag-unread",
+          "instruction": "Add a site by URL, open a story and save it with a tag, then mark a different story as unread.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "train-and-share",
+          "instruction": "Subscribe to two feeds, train the story filter by liking an author or tag, then share a story to my blurblog.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "folder-move-rename",
+          "instruction": "Create a folder, move one of my subscribed sites into it, then rename the folder.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "the-old-reader",
+      "start_url": "https://theoldreader.com/users/sign_up",
+      "domain": "theoldreader.com",
+      "category": "bookmarks-feeds",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "subscribe-folder-like",
+          "instruction": "Subscribe to three feeds, organize two of them into a new folder, and like a post.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "like-save-markread",
+          "instruction": "Add a feed by URL, like one post, save another to read later, then mark all as read.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "folder-drag-rename",
+          "instruction": "Subscribe to two feeds, create a folder and drag a feed into it, then rename that feed.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "share-and-view",
+          "instruction": "Add a feed, open a post and share it to my profile, then switch the layout to expanded view.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "commafeed",
+      "start_url": "https://www.commafeed.com",
+      "domain": "commafeed.com",
+      "category": "bookmarks-feeds",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "subscribe-category-star",
+          "instruction": "Subscribe to three feeds, create a new category and move two feeds into it, then star an entry.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "add-rename-star-unread",
+          "instruction": "Add a feed by URL, rename it, star an article, and mark another as unread.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "category-direct-markall",
+          "instruction": "Create a category, subscribe to a feed directly inside it, then mark the whole category as read.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "tag-and-search",
+          "instruction": "Subscribe to two feeds, tag an entry, then use search to locate a specific article.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "write-as",
+      "start_url": "https://write.as/me/c/",
+      "domain": "write.as",
+      "category": "blogging-publishing",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "publish-first-markdown-post",
+          "instruction": "Set up my blog and publish a first post that has a headline, three paragraphs, a Markdown subheading, and a closing link.",
+          "difficulty": "hard",
+          "expected_actions": 19,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "second-post-blockquote-code",
+          "instruction": "Write and publish a second post on my blog that includes a blockquote and a fenced code block.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "set-title-and-pin-post",
+          "instruction": "Give my blog a display title and a short description in settings, then pin one of my posts to the blog navigation.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-add-paragraph-link",
+          "instruction": "Edit my most recent published post to add a new paragraph and a hyperlink, then re-publish it.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "infosec-press",
+      "start_url": "https://infosec.press/",
+      "domain": "infosec.press",
+      "category": "blogging-publishing",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "register-and-publish-post",
+          "instruction": "Create an account here and publish my first post with a title, two paragraphs, a Markdown heading, and a bulleted list.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "configure-blog-identity",
+          "instruction": "Set my blog's title and description in settings and update its appearance.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "second-post-with-formatting",
+          "instruction": "Write and publish a second Markdown post that has a subheading, a numbered list, and an external link.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-and-republish",
+          "instruction": "Open one of my published posts, add a closing paragraph and a quote, and re-publish the updated version.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "bolha-blog",
+      "start_url": "https://bolha.blog/",
+      "domain": "bolha.blog",
+      "category": "blogging-publishing",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "signup-and-first-post",
+          "instruction": "Sign up for a blog and publish a first post with a title, three paragraphs, and a Markdown heading.",
+          "difficulty": "hard",
+          "expected_actions": 19,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "blog-title-and-bio",
+          "instruction": "Set my blog's display name and description in the settings.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "second-post-list-link",
+          "instruction": "Publish a second post that contains a bulleted list and a hyperlink.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pin-post-to-nav",
+          "instruction": "Pin one of my published posts to the blog navigation menu.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "bearblog",
+      "start_url": "https://bearblog.dev/accounts/signup/",
+      "domain": "bearblog.dev",
+      "category": "blogging-publishing",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "publish-tagged-post",
+          "instruction": "Publish a new post with a title, an intro paragraph, a Markdown H2 heading, two more paragraphs, and two tags.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "blog-identity-and-nav",
+          "instruction": "Set up my blog: give it a title and a bio in settings and add an About link to the navigation.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "second-post-edit-slug-meta",
+          "instruction": "Write and publish a second post, then edit its URL slug and give it a meta description.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "draft-then-publish",
+          "instruction": "Create a draft post with a title and two paragraphs, save it unpublished, then come back and publish it.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-add-list-and-link",
+          "instruction": "Edit my latest post to insert a bulleted list and a hyperlink, then save it as published.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "mataroa",
+      "start_url": "https://mataroa.blog/accounts/create/",
+      "domain": "mataroa.blog",
+      "category": "blogging-publishing",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "publish-dated-post",
+          "instruction": "Publish a blog post with a title, several Markdown paragraphs, a subheading, and a custom publication date.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "customize-blog-theme",
+          "instruction": "Customize my blog by setting its title and subtitle and choosing a theme in settings.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "about-page-and-linked-post",
+          "instruction": "Create a standalone About page and publish a second post that links to it.",
+          "difficulty": "hard",
+          "expected_actions": 19,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-slug-add-image",
+          "instruction": "Edit one of my posts to change its slug and add an image via Markdown, then update it.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "draft-to-published",
+          "instruction": "Write a post, save it as a draft, then publish it and confirm it shows on my blog.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "pika-page",
+      "start_url": "https://pika.page/signup",
+      "domain": "pika.page",
+      "category": "blogging-publishing",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "create-blog-first-post",
+          "instruction": "Create a blog and publish my first post with a title, two paragraphs, a heading, and a couple of tags.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "second-post-custom-slug",
+          "instruction": "Write a second post with a list and a link, set a custom slug, and publish it.",
+          "difficulty": "hard",
+          "expected_actions": 17,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "blog-name-and-theme",
+          "instruction": "Set my blog's name, description, and theme in the settings.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "add-standalone-page",
+          "instruction": "Add a standalone About page to my blog and publish it.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-add-section",
+          "instruction": "Edit my latest post, add a new section with a subheading, and re-publish it.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "scribbles",
+      "start_url": "https://scribbles.page/auth/sign_up",
+      "domain": "scribbles.page",
+      "category": "blogging-publishing",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "publish-tagged-article",
+          "instruction": "Write and publish a post with a title, an opening paragraph, a heading, two more paragraphs, and two tags.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "customize-title-theme",
+          "instruction": "Customize my blog's title and description and pick a theme.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "second-post-edit-slug",
+          "instruction": "Publish a second post, then edit its URL slug and add a hyperlink in the body.",
+          "difficulty": "hard",
+          "expected_actions": 17,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "page-into-navigation",
+          "instruction": "Create an additional page and add it to my blog's navigation menu.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-add-list",
+          "instruction": "Edit an existing post to add a bulleted list, then update it.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "notepin",
+      "start_url": "https://notepin.co/",
+      "domain": "notepin.co",
+      "category": "blogging-publishing",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "signup-publish-post",
+          "instruction": "Create a blog and publish a post with a title, three paragraphs, and a heading.",
+          "difficulty": "hard",
+          "expected_actions": 17,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "blog-name-bio-theme",
+          "instruction": "Set my blog's name and bio and choose a theme in settings.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "draft-then-publish",
+          "instruction": "Write a second post, save it as a draft, then publish it.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-add-link",
+          "instruction": "Edit my latest published post to add a paragraph and a link, then update it.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "hedgedoc-envs",
+      "start_url": "https://hedgedoc.envs.net/register",
+      "domain": "hedgedoc.envs.net",
+      "category": "blogging-publishing",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "create-and-publish-note",
+          "instruction": "Create a new Markdown note titled with a heading, add a subheading, a bulleted list, and a code block, then publish it to a shareable link.",
+          "difficulty": "hard",
+          "expected_actions": 19,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "note-with-table-links",
+          "instruction": "Write a Markdown note containing a table and two links, then publish it and open the published URL.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "permissions-checklist-publish",
+          "instruction": "Create a note, set it to freely editable in the permissions menu, add a task checklist, and publish it.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "edit-and-republish-note",
+          "instruction": "Open one of my published notes, add a new section and a blockquote, and publish the updated version.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "leaflet-pub",
+      "start_url": "https://leaflet.pub/",
+      "domain": "leaflet.pub",
+      "category": "blogging-publishing",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "signin-create-publish-leaflet",
+          "instruction": "Sign in with my email and create a leaflet with a title, a heading block, two text blocks, and a bulleted list, then publish it.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "add-section-link-quote",
+          "instruction": "Add another section to my leaflet with a link block and a quote, then update the published version.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "event-leaflet-with-details",
+          "instruction": "Create an event leaflet with a title, a description, and a list of details, then publish it and open its link.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "rename-and-edit-block",
+          "instruction": "Rename my leaflet and edit one of its text blocks, then re-publish it.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "ghostfolio",
+      "start_url": "https://ghostfol.io/en/register",
+      "domain": "ghostfol.io",
+      "category": "finance-budgeting",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "ghostfolio-build-stock-portfolio",
+          "instruction": "Set up my investment portfolio with three stocks I bought, recording how many shares and the buy price for each, then show me my total portfolio value.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "ghostfolio-record-dividend-and-deposit",
+          "instruction": "Log a cash deposit into my account and record a dividend payment I received on one of my holdings.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "ghostfolio-add-crypto-and-set-currency",
+          "instruction": "Add a Bitcoin holding to my portfolio, set my base currency, and check how my assets are allocated by class.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "ghostfolio-two-accounts-split",
+          "instruction": "Create two separate accounts in my portfolio, a brokerage and a retirement one, and add a holding to each.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "firefly-iii",
+      "start_url": "https://demo.firefly-iii.org/login",
+      "domain": "demo.firefly-iii.org",
+      "category": "finance-budgeting",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "firefly-accounts-and-transactions",
+          "instruction": "Create a checking and a savings asset account, then record four of my recent expenses split between groceries and transport.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "firefly-monthly-budget",
+          "instruction": "Set up a monthly household budget with three spending categories and give each one a spending limit.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "firefly-savings-goal-piggybank",
+          "instruction": "Create a savings goal for a new laptop with a target amount, then put some money toward it.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "firefly-recurring-bill",
+          "instruction": "Add my monthly rent as a recurring bill and link a new payment to it, then review my bills overview.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "firefly-tags-and-filter",
+          "instruction": "Tag two of my transactions as work-related and then show me only the transactions with that tag.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "wallos",
+      "start_url": "https://demo.wallosapp.com/",
+      "domain": "demo.wallosapp.com",
+      "category": "finance-budgeting",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "wallos-add-four-subscriptions",
+          "instruction": "Track four of my recurring subscriptions with their prices, billing cycles, and next payment dates.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "wallos-category-and-payment-method",
+          "instruction": "Create a custom category and a new payment method, then assign them to two of my subscriptions.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "wallos-budget-and-projection",
+          "instruction": "Set a monthly budget limit and review what my subscriptions are projected to cost me each month.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "wallos-yearly-trial-notification",
+          "instruction": "Add a yearly subscription that is currently in a free trial and turn on a reminder before it renews.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "kresus",
+      "start_url": "https://demo.kresus.org/",
+      "domain": "demo.kresus.org",
+      "category": "finance-budgeting",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "kresus-manual-account-and-transactions",
+          "instruction": "Add a manual account, enter five transactions on it, and sort each one into the right category.",
+          "difficulty": "hard",
+          "expected_actions": 23,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "kresus-budget-thresholds",
+          "instruction": "Set monthly budget thresholds for two of my spending categories and check how I'm tracking against them.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "kresus-new-category-recategorize",
+          "instruction": "Create a new spending category with its own color and move three existing transactions into it.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "kresus-balance-alert",
+          "instruction": "Set up an alert that warns me when one of my categories goes over a monthly spending amount.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "goodbudget",
+      "start_url": "https://goodbudget.com/signup",
+      "domain": "goodbudget.com",
+      "category": "finance-budgeting",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "goodbudget-envelope-budget",
+          "instruction": "Set up my envelope budget with four spending envelopes and put a monthly amount into each one.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "goodbudget-account-and-transactions",
+          "instruction": "Add my account balance and record five recent expenses, each pulled from the matching envelope.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "goodbudget-annual-goal-envelope",
+          "instruction": "Create an annual goal envelope for a vacation fund with a target and a monthly amount to fill it.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "goodbudget-cover-overspend",
+          "instruction": "I overspent in one envelope, so move money from another to cover it and then show me my spending report.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "pocketsmith",
+      "start_url": "https://my.pocketsmith.com/signup/Free",
+      "domain": "my.pocketsmith.com",
+      "category": "finance-budgeting",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "pocketsmith-manual-account-transactions",
+          "instruction": "Create a manual bank account, add several transactions to it, and categorize them.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pocketsmith-monthly-budget-forecast",
+          "instruction": "Build a monthly budget with three category budgets and then look at my cash-flow forecast.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pocketsmith-savings-goal",
+          "instruction": "Set a savings goal with a target amount and date, then check what my projected balance looks like.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pocketsmith-categories-and-rule",
+          "instruction": "Create two custom categories and a rule that auto-categorizes matching transactions, then apply it to my past records.",
+          "difficulty": "hard",
+          "expected_actions": 17,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "toshl-finance",
+      "start_url": "https://toshl.com/signup/",
+      "domain": "toshl.com",
+      "category": "finance-budgeting",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "toshl-account-and-entries",
+          "instruction": "Add a financial account and log six expenses plus one income entry, tagging each one.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "toshl-two-budgets",
+          "instruction": "Create two monthly budgets for different spending tags and set a limit on each.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "toshl-recurring-expense",
+          "instruction": "Set up a monthly bill as a recurring expense and schedule its next planned payment.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "toshl-tags-and-breakdown",
+          "instruction": "Make a few custom tags, apply them to my expenses, and show me my spending broken down by tag.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "countabout",
+      "start_url": "https://secure.countabout.com/landing/Register",
+      "domain": "countabout.com",
+      "category": "finance-budgeting",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "countabout-accounts-and-transactions",
+          "instruction": "Set up a checking account and a credit card account, then enter six transactions with categories across them.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "countabout-zero-based-budget",
+          "instruction": "Build a zero-based monthly budget that assigns my income across four categories so nothing is left unallocated.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "countabout-split-transaction",
+          "instruction": "Add an income source and record a single purchase split across two different categories.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "countabout-savings-transfer-review",
+          "instruction": "Create a savings account, transfer money into it, and then compare my budget against what I actually spent.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "money-lover",
+      "start_url": "https://web.moneylover.me/",
+      "domain": "moneylover.me",
+      "category": "finance-budgeting",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "moneylover-wallet-and-transactions",
+          "instruction": "Create a wallet, log five transactions covering both income and expenses, and check the running balance.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "moneylover-monthly-budget",
+          "instruction": "Set a monthly budget for two spending categories and review how much budget is left after my expenses.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "moneylover-savings-event",
+          "instruction": "Start a savings goal for a trip and contribute toward it, then set a reminder for a recurring bill.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "moneylover-custom-category-report",
+          "instruction": "Add a custom expense category, move two transactions into it, and then open my spending report.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "budgetbakers-wallet",
+      "start_url": "https://web.budgetbakers.com/",
+      "domain": "budgetbakers.com",
+      "category": "finance-budgeting",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "budgetbakers-account-and-records",
+          "instruction": "Create an account and add six transactions with categories, then review my spending overview.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "budgetbakers-monthly-budget",
+          "instruction": "Set up a monthly budget across three categories and check how much of it I have left.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "budgetbakers-savings-goal",
+          "instruction": "Create a savings goal with a target amount and add a contribution toward it.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "budgetbakers-planned-payment-filter",
+          "instruction": "Add a recurring planned payment and a new category, then filter my records to show only that category.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "mealie",
+      "start_url": "https://demo.mealie.io/register/",
+      "domain": "demo.mealie.io",
+      "category": "recipes-meal-home",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "mealie-add-full-recipe",
+          "instruction": "Add a new chicken curry recipe with at least five ingredients and three preparation steps, then tag it as a dinner.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "mealie-create-cookbook",
+          "instruction": "Create a cookbook called Weeknight Dinners and organize a couple of my recipes into it.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "mealie-plan-three-days",
+          "instruction": "Plan my meals for the next three days by assigning a recipe to each day on the meal planner.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "mealie-shopping-from-recipe",
+          "instruction": "Start a shopping list and pull in the ingredients from one of my recipes.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "mealie-import-then-plan",
+          "instruction": "Import a recipe from a website link and then put it on today's meal plan.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "recipesage",
+      "start_url": "https://recipesage.com/",
+      "domain": "recipesage.com",
+      "category": "recipes-meal-home",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "recipesage-add-recipe-label",
+          "instruction": "Add a banana bread recipe with its ingredients and instructions, then give it a baking label.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "recipesage-meal-plan",
+          "instruction": "Create a meal plan and schedule one of my recipes on it for a specific day.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "recipesage-shopping-list",
+          "instruction": "Create a shopping list called Weekend and add several grocery items to it.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "recipesage-import-url",
+          "instruction": "Import a recipe from a web link into my collection.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "saffron-app",
+      "start_url": "https://www.mysaffronapp.com/",
+      "domain": "mysaffronapp.com",
+      "category": "recipes-meal-home",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "saffron-recipe-cookbook",
+          "instruction": "Add a new recipe with five ingredients and steps and file it under a new cookbook called Comfort Food.",
+          "difficulty": "hard",
+          "expected_actions": 21,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "saffron-plan-week",
+          "instruction": "Plan meals across three days of the week using recipes from my collection.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "saffron-shopping-list",
+          "instruction": "Put a recipe on my meal plan and generate a shopping list from it.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "saffron-import-recipe",
+          "instruction": "Import a recipe from a website into my cookbook.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "plan-to-eat",
+      "start_url": "https://app.plantoeat.com/signup/",
+      "domain": "plantoeat.com",
+      "category": "recipes-meal-home",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "plantoeat-add-recipe",
+          "instruction": "Add a new recipe with its ingredients and directions to my recipe book.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "plantoeat-plan-calendar",
+          "instruction": "Schedule recipes onto my meal planner calendar across the coming week.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "plantoeat-shopping-list",
+          "instruction": "Generate a shopping list from my planned meals and add a couple of extra items.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "plantoeat-import-url",
+          "instruction": "Import a recipe from a website link into my collection.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "eat-this-much",
+      "start_url": "https://www.eatthismuch.com/",
+      "domain": "eatthismuch.com",
+      "category": "recipes-meal-home",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "etm-goals-generate-plan",
+          "instruction": "Set my calorie target and dietary preferences, then generate a day's meal plan.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "etm-swap-meals",
+          "instruction": "Generate a meal plan and swap out two of the suggested meals for alternatives.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "etm-grocery-list",
+          "instruction": "Generate a grocery list from my meal plan for the week.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "etm-add-custom-food",
+          "instruction": "Add a custom food with its nutrition information to my account.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "our-groceries",
+      "start_url": "https://www.ourgroceries.com/",
+      "domain": "ourgroceries.com",
+      "category": "recipes-meal-home",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "ourgroceries-create-list",
+          "instruction": "Create a new shopping list called Groceries and add at least eight items to it.",
+          "difficulty": "medium",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "ourgroceries-categorize-crossoff",
+          "instruction": "Add items to a list, sort a few into store-aisle categories, and cross off two of them.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "ourgroceries-recipe-to-list",
+          "instruction": "Create a recipe with several ingredients and add those ingredients onto a shopping list.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "ourgroceries-two-lists",
+          "instruction": "Create two separate lists, one for groceries and one for a hardware store, and populate each.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "pepperplate",
+      "start_url": "https://www.pepperplate.com/",
+      "domain": "pepperplate.com",
+      "category": "recipes-meal-home",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "pepperplate-add-recipe",
+          "instruction": "Add a new recipe with its ingredients and directions and put it in a category.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pepperplate-create-menu",
+          "instruction": "Create a dinner menu and add two recipes to it.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pepperplate-shopping-list",
+          "instruction": "Add recipes to my shopping list and review the combined grocery items.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pepperplate-schedule-meal",
+          "instruction": "Schedule a recipe on my meal planner for a specific date.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "prepear",
+      "start_url": "https://www.prepear.com/",
+      "domain": "prepear.com",
+      "category": "recipes-meal-home",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "prepear-add-recipe",
+          "instruction": "Add a new recipe with its ingredients and instructions and save it to a collection.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "prepear-meal-plan",
+          "instruction": "Drag recipes onto my meal plan calendar across several days.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "prepear-grocery-list",
+          "instruction": "Generate a grocery list from my meal plan and add a couple of extra items.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "prepear-import-plan",
+          "instruction": "Import a recipe from a link and add it to my meal plan.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "kitchenowl",
+      "start_url": "https://app.kitchenowl.org/",
+      "domain": "app.kitchenowl.org",
+      "category": "recipes-meal-home",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kitchenowl-household-list",
+          "instruction": "Set up a household and add several items to its shopping list.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "kitchenowl-recipe-to-list",
+          "instruction": "Create a recipe with multiple ingredients and add its items to the shopping list.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "kitchenowl-meal-plan",
+          "instruction": "Add recipes to the meal planner for a few days this week.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "kitchenowl-expense-split",
+          "instruction": "Add a household expense and split it between members.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "baserow",
+      "start_url": "https://baserow.io/signup",
+      "domain": "baserow.io",
+      "category": "productivity-nocode",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "baserow-contacts-table",
+          "instruction": "Set up a contacts database for my small business with name, email, company, and status columns, and add four sample contacts.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "baserow-grouped-view",
+          "instruction": "Add a single-select status field to my table and make a grid view that groups the rows by status.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "baserow-kanban",
+          "instruction": "Create a kanban board of my tasks organized by stage and move one card to a different column.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "baserow-linked-table",
+          "instruction": "Add a second table for companies and link it to my contacts so each contact points to a company record.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "baserow-filter-sort",
+          "instruction": "Filter my contacts view to show only active people and sort them alphabetically by name.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "nocodb",
+      "start_url": "https://app.nocodb.com/#/signup",
+      "domain": "app.nocodb.com",
+      "category": "productivity-nocode",
+      "provisioning": "open_signup",
+      "tasks": [
+        {
+          "id": "nocodb-books-base",
+          "instruction": "Create a new base with a table tracking my reading list: title, author, rating, and date-read, then add three books.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "nocodb-filtered-view",
+          "instruction": "Build a grid view of my books filtered to only those rated above three and sorted by rating.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "nocodb-linked-relation",
+          "instruction": "Set up a tasks table and a projects table and link each task to a project.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "nocodb-kanban-card",
+          "instruction": "Create a kanban view of my tasks grouped by status and add a new card in the to-do column.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "nocodb-formula-field",
+          "instruction": "Add a formula column that combines the first and last name fields into one full-name field.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "teable",
+      "start_url": "https://app.teable.ai/auth/signup",
+      "domain": "app.teable.ai",
+      "category": "productivity-nocode",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "teable-content-calendar",
+          "instruction": "Build a content calendar with title, channel, publish-date, and status fields and fill in four planned posts.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "teable-kanban-move",
+          "instruction": "Create a kanban view of my posts grouped by status and drag a record from draft to scheduled.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "teable-filter-sort",
+          "instruction": "Make a view that shows only published posts ordered by publish date.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "teable-linked-records",
+          "instruction": "Add a second table for campaigns and link each post to the campaign it belongs to.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "grist",
+      "start_url": "https://docs.getgrist.com/signup",
+      "domain": "docs.getgrist.com",
+      "category": "productivity-nocode",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "grist-expenses-doc",
+          "instruction": "Create a new document with an expenses table holding date, category, and amount, and enter five expense rows.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "keypress"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "grist-summary-table",
+          "instruction": "Add a summary that totals my expenses grouped by category.",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "grist-formula-flag",
+          "instruction": "Add a formula column that flags any expense over 100 as high.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "grist-reference-link",
+          "instruction": "Set up a projects table and a tasks table and connect each task to a project with a reference column.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "rallly",
+      "start_url": "https://app.rallly.co/login",
+      "domain": "app.rallly.co",
+      "category": "productivity-nocode",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "rallly-team-sync-poll",
+          "instruction": "Create a group meeting poll called Team Sync with three candidate time slots and a short description.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "rallly-dinner-poll",
+          "instruction": "Set up a scheduling poll for a team dinner with four possible dates and add a location note.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "rallly-vote-availability",
+          "instruction": "Create a poll, then add myself as a participant and mark my availability across the options.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "rallly-edit-share",
+          "instruction": "Make a new poll, edit its title and description after creating it, and grab the share link.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "formbricks",
+      "start_url": "https://app.formbricks.com/auth/signup",
+      "domain": "app.formbricks.com",
+      "category": "productivity-nocode",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "formbricks-feedback-survey",
+          "instruction": "Build a customer-feedback survey with a rating question, a multiple-choice question, and an open-text question, then publish it.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "formbricks-thankyou-share",
+          "instruction": "Create a survey from scratch, add three questions, set up a thank-you ending screen, and get the share link.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "formbricks-conditional-logic",
+          "instruction": "Add branching logic so a follow-up question only appears when someone gives a low rating.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "formbricks-contact-form",
+          "instruction": "Create a contact-style form with name, email, and message fields and publish it.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "documenso",
+      "start_url": "https://app.documenso.com/signup",
+      "domain": "app.documenso.com",
+      "category": "productivity-nocode",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "documenso-single-signer",
+          "instruction": "Upload a document, place a signature field and a date field for one recipient, and send it out for signing.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "documenso-two-recipients",
+          "instruction": "Create a signing request with two recipients and add a signature field for each of them.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "documenso-template",
+          "instruction": "Set up a reusable template document with a name field and a signature field.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "documenso-draft-fields",
+          "instruction": "Upload a PDF, add a text field and a signature field, and save it as a draft without sending.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "auth_required": true
+        }
+      ]
+    },
+    {
+      "name": "penpot",
+      "start_url": "https://design.penpot.app/#/auth/register",
+      "domain": "design.penpot.app",
+      "category": "productivity-nocode",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "penpot-login-screen",
+          "instruction": "Create a new design file and lay out a simple login screen with two input boxes, a button, and a heading.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "penpot-styled-board",
+          "instruction": "Make a board, add a heading text and a rectangle, and give the rectangle a fill color.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "penpot-business-card",
+          "instruction": "Design a business-card layout with a name, a job title, and a logo shape arranged on a board.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "penpot-component-instances",
+          "instruction": "Turn a button into a reusable component and place two instances of it on the canvas.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "drag"
+          ],
+          "auth_required": true
+        }
+      ]
+    }
+  ]
+}

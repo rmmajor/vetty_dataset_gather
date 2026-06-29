@@ -195,10 +195,17 @@ def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str],
             "open the newest message, use its link or code, and return.\n"
         )
     else:
+        # Realistic email handling IS the skill (no harness shortcut): a disposable inbox can take a
+        # minute or two and the mail may land in spam. Teach the agent to wait in real increments,
+        # refresh, check spam, and re-request once before giving up — all ordinary recorded browser
+        # actions, which is exactly what a deployed CUA must do.
         mail_line = (
             f"- You have your own email inbox at {webmail_url}. If — and only if — a step needs an "
             "email (a sign-up confirmation, or a password reset), `navigate` there, sign in with your "
-            "email and password, open the newest message, use its link or code, and return.\n"
+            "email and password, and read the newest message. The mail can take a minute or two and "
+            "may land in Spam/Junk: after requesting it, `wait` ~10-20s and refresh; if it has not "
+            "arrived, wait again and check the Spam/Junk folder; if still nothing after two checks, "
+            "request it once more. Only conclude it will not arrive after genuinely retrying.\n"
         )
     done_line = ("- You are finished as soon as the goal is met (e.g. the account exists and you are "
                  "signed in). Do not keep hunting for a confirmation email if the site already let "
