@@ -50,6 +50,18 @@ def _req(method: str, path: str, body: dict | None = None, token: str | None = N
                 time.sleep(delay)
                 continue
             raise
+        except urllib.error.URLError as e:
+            # Transient host network/DNS blip (getaddrinfo "nodename nor servname", connection
+            # refused/reset/timeout) — these otherwise fail a whole site instantly during a brief
+            # outage and burn the queue. HTTPError (a URLError subclass) is handled above; this is
+            # the connection-level fallback. Back off and retry; give up only after `tries`.
+            if attempt < tries - 1:
+                delay = 3 * (2 ** attempt)
+                logger.warning(f"mail.tm network error on {method} {path} ({e.reason}) — retry in "
+                               f"{delay:.0f}s (attempt {attempt + 1}/{tries})")
+                time.sleep(delay)
+                continue
+            raise
 
 
 def _members(resp) -> list:
