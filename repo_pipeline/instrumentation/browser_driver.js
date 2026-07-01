@@ -870,11 +870,15 @@ const routes = {
     return { ok: true, url: state.page.url(), snapshot: (await takeSnapshot()).slice(0, 8000) };
   },
   'POST /storage_state': async () => {
-    // Export the current context's cookies + localStorage so a register/login trajectory's
-    // authenticated session can be injected into later tasks (auth_mode=pre_session) — letting
-    // most downstream tasks start already signed in instead of repeating a login.
+    // Export the current context's cookies + localStorage + IndexedDB so a register/login
+    // trajectory's authenticated session can be injected into later tasks (auth_mode=pre_session) —
+    // letting most downstream tasks start already signed in instead of repeating a login. IndexedDB
+    // is required for SPA apps (workflowy/appflowy/…) that keep their auth token there rather than in
+    // cookies; without it the injected session is empty and every reuse task re-hits the login wall.
+    // `{indexedDB:true}` needs Playwright >=1.51 (the sandbox image is pinned to 1.55); newContext
+    // restores IndexedDB automatically when the storage_state carries it.
     if (!state.context) throw new Error('no active session');
-    return { ok: true, storage_state: await state.context.storageState() };
+    return { ok: true, storage_state: await state.context.storageState({ indexedDB: true }) };
   },
   'GET /status': async () => ({
     ok: true,

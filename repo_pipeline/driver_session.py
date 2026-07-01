@@ -28,7 +28,9 @@ DRIVER_BAKED_DIR = "/opt/driver"
 DRIVER_LOG = "/workspace/driver.log"
 APP_LOG = "/workspace/app.log"
 # Pinned to the sandbox image's Playwright base (browsers in /ms-playwright are this revision).
-PLAYWRIGHT_CORE_VERSION = os.environ.get("DRIVER_PLAYWRIGHT_CORE_VERSION", "1.50.0")
+# 1.55 (>=1.51) so storageState({indexedDB:true}) can carry IndexedDB-based auth for SPA apps
+# (workflowy/appflowy/…) whose session cookies alone do not authenticate a reused context.
+PLAYWRIGHT_CORE_VERSION = os.environ.get("DRIVER_PLAYWRIGHT_CORE_VERSION", "1.55.0")
 DRIVER_READY_TIMEOUT = int(os.environ.get("DRIVER_READY_TIMEOUT", "60"))
 
 _REF_LINE_RE = re.compile(r"^\[\d+\] ", re.MULTILINE)
