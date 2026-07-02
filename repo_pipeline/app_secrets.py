@@ -102,6 +102,39 @@ def burner_account(burner_id: str) -> dict | None:
             "provisioning_mode": entry.get("provisioning_mode", "human_provisioned")}
 
 
+def register_burner(burner_id: str, email: str, password: str,
+                    provisioning_mode: str = "human_provisioned") -> None:
+    """Register (or update) a burner in the gitignored burner store so the guarded/public lane's
+    fail-closed `is_registered_burner` gate will permit it. Called by the human-provisioning helper
+    after a person clears a signup wall; `provisioning_mode` records how the identity was created
+    ('human_provisioned' | 'generated'). NEVER register a real personal account here — the burner
+    store is for disposable identities only ([[burner-accounts-only-for-capture]])."""
+    if not (burner_id and email and password):
+        raise ValueError("register_burner requires a non-empty burner_id, email, and password")
+    _CRED_DIR.mkdir(parents=True, exist_ok=True)
+    registry = _load_burners()
+    registry[burner_id] = {"email": email, "password": password,
+                           "provisioning_mode": provisioning_mode, "registered": True}
+    _BURNER_FILE.write_text(json.dumps(registry, indent=2))
+    logger.info(f"registered burner '{burner_id}' ({provisioning_mode})")
+
+
+def save_storage_state(ref: str, state: dict) -> None:
+    """Persist a Playwright storage_state dump (cookies + localStorage + IndexedDB) to
+    `credentials/storage_state/<ref>.json` so a later pre_session run starts already signed in.
+    Written by the human-provisioning helper right after a manual login; read back by
+    `load_storage_state`. Refuses an empty dump so a mis-run (human never actually signed in) fails
+    loudly instead of persisting a logged-out session."""
+    if not ref:
+        raise ValueError("save_storage_state requires a non-empty ref")
+    if not isinstance(state, dict) or not (state.get("cookies") or state.get("origins")):
+        raise ValueError("refusing to save an empty storage_state (no cookies or origins)")
+    _STORAGE_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = _STORAGE_STATE_DIR / f"{ref}.json"
+    path.write_text(json.dumps(state, indent=2))
+    logger.info(f"saved storage_state '{ref}' ({len(json.dumps(state))} bytes)")
+
+
 def load_storage_state(ref: str) -> dict | None:
     """A saved Playwright storage_state (cookies + localStorage) for pre_session login on a real
     site, read from `credentials/storage_state/<ref>.json`. None if the ref is missing/unreadable —

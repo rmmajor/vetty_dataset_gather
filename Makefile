@@ -1,5 +1,6 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
-       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard
+       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
+       capture-public provision-human capture-human
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -101,6 +102,14 @@ audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on 
 
 capture-public: ## Teacher capture on curated public sites (real-web diversity lane)
 	python -m repo_pipeline.public_capture $(if $(PUBLIC_SITES),--sites $(PUBLIC_SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
+
+provision-human: ## Human-in-the-loop: headed browser to sign a burner into one login-gated SITE (SITE=name)
+	@test -n "$(SITE)" || (echo "ERROR: set SITE=<site-name> (a site from the indie/logingated config)" && exit 1)
+	python -m playwright install chromium
+	python -m repo_pipeline.provision_human $(SITE) $(if $(SRC_CONFIG),--config $(SRC_CONFIG))
+
+capture-human: ## Capture tasks on human-provisioned sites (reuses saved sessions; SITES=a,b optional)
+	python -m repo_pipeline.public_capture --config repo_pipeline/public_sites_human.json --no-propose $(if $(SITES),--sites $(SITES))
 
 pipeline-discover: ## Stage 1: Discover QA repos on GitHub
 	@test -n "$$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN not set" && exit 1)
