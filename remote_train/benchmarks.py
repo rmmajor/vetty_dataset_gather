@@ -26,15 +26,27 @@ class Benchmark:
     files: tuple           # harness files that must exist on the box (incl. the requirements file)
     requirements: str      # pip requirements file to install on the box
     results_dir: str       # dir (relative to remote workdir) the harness writes results into
-    command: str           # template; gets {models_yaml} {limit} {results_dir}
+    command: str           # template; gets {models_yaml} {results_dir}
+    dataset: str = ""      # default HF dataset for this benchmark (cfg.eval_dataset overrides)
+    split: str = ""
+    extra_args: tuple = () # benchmark-specific flags the harness needs to score correctly
     source_ref: str = ""   # git ref to fetch missing files from
     summarize: Callable = None  # (local_results_dir: Path) -> str
 
     def build_command(self, cfg, models_yaml: str) -> str:
-        limit = f"--limit {cfg.eval_limit}" if cfg.eval_limit else ""
-        return self.command.format(
-            models_yaml=models_yaml, limit=limit, results_dir=self.results_dir
-        ).strip()
+        parts = [self.command.format(models_yaml=models_yaml, results_dir=self.results_dir)]
+        dataset = cfg.eval_dataset or self.dataset
+        split = cfg.eval_split or self.split
+        if dataset:
+            parts.append(f"--dataset {dataset}")
+        if split:
+            parts.append(f"--split {split}")
+        if cfg.eval_limit:
+            parts.append(f"--limit {cfg.eval_limit}")
+        parts.extend(self.extra_args)
+        if cfg.eval_extra_args:
+            parts.append(cfg.eval_extra_args)
+        return " ".join(str(p) for p in parts if p)
 
 
 def _summarize_screenspot(results_dir: Path) -> str:
@@ -70,7 +82,15 @@ BENCHMARKS: dict = {
         files=("eval_screenspot.py", "train_qwen.py", "requirements-eval.txt"),
         requirements="requirements-eval.txt",
         results_dir="eval_results",
-        command="python eval_screenspot.py run --models-config {models_yaml} {limit} --output-dir {results_dir}",
+        command="python eval_screenspot.py run --models-config {models_yaml} --output-dir {results_dir}",
+        # NOT the harness default (os-copilot/ScreenSpot-v2): that repo is raw JSON + an image
+        # zip with no `test` split and no image column, so load_dataset() cannot read it.
+        # This fork ships real parquet with a 1272-row `test` split and a proper image column.
+        dataset="rootsautomation/ScreenSpot",
+        split="test",
+        # CRITICAL: this fork stores bbox as (x1,y1,x2,y2). The harness defaults to xywh, which
+        # would mis-score every sample and report plausible-looking GARBAGE rather than crash.
+        extra_args=("--bbox-format", "xyxy"),
         source_ref="origin/worktree-feat+screenspot-eval",
         summarize=_summarize_screenspot,
     ),

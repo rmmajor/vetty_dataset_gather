@@ -197,7 +197,8 @@ class VastAIProvider(ComputeProvider):
 
     def _ssh_base(self, instance) -> list:
         key = os.path.expanduser(self.cfg.ssh_key_path)
-        return ["ssh", "-p", str(instance.ssh_port), "-i", key, *_SSH_OPTS,
+        # -n detaches ssh's own stdin; without it a backgrounded remote job can hold the channel open.
+        return ["ssh", "-n", "-p", str(instance.ssh_port), "-i", key, *_SSH_OPTS,
                 f"{instance.ssh_user}@{instance.ssh_host}"]
 
     def _rsync(self, instance, src, dst, *, upload) -> None:

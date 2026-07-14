@@ -40,6 +40,8 @@ def _cli_overrides(args) -> dict:
         "benchmark": getattr(args, "benchmark", None),
         "eval_limit": getattr(args, "limit", None),
         "eval_models": tuple(models) if models else None,
+        "eval_dataset": getattr(args, "dataset", None),
+        "eval_split": getattr(args, "split", None),
         "push_hf_repo": getattr(args, "push_hf", None),
         "notify": True if getattr(args, "notify", False) else None,
     }
@@ -115,6 +117,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Model id to evaluate (repeatable, e.g. Qwen/Qwen3.5-9B-Base).")
     eval_p.add_argument("--benchmark", default=None, choices=sorted(BENCHMARKS), help="Which eval to run.")
     eval_p.add_argument("--limit", type=int, default=None, help="Cap samples (omit = full dataset).")
+    eval_p.add_argument("--dataset", default=None, help="Override the benchmark's default HF dataset.")
+    eval_p.add_argument("--split", default=None, help="Override the dataset split.")
     eval_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     eval_p.set_defaults(func=eval_cmd)
 

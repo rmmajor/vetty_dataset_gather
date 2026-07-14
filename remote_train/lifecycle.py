@@ -213,8 +213,13 @@ def _launch(provider, instance, cfg, body: str) -> None:
     _, err, code = provider.exec(instance, write_cmd, timeout=60)
     if code != 0:
         raise ProviderError(f"Failed to write remote run script: {err[:200]}")
+    # `setsid` + redirecting ALL THREE fds is what makes ssh return. Backgrounding alone
+    # (`nohup … >/dev/null 2>&1 &`) leaves the child holding the ssh channel's stdin, so the
+    # client blocks until it times out even though the job started fine.
     _, err, code = provider.exec(
-        instance, f"cd {wd} && nohup bash {_RUN_SCRIPT} >/dev/null 2>&1 & echo launched", timeout=60
+        instance,
+        f"cd {wd} && setsid nohup bash {_RUN_SCRIPT} </dev/null >/dev/null 2>&1 & echo launched",
+        timeout=60,
     )
     if code != 0:
         raise ProviderError(f"Failed to launch remote job: {err[:200]}")
