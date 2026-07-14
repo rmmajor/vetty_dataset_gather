@@ -49,6 +49,9 @@ class RemoteTrainConfig:
     eval_dataset: str = ""     # override the benchmark's default HF dataset
     eval_split: str = ""
     eval_extra_args: str = ""  # extra flags passed straight to the harness
+    # Coordinate convention THE MODEL answers in. normalized_1000 for a stock Qwen;
+    # viewport_abs for a checkpoint fine-tuned on this project's corpus.
+    eval_coord_space: str = "normalized_1000"
 
     push_hf_repo: str = ""
     notify: bool = False
@@ -63,7 +66,8 @@ _YAML_KEYS = {
     "exclude_countries", "instance_label", "image", "disk_gb", "max_runtime_hours",
     "ready_timeout_s", "poll_interval_s", "ssh_key_path", "remote_workdir", "trajectories_dir",
     "train_config", "output_dir", "val_split", "benchmark", "eval_models", "eval_limit",
-    "eval_results_dir", "eval_dataset", "eval_split", "eval_extra_args", "push_hf_repo", "notify",
+    "eval_results_dir", "eval_dataset", "eval_split", "eval_extra_args", "eval_coord_space",
+    "push_hf_repo", "notify",
 }
 
 

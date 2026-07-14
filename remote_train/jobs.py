@@ -106,7 +106,15 @@ class EvalJob(RemoteJob):
         if not cfg.eval_models:
             raise FileNotFoundError("no models to evaluate — pass --model <id> (repeatable)")
         self.local_files = materialize(self.benchmark, self.staging)
-        specs = [{"label": str(m).split("/")[-1], "model": str(m)} for m in cfg.eval_models]
+        # coord_space is per-MODEL, not per-dataset: a stock Qwen answers in normalized_1000, a
+        # model fine-tuned on this corpus answers in viewport_abs. Scoring one in the other's
+        # space silently reports a wrong number, so it is written onto every spec explicitly.
+        specs = []
+        for m in cfg.eval_models:
+            spec = {"label": str(m).split("/")[-1], "model": str(m)}
+            if cfg.eval_coord_space:
+                spec["coord_space"] = cfg.eval_coord_space
+            specs.append(spec)
         self.models_yaml.write_text(yaml.safe_dump(specs, sort_keys=False))
         logger.info(f"benchmark '{self.benchmark.name}' on {[s['model'] for s in specs]}"
                     f"{f' (limit {cfg.eval_limit})' if cfg.eval_limit else ' (full dataset)'}")

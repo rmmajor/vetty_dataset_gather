@@ -54,9 +54,26 @@ python -m repo_pipeline.orchestrator --status
 # Convert + train (works on output of either path)
 make convert               # trajectories/ -> training_data/sft_dataset.jsonl
 make train                 # invokes `swift sft` (needs ms-swift on a GPU box)
+
+# Eval grounding before/after SFT (ScreenSpot)
+make install-eval          # eval deps (GPU box)
+make eval-screenspot       # evals every model in eval_models.yaml, writes eval_results/
+make test-eval             # harness smoke test (no model/GPU/network)
 ```
 
-There is no test suite. The executable checks are `make test-sandbox` (container smoke test), `make test-driver` (scripted no-LLM browser-driver session asserting the trajectory contract), and `make test-notifier` (Telegram bot). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
+There is no test suite. The executable checks are `make test-sandbox` (container smoke test), `make test-driver` (scripted no-LLM browser-driver session asserting the trajectory contract), `make test-notifier` (Telegram bot), and `make test-eval` (ScreenSpot eval harness smoke test). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
+
+## Evaluation (`eval_screenspot.py`)
+
+ScreenSpot grounding eval: predicted click point vs. target bbox. Mirrors `train_qwen.py`'s style and **imports `SYSTEM_PROMPT` from it** to guarantee train/eval prompt parity (so `train_qwen.py` — and the `repo_pipeline.corpus_audit` it imports — must be present wherever the eval runs). Registry/flag-driven: `COORD_SPACES`, `PREDICTOR_BACKENDS` (`swift` shells out to `swift infer`; `mock` for tests), a configurable parser (`DEFAULT_PARSE_PATTERNS`, tries `<ref>(x,y)</ref>` first), and a configurable dataset/bbox adapter. Evaluates N specs from `eval_models.yaml`. Heavy deps (`datasets`) load lazily so `make test-eval` needs none. Validated end-to-end on a rented GPU (`swift infer` flags confirmed).
+
+**Measured baseline:** `Qwen/Qwen3.5-9B` (instruct, no SFT) scores **85.0%** on `rootsautomation/ScreenSpot` `test` (n=100, 93% parse, text 96% / icon 86%). That is the bar SFT must beat.
+
+**The scoring conventions are the whole ballgame — get one wrong and the eval reports a confident WRONG number instead of crashing.** All were verified against real model output:
+- **`coord_space` is PER-MODEL** (`ModelSpec.coord_space`, set it in `eval_models.yaml`). A stock Qwen answers in `normalized_1000`; a checkpoint fine-tuned on this corpus answers in `viewport_abs` (the 1280x720 training viewport). The *same* base-model predictions score **85% as `normalized_1000` and 25% as `viewport_abs`** — so a before/after comparison scored with one global coord space is meaningless.
+- **`--bbox-normalized` (default on)** — the default dataset stores bbox in 0-1, not pixels. Treating it as pixels shrinks every target to a sub-pixel box at the origin: **0% by construction, regardless of the model.**
+- **`--bbox-format xyxy` (default)** — that mirror stores `(x1,y1,x2,y2)`, not `xywh`.
+- The default dataset is `rootsautomation/ScreenSpot`, **not** `os-copilot/ScreenSpot-v2` (that repo is raw JSON + an image zip: no `test` split, no image column, `load_dataset` cannot read it). Re-check all three conventions against any other mirror you point `--dataset` at.
 
 ## Path B architecture (`repo_pipeline/`)
 

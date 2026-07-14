@@ -42,6 +42,7 @@ def _cli_overrides(args) -> dict:
         "eval_models": tuple(models) if models else None,
         "eval_dataset": getattr(args, "dataset", None),
         "eval_split": getattr(args, "split", None),
+        "eval_coord_space": getattr(args, "coord_space", None),
         "push_hf_repo": getattr(args, "push_hf", None),
         "notify": True if getattr(args, "notify", False) else None,
     }
@@ -119,6 +120,10 @@ def build_parser() -> argparse.ArgumentParser:
     eval_p.add_argument("--limit", type=int, default=None, help="Cap samples (omit = full dataset).")
     eval_p.add_argument("--dataset", default=None, help="Override the benchmark's default HF dataset.")
     eval_p.add_argument("--split", default=None, help="Override the dataset split.")
+    eval_p.add_argument("--coord-space", default=None,
+                        choices=["normalized_1000", "viewport_abs", "native_abs"],
+                        help="Coordinate convention THE MODEL answers in. normalized_1000 for a "
+                             "stock Qwen; viewport_abs for a checkpoint fine-tuned on this corpus.")
     eval_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     eval_p.set_defaults(func=eval_cmd)
 
