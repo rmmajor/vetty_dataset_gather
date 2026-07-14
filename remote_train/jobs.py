@@ -115,8 +115,11 @@ class EvalJob(RemoteJob):
         wd = cfg.remote_workdir
         provider.exec(instance, f"mkdir -p {wd}", timeout=60)
         logger.info("Uploading eval harness…")
-        for path in self.local_files:
-            provider.upload(instance, str(path), f"{wd}/{path.name}")
+        dirs = {str(Path(rel).parent) for _, rel in self.local_files if Path(rel).parent != Path(".")}
+        for d in sorted(dirs):
+            provider.exec(instance, f"mkdir -p {wd}/{d}", timeout=60)
+        for local, remote_rel in self.local_files:
+            provider.upload(instance, str(local), f"{wd}/{remote_rel}")
         provider.upload(instance, str(self.models_yaml), f"{wd}/{self.models_yaml.name}")
 
     def remote_command(self, cfg) -> str:

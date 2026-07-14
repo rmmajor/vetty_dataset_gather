@@ -77,9 +77,17 @@ def _summarize_screenspot(results_dir: Path) -> str:
 BENCHMARKS: dict = {
     "screenspot": Benchmark(
         name="screenspot",
-        # eval_screenspot imports SYSTEM_PROMPT from train_qwen for train/eval prompt parity,
-        # so train_qwen.py has to ship too.
-        files=("eval_screenspot.py", "train_qwen.py", "requirements-eval.txt"),
+        # eval_screenspot imports SYSTEM_PROMPT from train_qwen (train/eval prompt parity), and
+        # train_qwen has a TOP-LEVEL `from repo_pipeline.corpus_audit import ...`, so that package
+        # must ship too or the eval dies on import. corpus_audit is stdlib-only and __init__ is
+        # empty, so this is two small files, not the whole pipeline.
+        files=(
+            "eval_screenspot.py",
+            "train_qwen.py",
+            "requirements-eval.txt",
+            "repo_pipeline/__init__.py",
+            "repo_pipeline/corpus_audit.py",
+        ),
         requirements="requirements-eval.txt",
         results_dir="eval_results",
         command="python eval_screenspot.py run --models-config {models_yaml} --output-dir {results_dir}",
@@ -104,13 +112,18 @@ def build_benchmark(name: str) -> Benchmark:
 
 
 def materialize(benchmark: Benchmark, staging: Path) -> list:
-    """Every harness file as a local path, fetching whatever is missing from `source_ref`."""
+    """[(local_path, remote_relpath)] for every harness file; missing ones fetched from `source_ref`.
+
+    The remote path keeps the DECLARED relative path, not the basename — a harness that imports a
+    package (eval_screenspot -> train_qwen -> repo_pipeline.corpus_audit) needs that package to land
+    at `repo_pipeline/corpus_audit.py` on the box, not flattened next to it.
+    """
     staging.mkdir(parents=True, exist_ok=True)
-    paths = []
+    pairs = []
     for name in benchmark.files:
         local = Path(name)
         if local.is_file():
-            paths.append(local)
+            pairs.append((local, name))
             continue
         if not benchmark.source_ref:
             raise FileNotFoundError(
@@ -124,8 +137,8 @@ def materialize(benchmark: Benchmark, staging: Path) -> list:
             raise FileNotFoundError(
                 f"could not fetch {name!r} from {benchmark.source_ref}: {result.stderr.strip()[:200]}"
             )
-        staged = staging / name
+        staged = staging / Path(name).name
         staged.write_text(result.stdout)
         logger.info(f"materialized {name} from {benchmark.source_ref}")
-        paths.append(staged)
-    return paths
+        pairs.append((staged, name))
+    return pairs
