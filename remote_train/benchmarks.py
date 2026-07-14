@@ -96,9 +96,19 @@ BENCHMARKS: dict = {
         # This fork ships real parquet with a 1272-row `test` split and a proper image column.
         dataset="rootsautomation/ScreenSpot",
         split="test",
-        # CRITICAL: this fork stores bbox as (x1,y1,x2,y2). The harness defaults to xywh, which
-        # would mis-score every sample and report plausible-looking GARBAGE rather than crash.
-        extra_args=("--bbox-format", "xyxy"),
+        # SCORING CONVENTIONS — get any of these wrong and the harness reports a confident,
+        # completely wrong number instead of crashing. All three were verified against the real
+        # predictions, not assumed:
+        #   xyxy            this fork stores (x1,y1,x2,y2); the harness defaults to xywh.
+        #   bbox-normalized this fork's bbox is 0-1, NOT pixels. Without this the target becomes a
+        #                   sub-pixel box at the origin and accuracy is 0% by construction.
+        #   normalized_1000 Qwen emits coords in a 0-1000 normalized space, not viewport pixels.
+        #                   Scoring the same predictions as viewport_abs gives 25%; as 0-1000 it
+        #                   gives 85%. The harness default (viewport_abs) is wrong for this model.
+        # NOTE: a model FINE-TUNED on this project's corpus emits viewport-absolute 1280x720
+        # coords instead, so a before/after comparison needs a PER-MODEL coord space — the harness
+        # only has one global --coord-space today. See the PR discussion.
+        extra_args=("--bbox-format", "xyxy", "--bbox-normalized", "--coord-space", "normalized_1000"),
         source_ref="origin/worktree-feat+screenspot-eval",
         summarize=_summarize_screenspot,
     ),
