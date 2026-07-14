@@ -1,6 +1,6 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
        setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
-       install-remote remote-train remote-train-dry remote-train-cleanup test-remote
+       install-remote remote-train remote-eval remote-train-dry remote-train-cleanup test-remote
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -152,7 +152,14 @@ install-remote: ## Install the vastai CLI (local controller deps)
 
 remote-train: ## Rent a GPU, train, pull adapter, and ALWAYS destroy the instance (needs VAST_API_KEY)
 	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
-	python -m remote_train run $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+	python -m remote_train train $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+
+remote-eval: ## Benchmark model(s) on a rented GPU, no training (EVAL_MODEL=... EVAL_LIMIT=...)
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train eval \
+		$(foreach m,$(EVAL_MODEL),--model $(m)) \
+		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT)) \
+		$(if $(REMOTE_ARGS),$(REMOTE_ARGS))
 
 remote-train-dry: ## Dry run: print the cheapest geo-allowed offer, provision nothing
 	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)

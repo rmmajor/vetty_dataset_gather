@@ -19,6 +19,9 @@ class RemoteTrainConfig:
 
     gpu_name: str = ""
     min_vram_gb: int = 48
+    # bfloat16 (config.yaml torch_dtype) needs Ampere sm_80+; Turing cards (compute_cap 750,
+    # e.g. Quadro RTX 8000) are cheap but cannot run the workload. 800 = A100/A6000-class floor.
+    min_compute_cap: int = 800
     num_gpus: int = 1
     max_price_per_hour: float = 2.0
     min_reliability: float = 0.90
@@ -39,7 +42,11 @@ class RemoteTrainConfig:
     output_dir: str = "output"
     val_split: float = 0.1
 
-    run_eval: bool = False
+    benchmark: str = "screenspot"
+    eval_models: tuple = ()
+    eval_limit: int = 0  # 0 = full dataset
+    eval_results_dir: str = "eval_results"
+
     push_hf_repo: str = ""
     notify: bool = False
 
@@ -48,10 +55,12 @@ class RemoteTrainConfig:
 
 
 _YAML_KEYS = {
-    "provider", "gpu_name", "min_vram_gb", "num_gpus", "max_price_per_hour", "min_reliability",
+    "provider", "gpu_name", "min_vram_gb", "min_compute_cap", "num_gpus", "max_price_per_hour",
+    "min_reliability",
     "exclude_countries", "instance_label", "image", "disk_gb", "max_runtime_hours",
     "ready_timeout_s", "poll_interval_s", "ssh_key_path", "remote_workdir", "trajectories_dir",
-    "train_config", "output_dir", "val_split", "run_eval", "push_hf_repo", "notify",
+    "train_config", "output_dir", "val_split", "benchmark", "eval_models", "eval_limit",
+    "eval_results_dir", "push_hf_repo", "notify",
 }
 
 

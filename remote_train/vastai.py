@@ -20,6 +20,7 @@ import logging
 import os
 import subprocess
 import time
+from pathlib import Path
 
 from remote_train.base import (
     ComputeProvider,
@@ -48,7 +49,8 @@ class VastAIProvider(ComputeProvider):
     def search_offer(self, cfg) -> Offer:
         query = (
             f"reliability > {cfg.min_reliability} num_gpus={cfg.num_gpus} "
-            f"gpu_ram >= {cfg.min_vram_gb} dph_total <= {cfg.max_price_per_hour} "
+            f"gpu_ram >= {cfg.min_vram_gb} compute_cap >= {cfg.min_compute_cap} "
+            f"dph_total <= {cfg.max_price_per_hour} "
             f"disk_space >= {cfg.disk_gb} rentable=true"
         )
         if cfg.gpu_name:
@@ -59,18 +61,25 @@ class VastAIProvider(ComputeProvider):
         offer = select_cheapest_allowed(offers, cfg)
         logger.info(
             f"Selected Vast.ai offer {offer.id}: {offer.gpu_name} x{offer.num_gpus}, "
-            f"{offer.gpu_ram_gb}GB, ${offer.price_per_hour:.3f}/hr, {offer.country}, "
-            f"reliability {offer.reliability:.2f}"
+            f"{offer.gpu_ram_gb}GB, compute_cap {offer.compute_cap}, "
+            f"${offer.price_per_hour:.3f}/hr, {offer.country}, reliability {offer.reliability:.2f}"
         )
         return offer
 
     def provision(self, offer, cfg) -> Instance:
+        pub = self._public_key()
+        pub_min = " ".join(pub.split()[:2])  # drop the comment — it goes through a shell echo
+        onstart = (
+            "mkdir -p /root/.ssh && "
+            f"echo '{pub_min}' >> /root/.ssh/authorized_keys && "
+            "chmod 600 /root/.ssh/authorized_keys && touch /workspace/.provisioned"
+        )
         result = self._cli_json([
             "create", "instance", offer.id,
             "--image", cfg.image,
             "--disk", str(cfg.disk_gb),
             "--label", cfg.instance_label,
-            "--onstart-cmd", "touch /workspace/.provisioned",
+            "--onstart-cmd", onstart,
             "--ssh", "--direct",
         ])
         if isinstance(result, dict) and result.get("success") is False:
@@ -81,7 +90,32 @@ class VastAIProvider(ComputeProvider):
         if not instance_id:
             raise ProviderError(f"Vast.ai create returned no instance id: {result}")
         logger.info(f"Provisioned Vast.ai instance {instance_id} (label {cfg.instance_label})")
+        self._attach_ssh_key(instance_id, pub)
         return Instance(id=instance_id, provider=self.name, label=cfg.instance_label, raw=result if isinstance(result, dict) else {})
+
+    def _public_key(self) -> str:
+        """Our SSH public key, from `<ssh_key_path>.pub` or derived from the private key."""
+        key = Path(os.path.expanduser(self.cfg.ssh_key_path))
+        pub = Path(str(key) + ".pub")
+        if pub.is_file():
+            return pub.read_text().strip()
+        result = subprocess.run(["ssh-keygen", "-y", "-f", str(key)], capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            raise ProviderError(f"could not derive a public key from {key}: {result.stderr.strip()[:200]}")
+        return result.stdout.strip()
+
+    def _attach_ssh_key(self, instance_id: str, pub: str) -> None:
+        """Attach our key to THIS instance.
+
+        Team-scoped API keys cannot register account-wide keys (Vast: "Team SSH keys are not
+        supported"), so we attach per-instance — which is tighter anyway, and keeps a shared
+        team account free of one-off keys. The onstart hook above is the fallback.
+        """
+        try:
+            self._cli(["attach", "ssh", str(instance_id), pub])
+            logger.info(f"Attached local SSH key to instance {instance_id}")
+        except ProviderError as e:
+            logger.warning(f"attach ssh failed ({e}) — falling back to the onstart-injected authorized_keys")
 
     def wait_ready(self, instance, timeout) -> None:
         deadline = time.time() + timeout
@@ -130,7 +164,10 @@ class VastAIProvider(ComputeProvider):
     def destroy(self, instance) -> bool:
         for attempt in range(1, 6):
             try:
-                self._cli(["destroy", "instance", instance.id])
+                # `-y` is NOT optional: without it the CLI stops at an interactive confirmation,
+                # reads EOF, prints "Aborted." and still EXITS 0 — i.e. a silent no-op that looks
+                # like success and leaks a running (billing) instance.
+                self._cli(["destroy", "instance", instance.id, "-y"])
             except ProviderError as e:
                 logger.warning(f"destroy call failed (attempt {attempt}): {e}")
             time.sleep(5)
@@ -213,6 +250,7 @@ class VastAIProvider(ComputeProvider):
             num_gpus=int(r.get("num_gpus", 1) or 1),
             country=normalize_country(r.get("geolocation")),
             reliability=float(r.get("reliability2", r.get("reliability", 0)) or 0),
+            compute_cap=int(r.get("compute_cap", 0) or 0),
             raw=r,
         )
 
@@ -229,6 +267,14 @@ class VastAIProvider(ComputeProvider):
             raise ProviderError(f"vastai {' '.join(args[:2])} timed out after {_CLI_TIMEOUT}s") from e
         if r.returncode != 0:
             raise ProviderError(f"vastai {' '.join(args[:2])} failed: {r.stderr.strip()[:300]}")
+        # A vastai subcommand that hits an interactive confirmation with no TTY prints "Aborted."
+        # and STILL exits 0. Treat that as the failure it is, so no caller can mistake a no-op
+        # for success (this is how a destroy silently left a billing instance alive).
+        if "Aborted." in r.stdout:
+            raise ProviderError(
+                f"vastai {' '.join(args[:2])} aborted at an interactive prompt (exit 0, no action taken) "
+                f"— a confirmation flag such as `-y` is missing"
+            )
         return r.stdout
 
     def _cli_json(self, args: list):

@@ -1,9 +1,9 @@
-"""Provider-agnostic remote-training lifecycle, with teardown as the first-class concern.
+"""Provider-agnostic remote JOB lifecycle, with teardown as the first-class concern.
 
-`run_remote_training` provisions a GPU, ships `trajectories/` + the training code, runs the
-EXISTING `train_qwen.py convert` + `train_qwen.py train` on the box (no training logic is
-duplicated here), pulls the LoRA adapter back to `./output`, and — always — destroys the
-instance.
+The skeleton — rent a GPU → wait for SSH → upload → run (detached, sentinel-tracked) → pull
+results → ALWAYS destroy — is job-agnostic. What actually runs comes from a `RemoteJob`
+(`jobs.py`): `train` fine-tunes, `eval` benchmarks. Adding a job type or a new benchmark never
+touches this file.
 
 Teardown is defense-in-depth so credits are never wasted:
   1. `try/finally` around the whole run → destroy on success, exception, or early return.
@@ -25,6 +25,7 @@ from pathlib import Path
 from remote_train import state
 from remote_train.base import Instance, ProviderError
 from remote_train.config import RemoteTrainConfig
+from remote_train.jobs import build_job
 from remote_train.mock import MockProvider
 
 try:
@@ -35,38 +36,47 @@ except Exception:  # telegram/repo_pipeline optional — notify is off by defaul
 logger = logging.getLogger(__name__)
 
 _STATUS_FILE = "STATUS"
-_LOG_FILE = "train.log"
+_LOG_FILE = "run.log"
 _RUN_SCRIPT = "run.sh"
 
 
-def run_remote_training(provider, cfg: RemoteTrainConfig, *, enable_safety: bool = True) -> int:
-    _preflight(cfg)
+def run_remote_job(provider, cfg: RemoteTrainConfig, job_name: str, *, enable_safety: bool = True) -> int:
+    return _run_job(provider, cfg, build_job(job_name, cfg), enable_safety=enable_safety)
+
+
+def _run_job(provider, cfg, job, *, enable_safety: bool = True) -> int:
+    job.preflight(cfg)
     _sweep_orphans(provider, cfg)
 
     instance = None
     stop = threading.Event()
-    watchdog = None
     try:
         offer = provider.search_offer(cfg)
         instance = provider.provision(offer, cfg)
         state.record_instance(instance)
+        logger.info(
+            f"RENTED {instance.id} — {offer.gpu_name} {offer.gpu_ram_gb}GB @ ${offer.price_per_hour:.3f}/hr "
+            f"({offer.country}). It WILL be destroyed when this run ends."
+        )
         if enable_safety:
             _install_signal_handlers(provider, instance)
-            watchdog = _start_watchdog(provider, instance, cfg, stop)
+            _start_watchdog(provider, instance, cfg, stop)
 
         provider.wait_ready(instance, cfg.ready_timeout_s)
-        _sync_up(provider, instance, cfg)
-        _launch_training(provider, instance, cfg)
+        job.upload(provider, instance, cfg)
+        _launch(provider, instance, cfg, job.remote_command(cfg))
 
         deadline = time.time() + cfg.max_runtime_hours * 3600
-        if not _wait_for_completion(provider, instance, cfg, deadline):
-            logger.error("Remote training reported FAILED — pulling logs, skipping adapter download")
-            _pull_logs(provider, instance, cfg)
+        ok = _wait_for_completion(provider, instance, cfg, deadline)
+        _pull_logs(provider, instance, cfg, job.results_dest(cfg))
+        if not ok:
+            logger.error(f"Remote {job.name} reported FAILED — see ./{job.results_dest(cfg)}/{_LOG_FILE}")
             return 1
 
-        _sync_down(provider, instance, cfg)
-        _post_train(provider, instance, cfg)
-        logger.info(f"Remote training complete; LoRA adapter in ./{cfg.output_dir}")
+        job.collect(provider, instance, cfg)
+        summary = job.report(cfg)
+        if summary:
+            print(f"\n=== {job.name} results ===\n{summary}\n")
         return 0
     finally:
         stop.set()
@@ -149,65 +159,66 @@ def _start_watchdog(provider, instance, cfg, stop: threading.Event) -> threading
 
 
 def _sweep_orphans(provider, cfg) -> None:
+    """Pre-run safety sweep — designed for a SHARED/team account.
+
+    We only auto-destroy the instance THIS tool recorded in the state file (provably ours and
+    provably orphaned). Anything else carrying our label is reported, never killed: it could be
+    a concurrent run of yours. Teammates' boxes are invisible to us anyway — `list_owned` is an
+    exact label match. Destroying every labeled box is an explicit, user-initiated act:
+    `make remote-train-cleanup`.
+    """
+    record = state.read_instance()
+    recorded_id = str(record.get("id")) if record and record.get("id") else ""
+
     try:
-        orphans = provider.list_owned(cfg.instance_label)
+        labeled = provider.list_owned(cfg.instance_label)
     except ProviderError as e:
         logger.warning(f"Orphan pre-sweep skipped (list failed): {e}")
         return
-    for inst in orphans:
-        logger.warning(f"Found pre-existing instance {inst.id} labeled '{cfg.instance_label}' — destroying before run")
-        _guaranteed_destroy(provider, inst)
+
+    for inst in labeled:
+        if inst.id == recorded_id:
+            logger.warning(f"Orphan {inst.id} left by a previous run (state file) — destroying before start")
+            _guaranteed_destroy(provider, inst)
+        else:
+            logger.warning(
+                f"Instance {inst.id} also carries label '{cfg.instance_label}' but was not recorded by this "
+                f"tool — LEAVING IT ALONE (may be a concurrent run). If it is an orphan, run "
+                f"`make remote-train-cleanup`."
+            )
+
+    if recorded_id and not any(i.id == recorded_id for i in labeled):
+        state.clear_instance()  # recorded instance is already gone
 
 
-# ----- lifecycle steps -----
+# ----- run steps -----
 
-def _preflight(cfg) -> None:
-    traj = Path(cfg.trajectories_dir)
-    if not traj.is_dir() or not any(traj.iterdir()):
-        raise FileNotFoundError(f"trajectories dir '{traj}' missing or empty — nothing to train on")
-    if not Path(cfg.train_config).is_file():
-        raise FileNotFoundError(f"train config '{cfg.train_config}' not found")
-
-
-def _sync_up(provider, instance, cfg) -> None:
-    wd = cfg.remote_workdir
-    provider.exec(instance, f"mkdir -p {wd}/trajectories", timeout=60)
-    logger.info("Uploading training bundle (trajectories + code)…")
-    provider.upload(instance, cfg.trajectories_dir.rstrip("/") + "/", f"{wd}/trajectories/")
-    for f in ("train_qwen.py", cfg.train_config, "requirements.txt"):
-        if Path(f).is_file():
-            provider.upload(instance, f, f"{wd}/{Path(f).name}")
-
-
-def _remote_script(cfg) -> str:
+def _remote_script(cfg, body: str) -> str:
     wd = cfg.remote_workdir
     return (
         "set -o pipefail\n"
         f"cd {wd}\n"
         f"echo RUNNING > {wd}/{_STATUS_FILE}\n"
         "{\n"
-        "  pip install -r requirements.txt && \\\n"
-        '  pip install "ms-swift[llm]" && \\\n'
-        f"  python train_qwen.py convert --input trajectories/ --output training_data/ "
-        f"--val-split {cfg.val_split} --exclude-waste-steps --exclude-meandering && \\\n"
-        f"  python train_qwen.py train --config {Path(cfg.train_config).name} "
-        f"--dataset training_data/sft_dataset.jsonl\n"
+        f"{body}\n"
         f"}} > {wd}/{_LOG_FILE} 2>&1\n"
         f"if [ $? -eq 0 ]; then echo DONE > {wd}/{_STATUS_FILE}; else echo FAILED > {wd}/{_STATUS_FILE}; fi\n"
     )
 
 
-def _launch_training(provider, instance, cfg) -> None:
+def _launch(provider, instance, cfg, body: str) -> None:
     wd = cfg.remote_workdir
-    script = _remote_script(cfg)
+    script = _remote_script(cfg, body)
     write_cmd = f"cat > {wd}/{_RUN_SCRIPT} <<'REMOTE_EOF'\n{script}REMOTE_EOF"
     _, err, code = provider.exec(instance, write_cmd, timeout=60)
     if code != 0:
         raise ProviderError(f"Failed to write remote run script: {err[:200]}")
-    _, err, code = provider.exec(instance, f"cd {wd} && nohup bash {_RUN_SCRIPT} >/dev/null 2>&1 & echo launched", timeout=60)
+    _, err, code = provider.exec(
+        instance, f"cd {wd} && nohup bash {_RUN_SCRIPT} >/dev/null 2>&1 & echo launched", timeout=60
+    )
     if code != 0:
-        raise ProviderError(f"Failed to launch remote training: {err[:200]}")
-    logger.info("Remote training launched (detached). Polling for completion…")
+        raise ProviderError(f"Failed to launch remote job: {err[:200]}")
+    logger.info("Remote job launched (detached). Polling for completion…")
 
 
 def _wait_for_completion(provider, instance, cfg, deadline: float) -> bool:
@@ -226,71 +237,17 @@ def _wait_for_completion(provider, instance, cfg, deadline: float) -> bool:
         if status == "FAILED":
             return False
         time.sleep(cfg.poll_interval_s)
-    raise ProviderError(f"Training exceeded max_runtime_hours ({cfg.max_runtime_hours}h)")
+    raise ProviderError(f"Job exceeded max_runtime_hours ({cfg.max_runtime_hours}h)")
 
 
-def _sync_down(provider, instance, cfg) -> None:
-    wd = cfg.remote_workdir
-    logger.info("Downloading trained adapter…")
-    provider.download(instance, f"{wd}/output/", cfg.output_dir.rstrip("/") + "/")
-    adapter = Path(cfg.output_dir) / "adapter_config.json"
-    if not adapter.exists():
-        logger.warning(f"Expected {adapter} not found after download — inspect ./{cfg.output_dir}")
-
-
-def _pull_logs(provider, instance, cfg) -> None:
+def _pull_logs(provider, instance, cfg, dest_dir: str) -> None:
     wd = cfg.remote_workdir
     try:
-        Path(cfg.output_dir).mkdir(parents=True, exist_ok=True)
-        provider.download(instance, f"{wd}/{_LOG_FILE}", str(Path(cfg.output_dir) / _LOG_FILE))
-        logger.info(f"Remote training log saved to ./{cfg.output_dir}/{_LOG_FILE}")
+        Path(dest_dir).mkdir(parents=True, exist_ok=True)
+        provider.download(instance, f"{wd}/{_LOG_FILE}", str(Path(dest_dir) / _LOG_FILE))
+        logger.info(f"Remote log saved to ./{dest_dir}/{_LOG_FILE}")
     except ProviderError as e:
         logger.warning(f"Could not pull remote log: {e}")
-
-
-def _post_train(provider, instance, cfg) -> None:
-    if cfg.run_eval:
-        _maybe_eval(provider, instance, cfg)
-    if cfg.push_hf_repo:
-        _maybe_push_hf(provider, instance, cfg)
-    if cfg.notify:
-        _notify(f"✅ remote training done on {instance.id}; adapter pulled to ./{cfg.output_dir}")
-
-
-def _maybe_eval(provider, instance, cfg) -> None:
-    wd = cfg.remote_workdir
-    eval_files = [f for f in ("eval_screenspot.py", "eval_models.yaml", "requirements-eval.txt") if Path(f).is_file()]
-    if "eval_screenspot.py" not in eval_files:
-        logger.warning("--eval requested but eval_screenspot.py not present locally — skipping (merge PR #12 first)")
-        return
-    try:
-        for f in eval_files:
-            provider.upload(instance, f, f"{wd}/{f}")
-        provider.exec(instance, f"cd {wd} && pip install -r requirements-eval.txt && python eval_screenspot.py run",
-                      stream=True, timeout=0)
-        provider.download(instance, f"{wd}/eval_results/", "eval_results/")
-        logger.info("Eval complete; results in ./eval_results")
-    except ProviderError as e:
-        logger.error(f"Post-train eval failed (non-fatal): {e}")
-
-
-def _maybe_push_hf(provider, instance, cfg) -> None:
-    if not cfg.hf_token:
-        logger.warning("--push-hf requested but HF_TOKEN unset — skipping")
-        return
-    wd = cfg.remote_workdir
-    push = (
-        f"cd {wd} && pip install -U huggingface_hub && "
-        f"HF_TOKEN={cfg.hf_token} huggingface-cli upload {cfg.push_hf_repo} output . --repo-type model"
-    )
-    try:
-        _, err, code = provider.exec(instance, push, timeout=1800)
-        if code == 0:
-            logger.info(f"Pushed adapter to HuggingFace repo {cfg.push_hf_repo}")
-        else:
-            logger.error(f"HF push failed (non-fatal): {err[:200]}")
-    except ProviderError as e:
-        logger.error(f"HF push failed (non-fatal): {e}")
 
 
 def _notify(message: str) -> None:
@@ -308,24 +265,23 @@ def _notify(message: str) -> None:
         logger.error(f"notify failed: {e}")
 
 
-# ----- no-cost self-test (the teardown guarantee is the central assertion) -----
+# ----- no-cost self-test (teardown guarantee is the central assertion) -----
 
 def run_smoke_test() -> int:
     failures = []
     tmp = Path(tempfile.mkdtemp(prefix="remote_train_smoke_"))
-    (tmp / "trajectories").mkdir()
-    (tmp / "trajectories" / "task_x").mkdir()
+    (tmp / "trajectories" / "task_x").mkdir(parents=True)
     (tmp / "trajectories" / "task_x" / "trajectory.json").write_text("{}")
     (tmp / "config.yaml").write_text("model: test\noutput_dir: ./output\n")
-    (tmp / "train_qwen.py").write_text("# stub\n")
-    (tmp / "requirements.txt").write_text("\n")
     state.STATE_FILE = tmp / ".remote_train_state.json"
 
-    def make_cfg():
+    def make_cfg(job="train"):
         cfg = RemoteTrainConfig()
         cfg.trajectories_dir = str(tmp / "trajectories")
         cfg.train_config = str(tmp / "config.yaml")
         cfg.output_dir = str(tmp / "output")
+        cfg.eval_results_dir = str(tmp / "eval_results")
+        cfg.eval_models = ("Qwen/Qwen3.5-9B-Base",)
         cfg.poll_interval_s = 0
         return cfg
 
@@ -335,41 +291,39 @@ def run_smoke_test() -> int:
             failures.append(name)
 
     cfg = make_cfg()
-
     provider = MockProvider(cfg)
     offer = provider.search_offer(cfg)
     check("geo-exclusion drops RU/CN; cheapest allowed is SE", offer.id == "se-1" and offer.country == "SE")
     check("excluded offers were actually present", any(o.country in ("RU", "CN") for o in provider._fake_offers))
+    check("instance is labeled roman.maior", provider.provision(offer, cfg).label == "roman.maior")
 
-    inst = provider.provision(offer, cfg)
-    check("instance is labeled roman.maior", inst.label == "roman.maior")
+    for job_name in ("train", "eval"):
+        happy = MockProvider(make_cfg())
+        rc = run_remote_job(happy, make_cfg(), job_name, enable_safety=False)
+        check(f"{job_name}: happy path returns 0", rc == 0)
+        check(f"{job_name}: happy path destroyed the instance", len(happy.destroyed) == 1)
 
-    happy = MockProvider(make_cfg())
-    rc = run_remote_training(happy, make_cfg(), enable_safety=False)
-    check("happy path returns 0", rc == 0)
-    check("happy path destroyed the instance", len(happy.destroyed) == 1)
+        class _RaiseProvider(MockProvider):
+            def wait_ready(self, instance, timeout):
+                raise ProviderError("simulated mid-run failure")
 
-    class _RaiseProvider(MockProvider):
-        def wait_ready(self, instance, timeout):
-            raise ProviderError("simulated mid-run failure")
+        boom = _RaiseProvider(make_cfg())
+        try:
+            run_remote_job(boom, make_cfg(), job_name, enable_safety=False)
+        except ProviderError:
+            pass
+        check(f"{job_name}: exception path still destroyed the instance", len(boom.destroyed) == 1)
 
-    boom = _RaiseProvider(make_cfg())
-    try:
-        run_remote_training(boom, make_cfg(), enable_safety=False)
-    except ProviderError:
-        pass
-    check("exception path still destroyed the instance", len(boom.destroyed) == 1)
+        class _InterruptProvider(MockProvider):
+            def wait_ready(self, instance, timeout):
+                raise KeyboardInterrupt()
 
-    class _InterruptProvider(MockProvider):
-        def wait_ready(self, instance, timeout):
-            raise KeyboardInterrupt()
-
-    interrupted = _InterruptProvider(make_cfg())
-    try:
-        run_remote_training(interrupted, make_cfg(), enable_safety=False)
-    except KeyboardInterrupt:
-        pass
-    check("SIGINT/KeyboardInterrupt path still destroyed the instance", len(interrupted.destroyed) == 1)
+        interrupted = _InterruptProvider(make_cfg())
+        try:
+            run_remote_job(interrupted, make_cfg(), job_name, enable_safety=False)
+        except KeyboardInterrupt:
+            pass
+        check(f"{job_name}: SIGINT path still destroyed the instance", len(interrupted.destroyed) == 1)
 
     print(f"\nremote_train self-test: {'ALL PASS' if not failures else f'{len(failures)} FAILURES'}")
     return 0 if not failures else 1

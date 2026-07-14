@@ -6,7 +6,8 @@ provider: vastai
 
 # ----- GPU offer selection -----
 gpu_name: ""              # substring filter on GPU name (e.g. "A100"); "" = any
-min_vram_gb: 48           # 9B LoRA + vision; raise to 80 to force A100/H100-class
+min_vram_gb: 48           # 9B LoRA + vision; raise to 80 for 27B+ (weights must stay resident)
+min_compute_cap: 800      # bf16 needs Ampere sm_80+. Turing (750, e.g. Q RTX 8000) is cheaper but CANNOT run bf16.
 num_gpus: 1
 max_price_per_hour: 2.0   # hard cap on $/hr; offers above this are skipped
 min_reliability: 0.90     # Vast host uptime score; a dead host mid-run wastes the rental

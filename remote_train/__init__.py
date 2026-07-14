@@ -15,6 +15,8 @@ from remote_train.base import (
     select_cheapest_allowed,
 )
 from remote_train.config import RemoteTrainConfig, load_config
+from remote_train.benchmarks import BENCHMARKS, Benchmark, build_benchmark
+from remote_train.jobs import JOBS, RemoteJob, build_job
 from remote_train import vastai  # noqa: F401 — registers "vastai"
 from remote_train import mock  # noqa: F401 — registers "mock"
 
@@ -29,4 +31,10 @@ __all__ = [
     "select_cheapest_allowed",
     "RemoteTrainConfig",
     "load_config",
+    "BENCHMARKS",
+    "Benchmark",
+    "build_benchmark",
+    "JOBS",
+    "RemoteJob",
+    "build_job",
 ]

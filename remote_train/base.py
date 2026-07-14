@@ -29,6 +29,7 @@ class Offer:
     num_gpus: int
     country: str
     reliability: float
+    compute_cap: int = 0  # 750=Turing (no bf16), 800=Ampere, 890=Ada, 1200=Blackwell
     raw: dict = field(default_factory=dict)
 
 

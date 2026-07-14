@@ -1,20 +1,23 @@
-"""CLI for provider-pluggable remote training.
+"""CLI for provider-pluggable remote jobs (train / eval) on rented GPUs.
 
-    python -m remote_train run                 # provision → train → pull adapter → destroy
-    python -m remote_train run --smoke         # no-cost self-test (mock provider, no instance)
-    python -m remote_train search              # dry run: print the cheapest allowed offer only
-    python -m remote_train cleanup             # destroy any instance left behind (orphan sweep)
+    python -m remote_train train                       # rent -> SFT -> pull adapter -> destroy
+    python -m remote_train eval --model Qwen/Qwen3.5-9B-Base --model Qwen/Qwen3.5-9B --limit 100
+    python -m remote_train run --smoke                 # no-cost self-test (mock provider)
+    python -m remote_train search                      # dry run: cheapest allowed offer, rents nothing
+    python -m remote_train cleanup                     # destroy any leftover instance
 
-Subcommand dispatch mirrors `eval_screenspot.py` (`set_defaults(func=…)`); `--provider`
-choices come from the registry (`sorted(PROVIDERS)`).
+`--provider` / `--benchmark` choices come straight from the registries, so a new provider or a
+new eval shows up in the CLI with no changes here.
 """
 import argparse
 import logging
 import sys
 
-from remote_train import lifecycle, state
+from remote_train import lifecycle
 from remote_train.base import PROVIDERS, ProviderError, build_provider
+from remote_train.benchmarks import BENCHMARKS
 from remote_train.config import load_config
+from remote_train.jobs import JOBS
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -26,6 +29,7 @@ def _setup_logging(verbose: bool) -> None:
 
 
 def _cli_overrides(args) -> dict:
+    models = getattr(args, "models", None)
     return {
         "provider": getattr(args, "provider", None),
         "gpu_name": getattr(args, "gpu", None),
@@ -33,18 +37,28 @@ def _cli_overrides(args) -> dict:
         "disk_gb": getattr(args, "disk", None),
         "max_price_per_hour": getattr(args, "max_price", None),
         "max_runtime_hours": getattr(args, "max_hours", None),
-        "run_eval": True if getattr(args, "eval", False) else None,
+        "benchmark": getattr(args, "benchmark", None),
+        "eval_limit": getattr(args, "limit", None),
+        "eval_models": tuple(models) if models else None,
         "push_hf_repo": getattr(args, "push_hf", None),
         "notify": True if getattr(args, "notify", False) else None,
     }
 
 
-def run_cmd(args) -> int:
-    if args.smoke:
-        return lifecycle.run_smoke_test()
+def _job_cmd(args, job_name: str) -> int:
     cfg = load_config(args.config, _cli_overrides(args))
     provider = build_provider(cfg.provider, cfg)
-    return lifecycle.run_remote_training(provider, cfg)
+    return lifecycle.run_remote_job(provider, cfg, job_name)
+
+
+def train_cmd(args) -> int:
+    if getattr(args, "smoke", False):
+        return lifecycle.run_smoke_test()
+    return _job_cmd(args, "train")
+
+
+def eval_cmd(args) -> int:
+    return _job_cmd(args, "eval")
 
 
 def search_cmd(args) -> int:
@@ -78,16 +92,31 @@ def _add_common(p) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="remote_train", description="Provider-pluggable remote training (Vast.ai).")
+    parser = argparse.ArgumentParser(prog="remote_train", description="Remote GPU jobs (train / eval).")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    run_p = sub.add_parser("run", help="Provision, train, pull adapter, and destroy.")
+    train_p = sub.add_parser("train", help="Fine-tune on a rented GPU, pull the adapter, destroy.")
+    _add_common(train_p)
+    train_p.add_argument("--push-hf", default=None, help="HuggingFace repo to upload the adapter to.")
+    train_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
+    train_p.set_defaults(func=train_cmd)
+
+    # `run` kept as an alias of `train` so `run --smoke` (the documented self-test) still works.
+    run_p = sub.add_parser("run", help="Alias of `train`; `run --smoke` is the no-cost self-test.")
     _add_common(run_p)
     run_p.add_argument("--smoke", action="store_true", help="No-cost self-test (mock provider).")
-    run_p.add_argument("--eval", action="store_true", help="Run eval_screenspot.py before/after on the box.")
-    run_p.add_argument("--push-hf", default=None, help="HuggingFace repo to upload the adapter to (needs HF_TOKEN).")
-    run_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
-    run_p.set_defaults(func=run_cmd)
+    run_p.add_argument("--push-hf", default=None, help=argparse.SUPPRESS)
+    run_p.add_argument("--notify", action="store_true", help=argparse.SUPPRESS)
+    run_p.set_defaults(func=train_cmd)
+
+    eval_p = sub.add_parser("eval", help="Benchmark model(s) on a rented GPU. No training.")
+    _add_common(eval_p)
+    eval_p.add_argument("--model", action="append", dest="models",
+                        help="Model id to evaluate (repeatable, e.g. Qwen/Qwen3.5-9B-Base).")
+    eval_p.add_argument("--benchmark", default=None, choices=sorted(BENCHMARKS), help="Which eval to run.")
+    eval_p.add_argument("--limit", type=int, default=None, help="Cap samples (omit = full dataset).")
+    eval_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
+    eval_p.set_defaults(func=eval_cmd)
 
     search_p = sub.add_parser("search", help="Dry run: print the cheapest allowed offer, provision nothing.")
     _add_common(search_p)
@@ -106,7 +135,7 @@ def main() -> int:
     _setup_logging(getattr(args, "verbose", False))
     try:
         return args.func(args)
-    except (ProviderError, FileNotFoundError) as e:
+    except (ProviderError, FileNotFoundError, ValueError) as e:
         logging.getLogger("remote_train").error(str(e))
         return 1
 
