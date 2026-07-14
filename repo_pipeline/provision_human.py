@@ -21,6 +21,7 @@ Run: python -m repo_pipeline.provision_human <site-name> [--config <source-confi
 import argparse
 import json
 import logging
+import secrets
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -36,6 +37,18 @@ SOURCE_CONFIGS = [
     Path(__file__).parent / "public_sites_actions_logingated.json",
 ]
 HUMAN_CONFIG = Path(__file__).parent / "public_sites_human.json"
+
+_FIRST_NAMES = ["Emma", "Liam", "Olivia", "Noah", "Ava", "Ethan", "Sophia", "Mason", "Isabella",
+                "Lucas", "Mia", "Oliver", "Amelia", "Elijah", "Charlotte", "James", "Harper",
+                "Benjamin", "Evelyn", "Henry", "Chloe", "Daniel", "Grace", "Owen", "Nora"]
+_LAST_NAMES = ["Smith", "Johnson", "Miller", "Davis", "Garcia", "Wilson", "Anderson", "Thomas",
+               "Taylor", "Moore", "Martin", "Lee", "Walker", "Hall", "Allen", "Young", "King",
+               "Wright", "Scott", "Bennett", "Reed", "Cooper", "Bailey", "Rivera", "Hughes"]
+
+
+def random_name() -> tuple[str, str]:
+    """A plausible disposable first/last name for signup forms — never the operator's real identity."""
+    return secrets.choice(_FIRST_NAMES), secrets.choice(_LAST_NAMES)
 
 
 def find_site(name: str, config_path: Path | None = None) -> dict | None:
@@ -85,6 +98,30 @@ def upsert_human_config(site: dict, ref: str, app_url: str) -> None:
     logger.info(f"wrote {site['name']} ({len(entry['tasks'])} tasks) to {HUMAN_CONFIG.name}")
 
 
+def open_realistic_browser(playwright):
+    """A HEADED browser that does not trip anti-bot fingerprinting (Cloudflare Turnstile, reCAPTCHA).
+    Playwright's default Chromium is the automation-branded 'Chrome for Testing' launched with
+    `--enable-automation` and the AutomationControlled blink feature, which set `navigator.webdriver`
+    and the 'controlled by automated software' tells that Turnstile blocks even when a human solves
+    the challenge. So: prefer the real system Google Chrome, strip those flags, mask navigator.webdriver,
+    and use a real resizable OS window. The person still solves the challenge; this only stops the
+    browser itself from being fingerprinted as a bot."""
+    launch = {
+        "headless": False,
+        "args": ["--disable-blink-features=AutomationControlled"],
+        "ignore_default_args": ["--enable-automation"],
+    }
+    try:
+        browser = playwright.chromium.launch(channel="chrome", **launch)
+        logger.info("launched real system Google Chrome (channel=chrome)")
+    except Exception as e:
+        logger.warning(f"system Google Chrome unavailable ({e}); using bundled chromium with anti-automation flags")
+        browser = playwright.chromium.launch(**launch)
+    context = browser.new_context(no_viewport=True)
+    context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    return browser, context
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Human-in-the-loop login provisioning (headed browser)")
     parser.add_argument("site", help="Site name from a source config (indie / logingated)")
@@ -98,19 +135,22 @@ def main() -> None:
 
     ref = f"{site['name']}-human-1"
     mailbox = mailtm.create_mailbox()
+    first, last = random_name()
     print("\n" + "=" * 72)
     print(f"  PROVISIONING: {site['name']}   →  {site['start_url']}")
     print("  Sign up with this DISPOSABLE burner (NEVER a personal account):")
-    print(f"    email    : {mailbox['address']}")
-    print(f"    password : {mailbox['password']}")
+    print(f"    full name : {first} {last}")
+    print(f"    first name: {first}")
+    print(f"    last name : {last}")
+    print(f"    email     : {mailbox['address']}")
+    print(f"    password  : {mailbox['password']}")
     print(f"  Read verification email here or at {mailtm.WEBMAIL_URL} (same email + password).")
     print("=" * 72)
 
     state = None
     app_url = site["start_url"]
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=False)
-        context = browser.new_context()
+        browser, context = open_realistic_browser(playwright)
         page = context.new_page()
         try:
             page.goto(site["start_url"], wait_until="domcontentloaded", timeout=60000)
@@ -133,7 +173,8 @@ def main() -> None:
             browser.close()
 
     app_secrets.save_storage_state(ref, state)  # raises if the dump is empty (never actually logged in)
-    app_secrets.register_burner(ref, mailbox["address"], mailbox["password"])
+    app_secrets.register_burner(ref, mailbox["address"], mailbox["password"],
+                                first_name=first, last_name=last)
     provisioning_status.mark(site["name"], provisioning_status.REGISTERED,
                              provisioning=site.get("provisioning", ""))
     upsert_human_config(site, ref, app_url)

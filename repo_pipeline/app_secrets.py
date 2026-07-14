@@ -103,18 +103,24 @@ def burner_account(burner_id: str) -> dict | None:
 
 
 def register_burner(burner_id: str, email: str, password: str,
-                    provisioning_mode: str = "human_provisioned") -> None:
+                    provisioning_mode: str = "human_provisioned",
+                    first_name: str = "", last_name: str = "") -> None:
     """Register (or update) a burner in the gitignored burner store so the guarded/public lane's
     fail-closed `is_registered_burner` gate will permit it. Called by the human-provisioning helper
     after a person clears a signup wall; `provisioning_mode` records how the identity was created
-    ('human_provisioned' | 'generated'). NEVER register a real personal account here — the burner
-    store is for disposable identities only ([[burner-accounts-only-for-capture]])."""
+    ('human_provisioned' | 'generated'). The generated disposable `first_name`/`last_name` are stored
+    when present so a signup form's name fields stay consistent on reuse. NEVER register a real
+    personal account here — the burner store is for disposable identities only
+    ([[burner-accounts-only-for-capture]])."""
     if not (burner_id and email and password):
         raise ValueError("register_burner requires a non-empty burner_id, email, and password")
     _CRED_DIR.mkdir(parents=True, exist_ok=True)
     registry = _load_burners()
-    registry[burner_id] = {"email": email, "password": password,
-                           "provisioning_mode": provisioning_mode, "registered": True}
+    entry = {"email": email, "password": password,
+             "provisioning_mode": provisioning_mode, "registered": True}
+    if first_name or last_name:
+        entry["first_name"], entry["last_name"] = first_name, last_name
+    registry[burner_id] = entry
     _BURNER_FILE.write_text(json.dumps(registry, indent=2))
     logger.info(f"registered burner '{burner_id}' ({provisioning_mode})")
 
