@@ -213,17 +213,23 @@ def _launch(provider, instance, cfg, body: str) -> None:
     _, err, code = provider.exec(instance, write_cmd, timeout=60)
     if code != 0:
         raise ProviderError(f"Failed to write remote run script: {err[:200]}")
-    # `setsid` + redirecting ALL THREE fds is what makes ssh return. Backgrounding alone
-    # (`nohup … >/dev/null 2>&1 &`) leaves the child holding the ssh channel's stdin, so the
-    # client blocks until it times out even though the job started fine.
-    _, err, code = provider.exec(
-        instance,
-        f"cd {wd} && setsid nohup bash {_RUN_SCRIPT} </dev/null >/dev/null 2>&1 & echo launched",
-        timeout=60,
-    )
-    if code != 0:
-        raise ProviderError(f"Failed to launch remote job: {err[:200]}")
-    logger.info("Remote job launched (detached). Polling for completion…")
+    # sshd can hold the exec channel open for a detached child even with setsid + all three fds
+    # redirected, so the ssh CLIENT may never return here. That is not evidence of failure, and
+    # its exit code is not evidence of success. Fire it, tolerate a non-returning client, then
+    # prove the job actually started by looking for the STATUS sentinel it writes on disk.
+    launch = f"cd {wd} && setsid nohup bash {_RUN_SCRIPT} </dev/null >/dev/null 2>&1 & echo launched"
+    try:
+        provider.exec(instance, launch, timeout=20)
+    except ProviderError as e:
+        logger.info(f"launch client did not return ({e}) — verifying via the STATUS sentinel instead")
+
+    for _ in range(12):
+        out, _, _ = provider.exec(instance, f"cat {wd}/{_STATUS_FILE} 2>/dev/null || true", timeout=30)
+        if out.strip():
+            logger.info(f"Remote job is running (STATUS={out.strip()}). Polling for completion…")
+            return
+        time.sleep(5)
+    raise ProviderError("remote job never started — no STATUS sentinel appeared within 60s")
 
 
 def _wait_for_completion(provider, instance, cfg, deadline: float) -> bool:
