@@ -26,7 +26,7 @@ from repo_pipeline.task_proposer import propose_tasks
 
 logger = logging.getLogger(__name__)
 
-# Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet 4.6 — see
+# Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet-class models — see
 # memory pathb-e2e-and-sdk-budget-floor). Defaults sit comfortably above that floor; tune
 # down only after verifying a smaller cap doesn't trip `error_max_budget_usd`.
 INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.30"))
