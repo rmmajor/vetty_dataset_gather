@@ -65,7 +65,7 @@ A 6-stage quality funnel — cast the widest net, then reject aggressively:
 | 3. Shallow Score | Claude Sonnet scores repo metadata | Sonnet | ~$0.03 |
 | 4. Deep Analyze | Clone + statically inspect tests in Docker (no install) | Sonnet | ~$0.15 |
 | 5. Trial Run | POC instrumented test in Docker | Sonnet | ~$0.30 |
-| 6. Generate | Full trajectory generation in Docker | Sonnet + Haiku | ~$0.60 |
+| 6. Generate | Full trajectory generation in Docker | Sonnet | ~$0.60 |
 
 Stages 1–2 run on-demand. Stages 3–6 run as an overnight cron job with a configurable budget cap. Results are sent via Telegram in the morning.
 
@@ -155,7 +155,7 @@ registry.reset_rejected(stage=5)  # re-queue repos rejected at trial stage
     ├── stage4_deep_analyze.py       # Deep inspection in Docker
     ├── stage5_trial_run.py          # POC instrumented test in Docker
     ├── stage6_generate.py           # Full trajectory generation
-    ├── think_generator.py           # Claude Haiku thinking blocks
+    ├── think_generator.py           # Claude Sonnet thinking blocks
     ├── notifier.py                  # Telegram reports
     └── instrumentation/
         ├── capture.py               # Shared capture logic
@@ -220,7 +220,7 @@ See `config.yaml` for default hyperparameters. Key settings from the blueprint:
 - Stages 1–2: free
 - Stage 3: ~$0.03/repo (scoring)
 - Stages 4–6: ~$0.15–0.60/repo (only repos passing prior gates)
-- Think blocks: ~$0.005/step (Haiku)
+- Think blocks: ~$0.005/step (Sonnet)
 - Budget is capped per run — pipeline pauses when limit is hit
 
 **Training:**

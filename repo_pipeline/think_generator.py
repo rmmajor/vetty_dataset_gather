@@ -32,7 +32,7 @@ from repo_pipeline.sdk_runner import UsageLimitReached, cost_tracker, harden_opt
 
 logger = logging.getLogger(__name__)
 
-# Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet 4.6 — see
+# Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet-class models — see
 # memory pathb-e2e-and-sdk-budget-floor). Defaults sit comfortably above that floor; the
 # per-call envelope for one think block is dominated by SDK overhead, not by tokens.
 THINK_BUDGET_USD = float(os.environ.get("THINK_BUDGET_USD", "0.30"))

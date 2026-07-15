@@ -94,7 +94,7 @@ Each stage calls `registry.get_repos_for_stage(N)` (which selects by input statu
 
 ## Claude Agent SDK usage
 
-Path B calls Claude via `claude_agent_sdk.query()` returning `AsyncIterator[Message]`. Standard extraction pattern (used in every stage): iterate, take `message.result` from a `ResultMessage` where `message.subtype == "success"`. Options are `ClaudeAgentOptions(model, max_turns, max_budget_usd, permission_mode="bypassPermissions", allowed_tools, cwd)`. Models: `claude-sonnet-4-6` across the pipeline (analysis, scoring, instruction generation, thought generation, task-type classification). Configured centrally in `repo_pipeline/llm_config.py` — every call site imports a named purpose (`MODEL_FOR_REASONING`, `MODEL_FOR_GROUNDED_GENERATION`, `MODEL_FOR_CLASSIFICATION`) rather than a model string.
+Path B calls Claude via `claude_agent_sdk.query()` returning `AsyncIterator[Message]`. Standard extraction pattern (used in every stage): iterate, take `message.result` from a `ResultMessage` where `message.subtype == "success"`. Options are `ClaudeAgentOptions(model, max_turns, max_budget_usd, permission_mode="bypassPermissions", allowed_tools, cwd)`. Models: the latest Sonnet-class model (currently `claude-sonnet-5`) across the pipeline (analysis, scoring, instruction generation, thought generation, task-type classification). Configured centrally in `repo_pipeline/llm_config.py` — `LATEST_MODEL_BY_CLASS` maps each class (opus/sonnet/haiku) to its latest ID, and every call site imports a named purpose (`MODEL_FOR_REASONING`, `MODEL_FOR_GROUNDED_GENERATION`, `MODEL_FOR_CLASSIFICATION`) rather than a model string.
 
 ## Budget & concurrency
 
