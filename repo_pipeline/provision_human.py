@@ -51,13 +51,16 @@ def random_name() -> tuple[str, str]:
     return secrets.choice(_FIRST_NAMES), secrets.choice(_LAST_NAMES)
 
 
-def find_site(name: str, config_path: Path | None = None) -> dict | None:
-    """The site dict for `name`, searched in `config_path` (if given) else both source configs."""
+def find_site(key: str, config_path: Path | None = None) -> dict | None:
+    """The site dict matching `key` — its `name` OR its `start_url` (trailing slash ignored), searched
+    in `config_path` (if given) else both source configs. Accepting the URL too lets the operator paste
+    either the site name or the signup URL straight from the worklist."""
+    key_url = key.rstrip("/")
     for cfg in ([config_path] if config_path else SOURCE_CONFIGS):
         if not cfg or not cfg.exists():
             continue
         for site in json.loads(cfg.read_text()).get("sites", []):
-            if site.get("name") == name:
+            if site.get("name") == key or site.get("start_url", "").rstrip("/") == key_url:
                 return site
     return None
 
@@ -98,13 +101,13 @@ def upsert_human_config(site: dict, ref: str, app_url: str) -> None:
     logger.info(f"wrote {site['name']} ({len(entry['tasks'])} tasks) to {HUMAN_CONFIG.name}")
 
 
-def open_realistic_browser(playwright):
-    """A HEADED browser that does not trip anti-bot fingerprinting (Cloudflare Turnstile, reCAPTCHA).
-    Playwright's default Chromium is the automation-branded 'Chrome for Testing' launched with
-    `--enable-automation` and the AutomationControlled blink feature, which set `navigator.webdriver`
-    and the 'controlled by automated software' tells that Turnstile blocks even when a human solves
-    the challenge. So: prefer the real system Google Chrome, strip those flags, mask navigator.webdriver,
-    and use a real resizable OS window. The person still solves the challenge; this only stops the
+def launch_realistic_chrome(playwright):
+    """Launch a HEADED browser that does not trip anti-bot fingerprinting (Cloudflare Turnstile,
+    reCAPTCHA). Playwright's default Chromium is the automation-branded 'Chrome for Testing' launched
+    with `--enable-automation` + the AutomationControlled blink feature, which set navigator.webdriver
+    and the tells Turnstile blocks even when a human solves the challenge. Prefer the real system
+    Google Chrome and strip those flags. One browser is reused across a batch; each site gets a fresh
+    isolated context (new_stealth_context). The person still solves the challenge — this only stops the
     browser itself from being fingerprinted as a bot."""
     launch = {
         "headless": False,
@@ -117,22 +120,19 @@ def open_realistic_browser(playwright):
     except Exception as e:
         logger.warning(f"system Google Chrome unavailable ({e}); using bundled chromium with anti-automation flags")
         browser = playwright.chromium.launch(**launch)
+    return browser
+
+
+def new_stealth_context(browser):
     context = browser.new_context(no_viewport=True)
     context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    return browser, context
+    return context
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Human-in-the-loop login provisioning (headed browser)")
-    parser.add_argument("site", help="Site name from a source config (indie / logingated)")
-    parser.add_argument("--config", default=None, help="Source config path (default: search both)")
-    args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-
-    site = find_site(args.site, Path(args.config) if args.config else None)
-    if not site:
-        raise SystemExit(f"site '{args.site}' not found in source config(s)")
-
+def provision_site(browser, site: dict) -> str:
+    """Provision one site interactively in a fresh context: mint a disposable burner, let the operator
+    sign up / clear the wall by hand, then save the session + burner and wire it into the human config.
+    Returns 'provisioned' or 'skipped'. Raises SystemExit to stop a whole batch."""
     ref = f"{site['name']}-human-1"
     mailbox = mailtm.create_mailbox()
     first, last = random_name()
@@ -147,30 +147,32 @@ def main() -> None:
     print(f"  Read verification email here or at {mailtm.WEBMAIL_URL} (same email + password).")
     print("=" * 72)
 
+    context = new_stealth_context(browser)
+    page = context.new_page()
+    try:
+        page.goto(site["start_url"], wait_until="domcontentloaded", timeout=60000)
+    except Exception as e:
+        logger.warning(f"initial navigation issue ({e}); navigate manually in the window")
+    print("\n  Sign up / log in with the burner above and solve any captcha. When you are fully signed\n"
+          "  in (the app's own screen is showing), return here.\n")
     state = None
     app_url = site["start_url"]
-    with sync_playwright() as playwright:
-        browser, context = open_realistic_browser(playwright)
-        page = context.new_page()
-        try:
-            page.goto(site["start_url"], wait_until="domcontentloaded", timeout=60000)
-        except Exception as e:
-            logger.warning(f"initial navigation issue ({e}); navigate manually in the window")
-        print("\n  A browser window is open. Sign up / log in with the burner above and solve any\n"
-              "  captcha. When you are fully signed in (the app's own screen is showing), return here.\n")
-        try:
-            while True:
-                cmd = input("  [Enter]=done  |  mail=show latest email  |  q=abort : ").strip().lower()
-                if cmd == "":
-                    break
-                if cmd == "q":
-                    raise SystemExit("aborted by operator — nothing saved")
-                if cmd == "mail":
-                    show_latest_mail(mailbox["token"])
-            app_url = page.url or site["start_url"]
-            state = context.storage_state(indexed_db=True)
-        finally:
-            browser.close()
+    try:
+        while True:
+            cmd = input("  [Enter]=done | mail=show email | skip=skip this site | q=quit batch : ").strip().lower()
+            if cmd == "":
+                app_url = page.url or site["start_url"]
+                state = context.storage_state(indexed_db=True)
+                break
+            if cmd == "skip":
+                logger.info(f"[{site['name']}] skipped by operator")
+                return "skipped"
+            if cmd == "q":
+                raise SystemExit("batch stopped by operator")
+            if cmd == "mail":
+                show_latest_mail(mailbox["token"])
+    finally:
+        context.close()
 
     app_secrets.save_storage_state(ref, state)  # raises if the dump is empty (never actually logged in)
     app_secrets.register_burner(ref, mailbox["address"], mailbox["password"],
@@ -178,9 +180,61 @@ def main() -> None:
     provisioning_status.mark(site["name"], provisioning_status.REGISTERED,
                              provisioning=site.get("provisioning", ""))
     upsert_human_config(site, ref, app_url)
-    print(f"\n  ✓ provisioned {site['name']}: session saved ({ref}), burner registered, "
-          f"added to {HUMAN_CONFIG.name}")
-    print(f"  Next:  make capture-human SITES={site['name']}\n")
+    print(f"\n  ✓ provisioned {site['name']}: session saved ({ref}), burner registered, added to {HUMAN_CONFIG.name}")
+    return "provisioned"
+
+
+def batch_targets(config_path: Path | None) -> list[dict]:
+    """Every needs_human site not yet provisioned (registered), resolved to site dicts, name-sorted."""
+    done = set(provisioning_status.sites_with_status(provisioning_status.REGISTERED))
+    todo = sorted(n for n in provisioning_status.sites_with_status(provisioning_status.NEEDS_HUMAN) if n not in done)
+    return [s for s in (find_site(n, config_path) for n in todo) if s]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Human-in-the-loop login provisioning (headed browser)")
+    parser.add_argument("site", nargs="?", default=None, help="Site name or signup URL (omit with --all/--sites)")
+    parser.add_argument("--sites", default=None, help="Comma-separated site names/URLs to provision in a loop")
+    parser.add_argument("--all", action="store_true", help="Provision ALL needs_human sites in a loop")
+    parser.add_argument("--config", default=None, help="Source config path (default: search both)")
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    config_path = Path(args.config) if args.config else None
+
+    if args.all:
+        sites = batch_targets(config_path)
+    elif args.sites:
+        sites = [find_site(k.strip(), config_path) for k in args.sites.split(",")]
+    elif args.site:
+        sites = [find_site(args.site, config_path)]
+    else:
+        parser.error("give a SITE / URL, or --sites a,b,c, or --all")
+    sites = [s for s in sites if s]
+    if not sites:
+        raise SystemExit("no matching sites to provision (check names against the source configs)")
+
+    batch = len(sites) > 1
+    counts = {"provisioned": 0, "skipped": 0, "failed": 0}
+    with sync_playwright() as playwright:
+        browser = launch_realistic_chrome(playwright)
+        try:
+            for i, site in enumerate(sites, 1):
+                if batch:
+                    print(f"\n########## [{i}/{len(sites)}] {site['name']} ##########")
+                try:
+                    counts[provision_site(browser, site)] += 1
+                except SystemExit as e:
+                    print(f"\n{e}")
+                    break
+                except Exception as e:
+                    logger.error(f"[{site['name']}] provisioning failed ({e}); moving on")
+                    counts["failed"] += 1
+        finally:
+            browser.close()
+
+    print(f"\n  done: {counts['provisioned']} provisioned, {counts['skipped']} skipped, {counts['failed']} failed")
+    if counts["provisioned"]:
+        print("  Next: tell the assistant to run the batch gather over public_sites_human.json\n")
 
 
 if __name__ == "__main__":
