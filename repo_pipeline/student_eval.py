@@ -7,9 +7,10 @@ import os
 import re
 import subprocess
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 from repo_pipeline import driver_session
 from repo_pipeline.agent_capture import verify_trajectory
@@ -189,40 +190,26 @@ def build_student(cfg: "EvalConfig") -> StudentClient:
 
 
 # ---------------------------------------------------------------------------
-# Action parsing. The grammar is exactly what train_qwen.format_action_for_training emits.
+# Action grammar: ONE tolerant definition, enumerated in CLAUDE.md's Student eval section.
+# Any UNAMBIGUOUS spelling of a call is accepted and how canonical the output was is reported
+# as canonical_form_rate, because a base model has only seen this grammar DESCRIBED in the
+# system prompt and charging surface deviation to its success rate would measure imitation.
 # ---------------------------------------------------------------------------
 
-_REF = r"<ref>\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)</ref>"
-
-ACTION_PATTERNS: list = [
-    (re.compile(rf"^click\(\s*{_REF}\s*(?:,\s*button\s*=\s*(\w+)\s*)?\)$"),
-     lambda m: {"type": "click", "x": int(m.group(1)), "y": int(m.group(2)),
-                "button": m.group(3) or "left"}),
-    (re.compile(rf"^double_click\(\s*{_REF}\s*\)$"),
-     lambda m: {"type": "double_click", "x": int(m.group(1)), "y": int(m.group(2))}),
-    (re.compile(rf"^move\(\s*{_REF}\s*\)$"),
-     lambda m: {"type": "move", "x": int(m.group(1)), "y": int(m.group(2))}),
-    (re.compile(rf"^drag\(\s*{_REF}\s*->\s*{_REF}\s*\)$"),
-     lambda m: {"type": "drag", "path": [{"x": int(m.group(1)), "y": int(m.group(2))},
-                                         {"x": int(m.group(3)), "y": int(m.group(4))}]}),
-    (re.compile(rf"^scroll\(\s*{_REF}\s*,\s*scrollX\s*=\s*(-?\d+)\s*,\s*scrollY\s*=\s*(-?\d+)\s*\)$"),
-     lambda m: {"type": "scroll", "x": int(m.group(1)), "y": int(m.group(2)),
-                "scroll_x": int(m.group(3)), "scroll_y": int(m.group(4))}),
-    (re.compile(r'^type\("(.*)"\)$', re.DOTALL),
-     lambda m: {"type": "type", "text": m.group(1)}),
-    (re.compile(r"^keypress\((\[.*\])\)$", re.DOTALL),
-     lambda m: {"type": "keypress", "keys": json.loads(m.group(1))}),
-    (re.compile(r"^wait\(\)$"), lambda m: {"type": "wait"}),
-    (re.compile(r"^done\(\)$"), lambda m: {"type": "done"}),
-    (re.compile(r"^screenshot\(\)$"), lambda m: {"type": "screenshot"}),
-]
+ACTION_VERBS = ("click", "double_click", "move", "drag", "scroll", "type", "keypress",
+                "wait", "done", "screenshot")
+NO_ARG_VERBS = ("wait", "done", "screenshot")
+# The system prompt documents scroll as scrollX=0, scrollY=500, and the driver defaults match.
+DEFAULT_SCROLL = (0, 500)
 
 _BULLET_RE = re.compile(r"^[-*]\s+")
 _ACTION_PREFIX_RE = re.compile(r"^action\s*:\s*(.*)$", re.IGNORECASE)
-# A bare call counts only when it is the WHOLE line; this hint spots a line that gestures at an
-# action without being one, so leading prose is reported as malformed rather than silently ignored.
-_ACTION_CALL_HINT_RE = re.compile(
-    r"\b(?:click|double_click|move|type|keypress|scroll|drag|wait|done|screenshot)\s*\(")
+_CALL_RE = re.compile(rf"^({'|'.join(ACTION_VERBS)})\s*(?:\((.*)\))?$", re.IGNORECASE | re.DOTALL)
+_REF_WRAPPER_RE = re.compile(r"</?ref>")
+# A call counts only when it is the WHOLE line; this hint spots a line that gestures at an action
+# without being one, so leading prose is reported as malformed rather than silently ignored.
+_ACTION_CALL_HINT_RE = re.compile(rf"\b(?:{'|'.join(ACTION_VERBS)})\s*\(")
+_WHITESPACE_RE = re.compile(r"\s+")
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 # Reasoning chat templates PREFILL the opening <think>, so the completion carries only the
 # closing tag; without this the think text is lost and think_rate reads 0% on a model that
@@ -230,37 +217,250 @@ _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 _THINK_PREFILLED_RE = re.compile(r"\A(.*?)</think>", re.DOTALL)
 
 
-def _parse_action_expression(body: str) -> dict | None:
-    """The action grammar itself, with no prefix handling."""
-    for pattern, builder in ACTION_PATTERNS:
-        matched = pattern.match(body)
-        if not matched:
+class ParsedLine(NamedTuple):
+    action: dict | None
+    kind: str                 # prefixed | bare | malformed | ignored
+    deviations: tuple = ()    # how it differed from the canonical form
+
+
+def _squash(text: str) -> str:
+    return _WHITESPACE_RE.sub("", text)
+
+
+def _split_top_level(text: str, extra_separators: str = "") -> list:
+    """Split on commas outside quotes, parens and brackets, so quoted text survives intact."""
+    parts, current, depth, quote = [], [], 0, ""
+    for char in text:
+        if quote:
+            current.append(char)
+            if char == quote:
+                quote = ""
             continue
-        try:
-            return builder(matched)
-        except (ValueError, json.JSONDecodeError):
-            return None
+        if char in "\"'":
+            quote = char
+            current.append(char)
+            continue
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        if depth == 0 and (char == "," or char in extra_separators):
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    parts.append("".join(current))
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _as_number(token: str):
+    try:
+        return int(round(float(token)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_quoted_string(token: str):
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
+        return token[1:-1]
     return None
 
 
-def classify_action_line(line: str) -> tuple:
-    """Classify one line as prefixed | bare | malformed | ignored, with its action when it has one."""
+def _take_point(tokens: list, index: int):
+    """(x, y, next_index) from one `(x, y)` token or two scalar tokens, else None."""
+    if index >= len(tokens):
+        return None
+    token = tokens[index]
+    if token.startswith("(") and token.endswith(")"):
+        parts = _split_top_level(token[1:-1])
+        if len(parts) != 2:
+            return None
+        x, y = _as_number(parts[0]), _as_number(parts[1])
+        return (x, y, index + 1) if x is not None and y is not None else None
+    x, y = _as_number(token), _as_number(tokens[index + 1]) if index + 1 < len(tokens) else None
+    return (x, y, index + 2) if x is not None and y is not None else None
+
+
+def _kwarg_number(kwargs: dict, names: tuple):
+    for name in names:
+        if name in kwargs:
+            return _as_number(kwargs[name])
+    return None
+
+
+def _build_click(tokens, kwargs, note):
+    point = _take_point(tokens, 0)
+    if point is None:
+        return None
+    x, y, index = point
+    button = kwargs.get("button")
+    if button is None and index < len(tokens) and tokens[index].lower() in ("left", "right"):
+        button = tokens[index]
+        index += 1
+    if button is None:
+        note("default_kwargs")
+    return {"type": "click", "x": x, "y": y, "button": (button or "left").lower()}
+
+
+def _point_only(action_type: str):
+    def build(tokens, kwargs, note):
+        point = _take_point(tokens, 0)
+        return None if point is None else {"type": action_type, "x": point[0], "y": point[1]}
+    return build
+
+
+def _build_drag(tokens, kwargs, note):
+    first = _take_point(tokens, 0)
+    if first is None:
+        return None
+    second = _take_point(tokens, first[2])
+    if second is None:
+        return None
+    return {"type": "drag", "path": [{"x": first[0], "y": first[1]},
+                                     {"x": second[0], "y": second[1]}]}
+
+
+def _build_scroll(tokens, kwargs, note):
+    point = _take_point(tokens, 0)
+    if point is None:
+        return None
+    x, y, index = point
+    scroll_x = _kwarg_number(kwargs, ("scrollx", "scroll_x", "dx"))
+    scroll_y = _kwarg_number(kwargs, ("scrolly", "scroll_y", "dy"))
+    if scroll_x is None and index < len(tokens):
+        scroll_x = _as_number(tokens[index])
+        index += 1
+    if scroll_y is None and index < len(tokens):
+        scroll_y = _as_number(tokens[index])
+    if scroll_x is None or scroll_y is None:
+        note("default_kwargs")
+    return {"type": "scroll", "x": x, "y": y,
+            "scroll_x": DEFAULT_SCROLL[0] if scroll_x is None else scroll_x,
+            "scroll_y": DEFAULT_SCROLL[1] if scroll_y is None else scroll_y}
+
+
+def _build_type(tokens, kwargs, note):
+    # Exactly one token: a quoted literal keeps its own commas, and an unquoted one is ambiguous.
+    if len(tokens) != 1:
+        return None
+    text = _as_quoted_string(tokens[0])
+    if text is None:
+        return None
+    if not tokens[0].startswith('"'):
+        note("alt_quotes")
+    return {"type": "type", "text": text}
+
+
+def _build_keypress(tokens, kwargs, note):
+    if not tokens:
+        return None
+    if len(tokens) == 1 and tokens[0].startswith("[") and tokens[0].endswith("]"):
+        try:
+            keys = json.loads(tokens[0].replace("'", '"'))
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(keys, list) or not keys or not all(isinstance(k, str) for k in keys):
+            return None
+        return {"type": "keypress", "keys": keys}
+    keys = []
+    for token in tokens:
+        literal = _as_quoted_string(token)
+        token = literal if literal is not None else token
+        combo = [part for part in token.split("+") if part.strip()]
+        keys.extend(combo if len(combo) > 1 else [token])
+    keys = [key.strip() for key in keys if key.strip()]
+    if not keys:
+        return None
+    note("bare_keys")
+    return {"type": "keypress", "keys": keys}
+
+
+def _no_args(action_type: str):
+    def build(tokens, kwargs, note):
+        if tokens or kwargs:
+            note("extra_args")
+        return {"type": action_type}
+    return build
+
+
+ACTION_BUILDERS: dict = {
+    "click": _build_click,
+    "double_click": _point_only("double_click"),
+    "move": _point_only("move"),
+    "drag": _build_drag,
+    "scroll": _build_scroll,
+    "type": _build_type,
+    "keypress": _build_keypress,
+    "wait": _no_args("wait"),
+    "done": _no_args("done"),
+    "screenshot": _no_args("screenshot"),
+}
+
+
+def _parse_call(body: str):
+    """(action, deviations) for one call expression, or (None, ()) when it is not one."""
+    match = _CALL_RE.match(body.strip())
+    if not match:
+        return None, ()
+    verb = match.group(1).lower()
+    raw_args = match.group(2)
+    deviations = []
+    note = deviations.append
+
+    if raw_args is None:
+        if verb not in NO_ARG_VERBS:
+            return None, ()
+        note("missing_parens")
+        raw_args = ""
+
+    had_ref = "<ref>" in raw_args
+    args = _REF_WRAPPER_RE.sub("", raw_args)
+    if verb == "drag":
+        args = args.replace("->", ",")
+
+    tokens, kwargs = [], {}
+    for token in _split_top_level(args):
+        key, sep, value = token.partition("=")
+        if sep and _as_quoted_string(token) is None and re.fullmatch(r"[A-Za-z_][\w]*", key.strip()):
+            kwargs[key.strip().lower()] = value.strip()
+        else:
+            tokens.append(token)
+
+    action = ACTION_BUILDERS[verb](tokens, kwargs, note)
+    if action is None:
+        return None, ()
+    if not had_ref and any(key in action for key in ("x", "path")):
+        note("bare_coords")
+    known = {"click": {"button"}, "scroll": {"scrollx", "scrolly", "scroll_x", "scroll_y", "dx", "dy"}}
+    if set(kwargs) - known.get(verb, set()):
+        note("extra_args")
+    return action, tuple(dict.fromkeys(deviations))
+
+
+def classify_action_line(line: str) -> ParsedLine:
+    """Classify one line as prefixed | bare | malformed | ignored, with its action and deviations."""
     stripped = _BULLET_RE.sub("", line.strip().strip("`").strip(), count=1)
     if not stripped:
-        return None, "ignored"
+        return ParsedLine(None, "ignored")
     prefix_match = _ACTION_PREFIX_RE.match(stripped)
     body = prefix_match.group(1).strip() if prefix_match else stripped
-    action = _parse_action_expression(body)
-    if action is not None:
-        return action, "prefixed" if prefix_match else "bare"
-    if prefix_match or _ACTION_CALL_HINT_RE.search(stripped):
-        return None, "malformed"
-    return None, "ignored"
+    action, deviations = _parse_call(body)
+    if action is None:
+        if prefix_match or _ACTION_CALL_HINT_RE.search(stripped):
+            return ParsedLine(None, "malformed")
+        return ParsedLine(None, "ignored")
+    if not prefix_match:
+        deviations = ("missing_prefix",) + deviations
+    if _squash(stripped) == _squash(format_action_for_training(action)):
+        deviations = ()
+    elif not deviations:
+        deviations = ("other",)
+    return ParsedLine(action, "prefixed" if prefix_match else "bare", deviations)
 
 
 def parse_action_line(line: str) -> dict | None:
     """One action line back into a trajectory action dict, or None if it is not a valid action."""
-    return classify_action_line(line)[0]
+    return classify_action_line(line).action
 
 
 @dataclass
@@ -269,14 +469,15 @@ class ParsedStep:
     actions: list
     malformed_lines: int
     raw: str
-    bare_actions: int = 0
+    canonical_actions: int = 0
+    deviations: dict = field(default_factory=dict)
 
     @property
     def parse_failed(self) -> bool:
         return not self.actions
 
 
-def parse_student_output(text: str, accept_bare_actions: bool = True) -> ParsedStep:
+def parse_student_output(text: str, tolerant_grammar: bool = True) -> ParsedStep:
     """Split one assistant turn into its `<think>` text and ordered action dicts; a step fails only when NO line parsed."""
     text = text or ""
     think_re = _THINK_RE if "<think>" in text else _THINK_PREFILLED_RE
@@ -284,20 +485,21 @@ def parse_student_output(text: str, accept_bare_actions: bool = True) -> ParsedS
     think = (think_match.group(1).strip() if think_match else "")
     body = think_re.sub("", text, count=1)
 
-    actions = []
-    malformed = 0
-    bare = 0
+    actions, malformed, canonical = [], 0, 0
+    deviations: dict = {}
     for line in body.splitlines():
-        action, kind = classify_action_line(line)
-        if kind == "ignored":
+        parsed = classify_action_line(line)
+        if parsed.kind == "ignored":
             continue
-        if kind == "malformed" or (kind == "bare" and not accept_bare_actions):
+        if parsed.kind == "malformed" or (parsed.deviations and not tolerant_grammar):
             malformed += 1
             continue
-        bare += kind == "bare"
-        actions.append(action)
-    return ParsedStep(think=think, actions=actions, malformed_lines=malformed,
-                      raw=text, bare_actions=bare)
+        for deviation in parsed.deviations:
+            deviations[deviation] = deviations.get(deviation, 0) + 1
+        canonical += not parsed.deviations
+        actions.append(parsed.action)
+    return ParsedStep(think=think, actions=actions, malformed_lines=malformed, raw=text,
+                      canonical_actions=canonical, deviations=deviations)
 
 
 # ---------------------------------------------------------------------------
@@ -426,7 +628,7 @@ class EvalConfig:
     student_retries: int = 2
     mock_trajectory: str = ""
     coord_space: str = "viewport_abs"
-    accept_bare_actions: bool = True
+    tolerant_grammar: bool = True
     max_unproductive_steps: int = 5
     max_parse_failures: int = 3
     max_steps: int = 0                 # >0 pins a FLAT cap; 0 derives one per task (below)
@@ -469,7 +671,8 @@ class EpisodeRecord:
     parse_failure_steps: int = 0
     malformed_lines: int = 0
     actions_parsed: int = 0
-    actions_missing_prefix: int = 0
+    actions_canonical: int = 0
+    form_deviations: dict = field(default_factory=dict)
     think_steps: int = 0
     driver_errors: int = 0
     out_of_bounds: int = 0
@@ -623,10 +826,12 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
 
             record.model_steps = step
             record.raw_last_response = (raw or "")[-1500:]
-            parsed = parse_student_output(raw, cfg.accept_bare_actions)
+            parsed = parse_student_output(raw, cfg.tolerant_grammar)
             record.malformed_lines += parsed.malformed_lines
             record.actions_parsed += len(parsed.actions)
-            record.actions_missing_prefix += parsed.bare_actions
+            record.actions_canonical += parsed.canonical_actions
+            for deviation, count in parsed.deviations.items():
+                record.form_deviations[deviation] = record.form_deviations.get(deviation, 0) + count
             if parsed.think:
                 record.think_steps += 1
 
@@ -757,6 +962,12 @@ async def judge_episode(record: EpisodeRecord, cfg: EvalConfig):
 # ---------------------------------------------------------------------------
 
 
+def _format_deviations(deviations: dict) -> str:
+    if not deviations:
+        return "none"
+    return ", ".join(f"{kind} {count}" for kind, count in deviations.items())
+
+
 def _rate(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 4) if denominator else 0.0
 
@@ -802,7 +1013,11 @@ def compute_metrics(records: list[EpisodeRecord]) -> dict:
     model_steps = sum(r.model_steps for r in records)
     parse_failures = sum(r.parse_failure_steps for r in records)
     actions_parsed = sum(r.actions_parsed for r in records)
-    actions_missing_prefix = sum(r.actions_missing_prefix for r in records)
+    actions_canonical = sum(r.actions_canonical for r in records)
+    form_deviations: dict = {}
+    for record in records:
+        for deviation, count in (record.form_deviations or {}).items():
+            form_deviations[deviation] = form_deviations.get(deviation, 0) + count
 
     by_domain = _group_metrics(records, lambda r: r.domain or r.website or "unknown")
     by_level = _group_metrics(records, lambda r: r.level or "ungraded")
@@ -827,8 +1042,9 @@ def compute_metrics(records: list[EpisodeRecord]) -> dict:
         "parse_failure_rate": _rate(parse_failures, model_steps),
         "malformed_action_lines": sum(r.malformed_lines for r in records),
         "actions_parsed": actions_parsed,
-        "actions_missing_prefix": actions_missing_prefix,
-        "prefix_adherence_rate": _rate(actions_parsed - actions_missing_prefix, actions_parsed),
+        "actions_canonical": actions_canonical,
+        "canonical_form_rate": _rate(actions_canonical, actions_parsed),
+        "action_form_deviations": dict(sorted(form_deviations.items(), key=lambda kv: -kv[1])),
         "done_rate": _rate(sum(1 for r in records if r.done_emitted), total),
         "think_rate": _rate(sum(r.think_steps for r in records), model_steps),
         "driver_error_rate": _rate(sum(r.driver_errors for r in records),
@@ -878,9 +1094,9 @@ def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
         "dataset_revision": provenance.get("revision", ""),
         "dataset_split": provenance.get("split", ""),
         "coord_space": cfg.coord_space,
-        # Parity key, deliberately NOT expected-to-differ: prefix tolerance is a property of the
-        # harness, so both sides of a delta must have been parsed the same way.
-        "accepts_bare_actions": cfg.accept_bare_actions,
+        # Parity key, deliberately NOT expected-to-differ: grammar tolerance is a property of
+        # the harness, so both sides of a delta must have been parsed the same way.
+        "action_grammar": "tolerant" if cfg.tolerant_grammar else "canonical",
         "step_cap_policy": step_cap_policy(cfg, source),
         "max_unproductive_steps": cfg.max_unproductive_steps,
         "max_parse_failures": cfg.max_parse_failures,
@@ -996,9 +1212,9 @@ def render_report(results: dict) -> str:
         f"| site-blocked | {metrics['site_blocked_rate'] * 100:.1f}% |",
         f"| parse-failure rate (steps) | {metrics['parse_failure_rate'] * 100:.1f}% |",
         f"| malformed action lines | {metrics['malformed_action_lines']} |",
-        f"| `action:` prefix adherence | {metrics.get('prefix_adherence_rate', 0) * 100:.1f}% "
-        f"({metrics.get('actions_missing_prefix', 0)}/{metrics.get('actions_parsed', 0)} "
-        f"actions omitted the prefix) |",
+        f"| canonical action form | {metrics.get('canonical_form_rate', 0) * 100:.1f}% "
+        f"({metrics.get('actions_canonical', 0)}/{metrics.get('actions_parsed', 0)} actions) |",
+        f"| form deviations | {_format_deviations(metrics.get('action_form_deviations'))} |",
         f"| done() emission rate | {metrics['done_rate'] * 100:.1f}% |",
         f"| <think> emission rate (steps) | {metrics['think_rate'] * 100:.1f}% |",
         f"| driver-refused action rate | {metrics['driver_error_rate'] * 100:.1f}% |",
@@ -1017,10 +1233,13 @@ def render_report(results: dict) -> str:
         "benchmark's own human step count, which is a more defensible efficiency denominator than "
         "our raw step counts.",
         "",
-        "Prefix adherence is reported on its own rather than folded into the success rate: the "
-        "parser accepts the action grammar with or without the leading `action:` (it is "
-        "unambiguous either way), so a model that never learned the prefix is not scored as unable "
-        "to browse. How well each model formats its output stays visible as its own finding, and "
+        "`canonical action form` is the share of parsed actions spelled exactly as "
+        "`format_action_for_training` emits them. The parser accepts any UNAMBIGUOUS spelling of a "
+        "call (optional `action:`, bare or `<ref>`-wrapped coordinates, `wait` with or without "
+        "`()`, omitted keyword arguments, single or double quotes, bare key names) and rejects "
+        "genuinely ambiguous ones. A base model has only seen the grammar described in the system "
+        "prompt, so charging surface deviation to its success rate would measure imitation of an "
+        "unfamiliar convention rather than browsing. The deviation is reported here instead, and "
         "the tolerance is a harness parity key so both sides of a delta are parsed identically.",
         "",
         "## Per level",
@@ -1081,7 +1300,7 @@ PARITY_EXEMPT_KEYS = ("git_commit", "task_source_description", "level_distributi
 def render_comparison(runs: list[dict]) -> str:
     """Before/after table over two or more runs, with the parity check and per-level and per-domain diffs."""
     lines = ["# Student eval — comparison", "",
-             "| label | verified success | all-episode success | parse-failure | prefix adherence | "
+             "| label | verified success | all-episode success | parse-failure | canonical form | "
              "done() rate | mean steps (success) | steps/ref | site-blocked | n |",
              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for run in runs:
@@ -1090,7 +1309,7 @@ def render_comparison(runs: list[dict]) -> str:
             f"| `{run['label']}` | {m['verified_success_rate'] * 100:.1f}% | "
             f"{m['verified_success_rate_all_episodes'] * 100:.1f}% | "
             f"{m['parse_failure_rate'] * 100:.1f}% | "
-            f"{m.get('prefix_adherence_rate', 0) * 100:.1f}% | {m['done_rate'] * 100:.1f}% | "
+            f"{m.get('canonical_form_rate', 0) * 100:.1f}% | {m['done_rate'] * 100:.1f}% | "
             f"{m['mean_steps_on_success']} | "
             f"{m.get('mean_steps_over_reference_on_success', 0)}x | "
             f"{m['site_blocked_rate'] * 100:.1f}% | {m['episodes']} |")
@@ -1112,7 +1331,7 @@ def render_comparison(runs: list[dict]) -> str:
 
     if len(runs) > 1:
         lines += ["", f"## Delta vs `{base['label']}`", "",
-                  "| label | verified success | parse-failure | prefix adherence | done() rate | "
+                  "| label | verified success | parse-failure | canonical form | done() rate | "
                   + " | ".join(f"{level} success" for level in levels) + " |",
                   "| --- | --- | --- | --- | --- | " + " | ".join("---" for _ in levels) + " |"]
         for run in runs[1:]:
@@ -1127,7 +1346,7 @@ def render_comparison(runs: list[dict]) -> str:
                 f"| `{run['label']}` | "
                 f"{(b['verified_success_rate'] - a['verified_success_rate']) * 100:+.1f} pp | "
                 f"{(b['parse_failure_rate'] - a['parse_failure_rate']) * 100:+.1f} pp | "
-                f"{(b.get('prefix_adherence_rate', 0) - a.get('prefix_adherence_rate', 0)) * 100:+.1f} pp | "
+                f"{(b.get('canonical_form_rate', 0) - a.get('canonical_form_rate', 0)) * 100:+.1f} pp | "
                 f"{(b['done_rate'] - a['done_rate']) * 100:+.1f} pp | "
                 + " | ".join(level_cells) + " |")
 
@@ -1353,10 +1572,11 @@ def _add_run_arguments(parser):
                         help="the convention THIS model answers in: a model fine-tuned here emits "
                              "viewport_abs (1280x720 pixels), a stock Qwen emits normalized_1000. "
                              "Set it explicitly per model — it is never auto-detected")
-    parser.add_argument("--require-action-prefix", action="store_true",
-                        help="reject action lines that omit the leading `action:`. Off by default: "
-                             "the grammar is unambiguous without it, and rejecting bare calls "
-                             "scores format adherence rather than browsing ability")
+    parser.add_argument("--strict-action-grammar", action="store_true",
+                        help="accept ONLY the canonical form format_action_for_training emits. Off "
+                             "by default: any unambiguous spelling of a call is accepted, and how "
+                             "canonical each model's output was is reported as canonical_form_rate "
+                             "instead of being charged to its success rate")
     parser.add_argument("--max-unproductive-steps", type=int, default=MAX_UNPRODUCTIVE_STEPS,
                         help="abort the episode as 'stuck' after this many steps in a row that "
                              "execute no action at all")
@@ -1397,7 +1617,7 @@ def _config_from_args(args) -> EvalConfig:
         temperature=args.temperature, max_tokens=args.max_tokens,
         student_timeout_s=args.student_timeout, student_retries=args.student_retries,
         mock_trajectory=args.mock_trajectory, coord_space=args.coord_space,
-        accept_bare_actions=not args.require_action_prefix,
+        tolerant_grammar=not args.strict_action_grammar,
         max_unproductive_steps=args.max_unproductive_steps,
         max_parse_failures=args.max_parse_failures, max_steps=args.max_steps,
         step_cap_multiple=args.step_cap_multiple, step_cap_floor=args.step_cap_floor,

@@ -154,17 +154,34 @@ before/after table plus a **harness parity check** that flags any field the two 
   the viewport under `viewport_abs`. Same reasoning as `eval_models.yaml`'s `coord_space`.
   In `compare`, a `coord_space` difference is an *expected, annotated* model-side difference, not
   a parity violation — a before/after pair is supposed to differ here.
-- **The `action:` prefix is optional, and adherence is its own metric.** The grammar
-  (`click(<ref>(x, y)</ref>)`, `type("...")`, …) is unambiguous without the prefix, and the stock
-  model uses it at step 1 then drops it — rejecting that scores prefix adherence, not browsing,
-  and would make a before/after delta partly the model learning to type five characters. So a bare
-  call executes, but only when the line *is* the call: prose containing an action call is
-  `malformed`, prose without one is ignored, and nothing else in the grammar is loosened.
-  `prefix_adherence_rate` / `actions_missing_prefix` are reported next to `parse_failure_rate` in
-  both `report.md` and `compare`, so format learning shows up as its own finding instead of being
-  laundered into the success rate. The tolerance is a **parity key** (`accepts_bare_actions`), not
-  an expected difference — both sides of a delta must be parsed identically. `--require-action-prefix`
-  restores strict mode.
+- **The action grammar is tolerant by design, and canonical form is its own metric.** The base
+  model has never been trained on our grammar — the system prompt only *describes* it — so
+  penalising surface deviation measures "can it imitate an unfamiliar convention", not "can it
+  browse". The parser therefore accepts any **unambiguous** spelling of a call and reports
+  `canonical_form_rate` (share of parsed actions spelled exactly as `format_action_for_training`
+  emits) plus an `action_form_deviations` breakdown, instead of charging deviation to the success
+  rate. The fine-tuned model emitting the canonical form is a real improvement and gets reported
+  in that column. Tolerance is a **parity key** (`action_grammar: tolerant|canonical`), so
+  `compare` proves both sides were parsed identically; `--strict-action-grammar` accepts canonical
+  only. Accepted (canonical first):
+
+  | verb | accepted spellings |
+  | --- | --- |
+  | `click` | `click(<ref>(x, y)</ref>, button=left)` · `(x, y)` · `x, y` · trailing `left`/`right` · button omitted (defaults left) |
+  | `double_click`, `move` | `<ref>(x, y)</ref>` · `(x, y)` · `x, y` |
+  | `drag` | both endpoints in any coordinate spelling, separated by `->` or `,` |
+  | `scroll` | `scrollX=`/`scrollY=`, `scroll_x=`/`scroll_y=`, `dx=`/`dy=`, positional deltas, or omitted (defaults `0, 500`) |
+  | `type` | `type("text")` · `type('text')` |
+  | `keypress` | `["Enter"]` · `"Enter"` · `Enter` · `Control, a` · `Control+a` |
+  | `wait`, `done`, `screenshot` | `verb()` · `verb` |
+  | everywhere | optional `action:` prefix, bullets/backticks/whitespace stripped, unknown kwargs ignored, floats rounded |
+
+  **Rejected as genuinely ambiguous** (not merely unfamiliar): `type(hello world)` and
+  `type(a, b)` — an unquoted string cannot be told from an argument list; `scroll(500)` — one
+  number reads equally as an x coordinate or a scrollY delta; `click(100)`, `drag((10, 20))`,
+  `keypress()` — incomplete. Loosening the *shape* of a call never loosens the rule that the line
+  **is** a call: prose wrapped around a valid call is `malformed`, narration with no call is
+  ignored.
 - **Outcome categories, not one bucket.** `completed` / `step_cap` / `stuck` /
   `parse_failure_abort` / `timeout` are scored; `site_blocked` (CAPTCHA/WAF/interstitial, via
   `BLOCK_SIGNATURES`), `unreachable` and `harness_error` are environment failures, excluded from

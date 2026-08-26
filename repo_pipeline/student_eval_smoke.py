@@ -5,6 +5,7 @@ import json
 import logging
 import sys
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 
 from repo_pipeline.student_eval import (
@@ -15,6 +16,7 @@ from repo_pipeline.student_eval import (
     EvalConfig,
     ReplayStudent,
     action_coordinates,
+    EpisodeRecord,
     build_user_text,
     coord_space_diagnosis,
     detect_block,
@@ -22,14 +24,16 @@ from repo_pipeline.student_eval import (
     judge_episode,
     outside_viewport,
     classify_action_line,
+    compute_metrics,
     parse_action_line,
     parse_student_output,
     render_comparison,
+    harness_fingerprint,
     render_report,
     run_episode,
     scale_action,
 )
-from repo_pipeline.eval_task_sources import EvalTask
+from repo_pipeline.eval_task_sources import TASK_SOURCES, EvalTask
 from train_qwen import HISTORY_WINDOW, format_action_for_training
 
 logger = logging.getLogger(__name__)
@@ -101,95 +105,227 @@ ROUND_TRIP_ACTIONS = [
 
 
 def check_parser_round_trip():
-    """Every action type survives format -> parse unchanged, with and without the `action:` prefix."""
+    """Every action type survives format -> parse unchanged, and reads as canonical."""
     seen = set()
     for action in ROUND_TRIP_ACTIONS:
         line = format_action_for_training(action)
-        assert line.startswith("action: "), line
-        bare = line[len("action: "):]
-
-        parsed, kind = classify_action_line(line)
-        assert parsed == action, f"round-trip mismatch for {line!r}: {parsed} != {action}"
-        assert kind == "prefixed", f"{line!r} classified {kind}"
-
-        parsed_bare, kind_bare = classify_action_line(bare)
-        assert parsed_bare == action, f"bare round-trip mismatch for {bare!r}: {parsed_bare}"
-        assert kind_bare == "bare", f"{bare!r} classified {kind_bare}"
-
-        assert classify_action_line(f"  {bare}  ")[1] == "bare", "surrounding whitespace must be ok"
-        assert classify_action_line(f"- {bare}")[1] == "bare", "a bullet must be ok"
+        parsed = classify_action_line(line)
+        assert parsed.action == action, f"round-trip mismatch for {line!r}: {parsed.action}"
+        assert parsed.kind == "prefixed", f"{line!r} classified {parsed.kind}"
+        assert parsed.deviations == (), f"canonical line reported deviations {parsed.deviations}"
         seen.add(action["type"])
     required = {"click", "double_click", "move", "type", "keypress", "scroll", "drag", "wait", "done"}
     assert required <= seen, f"round-trip missed action types: {required - seen}"
-    logger.info(f"parser round-trip OK for {len(ROUND_TRIP_ACTIONS)} actions over {len(seen)} types, "
-                f"prefixed and bare")
+    logger.info(f"parser round-trip OK for {len(ROUND_TRIP_ACTIONS)} canonical actions "
+                f"over {len(seen)} types")
 
 
-def check_bare_action_discipline():
-    """Dropping the `action:` prefix is tolerated; everything else about the grammar stays strict."""
+# Every accepted surface variant, per verb, against the action it must produce. The canonical form
+# is generated from the action itself, so this table only lists DEVIATIONS.
+GRAMMAR_MATRIX = [
+    ({"type": "click", "x": 217, "y": 925, "button": "left"}, [
+        "click(<ref>(217, 925)</ref>, button=left)",
+        "click(<ref>(217, 925)</ref>)",
+        "click((217, 925))",
+        "click(217, 925)",
+        "click(217, 925, left)",
+        "click(217.0, 925.0)",
+        "CLICK(217, 925)",
+    ]),
+    ({"type": "click", "x": 10, "y": 20, "button": "right"}, [
+        "click(<ref>(10, 20)</ref>, button=right)",
+        "click(10, 20, right)",
+        "click((10, 20), button=RIGHT)",
+    ]),
+    ({"type": "double_click", "x": 100, "y": 200}, [
+        "double_click(<ref>(100, 200)</ref>)",
+        "double_click((100, 200))",
+        "double_click(100, 200)",
+    ]),
+    ({"type": "move", "x": 5, "y": 719}, [
+        "move(<ref>(5, 719)</ref>)",
+        "move((5, 719))",
+        "move(5, 719)",
+    ]),
+    ({"type": "drag", "path": [{"x": 10, "y": 20}, {"x": 300, "y": 400}]}, [
+        "drag(<ref>(10, 20)</ref> -> <ref>(300, 400)</ref>)",
+        "drag((10, 20) -> (300, 400))",
+        "drag(10, 20 -> 300, 400)",
+        "drag((10, 20), (300, 400))",
+        "drag(10, 20, 300, 400)",
+        "drag(<ref>(10, 20)</ref> -> 300, 400)",
+        "drag(10, 20 -> <ref>(300, 400)</ref>)",
+    ]),
+    ({"type": "scroll", "x": 640, "y": 360, "scroll_x": 0, "scroll_y": 500}, [
+        "scroll(<ref>(640, 360)</ref>, scrollX=0, scrollY=500)",
+        "scroll(<ref>(640, 360)</ref>)",
+        "scroll((640, 360), scrollY=500)",
+        "scroll(640, 360)",
+        "scroll(640, 360, 0, 500)",
+        "scroll((640, 360), scroll_x=0, scroll_y=500)",
+        "scroll((640, 360), dx=0, dy=500)",
+    ]),
+    ({"type": "scroll", "x": 100, "y": 100, "scroll_x": -50, "scroll_y": -500}, [
+        "scroll(<ref>(100, 100)</ref>, scrollX=-50, scrollY=-500)",
+        "scroll(100, 100, -50, -500)",
+    ]),
+    ({"type": "type", "text": "hello, world"}, [
+        'type("hello, world")',
+        "type('hello, world')",
+    ]),
+    ({"type": "keypress", "keys": ["Enter"]}, [
+        'keypress(["Enter"])',
+        "keypress(['Enter'])",
+        'keypress("Enter")',
+        "keypress(Enter)",
+    ]),
+    ({"type": "keypress", "keys": ["Control", "a"]}, [
+        'keypress(["Control", "a"])',
+        "keypress(Control, a)",
+        "keypress(Control+a)",
+    ]),
+    ({"type": "wait"}, ["wait()", "wait", "wait( )"]),
+    ({"type": "done"}, ["done()", "done"]),
+    ({"type": "screenshot"}, ["screenshot()", "screenshot"]),
+]
+
+# Shapes rejected because they have more than one reading, not because they are unfamiliar.
+AMBIGUOUS_SHAPES = [
+    ("type(hello world)", "an unquoted string cannot be told from an argument list"),
+    ("type(a, b)", "two readings: one string containing a comma, or two arguments"),
+    ("scroll(500)", "one number reads equally as an x coordinate or a scrollY delta"),
+    ("click(100)", "half a point"),
+    ("drag((10, 20))", "one endpoint"),
+    ("keypress()", "no keys"),
+    ("click()", "no coordinates"),
+]
+
+
+def check_grammar_matrix():
+    """Every verb in every accepted surface variant, canonical and deviant, plus the rejections."""
+    variants = 0
+    for action, forms in GRAMMAR_MATRIX:
+        canonical = format_action_for_training(action)
+        for form in forms:
+            for line in (form, f"action: {form}", f"  {form} ", f"- {form}", f"`{form}`"):
+                parsed = classify_action_line(line)
+                assert parsed.action == action, f"{line!r} -> {parsed.action}, expected {action}"
+                assert parsed.kind in ("prefixed", "bare"), f"{line!r} classified {parsed.kind}"
+                # Whitespace is not a meaningful deviation, so canonicality ignores it.
+                is_canonical = "".join(line.split()) == "".join(canonical.split())
+                assert bool(parsed.deviations) != is_canonical, \
+                    f"{line!r} deviations={parsed.deviations} but canonical={is_canonical}"
+                variants += 1
+
+    for shape, why in AMBIGUOUS_SHAPES:
+        parsed = classify_action_line(shape)
+        assert parsed.action is None and parsed.kind == "malformed", \
+            f"{shape!r} was accepted as {parsed.action} but is ambiguous: {why}"
+    logger.info(f"grammar matrix OK: {variants} accepted spellings over "
+                f"{len(GRAMMAR_MATRIX)} action shapes, {len(AMBIGUOUS_SHAPES)} ambiguous rejected")
+
+
+def check_line_discipline():
+    """Loosening the SHAPE of a call must not loosen the rule that the line IS a call."""
     for prose in [
         "The next logical step is to type a query into the search bar.",
         "I should click the search bar and then wait for results.",
         "I will scroll down to find the done button.",
+        "I am done with this task.",
     ]:
-        assert classify_action_line(prose) == (None, "ignored"), f"narration picked up: {prose!r}"
+        assert classify_action_line(prose) == (None, "ignored", ()), f"narration picked up: {prose!r}"
 
     for near_miss in [
         'I should type("UK visa requirements") now.',
         "Next I will click(<ref>(100, 200)</ref>) on the field.",
         "action: I will search for visa requirements",
-        "action: click(100, 200)",
+        "First, click(217, 925) to focus it.",
     ]:
-        action, kind = classify_action_line(near_miss)
-        assert (action, kind) == (None, "malformed"), f"{near_miss!r} -> {kind}, expected malformed"
+        parsed = classify_action_line(near_miss)
+        assert (parsed.action, parsed.kind) == (None, "malformed"), \
+            f"{near_miss!r} -> {parsed.kind}, expected malformed"
+    logger.info("line discipline OK (prose with a call is malformed, narration is ignored)")
 
-    # The exact shape the live baseline emitted: a complete, prefix-less action after </think>.
+
+def check_live_response_shapes():
+    """The three surface variants the live baseline actually emitted, end to end through a step."""
     step = parse_student_output(
         "I have clicked into the search bar. The next step is to type a query.\n</think>\n\n"
         'type("UK visa requirements for American citizens working in healthcare")')
     assert step.actions == [
         {"type": "type", "text": "UK visa requirements for American citizens working in healthcare"}
     ], step.actions
-    assert step.bare_actions == 1 and step.malformed_lines == 0 and not step.parse_failed, step
+    assert step.deviations == {"missing_prefix": 1}, step.deviations
+    assert step.canonical_actions == 0 and not step.parse_failed, step
     assert step.think.startswith("I have clicked into the search bar"), step.think
 
-    strict = parse_student_output(step.raw, accept_bare_actions=False)
-    assert strict.parse_failed and strict.malformed_lines == 1, strict
-    assert strict.bare_actions == 0, strict
+    bare_coords = parse_student_output("<think>t</think>\nclick(217, 925)")
+    assert bare_coords.actions == [{"type": "click", "x": 217, "y": 925, "button": "left"}]
+    assert set(bare_coords.deviations) == {"missing_prefix", "bare_coords", "default_kwargs"}, \
+        bare_coords.deviations
+
+    no_parens = parse_student_output("<think>t</think>\naction: wait")
+    assert no_parens.actions == [{"type": "wait"}], no_parens.actions
+    assert no_parens.deviations == {"missing_parens": 1}, no_parens.deviations
 
     mixed = parse_student_output(
         "<think>t</think>\naction: click(<ref>(10, 20)</ref>, button=left)\nwait()\nnonsense(")
     assert [a["type"] for a in mixed.actions] == ["click", "wait"], mixed.actions
-    assert mixed.bare_actions == 1 and mixed.malformed_lines == 0, mixed
-    logger.info("bare-action discipline OK (prefix optional, prose rejected, strict mode available)")
+    assert mixed.canonical_actions == 1, mixed.canonical_actions
+    assert mixed.deviations == {"missing_prefix": 1}, mixed.deviations
+    assert mixed.malformed_lines == 0, mixed
+
+    strict = parse_student_output(step.raw, tolerant_grammar=False)
+    assert strict.parse_failed and strict.malformed_lines == 1, strict
+    strict_ok = parse_student_output(
+        "<think>t</think>\naction: click(<ref>(10, 20)</ref>, button=left)", tolerant_grammar=False)
+    assert strict_ok.canonical_actions == 1 and not strict_ok.parse_failed, strict_ok
+    logger.info("live response shapes OK (bare prefix, bare coords, missing parens, strict mode)")
+
+
+def check_canonical_form_rate():
+    """The metric must read 100% on canonical output and be correctly fractional on mixed output."""
+    canonical_only = [EpisodeRecordFactory(actions_parsed=4, actions_canonical=4, deviations={})]
+    metrics = compute_metrics(canonical_only)
+    assert metrics["canonical_form_rate"] == 1.0, metrics
+    assert metrics["action_form_deviations"] == {}, metrics
+
+    mixed = [EpisodeRecordFactory(actions_parsed=8, actions_canonical=2,
+                                  deviations={"missing_prefix": 6, "bare_coords": 4})]
+    metrics = compute_metrics(mixed)
+    assert metrics["canonical_form_rate"] == 0.25, metrics
+    assert metrics["action_form_deviations"] == {"missing_prefix": 6, "bare_coords": 4}, metrics
+    assert metrics["actions_canonical"] == 2 and metrics["actions_parsed"] == 8, metrics
+    logger.info("canonical_form_rate OK (1.0 canonical, 0.25 mixed, deviations aggregated)")
+
+
+def EpisodeRecordFactory(actions_parsed, actions_canonical, deviations):
+    return EpisodeRecord(task_id="t", instruction="i", start_url="https://x/", domain="d",
+                         outcome="completed", model_steps=4, actions_parsed=actions_parsed,
+                         actions_canonical=actions_canonical, form_deviations=deviations)
 
 
 def check_parser_tolerance():
-    """Structural tolerance only: prefixes, fences and bullets are stripped, action content never rewritten."""
+    """Multi-action steps, code fences and a missing think block all still parse."""
     parsed = parse_student_output(
         "<think>I need to search.</think>\n"
         'action: click(<ref>(100, 200)</ref>, button=left)\n'
         'action: type("laptop")\n'
-        'action: keypress(["Enter"])'
-    )
+        'action: keypress(["Enter"])')
     assert parsed.think == "I need to search.", parsed.think
     assert [a["type"] for a in parsed.actions] == ["click", "type", "keypress"], parsed.actions
+    assert parsed.canonical_actions == 3 and parsed.deviations == {}, parsed
     assert parsed.malformed_lines == 0 and not parsed.parse_failed
 
     garbage = parse_student_output("I will click the search box for you.")
     assert garbage.parse_failed and garbage.actions == [], garbage
-    assert garbage.malformed_lines == 0, "prose without an action: line is not a malformed action"
-
-    broken = parse_student_output("<think>t</think>\naction: click(100, 200)\naction: done()")
-    assert broken.malformed_lines == 1, broken
-    assert [a["type"] for a in broken.actions] == ["done"], broken.actions
-    assert not broken.parse_failed, "a partially-parsed step keeps its good actions"
+    assert garbage.malformed_lines == 0, "prose without a call is not a malformed action"
 
     fenced = parse_student_output("```\naction: wait()\n```")
     assert [a["type"] for a in fenced.actions] == ["wait"], fenced.actions
 
-    empty_think = parse_student_output("action: done()")
-    assert empty_think.think == "" and empty_think.actions == [{"type": "done"}]
+    no_think = parse_student_output("action: done()")
+    assert no_think.think == "" and no_think.actions == [{"type": "done"}]
     logger.info("parser tolerance OK")
 
 
@@ -262,14 +398,11 @@ def check_block_detection():
 
 def check_report_rendering():
     """Both renderers must run on a synthetic payload, or a crash surfaces only after a full run."""
-    from repo_pipeline.student_eval import EpisodeRecord, compute_metrics, harness_fingerprint
-    from repo_pipeline.eval_task_sources import TASK_SOURCES
-    from dataclasses import asdict
-
     records = [
         EpisodeRecord(task_id="a", instruction="i", start_url="https://a/", domain="shop",
                       outcome="completed", verified_success=True, model_steps=8, done_emitted=True,
-                      emitted_coords=8, actions_parsed=10, actions_missing_prefix=4),
+                      emitted_coords=8, actions_parsed=10, actions_canonical=6,
+                      form_deviations={"missing_prefix": 4}),
         EpisodeRecord(task_id="b", instruction="i", start_url="https://b/", domain="travel",
                       outcome="site_blocked", block_reason="captcha", model_steps=2),
         EpisodeRecord(task_id="c", instruction="i", start_url="https://c/", domain="shop",
@@ -291,12 +424,13 @@ def check_report_rendering():
     report = render_report(results)
     assert "verified task success: 50.0%" in report, report[:400]
     assert "site-blocked 33.3%" in report, report[:400]
-    assert "prefix adherence | 60.0% (4/10 actions omitted the prefix)" in report, report
-    assert metrics["prefix_adherence_rate"] == 0.6, metrics
-    assert results["harness"]["accepts_bare_actions"] is True, results["harness"]
-    assert "accepts_bare_actions" not in EXPECTED_TO_DIFFER_KEYS, \
-        "prefix tolerance is a harness property — it must be a parity key, not an expected difference"
-    assert "accepts_bare_actions" not in PARITY_EXEMPT_KEYS, PARITY_EXEMPT_KEYS
+    assert "canonical action form | 60.0% (6/10 actions)" in report, report
+    assert "form deviations | missing_prefix 4" in report, report
+    assert metrics["canonical_form_rate"] == 0.6, metrics
+    assert results["harness"]["action_grammar"] == "tolerant", results["harness"]
+    assert "action_grammar" not in EXPECTED_TO_DIFFER_KEYS, \
+        "grammar tolerance is a harness property — a parity key, not an expected difference"
+    assert "action_grammar" not in PARITY_EXEMPT_KEYS, PARITY_EXEMPT_KEYS
     after = json.loads(json.dumps(results))
     after["label"] = "after"
     after["metrics"]["verified_success_rate"] = 0.75
@@ -495,8 +629,11 @@ async def run_episode_smoke(judge: bool) -> bool:
 
 PARSER_CHECKS = [
     check_parser_round_trip,
+    check_grammar_matrix,
+    check_line_discipline,
+    check_live_response_shapes,
+    check_canonical_form_rate,
     check_parser_tolerance,
-    check_bare_action_discipline,
     check_prefilled_think,
     check_coordinate_scaling,
     check_driver_mapping,
