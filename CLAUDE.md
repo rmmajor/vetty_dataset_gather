@@ -154,6 +154,17 @@ before/after table plus a **harness parity check** that flags any field the two 
   the viewport under `viewport_abs`. Same reasoning as `eval_models.yaml`'s `coord_space`.
   In `compare`, a `coord_space` difference is an *expected, annotated* model-side difference, not
   a parity violation — a before/after pair is supposed to differ here.
+- **The `action:` prefix is optional, and adherence is its own metric.** The grammar
+  (`click(<ref>(x, y)</ref>)`, `type("...")`, …) is unambiguous without the prefix, and the stock
+  model uses it at step 1 then drops it — rejecting that scores prefix adherence, not browsing,
+  and would make a before/after delta partly the model learning to type five characters. So a bare
+  call executes, but only when the line *is* the call: prose containing an action call is
+  `malformed`, prose without one is ignored, and nothing else in the grammar is loosened.
+  `prefix_adherence_rate` / `actions_missing_prefix` are reported next to `parse_failure_rate` in
+  both `report.md` and `compare`, so format learning shows up as its own finding instead of being
+  laundered into the success rate. The tolerance is a **parity key** (`accepts_bare_actions`), not
+  an expected difference — both sides of a delta must be parsed identically. `--require-action-prefix`
+  restores strict mode.
 - **Outcome categories, not one bucket.** `completed` / `step_cap` / `stuck` /
   `parse_failure_abort` / `timeout` are scored; `site_blocked` (CAPTCHA/WAF/interstitial, via
   `BLOCK_SIGNATURES`), `unreachable` and `harness_error` are environment failures, excluded from

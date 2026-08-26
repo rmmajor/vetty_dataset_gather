@@ -217,7 +217,12 @@ ACTION_PATTERNS: list = [
     (re.compile(r"^screenshot\(\)$"), lambda m: {"type": "screenshot"}),
 ]
 
-_ACTION_LINE_RE = re.compile(r"^\s*(?:[-*]\s*)?action\s*:\s*(.+?)\s*$", re.IGNORECASE)
+_BULLET_RE = re.compile(r"^[-*]\s+")
+_ACTION_PREFIX_RE = re.compile(r"^action\s*:\s*(.*)$", re.IGNORECASE)
+# A bare call counts only when it is the WHOLE line; this hint spots a line that gestures at an
+# action without being one, so leading prose is reported as malformed rather than silently ignored.
+_ACTION_CALL_HINT_RE = re.compile(
+    r"\b(?:click|double_click|move|type|keypress|scroll|drag|wait|done|screenshot)\s*\(")
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 # Reasoning chat templates PREFILL the opening <think>, so the completion carries only the
 # closing tag; without this the think text is lost and think_rate reads 0% on a model that
@@ -225,10 +230,8 @@ _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 _THINK_PREFILLED_RE = re.compile(r"\A(.*?)</think>", re.DOTALL)
 
 
-def parse_action_line(line: str) -> dict | None:
-    """One `action: ...` line back into a trajectory action dict, or None if it is malformed."""
-    match = _ACTION_LINE_RE.match(line)
-    body = (match.group(1) if match else line).strip().strip("`")
+def _parse_action_expression(body: str) -> dict | None:
+    """The action grammar itself, with no prefix handling."""
     for pattern, builder in ACTION_PATTERNS:
         matched = pattern.match(body)
         if not matched:
@@ -240,19 +243,40 @@ def parse_action_line(line: str) -> dict | None:
     return None
 
 
+def classify_action_line(line: str) -> tuple:
+    """Classify one line as prefixed | bare | malformed | ignored, with its action when it has one."""
+    stripped = _BULLET_RE.sub("", line.strip().strip("`").strip(), count=1)
+    if not stripped:
+        return None, "ignored"
+    prefix_match = _ACTION_PREFIX_RE.match(stripped)
+    body = prefix_match.group(1).strip() if prefix_match else stripped
+    action = _parse_action_expression(body)
+    if action is not None:
+        return action, "prefixed" if prefix_match else "bare"
+    if prefix_match or _ACTION_CALL_HINT_RE.search(stripped):
+        return None, "malformed"
+    return None, "ignored"
+
+
+def parse_action_line(line: str) -> dict | None:
+    """One action line back into a trajectory action dict, or None if it is not a valid action."""
+    return classify_action_line(line)[0]
+
+
 @dataclass
 class ParsedStep:
     think: str
     actions: list
     malformed_lines: int
     raw: str
+    bare_actions: int = 0
 
     @property
     def parse_failed(self) -> bool:
         return not self.actions
 
 
-def parse_student_output(text: str) -> ParsedStep:
+def parse_student_output(text: str, accept_bare_actions: bool = True) -> ParsedStep:
     """Split one assistant turn into its `<think>` text and ordered action dicts; a step fails only when NO line parsed."""
     text = text or ""
     think_re = _THINK_RE if "<think>" in text else _THINK_PREFILLED_RE
@@ -262,16 +286,18 @@ def parse_student_output(text: str) -> ParsedStep:
 
     actions = []
     malformed = 0
+    bare = 0
     for line in body.splitlines():
-        stripped = line.strip()
-        if not stripped or not _ACTION_LINE_RE.match(stripped):
+        action, kind = classify_action_line(line)
+        if kind == "ignored":
             continue
-        parsed = parse_action_line(stripped)
-        if parsed is None:
+        if kind == "malformed" or (kind == "bare" and not accept_bare_actions):
             malformed += 1
-        else:
-            actions.append(parsed)
-    return ParsedStep(think=think, actions=actions, malformed_lines=malformed, raw=text or "")
+            continue
+        bare += kind == "bare"
+        actions.append(action)
+    return ParsedStep(think=think, actions=actions, malformed_lines=malformed,
+                      raw=text, bare_actions=bare)
 
 
 # ---------------------------------------------------------------------------
@@ -400,6 +426,7 @@ class EvalConfig:
     student_retries: int = 2
     mock_trajectory: str = ""
     coord_space: str = "viewport_abs"
+    accept_bare_actions: bool = True
     max_unproductive_steps: int = 5
     max_parse_failures: int = 3
     max_steps: int = 0                 # >0 pins a FLAT cap; 0 derives one per task (below)
@@ -441,6 +468,8 @@ class EpisodeRecord:
     actions_executed: int = 0
     parse_failure_steps: int = 0
     malformed_lines: int = 0
+    actions_parsed: int = 0
+    actions_missing_prefix: int = 0
     think_steps: int = 0
     driver_errors: int = 0
     out_of_bounds: int = 0
@@ -594,8 +623,10 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
 
             record.model_steps = step
             record.raw_last_response = (raw or "")[-1500:]
-            parsed = parse_student_output(raw)
+            parsed = parse_student_output(raw, cfg.accept_bare_actions)
             record.malformed_lines += parsed.malformed_lines
+            record.actions_parsed += len(parsed.actions)
+            record.actions_missing_prefix += parsed.bare_actions
             if parsed.think:
                 record.think_steps += 1
 
@@ -770,6 +801,8 @@ def compute_metrics(records: list[EpisodeRecord]) -> dict:
     blocked = [r for r in records if r.outcome == "site_blocked"]
     model_steps = sum(r.model_steps for r in records)
     parse_failures = sum(r.parse_failure_steps for r in records)
+    actions_parsed = sum(r.actions_parsed for r in records)
+    actions_missing_prefix = sum(r.actions_missing_prefix for r in records)
 
     by_domain = _group_metrics(records, lambda r: r.domain or r.website or "unknown")
     by_level = _group_metrics(records, lambda r: r.level or "ungraded")
@@ -793,6 +826,9 @@ def compute_metrics(records: list[EpisodeRecord]) -> dict:
         "site_blocked_rate": _rate(len(blocked), total),
         "parse_failure_rate": _rate(parse_failures, model_steps),
         "malformed_action_lines": sum(r.malformed_lines for r in records),
+        "actions_parsed": actions_parsed,
+        "actions_missing_prefix": actions_missing_prefix,
+        "prefix_adherence_rate": _rate(actions_parsed - actions_missing_prefix, actions_parsed),
         "done_rate": _rate(sum(1 for r in records if r.done_emitted), total),
         "think_rate": _rate(sum(r.think_steps for r in records), model_steps),
         "driver_error_rate": _rate(sum(r.driver_errors for r in records),
@@ -842,6 +878,9 @@ def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
         "dataset_revision": provenance.get("revision", ""),
         "dataset_split": provenance.get("split", ""),
         "coord_space": cfg.coord_space,
+        # Parity key, deliberately NOT expected-to-differ: prefix tolerance is a property of the
+        # harness, so both sides of a delta must have been parsed the same way.
+        "accepts_bare_actions": cfg.accept_bare_actions,
         "step_cap_policy": step_cap_policy(cfg, source),
         "max_unproductive_steps": cfg.max_unproductive_steps,
         "max_parse_failures": cfg.max_parse_failures,
@@ -957,6 +996,9 @@ def render_report(results: dict) -> str:
         f"| site-blocked | {metrics['site_blocked_rate'] * 100:.1f}% |",
         f"| parse-failure rate (steps) | {metrics['parse_failure_rate'] * 100:.1f}% |",
         f"| malformed action lines | {metrics['malformed_action_lines']} |",
+        f"| `action:` prefix adherence | {metrics.get('prefix_adherence_rate', 0) * 100:.1f}% "
+        f"({metrics.get('actions_missing_prefix', 0)}/{metrics.get('actions_parsed', 0)} "
+        f"actions omitted the prefix) |",
         f"| done() emission rate | {metrics['done_rate'] * 100:.1f}% |",
         f"| <think> emission rate (steps) | {metrics['think_rate'] * 100:.1f}% |",
         f"| driver-refused action rate | {metrics['driver_error_rate'] * 100:.1f}% |",
@@ -974,6 +1016,12 @@ def render_report(results: dict) -> str:
         "beside it rather than folded into it. `steps / reference_length` compares against the "
         "benchmark's own human step count, which is a more defensible efficiency denominator than "
         "our raw step counts.",
+        "",
+        "Prefix adherence is reported on its own rather than folded into the success rate: the "
+        "parser accepts the action grammar with or without the leading `action:` (it is "
+        "unambiguous either way), so a model that never learned the prefix is not scored as unable "
+        "to browse. How well each model formats its output stays visible as its own finding, and "
+        "the tolerance is a harness parity key so both sides of a delta are parsed identically.",
         "",
         "## Per level",
         "",
@@ -1033,15 +1081,16 @@ PARITY_EXEMPT_KEYS = ("git_commit", "task_source_description", "level_distributi
 def render_comparison(runs: list[dict]) -> str:
     """Before/after table over two or more runs, with the parity check and per-level and per-domain diffs."""
     lines = ["# Student eval — comparison", "",
-             "| label | verified success | all-episode success | parse-failure | done() rate | "
-             "mean steps (success) | steps/ref | site-blocked | n |",
-             "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+             "| label | verified success | all-episode success | parse-failure | prefix adherence | "
+             "done() rate | mean steps (success) | steps/ref | site-blocked | n |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for run in runs:
         m = run["metrics"]
         lines.append(
             f"| `{run['label']}` | {m['verified_success_rate'] * 100:.1f}% | "
             f"{m['verified_success_rate_all_episodes'] * 100:.1f}% | "
-            f"{m['parse_failure_rate'] * 100:.1f}% | {m['done_rate'] * 100:.1f}% | "
+            f"{m['parse_failure_rate'] * 100:.1f}% | "
+            f"{m.get('prefix_adherence_rate', 0) * 100:.1f}% | {m['done_rate'] * 100:.1f}% | "
             f"{m['mean_steps_on_success']} | "
             f"{m.get('mean_steps_over_reference_on_success', 0)}x | "
             f"{m['site_blocked_rate'] * 100:.1f}% | {m['episodes']} |")
@@ -1063,9 +1112,9 @@ def render_comparison(runs: list[dict]) -> str:
 
     if len(runs) > 1:
         lines += ["", f"## Delta vs `{base['label']}`", "",
-                  "| label | verified success | parse-failure | done() rate | "
+                  "| label | verified success | parse-failure | prefix adherence | done() rate | "
                   + " | ".join(f"{level} success" for level in levels) + " |",
-                  "| --- | --- | --- | --- | " + " | ".join("---" for _ in levels) + " |"]
+                  "| --- | --- | --- | --- | --- | " + " | ".join("---" for _ in levels) + " |"]
         for run in runs[1:]:
             a, b = base["metrics"], run["metrics"]
             level_cells = []
@@ -1078,6 +1127,7 @@ def render_comparison(runs: list[dict]) -> str:
                 f"| `{run['label']}` | "
                 f"{(b['verified_success_rate'] - a['verified_success_rate']) * 100:+.1f} pp | "
                 f"{(b['parse_failure_rate'] - a['parse_failure_rate']) * 100:+.1f} pp | "
+                f"{(b.get('prefix_adherence_rate', 0) - a.get('prefix_adherence_rate', 0)) * 100:+.1f} pp | "
                 f"{(b['done_rate'] - a['done_rate']) * 100:+.1f} pp | "
                 + " | ".join(level_cells) + " |")
 
@@ -1303,6 +1353,10 @@ def _add_run_arguments(parser):
                         help="the convention THIS model answers in: a model fine-tuned here emits "
                              "viewport_abs (1280x720 pixels), a stock Qwen emits normalized_1000. "
                              "Set it explicitly per model — it is never auto-detected")
+    parser.add_argument("--require-action-prefix", action="store_true",
+                        help="reject action lines that omit the leading `action:`. Off by default: "
+                             "the grammar is unambiguous without it, and rejecting bare calls "
+                             "scores format adherence rather than browsing ability")
     parser.add_argument("--max-unproductive-steps", type=int, default=MAX_UNPRODUCTIVE_STEPS,
                         help="abort the episode as 'stuck' after this many steps in a row that "
                              "execute no action at all")
@@ -1343,6 +1397,7 @@ def _config_from_args(args) -> EvalConfig:
         temperature=args.temperature, max_tokens=args.max_tokens,
         student_timeout_s=args.student_timeout, student_retries=args.student_retries,
         mock_trajectory=args.mock_trajectory, coord_space=args.coord_space,
+        accept_bare_actions=not args.require_action_prefix,
         max_unproductive_steps=args.max_unproductive_steps,
         max_parse_failures=args.max_parse_failures, max_steps=args.max_steps,
         step_cap_multiple=args.step_cap_multiple, step_cap_floor=args.step_cap_floor,

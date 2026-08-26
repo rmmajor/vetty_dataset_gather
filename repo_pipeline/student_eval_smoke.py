@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 
 from repo_pipeline.student_eval import (
+    EXPECTED_TO_DIFFER_KEYS,
+    PARITY_EXEMPT_KEYS,
     ACTION_TO_DRIVER,
     EvalBrowser,
     EvalConfig,
@@ -19,6 +21,7 @@ from repo_pipeline.student_eval import (
     driver_payload,
     judge_episode,
     outside_viewport,
+    classify_action_line,
     parse_action_line,
     parse_student_output,
     render_comparison,
@@ -98,17 +101,67 @@ ROUND_TRIP_ACTIONS = [
 
 
 def check_parser_round_trip():
-    """Every action type survives format -> parse unchanged."""
+    """Every action type survives format -> parse unchanged, with and without the `action:` prefix."""
     seen = set()
     for action in ROUND_TRIP_ACTIONS:
         line = format_action_for_training(action)
-        parsed = parse_action_line(line)
-        assert parsed is not None, f"failed to parse {line!r} (from {action})"
+        assert line.startswith("action: "), line
+        bare = line[len("action: "):]
+
+        parsed, kind = classify_action_line(line)
         assert parsed == action, f"round-trip mismatch for {line!r}: {parsed} != {action}"
+        assert kind == "prefixed", f"{line!r} classified {kind}"
+
+        parsed_bare, kind_bare = classify_action_line(bare)
+        assert parsed_bare == action, f"bare round-trip mismatch for {bare!r}: {parsed_bare}"
+        assert kind_bare == "bare", f"{bare!r} classified {kind_bare}"
+
+        assert classify_action_line(f"  {bare}  ")[1] == "bare", "surrounding whitespace must be ok"
+        assert classify_action_line(f"- {bare}")[1] == "bare", "a bullet must be ok"
         seen.add(action["type"])
     required = {"click", "double_click", "move", "type", "keypress", "scroll", "drag", "wait", "done"}
     assert required <= seen, f"round-trip missed action types: {required - seen}"
-    logger.info(f"parser round-trip OK for {len(ROUND_TRIP_ACTIONS)} actions over {len(seen)} types")
+    logger.info(f"parser round-trip OK for {len(ROUND_TRIP_ACTIONS)} actions over {len(seen)} types, "
+                f"prefixed and bare")
+
+
+def check_bare_action_discipline():
+    """Dropping the `action:` prefix is tolerated; everything else about the grammar stays strict."""
+    for prose in [
+        "The next logical step is to type a query into the search bar.",
+        "I should click the search bar and then wait for results.",
+        "I will scroll down to find the done button.",
+    ]:
+        assert classify_action_line(prose) == (None, "ignored"), f"narration picked up: {prose!r}"
+
+    for near_miss in [
+        'I should type("UK visa requirements") now.',
+        "Next I will click(<ref>(100, 200)</ref>) on the field.",
+        "action: I will search for visa requirements",
+        "action: click(100, 200)",
+    ]:
+        action, kind = classify_action_line(near_miss)
+        assert (action, kind) == (None, "malformed"), f"{near_miss!r} -> {kind}, expected malformed"
+
+    # The exact shape the live baseline emitted: a complete, prefix-less action after </think>.
+    step = parse_student_output(
+        "I have clicked into the search bar. The next step is to type a query.\n</think>\n\n"
+        'type("UK visa requirements for American citizens working in healthcare")')
+    assert step.actions == [
+        {"type": "type", "text": "UK visa requirements for American citizens working in healthcare"}
+    ], step.actions
+    assert step.bare_actions == 1 and step.malformed_lines == 0 and not step.parse_failed, step
+    assert step.think.startswith("I have clicked into the search bar"), step.think
+
+    strict = parse_student_output(step.raw, accept_bare_actions=False)
+    assert strict.parse_failed and strict.malformed_lines == 1, strict
+    assert strict.bare_actions == 0, strict
+
+    mixed = parse_student_output(
+        "<think>t</think>\naction: click(<ref>(10, 20)</ref>, button=left)\nwait()\nnonsense(")
+    assert [a["type"] for a in mixed.actions] == ["click", "wait"], mixed.actions
+    assert mixed.bare_actions == 1 and mixed.malformed_lines == 0, mixed
+    logger.info("bare-action discipline OK (prefix optional, prose rejected, strict mode available)")
 
 
 def check_parser_tolerance():
@@ -216,7 +269,7 @@ def check_report_rendering():
     records = [
         EpisodeRecord(task_id="a", instruction="i", start_url="https://a/", domain="shop",
                       outcome="completed", verified_success=True, model_steps=8, done_emitted=True,
-                      emitted_coords=8),
+                      emitted_coords=8, actions_parsed=10, actions_missing_prefix=4),
         EpisodeRecord(task_id="b", instruction="i", start_url="https://b/", domain="travel",
                       outcome="site_blocked", block_reason="captcha", model_steps=2),
         EpisodeRecord(task_id="c", instruction="i", start_url="https://c/", domain="shop",
@@ -238,6 +291,12 @@ def check_report_rendering():
     report = render_report(results)
     assert "verified task success: 50.0%" in report, report[:400]
     assert "site-blocked 33.3%" in report, report[:400]
+    assert "prefix adherence | 60.0% (4/10 actions omitted the prefix)" in report, report
+    assert metrics["prefix_adherence_rate"] == 0.6, metrics
+    assert results["harness"]["accepts_bare_actions"] is True, results["harness"]
+    assert "accepts_bare_actions" not in EXPECTED_TO_DIFFER_KEYS, \
+        "prefix tolerance is a harness property — it must be a parity key, not an expected difference"
+    assert "accepts_bare_actions" not in PARITY_EXEMPT_KEYS, PARITY_EXEMPT_KEYS
     after = json.loads(json.dumps(results))
     after["label"] = "after"
     after["metrics"]["verified_success_rate"] = 0.75
@@ -437,6 +496,7 @@ async def run_episode_smoke(judge: bool) -> bool:
 PARSER_CHECKS = [
     check_parser_round_trip,
     check_parser_tolerance,
+    check_bare_action_discipline,
     check_prefilled_think,
     check_coordinate_scaling,
     check_driver_mapping,
