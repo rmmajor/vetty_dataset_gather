@@ -2,7 +2,8 @@
        setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
        capture-public provision-human capture-human \
        install-eval eval-screenspot test-eval \
-       install-remote remote-train remote-eval remote-train-dry remote-train-cleanup test-remote
+       install-remote remote-train remote-eval remote-train-dry remote-train-cleanup test-remote \
+       test-rl-unit test-rl rl-tasks rl-serve rl-rollout rl-eval eval remote-grpo remote-serve test-grpo grpo-dataset
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -228,3 +229,21 @@ remote-train-cleanup: ## Destroy any leftover instance (state file + label 'roma
 
 test-remote: ## No-cost self-test of the remote-train lifecycle (mock provider; asserts teardown)
 	python -m remote_train run --smoke
+
+# ---------- GRPO (RL) on the rented GPU ----------
+
+remote-grpo: ## Rent a GPU, run GRPO against the local env service (make rl-serve first), pull adapters, ALWAYS destroy
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train grpo $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+
+remote-serve: ## Rent a GPU and serve the student on 127.0.0.1:8001 through a tunnel (SERVE_ADAPTER=output, SERVE_SECONDS=0)
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train serve $(if $(SERVE_ADAPTER),--adapter $(SERVE_ADAPTER)) $(if $(SERVE_SECONDS),--for-seconds $(SERVE_SECONDS)) $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+
+test-grpo: ## No-cost GRPO self-test: mock provider + mock env (teardown, tunnel, phase handshake) + command builders + unit tests
+	python -m remote_train run --smoke
+	python rl_train.py print-commands --config rl_config.yaml
+	python -m rl.tests test_trainer_core test_rl_train test_tunnel
+
+grpo-dataset: ## Write rl_tasks.jsonl (train split) for the GRPO trainer
+	python rl_train.py make-dataset --tasks rl/rl_tasks.json --out rl_tasks.jsonl

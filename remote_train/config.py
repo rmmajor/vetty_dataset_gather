@@ -56,6 +56,14 @@ class RemoteTrainConfig:
     push_hf_repo: str = ""
     notify: bool = False
 
+    rl_config: str = "rl_config.yaml"
+    rl_runs_dir: str = "rl_runs"
+    collect_every_polls: int = 10
+    serve_adapter: str = ""
+    serve_seconds: int = 0
+    env_url: str = ""
+    mock_phases: tuple = ("EVAL_BEFORE_READY", "TRAINING", "EVAL_AFTER_READY", "DONE")
+
     api_key: str = field(default="", repr=False)
     hf_token: str = field(default="", repr=False)
 
@@ -68,6 +76,7 @@ _YAML_KEYS = {
     "train_config", "output_dir", "val_split", "benchmark", "eval_models", "eval_limit",
     "eval_results_dir", "eval_dataset", "eval_split", "eval_extra_args", "eval_coord_space",
     "push_hf_repo", "notify",
+    "rl_config", "rl_runs_dir", "collect_every_polls", "serve_adapter", "serve_seconds", "env_url",
 }
 
 

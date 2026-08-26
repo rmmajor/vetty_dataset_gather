@@ -31,6 +31,7 @@ from remote_train.base import (
     normalize_country,
     select_cheapest_allowed,
 )
+from remote_train.tunnel import SshTunnel
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +181,9 @@ class VastAIProvider(ComputeProvider):
             f"NOW to avoid charges (or run `make remote-train-cleanup`)"
         )
         return False
+
+    def tunnel(self, instance, cfg, forwards):
+        return SshTunnel(self._ssh_base(instance), forwards)
 
     def list_owned(self, label) -> list:
         raw = self._cli_json(["show", "instances"])

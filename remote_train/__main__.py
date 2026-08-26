@@ -3,6 +3,8 @@
     python -m remote_train train                       # rent -> SFT -> pull adapter -> destroy
     python -m remote_train eval --model Qwen/Qwen3.5-9B-Base --model Qwen/Qwen3.5-9B --limit 100
     python -m remote_train run --smoke                 # no-cost self-test (mock provider)
+    python -m remote_train grpo                        # rent -> GRPO against the local env service -> pull adapters -> destroy
+    python -m remote_train serve --adapter output      # rent -> serve the student on 127.0.0.1:8001 via tunnel -> destroy
     python -m remote_train search                      # dry run: cheapest allowed offer, rents nothing
     python -m remote_train cleanup                     # destroy any leftover instance
 
@@ -45,6 +47,10 @@ def _cli_overrides(args) -> dict:
         "eval_coord_space": getattr(args, "coord_space", None),
         "push_hf_repo": getattr(args, "push_hf", None),
         "notify": True if getattr(args, "notify", False) else None,
+        "rl_config": getattr(args, "rl_config", None),
+        "env_url": getattr(args, "env_url", None),
+        "serve_adapter": getattr(args, "adapter", None),
+        "serve_seconds": getattr(args, "for_seconds", None),
     }
 
 
@@ -62,6 +68,14 @@ def train_cmd(args) -> int:
 
 def eval_cmd(args) -> int:
     return _job_cmd(args, "eval")
+
+
+def grpo_cmd(args) -> int:
+    return _job_cmd(args, "grpo")
+
+
+def serve_cmd(args) -> int:
+    return _job_cmd(args, "serve")
 
 
 def search_cmd(args) -> int:
@@ -126,6 +140,20 @@ def build_parser() -> argparse.ArgumentParser:
                              "stock Qwen; viewport_abs for a checkpoint fine-tuned on this corpus.")
     eval_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     eval_p.set_defaults(func=eval_cmd)
+
+    grpo_p = sub.add_parser("grpo", help="GRPO on a rented GPU against the local env service (make rl-serve first); ALWAYS destroys.")
+    _add_common(grpo_p)
+    grpo_p.add_argument("--rl-config", default=None, help="RL run config (default rl_config.yaml)")
+    grpo_p.add_argument("--env-url", default=None, help="Env service URL as seen from the box (default from rl_config; mock:// for smokes)")
+    grpo_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
+    grpo_p.set_defaults(func=grpo_cmd)
+
+    serve_p = sub.add_parser("serve", help="Serve the student on 127.0.0.1:8001 through a tunnel until --for-seconds or Ctrl-C.")
+    _add_common(serve_p)
+    serve_p.add_argument("--rl-config", default=None, help="RL run config (default rl_config.yaml)")
+    serve_p.add_argument("--adapter", default=None, help="LoRA adapter dir to serve on top of the base (e.g. output)")
+    serve_p.add_argument("--for-seconds", type=int, default=None, help="Auto-stop after N seconds (0 = until Ctrl-C)")
+    serve_p.set_defaults(func=serve_cmd)
 
     search_p = sub.add_parser("search", help="Dry run: print the cheapest allowed offer, provision nothing.")
     _add_common(search_p)

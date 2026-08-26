@@ -14,6 +14,8 @@ exercise them without renting anything.
 """
 from dataclasses import dataclass, field
 
+from remote_train.tunnel import NullTunnel
+
 
 class ProviderError(RuntimeError):
     """A provider operation failed (search, provision, ssh, transfer, destroy)."""
@@ -84,6 +86,10 @@ class ComputeProvider:
     def list_owned(self, label: str) -> list:
         """All live instances carrying `label` — powers the orphan sweep in cleanup."""
         raise NotImplementedError
+
+    def tunnel(self, instance: Instance, cfg, forwards: list):
+        """Optional: a context manager forwarding loopback ports (("R"|"L", port) pairs). Default: no tunnel."""
+        return NullTunnel(forwards)
 
 
 PROVIDERS: dict = {}
