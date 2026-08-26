@@ -201,6 +201,16 @@ before/after table plus a **harness parity check** that flags any field the two 
   `run_agent` chokepoint on the logged-in `claude` CLI — never `ANTHROPIC_API_KEY`. Screenshots per
   verdict are the dominant cost: `--judge-mid-screenshots` (default 2, plus the final) and the new
   `VERIFY_MID_SCREENSHOTS` env knob control it.
+- **Comparability — our numbers are NOT rankable against published Online-Mind2Web figures.**
+  Two deliberate differences. (1) *Denominator*: this harness excludes `site_blocked` /
+  `unreachable` / `harness_error` episodes from the success denominator, because a CAPTCHA wall
+  measures the network rather than the model. The Online-Mind2Web paper and the published results
+  tables (e.g. Fara-1.5) do NOT do this — there an unreachable site is simply a failed task. Always
+  report both denominators; `report.md` prints the all-episode rate next to the scored one for
+  exactly this reason. (2) *Judge*: ours is the capture pipeline's `verify_trajectory` rubric on
+  the latest Sonnet, not the paper's WebJudge/o4-mini, so absolute levels are not on the same
+  scale. Both are fine for a **before/after delta measured through this same harness**, which is
+  what the harness exists for; neither licenses putting our number in someone else's league table.
 - **Eval episodes must never enter training.** They land under `eval_runs/`, outside the
   `trajectories/**` glob `convert` walks, and each carries `metadata.excluded_reason=eval_episode`.
 - Driver support for a coordinate-only agent lives in `browser_driver.js` as the `move_xy`,
