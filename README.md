@@ -185,6 +185,86 @@ Or use Make:
     make convert
     make train
 
+## Evaluation (ScreenSpot grounding)
+
+`eval_screenspot.py` measures **grounding** — given a screenshot and an instruction, the
+model predicts a click point and we score whether it lands inside the target bounding box.
+It is how you quantify what SFT actually bought you.
+
+    make install-eval          # eval deps (GPU box)
+    make eval-screenspot       # evals every model in eval_models.yaml -> eval_results/
+    make test-eval             # harness self-test, no model/GPU/network
+
+### Measured results
+
+Baseline for the untrained starting checkpoint, on `rootsautomation/ScreenSpot` (`test`):
+
+| model | accuracy | parse rate | text | icon | n |
+|-------|---------:|-----------:|-----:|-----:|--:|
+| `Qwen/Qwen3.5-9B` (instruct, no SFT) | **85.0%** | 93% | 96.0% | 86.0% | 100 |
+
+**85% is the bar SFT has to beat** — the starting checkpoint is already a strong grounder.
+
+### Coordinate conventions — read this before trusting any number
+
+Getting these wrong does **not** crash the eval. It reports a confident, completely wrong
+number. All three were verified against real model output, not assumed:
+
+- **`--coord-space` is per-model, not global.** A stock Qwen emits **`normalized_1000`**
+  (0–1000). A model fine-tuned on this project's corpus emits **`viewport_abs`** (1280x720
+  pixels, the training viewport). A before/after comparison therefore needs a *different*
+  coord space per spec — set `coord_space:` on the spec in `eval_models.yaml`. Scoring the
+  same base-model predictions as `viewport_abs` instead of `normalized_1000` drops the score
+  from 85% to 25%.
+- **`--bbox-normalized`** — `rootsautomation/ScreenSpot` stores bbox in 0–1, not pixels.
+  Omit this flag and every target collapses to a sub-pixel box at the origin: **0% accuracy
+  by construction, regardless of the model.**
+- **`--bbox-format xyxy`** — that mirror stores `(x1,y1,x2,y2)`, not `xywh`.
+
+The defaults now match the default dataset. If you point `--dataset` somewhere else, re-check
+all three against that mirror's annotation convention.
+
+## Remote training / eval on a rented GPU (Vast.ai)
+
+`make train` assumes a GPU box you manage. To rent one instead — provision → ship code/data →
+run → pull results → **destroy the instance** — use the provider-pluggable `remote_train/`
+package:
+
+    make install-remote                 # one-time: pip install the vastai CLI
+    export VAST_API_KEY=...             # required
+    make remote-train-dry               # dry run: cheapest allowed offer, rents nothing
+    make remote-eval EVAL_MODEL=Qwen/Qwen3.5-9B EVAL_LIMIT=100   # benchmark, no training
+    make remote-train                   # full SFT, pulls the adapter back
+    make remote-train-cleanup           # safety net: destroy any leftover instance
+
+Two jobs share one lifecycle: `train` (SFT) and `eval` (benchmark only). Adding a benchmark is
+one `Benchmark` entry in `remote_train/benchmarks.py`; adding a provider (RunPod, Lambda) is one
+module implementing `ComputeProvider` plus a line in `PROVIDERS`. The lifecycle and CLI never change.
+
+**Teardown is guaranteed** — the instance dies in a `finally`, on SIGINT/SIGTERM/SIGHUP, via a
+`destroy` that polls until the box is *confirmed gone*, via a crash-safe state file + orphan
+sweep, and via a max-runtime watchdog. On a shared/team account the sweep only ever auto-destroys
+a box this tool provisioned; anything else carrying the label is reported, never killed.
+
+Offer selection is gated on `compute_cap >= 800` (bf16 needs Ampere+; the cheapest cards are
+Turing and **cannot** run this workload), on enough `disk_space` to hold the weights, and on an
+`exclude_countries` deny-list (default `RU, CN`). Every instance is labeled `roman.maior`.
+
+### Cost per run (measured, Vast.ai)
+
+| what | GPU | $/hr | wall time | cost |
+|------|-----|-----:|----------:|-----:|
+| ScreenSpot eval, 9B, 100 samples | A100 PCIE 40GB | $0.401 | ~31 min | **~$0.21** |
+| — of which: host image pull + boot | | | ~11 min | ~$0.07 |
+| — of which: pip install + 18GB model pull | | | ~15 min | ~$0.10 |
+| — of which: actual inference (100 samples) | | | ~4 min | ~$0.03 |
+| Failed/aborted attempt (dies in <5 min) | RTX A6000 48GB | $0.428 | 2–3 min | ~$0.02 |
+| Teardown smoke-check (rent + immediately destroy) | cheapest | $0.048 | ~20 s | ~$0.001 |
+
+Bandwidth is billed separately (~$2.67/TB down); an 18GB model pull adds roughly $0.05.
+Boot + install dominate a short eval — the marginal cost of *more samples* is small, so prefer
+one larger run over several small ones. A full 1272-sample ScreenSpot sweep is ~$0.35–0.50.
+
 ## Output Structure
 
     trajectories/

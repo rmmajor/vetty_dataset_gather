@@ -1,6 +1,8 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
        setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
-       capture-public provision-human capture-human
+       capture-public provision-human capture-human \
+       install-eval eval-screenspot test-eval \
+       install-remote remote-train remote-eval remote-train-dry remote-train-cleanup test-remote
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -18,6 +20,14 @@ PIPELINE_BUDGET ?= 30
 PIPELINE_WORKERS ?= 5
 PIPELINE_LIMIT ?=
 PIPELINE_LIMIT_PCT ?= 100
+EVAL_MODELS      ?= eval_models.yaml
+EVAL_DATASET     ?= rootsautomation/ScreenSpot
+EVAL_SPLIT       ?= test
+EVAL_BACKEND     ?= swift
+EVAL_COORD_SPACE ?=            # empty: each spec's own coord_space in EVAL_MODELS wins
+EVAL_VIEWPORT    ?= 1280x720
+EVAL_OUTPUT_DIR  ?= eval_results
+EVAL_LIMIT       ?=
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -148,7 +158,53 @@ pipeline-status: ## Show pipeline registry stats
 test-notifier: ## Test Telegram bot notification
 	python -m repo_pipeline.notifier --test
 
+# ---------- Evaluation (ScreenSpot grounding) ----------
+
+install-eval: ## Install ScreenSpot eval dependencies (GPU machine)
+	pip install -r requirements-eval.txt
+
+eval-screenspot: ## Eval grounding for all models in EVAL_MODELS (before/after SFT)
+	python eval_screenspot.py run \
+		--models-config $(EVAL_MODELS) \
+		--backend $(EVAL_BACKEND) \
+		--dataset $(EVAL_DATASET) \
+		--split $(EVAL_SPLIT) \
+		--viewport $(EVAL_VIEWPORT) \
+		--output-dir $(EVAL_OUTPUT_DIR) \
+		$(if $(EVAL_COORD_SPACE),--coord-space $(EVAL_COORD_SPACE)) \
+		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT))
+
+test-eval: ## Smoke-test the eval harness (no model/GPU/network)
+	python eval_screenspot.py run --smoke-test
+
 # ---------- Dashboard ----------
 
 dashboard: ## Launch trajectory SFT-readiness dashboard (Streamlit, localhost:8501)
 	streamlit run repo_pipeline/dashboard/app.py
+
+# ---------- Remote training (Vast.ai; provider-pluggable) ----------
+
+install-remote: ## Install the vastai CLI (local controller deps)
+	pip install vastai
+
+remote-train: ## Rent a GPU, train, pull adapter, and ALWAYS destroy the instance (needs VAST_API_KEY)
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train train $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+
+remote-eval: ## Benchmark model(s) on a rented GPU, no training (EVAL_MODEL=... EVAL_LIMIT=...)
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train eval \
+		$(foreach m,$(EVAL_MODEL),--model $(m)) \
+		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT)) \
+		$(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+
+remote-train-dry: ## Dry run: print the cheapest geo-allowed offer, provision nothing
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train search
+
+remote-train-cleanup: ## Destroy any leftover instance (state file + label 'roman.maior' orphans)
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train cleanup
+
+test-remote: ## No-cost self-test of the remote-train lifecycle (mock provider; asserts teardown)
+	python -m remote_train run --smoke
