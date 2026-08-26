@@ -22,17 +22,25 @@ from pathlib import Path
 LOOP_RUN_LIMIT = 3
 VIEWPORT = (1280, 720)
 
+# Guarded-mode control/observation actions are deliberate decisions, not page manipulation; they
+# must never be read as a stuck loop. A step that is ONLY these yields an empty signature, which the
+# run-length check treats as a break.
+_CONTROL_TYPES = {"confirm", "handoff", "approval_event"}
+
 
 def _action_signature(step: dict) -> tuple:
     """Full action identity, INCLUDING scroll deltas and drag paths — progressive scrolls
-    share (type, x, y) but are distinct actions, not a stuck loop."""
+    share (type, x, y) but are distinct actions, not a stuck loop. Control/observation actions
+    (confirm/handoff/approval_event) are excluded so repeated pauses never count as a loop."""
     return tuple(
         (
             a.get("type"), a.get("x"), a.get("y"), a.get("text"), tuple(a.get("keys") or []),
             a.get("scroll_x"), a.get("scroll_y"),
             json.dumps(a.get("path")) if a.get("path") else None,
+            a.get("url"),
         )
         for a in step.get("actions", [])
+        if a.get("type") not in _CONTROL_TYPES
     )
 
 
@@ -73,7 +81,9 @@ def audit_trajectory(traj_dir: Path) -> list[str]:
                         defects.append(f"step {step.get('step')}: {key}={action[key]} outside viewport")
         if not (traj_dir / step.get("screenshot", "")).exists():
             defects.append(f"step {step.get('step')}: missing screenshot")
-        if not (step.get("thought") or "").strip():
+        # Watchdog approval-event steps are observations (event + empty actions) with no thought by
+        # design; every ACTION step must still carry one.
+        if step.get("actions") and not (step.get("thought") or "").strip():
             defects.append(f"step {step.get('step')}: empty thought")
 
     verifier = capture_meta.get("verifier") or {}

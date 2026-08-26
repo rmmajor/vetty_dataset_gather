@@ -109,6 +109,19 @@ MAX_RETRIES = int(os.environ.get("PIPELINE_MAX_RETRIES", "3"))
 # shapes — so every stage reads the same switch instead of each re-reading the environment.
 CAPTURE_MODE = os.environ.get("PIPELINE_CAPTURE_MODE", "agent")
 
+# Auth-flow capture (agent mode): when on, the shared GreenMail+Roundcube mail stack is wired into
+# each capture sandbox (mail_service) and the proposer is allowed to emit registration / email-
+# verification / password-reset / email-OTP tasks the teacher completes END-TO-END in the browser
+# (register → open the webmail → read the link/code → return). Off by default so ordinary repo
+# capture is unchanged and needs no mail stack.
+AUTH_FLOW_CAPTURE = os.environ.get("PIPELINE_AUTH_FLOW_CAPTURE", "0") not in ("0", "", "false", "False")
+
+# Of the tasks that need an account, the fraction captured as "discovered" login (start signed OUT
+# with credentials available, sign in only when the app blocks progress) instead of "pre_session"
+# (start already signed in). Keeps login an organic minority skill rather than a forced prefix on
+# every trajectory. The rest of account tasks reuse the session captured from the register task.
+AUTH_DISCOVERED_RATIO = float(os.environ.get("PIPELINE_AUTH_DISCOVERED_RATIO", "0.25"))
+
 
 class PipelineFailure(Exception):
     """Base for stage failures. ``category`` is a FailureCategory, ``reason`` the human detail,
@@ -234,6 +247,12 @@ class TrajectoryStep(BaseModel):
     bbox: Optional[dict] = None
     role: Optional[str] = None
     name: Optional[str] = None
+    # Watchdog verdict recorded after a `confirm` step (login-gated capture). An observation,
+    # not an action the student emits: a step carrying `event` has empty `actions`, is excluded
+    # from SFT targets, and is threaded into the next steps' action_history so the student learns
+    # to execute only after approval. Shape: {kind:"approval", decision:"approve"|"deny",
+    # rationale:str, by:"watchdog"}.
+    event: Optional[dict] = None
 
 
 class Trajectory(BaseModel):
@@ -272,6 +291,15 @@ class TrajectoryMetadata(BaseModel):
     thought_source: str = ""
     dedup_hash: str = ""
     task_type: str = ""
+    # Login-gated lane (additive; absent on every pre-existing trajectory). `autonomy` is the
+    # learned-behavior policy the trajectory was captured under; `auth_mode` how the session was
+    # provisioned; `risk_category` the terminal risk class (if any); `preconditions` the replay
+    # manifest an eval/deploy harness reads to reconstruct the conditions (the SFT converter
+    # ignores it). See docs/superpowers/specs/2026-06-28-login-gated-trajectories-design.md.
+    autonomy: str = "autonomous"          # "guarded" | "autonomous"
+    auth_mode: str = "none"               # "pre_session" | "handoff_login" | "none"
+    risk_category: str = ""
+    preconditions: dict = Field(default_factory=dict)
 
 
 class StepCaptureMeta(BaseModel):

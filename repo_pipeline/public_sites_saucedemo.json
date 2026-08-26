@@ -1,0 +1,20 @@
+{
+  "sites": [
+    {
+      "name": "saucedemo",
+      "start_url": "https://www.saucedemo.com/",
+      "domain": "ecommerce_demo",
+      "autonomy": "autonomous",
+      "auth_mode": "login",
+      "burner_account_id": "saucedemo-demo",
+      "tasks": [
+        {"id": "login-add-two-to-cart",
+         "instruction": "Add the Sauce Labs Backpack and the Sauce Labs Bike Light to the shopping cart, then open the cart to review the items.",
+         "difficulty": "hard"},
+        {"id": "login-sort-and-checkout",
+         "instruction": "Sort the products by price from low to high, add the cheapest product to the cart, and complete the checkout by entering your name and postal code.",
+         "difficulty": "hard"}
+      ]
+    }
+  ]
+}

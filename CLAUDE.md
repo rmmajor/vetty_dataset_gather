@@ -64,9 +64,27 @@ make eval-online-mind2web EVAL_ENDPOINT=http://gpu:8000/v1 EVAL_MODEL=qwen EVAL_
 make eval-held-out EVAL_ENDPOINT=... EVAL_LABEL=before                # our own unseen tasks
 make eval-compare EVAL_RUNS="eval_runs/before_... eval_runs/after_..."  # the delta table
 make test-student-eval                                                # harness self-test
+# Eval grounding before/after SFT (ScreenSpot)
+make install-eval          # eval deps (GPU box)
+make eval-screenspot       # evals every model in eval_models.yaml, writes eval_results/
+make test-eval             # harness smoke test (no model/GPU/network)
 ```
 
-There is no test suite. The executable checks are `make test-sandbox` (container smoke test), `make test-driver` (scripted no-LLM browser-driver session asserting the trajectory contract), `make test-student-eval` (eval-harness parser round-trip + mock replay episode + judge), and `make test-notifier` (Telegram bot). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
+Two eval lanes, deliberately complementary: `eval_screenspot.py` measures GROUNDING (one screenshot, one instruction, is the predicted point inside the target box), and `repo_pipeline/student_eval.py` measures whether the model can actually complete a task across many steps in a live browser. Grounding can be excellent while task success is near zero, which is exactly what the baseline shows.
+
+There is no test suite. The executable checks are `make test-sandbox` (container smoke test), `make test-driver` (scripted no-LLM browser-driver session asserting the trajectory contract), `make test-eval` (ScreenSpot eval harness smoke test), `make test-student-eval` (episode-eval parser round-trip + mock replay episode + judge), and `make test-notifier` (Telegram bot). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
+
+## Evaluation (`eval_screenspot.py`)
+
+ScreenSpot grounding eval: predicted click point vs. target bbox. Mirrors `train_qwen.py`'s style and **imports `SYSTEM_PROMPT` from it** to guarantee train/eval prompt parity (so `train_qwen.py` — and the `repo_pipeline.corpus_audit` it imports — must be present wherever the eval runs). Registry/flag-driven: `COORD_SPACES`, `PREDICTOR_BACKENDS` (`swift` shells out to `swift infer`; `mock` for tests), a configurable parser (`DEFAULT_PARSE_PATTERNS`, tries `<ref>(x,y)</ref>` first), and a configurable dataset/bbox adapter. Evaluates N specs from `eval_models.yaml`. Heavy deps (`datasets`) load lazily so `make test-eval` needs none. Validated end-to-end on a rented GPU (`swift infer` flags confirmed).
+
+**Measured baseline:** `Qwen/Qwen3.5-9B` (instruct, no SFT) scores **85.0%** on `rootsautomation/ScreenSpot` `test` (n=100, 93% parse, text 96% / icon 86%). That is the bar SFT must beat.
+
+**The scoring conventions are the whole ballgame — get one wrong and the eval reports a confident WRONG number instead of crashing.** All were verified against real model output:
+- **`coord_space` is PER-MODEL** (`ModelSpec.coord_space`, set it in `eval_models.yaml`). A stock Qwen answers in `normalized_1000`; a checkpoint fine-tuned on this corpus answers in `viewport_abs` (the 1280x720 training viewport). The *same* base-model predictions score **85% as `normalized_1000` and 25% as `viewport_abs`** — so a before/after comparison scored with one global coord space is meaningless.
+- **`--bbox-normalized` (default on)** — the default dataset stores bbox in 0-1, not pixels. Treating it as pixels shrinks every target to a sub-pixel box at the origin: **0% by construction, regardless of the model.**
+- **`--bbox-format xyxy` (default)** — that mirror stores `(x1,y1,x2,y2)`, not `xywh`.
+- The default dataset is `rootsautomation/ScreenSpot`, **not** `os-copilot/ScreenSpot-v2` (that repo is raw JSON + an image zip: no `test` split, no image column, `load_dataset` cannot read it). Re-check all three conventions against any other mirror you point `--dataset` at.
 
 ## Path B architecture (`repo_pipeline/`)
 
@@ -221,3 +239,13 @@ before/after table plus a **harness parity check** that flags any field the two 
 ## Training
 
 `config.yaml` holds hyperparameters from the blueprint (Qwen3.5-9B-Base, LoRA r64/α128, lr 5e-5, 3 epochs, max_length 4096, `freeze_vit: true`, `max_pixels` exported as `MAX_PIXELS`). `train_qwen.py train` maps these keys to `swift sft` CLI flags; CLI overrides (`--epochs/--lr/--batch-size`) win over the config.
+
+## Remote training (`remote_train/`, Vast.ai; provider-pluggable)
+
+`make remote-train` runs the whole SFT on a rented cloud GPU instead of a hand-managed box: rent a GPU → ship `trajectories/` + the training code → run the **unchanged** `train_qwen.py convert` + `train_qwen.py train` on the box → pull the LoRA adapter back to `./output` → **destroy the instance**. No training logic is duplicated — the cloud layer only orchestrates.
+
+- **Provider-pluggable by design.** `remote_train/base.py` defines a `ComputeProvider` interface and a `PROVIDERS` registry of factory functions (same idiom as `eval_screenspot.py`'s `PREDICTOR_BACKENDS`). Vast.ai (`remote_train/vastai.py`, shells out to the `vastai` CLI) is impl #1; a second provider is a new module implementing 8 methods + one line appending its factory to `PROVIDERS` — `lifecycle.py`/CLI/Makefile never change. Offer selection (geo/price/VRAM policy) is the pure shared `base.select_cheapest_allowed`.
+- **Teardown is the #1 invariant** (never waste credits): `lifecycle.run_remote_training` destroys in `try/finally`, on SIGINT/SIGTERM/SIGHUP, via a `destroy` that polls until the box is **confirmed gone**, via a crash-safe `.remote_train_state.json` + the `cleanup` orphan sweep (by instance label), and via an independent max-runtime watchdog thread. `make remote-train-cleanup` force-destroys leftovers.
+- **Constraints baked in:** offers in `exclude_countries` (default `RU, CN`) are never rented; every instance is labeled `roman.maior` (also the orphan-sweep key). Both configurable in `remote_train.yaml` / env.
+- **Config:** `remote_train.yaml` (defaults < env < CLI), secrets via env only — `VAST_API_KEY` (required), `HF_TOKEN` (optional). Optional post-train flags (default off): `--eval` (PR #12's `eval_screenspot.py` before/after), `--push-hf`, `--notify` (reuses `repo_pipeline/notifier.py`).
+- **Verify:** `make test-remote` (no-cost mock-provider self-test whose central assertion is "destroy ran in every exit path: success, exception, SIGINT"); `make remote-train-dry` (real API, prints the cheapest geo-allowed offer, provisions nothing). The exact `vastai` CLI flags / JSON fields are documented assumptions isolated in `vastai.py` — validate with the dry run before a real run.

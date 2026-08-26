@@ -1,9 +1,11 @@
 import asyncio
 import base64
+import io
 import json
 import logging
 import os
 import subprocess
+import tarfile
 import time
 from pathlib import Path
 
@@ -14,6 +16,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMAGE = "repo-pipeline-sandbox:latest"
 CONTAINER_TIMEOUT_SECONDS = 1800  # 30 minutes
 EXEC_TIMEOUT_SECONDS = 300  # 5 minutes per command
+# Above this base64 size an http_json payload is streamed into the container as a file (Docker
+# archive API) instead of being embedded in the exec command line, which would otherwise overflow
+# the kernel argv limit ("argument list too long") — hit by a large pre_session storage_state.
+HTTP_INLINE_MAX = 100_000
 
 # Per-container resource caps. With workers=2, peak demand is ~2 * (SANDBOX_MEM_LIMIT +
 # SANDBOX_TMP_SIZE), which must stay under the Docker VM memory; defaults target ~6g for an 8g VM.
@@ -188,6 +194,26 @@ class DockerSandbox:
         if exit_code != 0:
             raise IOError(f"Cannot write {path}: {stderr}")
 
+    def put_bytes(self, container_path: str, data: bytes):
+        """Stream raw bytes into the container via the Docker archive (tar) API.
+
+        Unlike write_file/exec_command, the payload never crosses the exec command line, so it is
+        immune to the kernel argv limit — the path for content too large to pass as an argument
+        (e.g. a big pre_session storage_state in http_json)."""
+        self._check_timeout()
+        if self.container is None:
+            raise RuntimeError("Sandbox container not started")
+        directory = os.path.dirname(container_path) or "/"
+        name = os.path.basename(container_path)
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        self.exec_command(f"mkdir -p '{directory}'")
+        if not self.container.put_archive(directory, buf.getvalue()):
+            raise IOError(f"put_archive failed for {container_path}")
+
     def list_files(self, pattern: str = "*", directory: str = "/workspace") -> list[str]:
         # Prune node_modules / .git before matching: an installed repo holds thousands of vendored
         # package.json files that no caller wants, and the `head -500` cap would otherwise be spent
@@ -286,13 +312,29 @@ class DockerSandbox:
         The payload travels base64-encoded through the exec shell so arbitrary text (quotes,
         newlines, unicode in agent thoughts) survives without quoting issues, in a single exec.
         """
+        tmp_path = None
         if payload is not None:
-            encoded = base64.b64encode(json.dumps(payload).encode()).decode()
-            cmd = (
-                f"echo {encoded} | base64 -d | "
-                f"curl -s -m {timeout - 5} -X {method} -H 'Content-Type: application/json' "
-                f"--data-binary @- '{url}'"
-            )
+            raw = json.dumps(payload).encode()
+            encoded = base64.b64encode(raw).decode()
+            if len(encoded) > HTTP_INLINE_MAX:
+                # Large payload (e.g. a big pre_session storage_state): stream it in as a file so it
+                # never touches the exec argv, then curl from the file and clean up. The file MUST
+                # live on the overlay fs (/workspace), NOT in /tmp: /tmp is a tmpfs mount and
+                # docker put_archive (put_bytes) extracts into the container's overlay layer, not
+                # into runtime tmpfs mounts — so a /tmp target lands in the overlay's hidden /tmp and
+                # is invisible to the exec'd curl (curl then exits 26, "error reading file").
+                tmp_path = f"/workspace/.httpreq_{base64.urlsafe_b64encode(os.urandom(9)).decode()}.json"
+                self.put_bytes(tmp_path, raw)
+                cmd = (
+                    f"curl -s -m {timeout - 5} -X {method} -H 'Content-Type: application/json' "
+                    f"--data-binary @{tmp_path} '{url}'; rc=$?; rm -f {tmp_path}; exit $rc"
+                )
+            else:
+                cmd = (
+                    f"echo {encoded} | base64 -d | "
+                    f"curl -s -m {timeout - 5} -X {method} -H 'Content-Type: application/json' "
+                    f"--data-binary @- '{url}'"
+                )
         else:
             cmd = f"curl -s -m {timeout - 5} -X {method} '{url}'"
         # Screenshot responses carry ~hundreds of KB of base64 — far past the default cap.
