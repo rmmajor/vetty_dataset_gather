@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from repo_pipeline import operator_pii
 from repo_pipeline.corpus_audit import LOOP_RUN_LIMIT, _action_signature
 
 
@@ -31,7 +32,22 @@ _SECRET_PATTERNS = [
 
 
 def _scan_text_for_secrets(text: str) -> list[str]:
-    return [name for name, pat in _SECRET_PATTERNS if pat.search(text)]
+    return [name for name, pat in _SECRET_PATTERNS if pat.search(text)] + operator_pii.scan_text(text)
+
+
+def _scan_examples_for_secrets(examples) -> list[str]:
+    """Distinct findings across every message of one trajectory's examples — the text that would ship."""
+    findings = []
+    for example in examples:
+        for message in example["messages"]:
+            content = message["content"]
+            text = content if isinstance(content, str) else " ".join(
+                c.get("text", "") for c in content if isinstance(c, dict)
+            )
+            for finding in _scan_text_for_secrets(text):
+                if finding not in findings:
+                    findings.append(finding)
+    return findings
 
 
 SYSTEM_PROMPT = """You are a GUI agent that operates a web browser at a 1280x720 resolution. \
@@ -106,7 +122,7 @@ def format_action_for_training(action):
         risk = action.get("risk_category", "")
         proposed = action.get("proposed_action") or {}
         if "x" in proposed and "y" in proposed:
-            inner = f'click(<ref>({proposed["x"]}, {proposed["y"]})</ref>)'
+            inner = f'{proposed.get("type") or "click"}(<ref>({proposed["x"]}, {proposed["y"]})</ref>)'
         elif proposed.get("type"):
             inner = f'{proposed["type"]}()'
         else:
@@ -275,6 +291,7 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     output_path.mkdir(parents=True, exist_ok=True)
 
     all_examples = []
+    leak_sources = []
     examples_by_group = {}
     skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0, "meandering": 0, "stuck_loop": 0}
     report = {
@@ -366,6 +383,9 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
             continue
 
         all_examples.extend(examples)
+        leaks = _scan_examples_for_secrets(examples)
+        if leaks:
+            leak_sources.append((traj_dir, leaks))
         # Split unit: the APP/SITE, not the step. Steps of one trajectory (and trajectories of
         # one app) share screenshots and layout — splitting below app level leaks pixels into
         # val and turns val loss into a memorization check.
@@ -415,21 +435,17 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     print(f"Skipped: {skipped}")
     print("======================\n")
 
-    # Secret-leak gate (FAIL CLOSED): masked credentials are recorded as <secret:NAME> placeholders,
-    # so a literal credential reaching the corpus is a leak. Refuse to write the dataset if any
-    # emitted example contains an unambiguous secret (card number, private key, known token format).
-    leak_counts = {}
-    for ex in all_examples:
-        for msg in ex["messages"]:
-            content = msg["content"]
-            text = content if isinstance(content, str) else " ".join(
-                c.get("text", "") for c in content if isinstance(c, dict)
-            )
-            for finding in _scan_text_for_secrets(text):
-                leak_counts[finding] = leak_counts.get(finding, 0) + 1
-    if leak_counts:
-        print(f"SECRET LEAK DETECTED — refusing to write dataset. Findings: {leak_counts}")
-        print("Credentials must be recorded as <secret:NAME> placeholders, never literal values.")
+    identities = operator_pii.configured_identities()
+    print("Operator-identity patterns: " + (", ".join(operator_pii.mask(v) for v in identities)
+          or "NONE — the PII gate is inert; set OPERATOR_PII or credentials/operator_pii.txt"))
+
+    # Leak gate (FAIL CLOSED): any literal secret or operator identity refuses the whole dataset.
+    if leak_sources:
+        print(f"SECRET/PII LEAK DETECTED in {len(leak_sources)} trajectories — refusing to write dataset.")
+        for traj_dir, findings in leak_sources:
+            print(f"  {traj_dir}: {', '.join(findings)}")
+        print("Quarantine each one (metadata.json excluded_reason) or re-capture: credentials belong in "
+              "<secret:NAME> placeholders, and a real person's identity belongs nowhere in the corpus.")
         sys.exit(1)
 
     # Group-wise split: whole apps go to val, never individual steps.
