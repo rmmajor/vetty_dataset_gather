@@ -40,6 +40,8 @@ RELABEL_MIN_STEPS = int(os.environ.get("AGENT_RELABEL_MIN_STEPS", "3"))
 # "meandering" grade is noisy (it fires on repeated actions and has flagged runs at ratio ~1.05),
 # so this quantitative ratio overrides it. Env-tunable; raise to keep looser runs.
 MEANDER_OK_RATIO = float(os.environ.get("AGENT_MEANDER_OK_RATIO", "2.0"))
+# Mid-run frames per verdict beyond the final one; ~1230 tokens each, so the eval-scale cost dial.
+VERIFY_MID_SCREENSHOTS = int(os.environ.get("VERIFY_MID_SCREENSHOTS", "2"))
 
 TEACHER_PROMPT = """You are a skilled computer user accomplishing a goal in a web application. \
 Work through the app's UI exactly as a careful human would.
@@ -737,20 +739,23 @@ def _verify_prompt_stream(text: str, screenshot_paths: list[Path]):
     return stream()
 
 
-def _verification_screenshots(traj_dir: Path, steps: list) -> tuple[list[Path], str]:
-    """Final screenshot plus 2 sampled mid-trajectory frames. A final-screenshot-only verifier
-    is process-blind: a run that wandered into the right end state trains wandering as
+def _verification_screenshots(traj_dir: Path, steps: list,
+                              mid_screenshots: int = None) -> tuple[list[Path], str]:
+    """Final screenshot plus evenly-sampled mid-trajectory frames. A final-screenshot-only
+    verifier is process-blind: a run that wandered into the right end state trains wandering as
     positive. Mid frames let the judge see whether progress was actually being made."""
+    n_mid = VERIFY_MID_SCREENSHOTS if mid_screenshots is None else mid_screenshots
     paths = []
     labels = []
     ui_steps = [s for s in steps if s.get("actions") and s["actions"][0].get("type") != "done"]
-    if len(ui_steps) >= 6:
-        for fraction, label in ((1 / 3, "mid-run (1/3)"), (2 / 3, "mid-run (2/3)")):
+    if len(ui_steps) >= 6 and n_mid > 0:
+        for i in range(1, n_mid + 1):
+            fraction = i / (n_mid + 1)
             step = ui_steps[int(len(ui_steps) * fraction)]
             p = traj_dir / step.get("screenshot", "")
             if p.exists():
                 paths.append(p)
-                labels.append(f"{label} — before step {step.get('step')}")
+                labels.append(f"mid-run ({i}/{n_mid + 1}) — before step {step.get('step')}")
     final = traj_dir / "final_screenshot.png"
     if not final.exists() and steps:
         final = traj_dir / steps[-1].get("screenshot", "")
@@ -782,6 +787,7 @@ async def verify_trajectory(
     state: dict | None = None,
     registry=None,
     full_name: str = "",
+    mid_screenshots: int = None,
     autonomy: str | None = None,
 ) -> dict:
     """Judge one captured trajectory on the host (after copy_out) and apply the verdict:
@@ -800,7 +806,7 @@ async def verify_trajectory(
     agent_summary = (state or {}).get("agent_summary") or capture_meta.get("agent_summary") or "(none)"
 
     steps = traj.get("steps", [])
-    screenshots, image_labels = _verification_screenshots(traj_dir, steps)
+    screenshots, image_labels = _verification_screenshots(traj_dir, steps, mid_screenshots)
     expected_actions = (capture_meta.get("task_meta") or {}).get("expected_actions") or "(unspecified)"
 
     prompt_template = GUARDED_VERIFY_PROMPT if effective_autonomy == "guarded" else VERIFY_PROMPT

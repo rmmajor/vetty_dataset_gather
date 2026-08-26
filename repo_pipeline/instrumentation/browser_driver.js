@@ -32,6 +32,9 @@
  *   hover     {ref}                             -> {type:"move", x, y} (hover-revealed UI)
  *   click_xy  {x, y, button?, dblclick?}        -> {type:"click", x, y} (canvas/maps, no DOM ref)
  *   drag_path {path:[{x,y},...]}                -> {type:"drag", path} (canvas drawing/dragging)
+ *   move_xy   {x, y}                            -> {type:"move", x, y} (hover at raw coordinates)
+ *   type_text {text, press_enter?}              -> {type:"type", text} (types into the focused element)
+ *   scroll_xy {x, y, dx?, dy?}                  -> {type:"scroll", x, y, scroll_x, scroll_y}
  *   wait      {seconds}                         -> {type:"wait"} (recorded: waiting is learnable)
  *   select    {ref, value}                      -> {type:"click", x, y} (native <select>)
  *   upload    {ref, filename?, content?}        -> meta only (no replayable pixel equivalent)
@@ -49,7 +52,8 @@ const PORT = parseInt(process.env.DRIVER_PORT || '8765', 10);
 const RESULTS_ROOT = process.env.TRAJECTORY_DIR || '/workspace/results';
 const VIEWPORT = { width: 1280, height: 720 };
 const SNAPSHOT_MAX_ELEMENTS = 150;
-const LOOP_GUARD_REPEATS = 3;
+// 0 disables the guard: student eval must let a stuck model actually repeat itself.
+const LOOP_GUARD_REPEATS = parseInt(process.env.DRIVER_LOOP_GUARD_REPEATS || '3', 10);
 
 function requirePlaywright() {
   const candidates = [
@@ -430,6 +434,7 @@ async function html5DragFallback(sourceLocator, destLocator) {
 /* ------------------------------ loop guard ------------------------------ */
 
 function loopGuard(signature) {
+  if (!LOOP_GUARD_REPEATS) return;
   const t = state.task;
   t.recentActions.push(signature);
   if (t.recentActions.length > LOOP_GUARD_REPEATS) t.recentActions.shift();
@@ -446,6 +451,12 @@ function loopGuard(signature) {
 }
 
 /* ------------------------------ action handlers ------------------------------ */
+
+function requireInViewport(x, y, label) {
+  if (!(x >= 0 && x < VIEWPORT.width && y >= 0 && y < VIEWPORT.height)) {
+    throw new Error(`${label} (${x},${y}) outside the ${VIEWPORT.width}x${VIEWPORT.height} viewport`);
+  }
+}
 
 // Substitute `<secret:NAME>` placeholders with the session's real (burner) credential values at
 // TYPE time only. The placeholder is what gets recorded into the trajectory; the resolved value is
@@ -559,9 +570,7 @@ async function handleAct(body) {
     // Coordinate-grounded click for surfaces with no DOM to reference (canvas, maps,
     // drawing apps). The agent supplies coordinates read from a screenshot.
     const x = Math.round(body.x), y = Math.round(body.y);
-    if (!(x >= 0 && x < VIEWPORT.width && y >= 0 && y < VIEWPORT.height)) {
-      throw new Error(`click_xy (${x},${y}) outside the ${VIEWPORT.width}x${VIEWPORT.height} viewport`);
-    }
+    requireInViewport(x, y, 'click_xy');
     loopGuard(`click_xy:${x},${y}`);
     const button = body.button === 'right' ? 'right' : 'left';
     actions = [{ type: 'click', x, y, button }];
@@ -571,11 +580,7 @@ async function handleAct(body) {
   } else if (kind === 'drag_path') {
     const path = Array.isArray(body.path) ? body.path.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) })) : [];
     if (path.length < 2) throw new Error("kind 'drag_path' requires a 'path' of at least 2 points");
-    for (const p of path) {
-      if (!(p.x >= 0 && p.x < VIEWPORT.width && p.y >= 0 && p.y < VIEWPORT.height)) {
-        throw new Error(`drag_path point (${p.x},${p.y}) outside the viewport`);
-      }
-    }
+    for (const p of path) requireInViewport(p.x, p.y, 'drag_path point');
     loopGuard(`drag_path:${path[0].x},${path[0].y}:${path[path.length - 1].x},${path[path.length - 1].y}`);
     actions = [{ type: 'drag', path }];
     await recordStep(thought, actions, null);
@@ -583,6 +588,33 @@ async function handleAct(body) {
     await state.page.mouse.down();
     for (const p of path.slice(1)) await state.page.mouse.move(p.x, p.y, { steps: 8 });
     await state.page.mouse.up();
+  } else if (kind === 'move_xy') {
+    const x = Math.round(body.x), y = Math.round(body.y);
+    requireInViewport(x, y, 'move_xy');
+    loopGuard(`move_xy:${x},${y}`);
+    actions = [{ type: 'move', x, y }];
+    await recordStep(thought, actions, null);
+    await state.page.mouse.move(x, y);
+    await state.page.waitForTimeout(500);
+  } else if (kind === 'type_text') {
+    // Coordinate-emitting agents type into whatever is focused; there is no ref to click first.
+    if (typeof body.text !== 'string') throw new Error("kind 'type_text' requires 'text'");
+    loopGuard(`type_text:${body.text}`);
+    actions = [{ type: 'type', text: body.text }];
+    if (body.press_enter) actions.push({ type: 'keypress', keys: ['Enter'] });
+    await recordStep(thought, actions, null);
+    await state.page.keyboard.type(resolveSecrets(body.text), { delay: 15 });
+    if (body.press_enter) await state.page.keyboard.press('Enter');
+  } else if (kind === 'scroll_xy') {
+    const x = Math.round(body.x), y = Math.round(body.y);
+    requireInViewport(x, y, 'scroll_xy');
+    const dx = Number.isFinite(body.dx) ? Math.round(body.dx) : 0;
+    const dy = Number.isFinite(body.dy) ? Math.round(body.dy) : 500;
+    loopGuard(`scroll_xy:${x},${y}:${dx},${dy}:${await state.page.evaluate(() => Math.round(window.scrollY))}`);
+    actions = [{ type: 'scroll', x, y, scroll_x: dx, scroll_y: dy }];
+    await recordStep(thought, actions, null);
+    await state.page.mouse.move(x, y);
+    await state.page.mouse.wheel(dx, dy);
   } else if (kind === 'navigate') {
     // Recorded cross-site navigation: the agent deliberately goes somewhere — e.g. to its webmail
     // to read a verification / reset email mid-flow. Unlike the setup-only POST /navigate, this IS
@@ -812,14 +844,18 @@ const routes = {
     if (!state.page) throw new Error('no active session');
     return { ok: true, url: state.page.url(), title: await state.page.title(), snapshot: (await takeSnapshot()).slice(0, 15000) };
   },
-  'POST /screenshot': async () => {
+  'POST /screenshot': async (body) => {
     if (!state.page) throw new Error('no active session');
     await scrubDevOverlays();
     // JPEG for the AGENT'S eyes only: image-heavy pages (map tiles, photo grids) produce
     // PNGs whose base64 exceeds the SDK's 1MB message buffer and kills the whole query.
     // Recorded training screenshots (recordStep) remain lossless PNG per the contract.
-    const buf = await state.page.screenshot({ type: 'jpeg', quality: 60 });
-    return { ok: true, b64: buf.toString('base64'), mime: 'image/jpeg' };
+    // format:'png' is for student eval, whose observations must match the trained PNG inputs.
+    const png = String((body && body.format) || 'jpeg').toLowerCase() === 'png';
+    const buf = png
+      ? await state.page.screenshot({ type: 'png' })
+      : await state.page.screenshot({ type: 'jpeg', quality: 60 });
+    return { ok: true, b64: buf.toString('base64'), mime: png ? 'image/png' : 'image/jpeg' };
   },
   'POST /affordances': async () => {
     if (!state.page) throw new Error('no active session');

@@ -9,6 +9,7 @@ pipeline_data/
 .venv*/
 videos/
 notes/
+eval_runs/
 output/
 eval_results/
 .remote_train_state.json
