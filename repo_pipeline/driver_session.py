@@ -66,9 +66,10 @@ def install_driver(sandbox):
         raise DriverError(f"playwright-core install failed: {(stdout + stderr)[-300:]}")
 
 
-def start_driver(sandbox):
-    """Daemonize the driver and wait for its HTTP port."""
-    sandbox.start_background(f"node {DRIVER_DIR}/browser_driver.js", DRIVER_LOG)
+def start_driver(sandbox, env: dict | None = None):
+    """Daemonize the driver and wait for its HTTP port; `env` prefixes the node invocation."""
+    prefix = "".join(f"{k}={v} " for k, v in (env or {}).items())
+    sandbox.start_background(f"{prefix}node {DRIVER_DIR}/browser_driver.js", DRIVER_LOG)
     if not sandbox.wait_for_port(DRIVER_PORT, DRIVER_READY_TIMEOUT):
         log_tail, _, _ = sandbox.exec_command(f"tail -20 {DRIVER_LOG}")
         raise DriverError(f"driver did not open port {DRIVER_PORT}; log tail: {log_tail[-400:]}")
@@ -169,8 +170,8 @@ class DriverClient:
     def snapshot(self) -> dict:
         return self._post("/snapshot")
 
-    def screenshot_b64(self) -> str:
-        return self._post("/screenshot")["b64"]
+    def screenshot_b64(self, image_format: str = "jpeg") -> str:
+        return self._post("/screenshot", {"format": image_format})["b64"]
 
     def navigate(self, url: str) -> dict:
         return self._post("/navigate", {"url": url})
