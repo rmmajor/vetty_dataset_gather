@@ -36,8 +36,8 @@ image = (
     volumes={HF_CACHE_MOUNT: hf_cache, VLLM_CACHE_MOUNT: vllm_cache, ADAPTERS_MOUNT: outputs},
     secrets=[modal.Secret.from_name("cua-eval")],
     port=8000,
-    # An episode is browser-bound, so gaps between requests are minutes; a short window would evict mid-run.
-    scaledown_window=900,
+    # Gaps between requests are seconds within an episode, so 5 min never evicts mid-run but caps idle billing.
+    scaledown_window=300,
     startup_timeout=900,
     target_concurrency=16,
     max_containers=1,
