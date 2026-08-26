@@ -24,10 +24,12 @@ from urllib.parse import urlparse
 from repo_pipeline import app_secrets, driver_session
 from repo_pipeline.agent_capture import run_teacher_task, verify_trajectory
 from repo_pipeline.instrumentation import RESULTS_DIR
+from repo_pipeline.provision_human import find_site
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler, safe_parallel_sandboxes
 from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
-from repo_pipeline.stage6_generate import _is_valid_trajectory, _load_proposed_tasks, _safe_task_id
+from repo_pipeline.stage6_generate import (CAPTURE_MAX_ATTEMPTS, _load_proposed_tasks, _safe_task_id,
+                                           is_capture_settled, record_capture_attempt)
 from repo_pipeline.task_proposer import propose_tasks
 from repo_pipeline.think_generator import needs_polish, polish_thoughts_for_trajectory
 
@@ -36,6 +38,8 @@ logger = logging.getLogger(__name__)
 SITES_CONFIG = Path(__file__).parent / "public_sites.json"
 PUBLIC_CONTAINER_TIMEOUT = 10800
 PUBLIC_TASKS_PER_SITE = int(os.environ.get("PUBLIC_TASKS_PER_SITE", "6"))
+# Every site registry ships as a JSON here, so a new one is searched by --sites with no code change.
+SITE_CONFIG_GLOB = "public_sites*.json"
 
 
 async def _run(fn, *args):
@@ -46,11 +50,43 @@ def _norm_instruction(text: str) -> str:
     return " ".join((text or "").lower().split())
 
 
-def load_sites(only: set[str] | None = None, config_path: Path | None = None) -> list[dict]:
-    sites = json.loads((config_path or SITES_CONFIG).read_text())["sites"]
+def known_site_configs(preferred: Path | None = None) -> list[Path]:
+    """Every site-registry JSON in the package, `preferred` first so an explicit --config wins ties."""
+    configs = sorted(Path(__file__).parent.glob(SITE_CONFIG_GLOB))
+    if preferred:
+        configs = [preferred] + [c for c in configs if c != preferred]
+    return configs
+
+
+def resolve_named_sites(names: list[str], preferred: Path | None = None) -> list[dict]:
+    """Resolve explicitly-named sites across every known config, in the order the caller named them."""
+    configs = known_site_configs(preferred)
+    resolved, unknown = [], []
+    for name in names:
+        matches = [(cfg, find_site(name, cfg)) for cfg in configs]
+        matches = [(cfg, site) for cfg, site in matches if site]
+        if not matches:
+            unknown.append(name)
+            continue
+        winning_cfg, site = matches[0]
+        # The same name can appear in several registries with different task sets; say which one won.
+        if len(matches) > 1:
+            logger.warning(f"'{name}' is defined in {len(matches)} configs — using "
+                           f"{winning_cfg.name} ({len(site.get('tasks', []))} tasks), ignoring "
+                           f"{', '.join(c.name for c, _ in matches[1:])}")
+        resolved.append(site)
+    # Hard error, never a warning: silently dropping a site the caller asked for by name reads as success.
+    if unknown:
+        raise ValueError(f"no site named {', '.join(unknown)} in any known config "
+                         f"({', '.join(c.name for c in configs)})")
+    return resolved
+
+
+def load_sites(only: list[str] | set[str] | None = None, config_path: Path | None = None) -> list[dict]:
     if only:
         # Explicitly named sites are honored even if skip-tagged (lets you re-probe a dud).
-        return [s for s in sites if s["name"] in only]
+        return resolve_named_sites(list(only), config_path)
+    sites = json.loads((config_path or SITES_CONFIG).read_text())["sites"]
     return [s for s in sites if not s.get("skip_capture")]
 
 
@@ -59,6 +95,10 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
     traj = json.loads((traj_dir / "trajectory.json").read_text())
     capture_meta = json.loads((traj_dir / "capture_meta.json").read_text())
     verifier = capture_meta.get("verifier", {})
+    task_meta = capture_meta.get("task_meta") or {}
+    # The trajectory's terminal risk class: the last consequential action the agent paused on.
+    risks = [a.get("risk_category", "") for s in traj["steps"]
+             for a in s.get("actions", []) if a.get("type") == "confirm"]
     metadata = {
         "task_id": traj["task_id"],
         "instruction": traj["instruction"],
@@ -78,8 +118,23 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
         "relabeled": verifier.get("relabeled", False),
         "viewport": {"width": 1280, "height": 720},
         "source_repo": f"public:{site['name']}",
+        "autonomy": task_meta.get("autonomy", "autonomous"),
+        "auth_mode": task_meta.get("auth_mode", "none"),
+        "risk_category": risks[-1] if risks else "",
+        # Replay manifest: what an eval/deploy harness must reconstruct for these actions to be valid.
+        "preconditions": {
+            "requires_session": task_meta.get("auth_mode") == "pre_session",
+            "session_ref": site.get("storage_state_ref", ""),
+            "start_url": traj["start_url"],
+            "env": task_meta.get("env", "live"),
+        },
     }
     (traj_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+
+    attempts = record_capture_attempt(traj_dir, "success" if traj["success"] else "failed")
+    if not traj["success"] and attempts >= CAPTURE_MAX_ATTEMPTS:
+        logger.warning(f"[{site['name']}] task '{task['id']}' has now failed {attempts}x — resume will "
+                       f"stop re-capturing it (raise CAPTURE_MAX_ATTEMPTS to keep trying)")
 
     if traj["success"] and needs_polish(traj_dir):
         await polish_thoughts_for_trajectory(traj_dir, registry=registry, full_name=f"site:{site['name']}")
@@ -187,7 +242,7 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry,
     # driver, so a fully-recorded site short-circuits before a sandbox is ever started.
     if persisted is not None or not propose:
         full = _merge_tasks(curated, persisted or [], max_tasks)
-        if full and all(_is_valid_trajectory(site_dir / f"task_{_safe_task_id(t['id'])}") for t in full):
+        if full and all(is_capture_settled(site_dir / f"task_{_safe_task_id(t['id'])}") for t in full):
             logger.info(f"[{site['name']}] all {len(full)} tasks already recorded")
             return {"site": site["name"], "captured": 0, "verified": 0, "skipped": len(full)}
 
@@ -216,7 +271,7 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry,
                 logger.warning(f"[{site['name']}] task proposal failed — using curated config tasks only")
 
         full = _merge_tasks(curated, proposed or [], max_tasks)
-        pending = [t for t in full if not _is_valid_trajectory(site_dir / f"task_{_safe_task_id(t['id'])}")]
+        pending = [t for t in full if not is_capture_settled(site_dir / f"task_{_safe_task_id(t['id'])}")]
         summary["skipped"] = len(full) - len(pending)
         if not pending:
             logger.info(f"[{site['name']}] all {len(full)} tasks already recorded")
@@ -271,8 +326,11 @@ async def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     install_sigterm_handler()
-    only = set(args.sites.split(",")) if args.sites else None
-    sites = load_sites(only, Path(args.config) if args.config else None)
+    only = [n.strip() for n in args.sites.split(",") if n.strip()] if args.sites else None
+    try:
+        sites = load_sites(only, Path(args.config) if args.config else None)
+    except ValueError as e:
+        raise SystemExit(f"--sites: {e}")
     logger.info(f"Public capture over {len(sites)} sites: {', '.join(s['name'] for s in sites)}")
 
     registry = RepoRegistry("pipeline_data/registry.db")

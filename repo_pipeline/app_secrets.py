@@ -50,6 +50,9 @@ _KNOWN_ACCOUNTS_FILE = _CRED_DIR / "known_accounts.json"
 _BURNER_FILE = _CRED_DIR / "burner_accounts.json"
 _STORAGE_STATE_DIR = _CRED_DIR / "storage_state"
 
+# Ref convention for every provisioning lane (`<site>-<lane>-1`); dict order is the reuse preference.
+_LANE_SLUG = {"generated": "auto", "human_provisioned": "human"}
+
 
 def boot_env_secrets() -> dict:
     """A fresh copy of the dummy boot-secret env. Callers merge it into the app's start env."""
@@ -125,6 +128,14 @@ def register_burner(burner_id: str, email: str, password: str,
     logger.info(f"registered burner '{burner_id}' ({provisioning_mode})")
 
 
+def _storage_state_path(ref: str) -> Path:
+    return _STORAGE_STATE_DIR / f"{ref}.json"
+
+
+def _carries_a_session(state) -> bool:
+    return bool(isinstance(state, dict) and (state.get("cookies") or state.get("origins")))
+
+
 def save_storage_state(ref: str, state: dict) -> None:
     """Persist a Playwright storage_state dump (cookies + localStorage + IndexedDB) to
     `credentials/storage_state/<ref>.json` so a later pre_session run starts already signed in.
@@ -133,10 +144,10 @@ def save_storage_state(ref: str, state: dict) -> None:
     loudly instead of persisting a logged-out session."""
     if not ref:
         raise ValueError("save_storage_state requires a non-empty ref")
-    if not isinstance(state, dict) or not (state.get("cookies") or state.get("origins")):
+    if not _carries_a_session(state):
         raise ValueError("refusing to save an empty storage_state (no cookies or origins)")
     _STORAGE_STATE_DIR.mkdir(parents=True, exist_ok=True)
-    path = _STORAGE_STATE_DIR / f"{ref}.json"
+    path = _storage_state_path(ref)
     path.write_text(json.dumps(state, indent=2))
     logger.info(f"saved storage_state '{ref}' ({len(json.dumps(state))} bytes)")
 
@@ -147,7 +158,7 @@ def load_storage_state(ref: str) -> dict | None:
     the caller fails closed (skips the site) rather than capture a logged-out session."""
     if not ref:
         return None
-    path = _STORAGE_STATE_DIR / f"{ref}.json"
+    path = _storage_state_path(ref)
     if not path.exists():
         return None
     try:
@@ -155,3 +166,53 @@ def load_storage_state(ref: str) -> dict | None:
     except (json.JSONDecodeError, OSError) as e:
         logger.warning(f"storage_state {ref} unreadable: {e}")
         return None
+
+
+def session_ref(site_name: str, provisioning_mode: str) -> str:
+    """The burner id / storage_state ref naming `site_name`'s login in the lane that provisioned it."""
+    if provisioning_mode not in _LANE_SLUG:
+        raise ValueError(f"unknown provisioning_mode '{provisioning_mode}' (expected {sorted(_LANE_SLUG)})")
+    return f"{site_name}-{_LANE_SLUG[provisioning_mode]}-1"
+
+
+def provisioned_refs(site_name: str) -> list[str]:
+    """Every lane's ref for `site_name`, in lookup-preference order."""
+    return [session_ref(site_name, mode) for mode in _LANE_SLUG]
+
+
+def save_provisioned_session(ref: str, email: str, password: str, state: dict,
+                             provisioning_mode: str = "human_provisioned",
+                             first_name: str = "", last_name: str = "") -> None:
+    """Persist both halves of a provisioned login — every lane's write path, human or autonomous."""
+    # State first: its empty-dump refusal then aborts before a burner is registered with no session.
+    save_storage_state(ref, state)
+    register_burner(ref, email, password, provisioning_mode=provisioning_mode,
+                    first_name=first_name, last_name=last_name)
+
+
+def load_provisioned_session(ref: str) -> dict | None:
+    """The {storage_state, secrets, provisioning_mode} for `ref`, or None unless BOTH halves exist."""
+    burner = burner_account(ref)
+    if burner is None:
+        return None
+    state = load_storage_state(ref)
+    # Same emptiness bar as the save path, so a hollowed-out file resumes nothing instead of pretending.
+    if not _carries_a_session(state):
+        return None
+    return {"storage_state": state, "provisioning_mode": burner["provisioning_mode"],
+            "secrets": {"email": burner["email"], "password": burner["password"]}}
+
+
+def find_provisioned_session(site_name: str) -> dict | None:
+    """The site's already-provisioned login and its `ref` (own lane preferred), or None."""
+    for ref in provisioned_refs(site_name):
+        session = load_provisioned_session(ref)
+        if session:
+            return {"ref": ref, **session}
+    return None
+
+
+def unvetted_session_refs(site_name: str) -> list[str]:
+    """Refs with a saved session no registered burner vouches for — unknown provenance, never reusable."""
+    return [ref for ref in provisioned_refs(site_name)
+            if _storage_state_path(ref).exists() and not is_registered_burner(ref)]
