@@ -9,3 +9,4 @@ pipeline_data/
 .venv*/
 videos/
 notes/
+eval_runs/

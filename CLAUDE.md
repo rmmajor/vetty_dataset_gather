@@ -54,9 +54,19 @@ python -m repo_pipeline.orchestrator --status
 # Convert + train (works on output of either path)
 make convert               # trajectories/ -> training_data/sft_dataset.jsonl
 make train                 # invokes `swift sft` (needs ms-swift on a GPU box)
+
+# Student eval (did the checkpoint actually get better? — see "Student eval" below)
+make eval-sources                                                     # registered task sources
+make eval-online-mind2web EVAL_ENDPOINT=http://gpu:8000/v1 EVAL_MODEL=qwen EVAL_LABEL=before \
+     EVAL_COORD_SPACE=normalized_1000                                 # stock model's convention
+make eval-online-mind2web EVAL_ENDPOINT=http://gpu:8000/v1 EVAL_MODEL=qwen EVAL_LABEL=after \
+     EVAL_ADAPTER=output/checkpoint-500 EVAL_COORD_SPACE=viewport_abs # fine-tuned convention
+make eval-held-out EVAL_ENDPOINT=... EVAL_LABEL=before                # our own unseen tasks
+make eval-compare EVAL_RUNS="eval_runs/before_... eval_runs/after_..."  # the delta table
+make test-student-eval                                                # harness self-test
 ```
 
-There is no test suite. The executable checks are `make test-sandbox` (container smoke test), `make test-driver` (scripted no-LLM browser-driver session asserting the trajectory contract), and `make test-notifier` (Telegram bot). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
+There is no test suite. The executable checks are `make test-sandbox` (container smoke test), `make test-driver` (scripted no-LLM browser-driver session asserting the trajectory contract), `make test-student-eval` (eval-harness parser round-trip + mock replay episode + judge), and `make test-notifier` (Telegram bot). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
 
 ## Path B architecture (`repo_pipeline/`)
 
@@ -106,7 +116,69 @@ LLM stages run with an `asyncio.Semaphore(workers)`; the orchestrator caps worke
 
 `OPENAI_API_KEY` (Path A), `GITHUB_TOKEN` + `ANTHROPIC_API_KEY` (Path B), `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` (optional, for overnight reports). `crontab.example` shows the nightly `--overnight` job.
 
+Student eval: `HF_READ_TOKEN` (or `HF_TOKEN`) for the gated Online-Mind2Web dataset, and `EVAL_ENDPOINT` / `EVAL_MODEL` / `EVAL_API_KEY` / `EVAL_ADAPTER` as make-level defaults for the served model.
+
 Sandbox resource caps (per Docker container, `repo_pipeline/sandbox.py`) are env-tunable so a run can't exhaust host RAM: `SANDBOX_MEM_LIMIT` (default `2g`), `SANDBOX_MEMSWAP_LIMIT` (default = mem limit ⇒ no swap, hard cap), `SANDBOX_PIDS_LIMIT` (`1024`), `SANDBOX_CPUS` (`2`), `SANDBOX_TMP_SIZE` (RAM-backed `/tmp`, `1g`), `SANDBOX_SHM_SIZE` (`256m`). Peak ≈ `workers * (mem + tmpfs)`; keep it under the Docker VM memory. Raise `SANDBOX_MEM_LIMIT` if a legitimately heavy suite gets OOM-killed.
+
+## Student eval (`repo_pipeline/student_eval.py`)
+
+The measurement side of the loop: run a served model through real browser episodes and report
+whether a fine-tuned checkpoint beat the base model. A single number is useless — **the
+deliverable is a delta**, so every run takes a `--label` (`before` / `after`), writes to
+`eval_runs/<run_id>/{report.md,results.json,run.log,episodes/}`, and `compare` renders the
+before/after table plus a **harness parity check** that flags any field the two runs disagree on.
+
+- **Prompt parity is the point.** The per-step user message is built by the same rules as
+  `train_qwen.convert_trajectory_to_examples` (same `SYSTEM_PROMPT`, `Task:` / `Previous actions:`
+  / `What action should you take?`, same `HISTORY_WINDOW`). An eval that prompts differently
+  measures the prompt.
+- **Model remote, browser local.** `--endpoint` is any OpenAI-compatible `/chat/completions`
+  (vLLM, `swift deploy`, a rented Vast.ai box); the browser is a `DockerSandbox` on the invoking
+  machine so live sites see a residential IP. Never assume the two are co-located.
+- **Task sources are a registry** (`repo_pipeline/eval_task_sources.py`): `TaskSource` +
+  `TASK_SOURCES`, same idiom as `frameworks.PROFILES`. `online_mind2web` (gated HF dataset,
+  300 tasks, columns `task_id` / `confirmed_task` / `website` / `reference_length` / `level`) and
+  `held_out` (our own never-captured `public_sites.json` + `proposed_tasks.json` tasks, proven
+  unseen by an on-disk check against the corpus). Adding an eval is a data entry.
+- **HF gating.** The dataset is `gated: auto`. The token is resolved explicitly — `HF_TOKEN`,
+  `HUGGING_FACE_HUB_TOKEN`, `HUGGINGFACE_HUB_TOKEN`, then `HF_READ_TOKEN` from `.env` (this repo's
+  name, which no HF library looks for), then `~/.cache/huggingface/token`. A 401/403 fails loudly
+  naming the URL to accept terms at; there is never a stub fallback.
+- **`--coord-space` is PER MODEL and never auto-detected.** A model fine-tuned here answers in
+  `viewport_abs` (1280x720 pixels); a stock Qwen answers in `normalized_1000`. Emitted positions
+  are scaled to viewport pixels before dispatch (scroll *deltas* are relative motion and are not
+  scaled), and `trajectory.json` records the EXECUTED pixel coordinates while the raw model text
+  stays in `raw_last_response`. Getting this wrong does not error — it silently produces a
+  confident wrong number, so the harness warns at the first impossible coordinate and prints a
+  `COORDINATE SPACE SUSPECT` banner in `report.md` when >25% of emitted coordinates fall outside
+  the viewport under `viewport_abs`. Same reasoning as `eval_models.yaml`'s `coord_space`.
+  In `compare`, a `coord_space` difference is an *expected, annotated* model-side difference, not
+  a parity violation — a before/after pair is supposed to differ here.
+- **Outcome categories, not one bucket.** `completed` / `step_cap` / `stuck` /
+  `parse_failure_abort` / `timeout` are scored; `site_blocked` (CAPTCHA/WAF/interstitial, via
+  `BLOCK_SIGNATURES`), `unreachable` and `harness_error` are environment failures, excluded from
+  the success denominator and reported separately. The headline carries all three headline numbers.
+- **Two abort rules, kept separate because they diagnose different things.** 3 consecutive steps
+  with no parseable action → `parse_failure_abort` (the model is not speaking the action
+  language); 5 consecutive steps that execute *zero* actions for any reason → `stuck` (it speaks
+  the language but nothing lands). The parse rule fires first on a parse-failure run, which is the
+  more specific diagnosis. Both are `--max-parse-failures` / `--max-unproductive-steps` and both
+  are in the harness fingerprint. This replaces the driver's own loop guard, which eval disables.
+- **Metrics split by `level`** (easy/medium/hard, as the source paper reports) and by domain;
+  step efficiency is `steps / reference_length`, and the **step cap is derived per task**
+  (`3x reference_length`, clamped to `[15, 50]`) because `reference_length` runs 1..36 — a flat
+  cap truncates the hardest tasks. `--max-steps N` pins a flat cap; the effective cap is recorded
+  per episode either way.
+- **The judge is `agent_capture.verify_trajectory`** (the WebJudge analogue), reached through the
+  `run_agent` chokepoint on the logged-in `claude` CLI — never `ANTHROPIC_API_KEY`. Screenshots per
+  verdict are the dominant cost: `--judge-mid-screenshots` (default 2, plus the final) and the new
+  `VERIFY_MID_SCREENSHOTS` env knob control it.
+- **Eval episodes must never enter training.** They land under `eval_runs/`, outside the
+  `trajectories/**` glob `convert` walks, and each carries `metadata.excluded_reason=eval_episode`.
+- Driver support for a coordinate-only agent lives in `browser_driver.js` as the `move_xy`,
+  `type_text` and `scroll_xy` `/act` kinds plus `POST /screenshot {format:"png"}`;
+  `DRIVER_LOOP_GUARD_REPEATS=0` disables the capture-time loop guard so a stuck student is
+  observed rather than refused.
 
 ## Training
 

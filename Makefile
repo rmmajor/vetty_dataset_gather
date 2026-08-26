@@ -1,5 +1,6 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
-       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard
+       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
+       eval-online-mind2web eval-held-out eval-compare eval-sources test-student-eval
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -17,6 +18,15 @@ PIPELINE_BUDGET ?= 30
 PIPELINE_WORKERS ?= 5
 PIPELINE_LIMIT ?=
 PIPELINE_LIMIT_PCT ?= 100
+EVAL_ENDPOINT ?=
+EVAL_MODEL    ?=
+EVAL_ADAPTER  ?=
+EVAL_API_KEY  ?=
+EVAL_LABEL    ?= baseline
+EVAL_COORD_SPACE ?=
+EVAL_LIMIT    ?=
+EVAL_RUNS     ?=
+EVAL_ARGS     ?=
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -138,6 +148,43 @@ pipeline-status: ## Show pipeline registry stats
 
 test-notifier: ## Test Telegram bot notification
 	python -m repo_pipeline.notifier --test
+
+# ---------- Student eval (before/after a training run) ----------
+
+eval-online-mind2web: ## Run Online-Mind2Web against a served model (EVAL_ENDPOINT=, EVAL_MODEL=, EVAL_LABEL=before|after)
+	@test -n "$(EVAL_ENDPOINT)" || (echo "ERROR: set EVAL_ENDPOINT=http://<host>:8000/v1 (the served model; the browser runs locally)" && exit 1)
+	python -m repo_pipeline.student_eval run \
+		--task-source online_mind2web \
+		--endpoint $(EVAL_ENDPOINT) \
+		$(if $(EVAL_MODEL),--model $(EVAL_MODEL)) \
+		$(if $(EVAL_ADAPTER),--adapter $(EVAL_ADAPTER)) \
+		$(if $(EVAL_API_KEY),--api-key $(EVAL_API_KEY)) \
+		--label $(EVAL_LABEL) \
+		$(if $(EVAL_COORD_SPACE),--coord-space $(EVAL_COORD_SPACE)) \
+		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT) --stratify) \
+		$(EVAL_ARGS)
+
+eval-held-out: ## Same harness over our own never-captured public-site tasks
+	@test -n "$(EVAL_ENDPOINT)" || (echo "ERROR: set EVAL_ENDPOINT=http://<host>:8000/v1" && exit 1)
+	python -m repo_pipeline.student_eval run \
+		--task-source held_out \
+		--endpoint $(EVAL_ENDPOINT) \
+		$(if $(EVAL_MODEL),--model $(EVAL_MODEL)) \
+		$(if $(EVAL_ADAPTER),--adapter $(EVAL_ADAPTER)) \
+		--label $(EVAL_LABEL) \
+		$(if $(EVAL_COORD_SPACE),--coord-space $(EVAL_COORD_SPACE)) \
+		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT)) \
+		$(EVAL_ARGS)
+
+eval-compare: ## Before/after table from two or more runs (EVAL_RUNS="eval_runs/before_... eval_runs/after_...")
+	@test -n "$(EVAL_RUNS)" || (echo 'ERROR: set EVAL_RUNS="eval_runs/<before_id> eval_runs/<after_id>"' && exit 1)
+	python -m repo_pipeline.student_eval compare $(EVAL_RUNS)
+
+eval-sources: ## List the registered eval task sources
+	python -m repo_pipeline.student_eval sources
+
+test-student-eval: ## Self-test the eval harness (parser round-trip + mock replay episode + judge)
+	python -m repo_pipeline.student_eval_smoke $(EVAL_ARGS)
 
 # ---------- Dashboard ----------
 
