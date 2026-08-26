@@ -143,7 +143,7 @@
         },
         {
           "id": "coda-team-wiki-subpages",
-          "instruction": "Build a team wiki in a new Coda doc with three subpages — Onboarding, Processes and Useful Links — each with a short intro paragraph and a bulleted list, and add a table of contents linking to them on the home page.",
+          "instruction": "Build a team wiki in a new Coda doc with three subpages \u2014 Onboarding, Processes and Useful Links \u2014 each with a short intro paragraph and a bulleted list, and add a table of contents linking to them on the home page.",
           "difficulty": "hard",
           "expected_actions": 20,
           "action_kinds": [
@@ -382,7 +382,7 @@
         },
         {
           "id": "resume-from-template",
-          "instruction": "Make me a one-page resume in Google Docs from a template — fill in my name and a short summary, add a work-experience section with two jobs and an education section, then change the document's accent color.",
+          "instruction": "Make me a one-page resume in Google Docs from a template \u2014 fill in my name and a short summary, add a work-experience section with two jobs and an education section, then change the document's accent color.",
           "difficulty": "hard",
           "expected_actions": 20,
           "action_kinds": [
@@ -1144,7 +1144,7 @@
         },
         {
           "id": "build-onboarding-collection",
-          "instruction": "Set up an 'Engineering Onboarding' collection in our wiki, add three documents — Setup Guide, Code Standards, and Deploy Process — and in the Setup Guide write a short intro with a heading and a table listing our core tools.",
+          "instruction": "Set up an 'Engineering Onboarding' collection in our wiki, add three documents \u2014 Setup Guide, Code Standards, and Deploy Process \u2014 and in the Setup Guide write a short intro with a heading and a table listing our core tools.",
           "difficulty": "hard",
           "expected_actions": 20,
           "action_kinds": [
@@ -1156,7 +1156,7 @@
         },
         {
           "id": "structured-spec-doc",
-          "instruction": "Write a product spec doc with a title and three sections — Overview, Requirements, and Open Questions — a bulleted requirements list, and a comparison table, then move it into the Product Wiki collection.",
+          "instruction": "Write a product spec doc with a title and three sections \u2014 Overview, Requirements, and Open Questions \u2014 a bulleted requirements list, and a comparison table, then move it into the Product Wiki collection.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -1518,7 +1518,7 @@
         },
         {
           "id": "blog-launch-outline",
-          "instruction": "Set up a project outline in Checkvist for launching a blog — create a list with three top-level phases, add three sub-tasks under each, tag two items urgent, set due dates on two, and mark the first sub-task done.",
+          "instruction": "Set up a project outline in Checkvist for launching a blog \u2014 create a list with three top-level phases, add three sub-tasks under each, tag two items urgent, set due dates on two, and mark the first sub-task done.",
           "difficulty": "hard",
           "expected_actions": 22,
           "action_kinds": [
@@ -3899,7 +3899,7 @@
         },
         {
           "id": "board-triage-labels",
-          "instruction": "Triage the ZenHub board — create two issues, label them 'bug' and 'priority', set estimates, assign them to yourself, and move one to the Review pipeline.",
+          "instruction": "Triage the ZenHub board \u2014 create two issues, label them 'bug' and 'priority', set estimates, assign them to yourself, and move one to the Review pipeline.",
           "difficulty": "hard",
           "expected_actions": 21,
           "action_kinds": [
@@ -4600,7 +4600,7 @@
         },
         {
           "id": "labels-folder-filter",
-          "instruction": "Create three colored labels — Finance, Travel, Personal — and a folder 'Archive 2026' in Proton Mail, then add a filter that stars and labels any message with 'invoice' in the subject as Finance.",
+          "instruction": "Create three colored labels \u2014 Finance, Travel, Personal \u2014 and a folder 'Archive 2026' in Proton Mail, then add a filter that stars and labels any message with 'invoice' in the subject as Finance.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -5001,7 +5001,7 @@
         },
         {
           "id": "newsletter-folder-filter",
-          "instruction": "Set up Yahoo Mail to auto-organize newsletters — create a folder called 'Newsletters' and add a filter that moves incoming mail with 'newsletter' in the subject into it.",
+          "instruction": "Set up Yahoo Mail to auto-organize newsletters \u2014 create a folder called 'Newsletters' and add a filter that moves incoming mail with 'newsletter' in the subject into it.",
           "difficulty": "hard",
           "expected_actions": 16,
           "action_kinds": [
@@ -5688,7 +5688,7 @@
         },
         {
           "id": "daily-routine-habits",
-          "instruction": "Build a daily routine in Reclaim with three habits — a morning 'Email triage' (30 min), a midday 'Lunch' (45 min), and an end-of-day 'Plan tomorrow' (15 min) — each with a priority.",
+          "instruction": "Build a daily routine in Reclaim with three habits \u2014 a morning 'Email triage' (30 min), a midday 'Lunch' (45 min), and an end-of-day 'Plan tomorrow' (15 min) \u2014 each with a priority.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -6121,7 +6121,7 @@
         },
         {
           "id": "cooking-custom-feed",
-          "instruction": "Build a custom feed on Reddit for home cooking — create the feed, add four cooking-related subreddits to it, and give it a description.",
+          "instruction": "Build a custom feed on Reddit for home cooking \u2014 create the feed, add four cooking-related subreddits to it, and give it a description.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -6145,7 +6145,7 @@
         },
         {
           "id": "profile-customize-pin",
-          "instruction": "Customize your Reddit profile — set a display name and bio, upload a banner and an avatar image, and pin one of your posts to the top of your profile.",
+          "instruction": "Customize your Reddit profile \u2014 set a display name and bio, upload a banner and an avatar image, and pin one of your posts to the top of your profile.",
           "difficulty": "hard",
           "expected_actions": 19,
           "action_kinds": [
@@ -6157,7 +6157,7 @@
         },
         {
           "id": "formatted-howto-post",
-          "instruction": "Write a detailed how-to post in a relevant subreddit using formatted sections — a header, a bulleted list and a link — add the appropriate post flair, and submit it.",
+          "instruction": "Write a detailed how-to post in a relevant subreddit using formatted sections \u2014 a header, a bulleted list and a link \u2014 add the appropriate post flair, and submit it.",
           "difficulty": "hard",
           "expected_actions": 17,
           "action_kinds": [
@@ -8256,7 +8256,7 @@
         },
         {
           "id": "twitch-channel-panels",
-          "instruction": "Add two channel panels to your Twitch profile — an About panel with a short bio and a Links panel with a couple of links.",
+          "instruction": "Add two channel panels to your Twitch profile \u2014 an About panel with a short bio and a Links panel with a couple of links.",
           "difficulty": "hard",
           "expected_actions": 16,
           "action_kinds": [
@@ -8492,7 +8492,7 @@
         },
         {
           "id": "study-server-channels-roles",
-          "instruction": "Set up a Guilded server for a study group — create text and voice channels grouped under two categories, make a 'Moderator' role with a color, and assign it to yourself.",
+          "instruction": "Set up a Guilded server for a study group \u2014 create text and voice channels grouped under two categories, make a 'Moderator' role with a color, and assign it to yourself.",
           "difficulty": "hard",
           "expected_actions": 22,
           "action_kinds": [
@@ -9631,7 +9631,7 @@
         },
         {
           "id": "boards-epic-backlog",
-          "instruction": "In your Azure DevOps project, build a backlog — create an epic, two user stories under it and three tasks, set story points, and assign them to an iteration.",
+          "instruction": "In your Azure DevOps project, build a backlog \u2014 create an epic, two user stories under it and three tasks, set story points, and assign them to an iteration.",
           "difficulty": "hard",
           "expected_actions": 24,
           "action_kinds": [
@@ -10276,7 +10276,7 @@
         },
         {
           "id": "scoped-deploy-tokens",
-          "instruction": "In your Fly.io account create two deploy tokens with different names and expirations — one short-lived for staging and one for production — and copy each.",
+          "instruction": "In your Fly.io account create two deploy tokens with different names and expirations \u2014 one short-lived for staging and one for production \u2014 and copy each.",
           "difficulty": "medium",
           "expected_actions": 14,
           "action_kinds": [
@@ -10623,7 +10623,7 @@
         },
         {
           "id": "github-deploy-config",
-          "instruction": "Configure your Scalingo app for GitHub deploys — link a repository, choose the branch to deploy, enable automatic deployment, and turn on review apps. Do not trigger a paid deploy.",
+          "instruction": "Configure your Scalingo app for GitHub deploys \u2014 link a repository, choose the branch to deploy, enable automatic deployment, and turn on review apps. Do not trigger a paid deploy.",
           "difficulty": "hard",
           "expected_actions": 16,
           "action_kinds": [
@@ -11741,7 +11741,7 @@
         },
         {
           "id": "augmented-dataset-version",
-          "instruction": "On a Roboflow project, generate a new dataset version — apply a train/test split, add flip and brightness augmentations and a resize step, then create the version.",
+          "instruction": "On a Roboflow project, generate a new dataset version \u2014 apply a train/test split, add flip and brightness augmentations and a resize step, then create the version.",
           "difficulty": "hard",
           "expected_actions": 17,
           "action_kinds": [
@@ -11753,7 +11753,7 @@
         },
         {
           "id": "label-workflow-guidelines",
-          "instruction": "Set up annotation for a Roboflow project — define the full class list, write annotation guidelines for labelers, and configure the labeling workflow settings.",
+          "instruction": "Set up annotation for a Roboflow project \u2014 define the full class list, write annotation guidelines for labelers, and configure the labeling workflow settings.",
           "difficulty": "medium",
           "expected_actions": 16,
           "action_kinds": [
@@ -12783,7 +12783,7 @@
         },
         {
           "id": "favorites-collections-sort",
-          "instruction": "Organize your Etsy favorites — create two collections (home decor and gifts), find and favorite four items, and sort each into the right collection.",
+          "instruction": "Organize your Etsy favorites \u2014 create two collections (home decor and gifts), find and favorite four items, and sort each into the right collection.",
           "difficulty": "hard",
           "expected_actions": 20,
           "action_kinds": [
@@ -12795,7 +12795,7 @@
         },
         {
           "id": "shop-about-sections",
-          "instruction": "Set up the basics of your Etsy shop — write the shop announcement, fill in the About section with a story, and create two shop sections.",
+          "instruction": "Set up the basics of your Etsy shop \u2014 write the shop announcement, fill in the About section with a story, and create two shop sections.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -12806,7 +12806,7 @@
         },
         {
           "id": "shop-policies-shipping",
-          "instruction": "Configure your Etsy shop policies — create a shipping profile with a processing time and rates, and fill in the returns and exchanges policy.",
+          "instruction": "Configure your Etsy shop policies \u2014 create a shipping profile with a processing time and rates, and fill in the returns and exchanges policy.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -12818,7 +12818,7 @@
         },
         {
           "id": "draft-soap-listing-variations",
-          "instruction": "Create a detailed draft listing for handmade soap on Etsy — add a title, description, price, category and tags, set up scent variations, and save it as a draft without publishing.",
+          "instruction": "Create a detailed draft listing for handmade soap on Etsy \u2014 add a title, description, price, category and tags, set up scent variations, and save it as a draft without publishing.",
           "difficulty": "hard",
           "expected_actions": 22,
           "action_kinds": [
@@ -13451,7 +13451,7 @@
         },
         {
           "id": "build-favorites-lists",
-          "instruction": "Create two favorites lists in MercadoLibre — 'Cocina' and 'Oficina' — and save at least two products from search into each list.",
+          "instruction": "Create two favorites lists in MercadoLibre \u2014 'Cocina' and 'Oficina' \u2014 and save at least two products from search into each list.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -13463,7 +13463,7 @@
         },
         {
           "id": "organize-favorites",
-          "instruction": "Save four electronics products to MercadoLibre favorites, then move two of them into a new list 'Comprar después' and remove one from favorites.",
+          "instruction": "Save four electronics products to MercadoLibre favorites, then move two of them into a new list 'Comprar despu\u00e9s' and remove one from favorites.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -13475,7 +13475,7 @@
         },
         {
           "id": "cart-configure-no-checkout",
-          "instruction": "Search for a coffee maker on MercadoLibre, open a listing, choose a color and quantity, add it to your cart, then update the quantity in the cart — stop before paying.",
+          "instruction": "Search for a coffee maker on MercadoLibre, open a listing, choose a color and quantity, add it to your cart, then update the quantity in the cart \u2014 stop before paying.",
           "difficulty": "medium",
           "expected_actions": 16,
           "action_kinds": [
@@ -13645,7 +13645,7 @@
         },
         {
           "id": "newegg-pc-build-wishlist",
-          "instruction": "On Newegg, create a new wishlist called Gaming PC Build and add five components to it — a CPU, a motherboard, RAM, an SSD and a power supply.",
+          "instruction": "On Newegg, create a new wishlist called Gaming PC Build and add five components to it \u2014 a CPU, a motherboard, RAM, an SSD and a power supply.",
           "difficulty": "hard",
           "expected_actions": 24,
           "action_kinds": [
@@ -13670,7 +13670,7 @@
         },
         {
           "id": "newegg-multi-list-organize",
-          "instruction": "On Newegg, create two wishlists — one public and one private — and add a couple of items to each.",
+          "instruction": "On Newegg, create two wishlists \u2014 one public and one private \u2014 and add a couple of items to each.",
           "difficulty": "medium",
           "expected_actions": 18,
           "action_kinds": [
@@ -13837,7 +13837,7 @@
         },
         {
           "id": "wishlist-collections-sort",
-          "instruction": "Build a Temu wishlist — favorite six gadgets, create two collections, and sort the favorited items into the right collections.",
+          "instruction": "Build a Temu wishlist \u2014 favorite six gadgets, create two collections, and sort the favorited items into the right collections.",
           "difficulty": "hard",
           "expected_actions": 20,
           "action_kinds": [
@@ -14738,7 +14738,7 @@
         },
         {
           "id": "chewy-favorites-collection",
-          "instruction": "On Chewy, build a favorites list of four dog supplies — a food, a treat, a toy and a bowl.",
+          "instruction": "On Chewy, build a favorites list of four dog supplies \u2014 a food, a treat, a toy and a bowl.",
           "difficulty": "medium",
           "expected_actions": 16,
           "action_kinds": [
@@ -14916,7 +14916,7 @@
         },
         {
           "id": "workout-playlist-curate",
-          "instruction": "Build a workout playlist on YouTube — create it, add five videos, reorder them so the warm-up is first, set it to unlisted, and write a description.",
+          "instruction": "Build a workout playlist on YouTube \u2014 create it, add five videos, reorder them so the warm-up is first, set it to unlisted, and write a description.",
           "difficulty": "hard",
           "expected_actions": 22,
           "action_kinds": [
@@ -14941,7 +14941,7 @@
         },
         {
           "id": "channel-customize-layout",
-          "instruction": "Customize your YouTube channel — write a channel description, set up the Home layout with a featured section, and add two external links.",
+          "instruction": "Customize your YouTube channel \u2014 write a channel description, set up the Home layout with a featured section, and add two external links.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -14954,7 +14954,7 @@
         },
         {
           "id": "themed-subscriptions-notifications",
-          "instruction": "Set up a themed subscriptions feed on YouTube — subscribe to four channels about photography and turn on all notifications for two of them.",
+          "instruction": "Set up a themed subscriptions feed on YouTube \u2014 subscribe to four channels about photography and turn on all notifications for two of them.",
           "difficulty": "medium",
           "expected_actions": 15,
           "action_kinds": [
@@ -16087,7 +16087,7 @@
         },
         {
           "id": "two-curated-lists",
-          "instruction": "Build two JustWatch lists — a 'Weekend Movies' list with four films and a 'Series to Binge' list with three shows — and reorder one list by priority.",
+          "instruction": "Build two JustWatch lists \u2014 a 'Weekend Movies' list with four films and a 'Series to Binge' list with three shows \u2014 and reorder one list by priority.",
           "difficulty": "hard",
           "expected_actions": 20,
           "action_kinds": [
@@ -16100,7 +16100,7 @@
         },
         {
           "id": "service-filters-watchlist",
-          "instruction": "Set up your JustWatch streaming preferences — pick the services you subscribe to and set your country, then build a filtered list of new titles and add several to your watchlist.",
+          "instruction": "Set up your JustWatch streaming preferences \u2014 pick the services you subscribe to and set your country, then build a filtered list of new titles and add several to your watchlist.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -17115,7 +17115,7 @@
         },
         {
           "id": "login-screen-wireframe",
-          "instruction": "In a Figma design file, build a login-screen wireframe — add a frame, place a logo placeholder, two input fields, a button and a link, align them, and rename the layers.",
+          "instruction": "In a Figma design file, build a login-screen wireframe \u2014 add a frame, place a logo placeholder, two input fields, a button and a link, align them, and rename the layers.",
           "difficulty": "hard",
           "expected_actions": 23,
           "action_kinds": [
@@ -17141,7 +17141,7 @@
         },
         {
           "id": "figjam-signup-flowchart",
-          "instruction": "On a FigJam board, map a sign-up flow — add five labeled shapes connected with arrows, group them inside a section, and add a sticky note explaining the flow.",
+          "instruction": "On a FigJam board, map a sign-up flow \u2014 add five labeled shapes connected with arrows, group them inside a section, and add a sticky note explaining the flow.",
           "difficulty": "hard",
           "expected_actions": 21,
           "action_kinds": [
@@ -17874,7 +17874,7 @@
         },
         {
           "id": "static-pages-menu",
-          "instruction": "Add two static pages to your blog — About and Contact — write a short intro on each, and add them to the blog's navigation menu.",
+          "instruction": "Add two static pages to your blog \u2014 About and Contact \u2014 write a short intro on each, and add them to the blog's navigation menu.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -18250,7 +18250,7 @@
         },
         {
           "id": "week-content-calendar",
-          "instruction": "Plan a week of social posts in Buffer — draft four posts with different copy, schedule each to the queue at a specific time across the week, and attach an image to two of them.",
+          "instruction": "Plan a week of social posts in Buffer \u2014 draft four posts with different copy, schedule each to the queue at a specific time across the week, and attach an image to two of them.",
           "difficulty": "hard",
           "expected_actions": 22,
           "action_kinds": [
@@ -18263,7 +18263,7 @@
         },
         {
           "id": "posting-schedule-setup",
-          "instruction": "Set up a posting schedule for your Buffer channel — add three posting times per day on weekdays, then queue two draft posts to fill the next open slots.",
+          "instruction": "Set up a posting schedule for your Buffer channel \u2014 add three posting times per day on weekdays, then queue two draft posts to fill the next open slots.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -19129,7 +19129,7 @@
         },
         {
           "id": "visme-social-graphic-set",
-          "instruction": "On Visme, design a social media graphic from a template — edit the text and colors — then duplicate it as a second size variant and save both.",
+          "instruction": "On Visme, design a social media graphic from a template \u2014 edit the text and colors \u2014 then duplicate it as a second size variant and save both.",
           "difficulty": "medium",
           "expected_actions": 16,
           "action_kinds": [
@@ -19332,7 +19332,7 @@
         },
         {
           "id": "themed-multi-watchlists",
-          "instruction": "Build two stock watchlists in Google Finance — a 'Tech Giants' list with five companies and a 'Dividend Stocks' list with four companies.",
+          "instruction": "Build two stock watchlists in Google Finance \u2014 a 'Tech Giants' list with five companies and a 'Dividend Stocks' list with four companies.",
           "difficulty": "hard",
           "expected_actions": 20,
           "action_kinds": [
@@ -20015,7 +20015,7 @@
         },
         {
           "id": "customize-invoice-template",
-          "instruction": "Customize your Wave invoice template — change the accent color, upload a logo, edit the footer and payment terms — then create a draft invoice using it.",
+          "instruction": "Customize your Wave invoice template \u2014 change the accent color, upload a logo, edit the footer and payment terms \u2014 then create a draft invoice using it.",
           "difficulty": "hard",
           "expected_actions": 18,
           "action_kinds": [
@@ -20428,7 +20428,7 @@
         },
         {
           "id": "monthly-budget-groups",
-          "instruction": "Set up a monthly budget in YNAB — create category groups for Bills, Daily Living and Savings with two categories under each, and assign dollar amounts to fund them.",
+          "instruction": "Set up a monthly budget in YNAB \u2014 create category groups for Bills, Daily Living and Savings with two categories under each, and assign dollar amounts to fund them.",
           "difficulty": "hard",
           "expected_actions": 24,
           "action_kinds": [
@@ -20463,7 +20463,7 @@
         },
         {
           "id": "savings-targets-goals",
-          "instruction": "Add savings targets in YNAB — set a monthly funding goal on the Groceries category and a 'save by a date' target on a new Vacation category.",
+          "instruction": "Add savings targets in YNAB \u2014 set a monthly funding goal on the Groceries category and a 'save by a date' target on a new Vacation category.",
           "difficulty": "medium",
           "expected_actions": 16,
           "action_kinds": [
@@ -21253,7 +21253,7 @@
         },
         {
           "id": "datacamp-complete-exercise",
-          "instruction": "On DataCamp, work through the first coding exercise of a free course — write the code, run it and submit to complete the exercise.",
+          "instruction": "On DataCamp, work through the first coding exercise of a free course \u2014 write the code, run it and submit to complete the exercise.",
           "difficulty": "hard",
           "expected_actions": 16,
           "action_kinds": [
@@ -22105,7 +22105,7 @@
       "start_url": "https://brainly.com",
       "domain": "brainly",
       "category": "learning-health",
-      "provisioning": "open_signup",
+      "provisioning": "oauth_only",
       "tasks": [
         {
           "id": "ask-photosynthesis",
