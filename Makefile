@@ -1,5 +1,6 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
-       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard
+       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
+       install-eval eval-screenspot test-eval
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -17,6 +18,14 @@ PIPELINE_BUDGET ?= 30
 PIPELINE_WORKERS ?= 5
 PIPELINE_LIMIT ?=
 PIPELINE_LIMIT_PCT ?= 100
+EVAL_MODELS      ?= eval_models.yaml
+EVAL_DATASET     ?= os-copilot/ScreenSpot-v2
+EVAL_SPLIT       ?= test
+EVAL_BACKEND     ?= swift
+EVAL_COORD_SPACE ?= viewport_abs
+EVAL_VIEWPORT    ?= 1280x720
+EVAL_OUTPUT_DIR  ?= eval_results
+EVAL_LIMIT       ?=
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -139,6 +148,24 @@ pipeline-status: ## Show pipeline registry stats
 test-notifier: ## Test Telegram bot notification
 	python -m repo_pipeline.notifier --test
 
+# ---------- Evaluation (ScreenSpot grounding) ----------
+
+install-eval: ## Install ScreenSpot eval dependencies (GPU machine)
+	pip install -r requirements-eval.txt
+
+eval-screenspot: ## Eval grounding for all models in EVAL_MODELS (before/after SFT)
+	python eval_screenspot.py run \
+		--models-config $(EVAL_MODELS) \
+		--backend $(EVAL_BACKEND) \
+		--dataset $(EVAL_DATASET) \
+		--split $(EVAL_SPLIT) \
+		--coord-space $(EVAL_COORD_SPACE) \
+		--viewport $(EVAL_VIEWPORT) \
+		--output-dir $(EVAL_OUTPUT_DIR) \
+		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT))
+
+test-eval: ## Smoke-test the eval harness (no model/GPU/network)
+	python eval_screenspot.py run --smoke-test
 # ---------- Dashboard ----------
 
 dashboard: ## Launch trajectory SFT-readiness dashboard (Streamlit, localhost:8501)
