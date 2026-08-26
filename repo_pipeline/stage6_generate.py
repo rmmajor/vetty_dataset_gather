@@ -48,6 +48,9 @@ AGENT_MAX_KEPT = int(os.environ.get("AGENT_MAX_KEPT_PER_REPO", "10"))
 # auth wall blocks every flow (e.g. TREK) otherwise grinds through its whole task list — minutes
 # per doomed task. A productive task resets the counter.
 AGENT_MAX_CONSECUTIVE_FAILS = int(os.environ.get("AGENT_MAX_CONSECUTIVE_FAILS", "3"))
+# Bounds re-capture of failed trajectories so a permanently-blocked task cannot burn a sandbox forever.
+CAPTURE_MAX_ATTEMPTS = int(os.environ.get("CAPTURE_MAX_ATTEMPTS", "2"))
+ATTEMPTS_FILE = "capture_attempts.json"
 
 INSTRUCTION_PROMPT = """You are reading an automated browser test for a web application.
 Your job is to write a one-sentence INSTRUCTION describing what user-facing scenario the
@@ -128,6 +131,47 @@ def _is_valid_trajectory(traj_dir: Path) -> bool:
 
 def _has_valid_trajectories(repo_traj_dir: Path) -> bool:
     return repo_traj_dir.exists() and any(_is_valid_trajectory(d) for d in repo_traj_dir.glob("task_*/"))
+
+
+def capture_attempts(traj_dir: Path) -> int:
+    """How many finalized capture attempts this trajectory has already cost."""
+    try:
+        return int(json.loads((traj_dir / ATTEMPTS_FILE).read_text()).get("attempts", 0))
+    except (OSError, ValueError, TypeError):
+        return 0
+
+
+def record_capture_attempt(traj_dir: Path, outcome: str) -> int:
+    """Count one finalized capture attempt against this trajectory's retry bound."""
+    # Host-only sidecar: every copy_out overwrites capture_meta.json, so a counter kept there resets.
+    attempts = capture_attempts(traj_dir) + 1
+    (traj_dir / ATTEMPTS_FILE).write_text(
+        json.dumps({"attempts": attempts, "last_outcome": outcome}, indent=2))
+    return attempts
+
+
+def capture_verdict(traj_dir: Path) -> str | None:
+    """A recorded trajectory's settled verdict, or None when the verifier never judged it."""
+    try:
+        if "verifier" not in json.loads((traj_dir / "capture_meta.json").read_text()):
+            return None
+        succeeded = json.loads((traj_dir / "trajectory.json").read_text()).get("success")
+    except (OSError, ValueError):
+        return None
+    return "success" if succeeded else "failed"
+
+
+def is_capture_exhausted(traj_dir: Path) -> bool:
+    """A recorded trajectory that failed verification and has no attempts left."""
+    return capture_verdict(traj_dir) == "failed" and capture_attempts(traj_dir) >= CAPTURE_MAX_ATTEMPTS
+
+
+def is_capture_settled(traj_dir: Path) -> bool:
+    """Whether task-level resume must leave this recorded trajectory alone."""
+    if not _is_valid_trajectory(traj_dir):
+        return False
+    # A None verdict is an interrupted run's orphan awaiting finalization, not a failure to re-capture.
+    return capture_verdict(traj_dir) != "failed" or is_capture_exhausted(traj_dir)
 
 
 def _safe_task_id(task_id: str) -> str:
