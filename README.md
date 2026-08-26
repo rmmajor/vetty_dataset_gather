@@ -204,11 +204,110 @@ Or use Make:
 ## Training Configuration
 
 See `config.yaml` for default hyperparameters. Key settings from the blueprint:
-- Model: Qwen/Qwen3.5-9B-Base
+- Model: Qwen/Qwen3.5-9B (post-trained checkpoint; the eval baseline is measured on it)
 - LoRA rank 64, alpha 128
 - Learning rate 5e-5, 3 epochs
 - Max sequence length 4096
 - Vision encoder frozen (freeze_vit: true)
+
+## Evaluation: Online-Mind2Web baseline
+
+The pre-training baseline every fine-tune is compared against. Captured 2026-08-26 with
+`make eval-online-mind2web`; raw artefacts in `eval_runs/baseline_qwen35_9b_online_mind2web_20260826T165014Z/`.
+
+**Model:** `Qwen/Qwen3.5-9B` (post-trained checkpoint, no adapter) served by vLLM 0.28.0 on a
+Modal L40S via `modal_serve.py`. Browser ran locally in `DockerSandbox` on a residential IP —
+a datacenter IP changes the blocking rate and makes the number incomparable.
+
+**Task set:** `osunlp/Online-Mind2Web` rev `eacad896a84d`, 50 tasks sampled level-stratified
+from 300 (17 easy / 16 medium / 17 hard). `coord_space=normalized_1000`, temperature 0,
+max_tokens 2048, per-task step cap `3x reference_length` clamped to [15, 50], `--parallel 3`.
+Judge: `claude-sonnet-5` (final + 2 mid screenshots).
+
+### Headline
+
+| metric | value |
+| --- | --- |
+| verified success (scored episodes) | **8.8%** (3 / 34) |
+| verified success (all episodes) | **6.0%** (3 / 50) |
+| site-blocked | 28.0% (14 episodes) |
+| unreachable | 4.0% (2 episodes) |
+| parse-failure rate | 22.3% |
+| canonical action form | 26.8% of 276 parsed actions |
+| `done()` emission rate | 28.0% |
+| `<think>` emission rate | 78.0% |
+| steps / reference on success | 1.36 |
+
+Two denominators are reported because they answer different questions. **8.8%** excludes
+episodes where the site blocked automation or never loaded — the model never saw those pages,
+so counting them measures the network. **6.0%** counts every task attempted, which is the
+convention the Online-Mind2Web paper and the Fara-1.5 results table use. Quote 6.0% when
+comparing to published work.
+
+### Per level (scored episodes)
+
+| level | n | scored | success | rate | blocked |
+| --- | --- | --- | --- | --- | --- |
+| easy | 17 | 11 | 2 | 18.2% | 29.4% |
+| medium | 16 | 10 | 0 | 0.0% | 37.5% |
+| hard | 17 | 13 | 1 | 7.7% | 17.6% |
+
+Sampling is **equal allocation** across levels, not proportional to the full set (80/141/79).
+Reweighted to the true mix the scored rate is ~6.9%, so the headline mildly overstates the
+300-task estimate by over-sampling easy tasks.
+
+### How it compares
+
+Published Online-Mind2Web results, all scored with WebJudge/o4-mini:
+
+| model | score |
+| --- | --- |
+| FaraGen1.5 Solver (GPT-5.4) | 83.4% |
+| Fara-1.5-9B | 63.4% |
+| GUI-Owl-1.5 (8B) | 48.6% |
+| MolmoWeb (8B) | 35.3% |
+| Fara-7B | 34.1% |
+| baseline search agent | ~22% |
+| **`Qwen3.5-9B`, no agent training (this run)** | **6.0%** |
+
+Sitting an order of magnitude below every purpose-trained CUA is the expected result for a model
+with no agent training, and it is the point of the measurement: it is the floor a fine-tune has
+to clear.
+
+**These numbers are not rankable against that table.** The judge is `claude-sonnet-5` on this
+repo's capture rubric, not WebJudge/o4-mini, and the OM2W authors measure WebJudge itself running
+6-10 points above human-rated success. The comparison is a plausibility check, not a leaderboard
+position. Closing that gap requires running a published checkpoint through this harness.
+
+### What the baseline actually fails at
+
+The failure is not reasoning. `<think>` was emitted on 78% of steps and the reasoning was usually
+correct — on the GOV.UK task it identified the right visa page and said why. Three things break:
+
+- **Output format.** Only 26.8% of parsed actions were in canonical form, and 755 lines were
+  unparseable against 276 parsed. The dominant deviations were omitted default kwargs (164),
+  bare coordinates without `<ref>` (115) and a missing `action:` prefix (58). 22.3% of steps
+  produced no executable action at all, and `parse_failure_abort` was the single most common
+  outcome (16 of 50).
+- **Stopping.** Only 28% of episodes emitted `done()`. The model rarely recognises completion.
+- **The environment.** 32% of tasks (16/50) never reached the model — blocked or unreachable.
+
+Grounding, notably, was **not** a failure mode once the coordinate space was set correctly:
+0 out-of-viewport actions were refused and the driver error rate was 0.4%.
+
+### Reproducing
+
+```bash
+modal deploy modal_serve.py                     # serves Qwen/Qwen3.5-9B on an L40S
+make eval-online-mind2web \
+  EVAL_ENDPOINT=<url>/v1 EVAL_MODEL=cua-student \
+  EVAL_LABEL=before EVAL_LIMIT=50 EVAL_COORD_SPACE=normalized_1000
+```
+
+After fine-tuning, re-run with `EVAL_LABEL=after`, `EVAL_COORD_SPACE=viewport_abs` (a model
+trained on this corpus answers in viewport pixels, not normalised units) and otherwise identical
+flags, then `make eval-compare`. Read the harness-parity section of the comparison before
+trusting the delta.
 
 ## Cost Estimates
 
