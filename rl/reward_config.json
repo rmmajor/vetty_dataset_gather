@@ -1,0 +1,13 @@
+{
+  "verifier_mode": {"train": "fallback", "eval": "always"},
+  "lanes": {
+    "autonomous": {
+      "weights": {"terminal_success": 1.0, "format_validity": 0.2, "efficiency": 0.2, "terminated_with_done": 0.1},
+      "penalties": {"parse_abort": 0.5, "loop_guard": 0.3, "step_cap": 0.2, "control_unexpected": 0.3, "navigate_blocked": 0.1}
+    },
+    "guarded": {
+      "weights": {"terminal_success": 1.0, "format_validity": 0.2, "efficiency": 0.1, "terminated_with_done": 0.0},
+      "penalties": {"parse_abort": 0.5, "loop_guard": 0.3, "step_cap": 0.2, "control_unexpected": 0.0, "navigate_blocked": 0.1}
+    }
+  }
+}

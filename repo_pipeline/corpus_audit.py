@@ -103,7 +103,8 @@ def is_trainable(traj_dir: Path) -> bool:
     """Mirrors train_qwen.py convert gating (default, no --include-replay)."""
     trajectory = _load_json(traj_dir / "trajectory.json")
     metadata = _load_json(traj_dir / "metadata.json")
-    if metadata.get("excluded_reason"):
+    capture_meta = _load_json(traj_dir / "capture_meta.json")
+    if metadata.get("excluded_reason") or capture_meta.get("excluded_reason"):
         return False
     source = metadata.get("capture_source") or ("path_a" if "mind2web" in traj_dir.name else "replay")
     if source == "replay":

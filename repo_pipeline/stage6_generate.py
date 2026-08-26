@@ -458,6 +458,12 @@ def _excluded(traj_dir: Path, reason: str):
     meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
     meta["excluded_reason"] = reason
     meta_file.write_text(json.dumps(meta, indent=2))
+    # convert/audit gate on metadata.json, so the exclusion must land there too when it exists.
+    metadata_file = traj_dir / "metadata.json"
+    if metadata_file.exists():
+        metadata = json.loads(metadata_file.read_text())
+        metadata["excluded_reason"] = reason
+        metadata_file.write_text(json.dumps(metadata, indent=2))
 
 
 async def _postprocess_agent_capture(rlog, registry, repo, repo_traj_dir: Path) -> tuple[list[Path], int]:

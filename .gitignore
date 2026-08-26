@@ -12,6 +12,9 @@ notes/
 output/
 eval_results/
 .remote_train_state.json
+# RL rollouts + student evals (never enter the SFT corpus)
+rl_runs/
+eval_runs/
 
 # Test-account credentials + saved sessions (never commit real logins)
 credentials/

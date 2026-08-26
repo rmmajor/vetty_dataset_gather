@@ -7,6 +7,7 @@ disk, bbox-center coordinates inside the 1280x720 viewport, thoughts recorded pe
 
 Run: python -m repo_pipeline.driver_smoke   (or `make test-driver`)
 """
+import base64
 import json
 import logging
 import sys
@@ -162,6 +163,21 @@ def run_smoke() -> bool:
                     "event": {"kind": "approval", "decision": "deny",
                               "rationale": "publishing on a live site is irreversible", "by": "watchdog"}})
 
+        # RL path: /observe's PNG becomes the next recorded step; `sequence` records ONE step of contract dicts and executes them.
+        recorded = json.loads(sandbox.read_file(f"{RESULTS_DIR}/task_smoke_test/trajectory.json"))
+        name_click = recorded["steps"][0]["actions"][0]
+        greet_click = recorded["steps"][1]["actions"][0]
+        observed = client.observe()
+        assert observed["mime"] == "image/png" and observed["step_next"] == len(recorded["steps"]) + 1
+        seq = client.act_sequence("Retyping my name through the coordinate path and submitting.", [
+            {"type": "click", "x": name_click["x"], "y": name_click["y"], "button": "left"},
+            {"type": "type", "text": "Sequence"},
+            {"type": "click", "x": greet_click["x"], "y": greet_click["y"], "button": "left"},
+        ])
+        assert seq["executed"] == 3 and seq["error"] is None and seq["terminal"] is False, seq
+        assert "hello Sequence" in client.snapshot()["snapshot"], "sequence actions did not take effect"
+        observed_png = observed["b64"]
+
         # The loop guard must refuse a third identical scroll from the same position only if no
         # progress was made; instead verify the explicit guard with repeated clicks.
         guard_tripped = False
@@ -235,6 +251,11 @@ def run_smoke() -> bool:
             ev = event_steps[0]
             assert ev["actions"] == [] and ev["event"].get("decision") == "deny", \
                 f"approval event malformed (must be observation-only): {ev}"
+
+            seq_step = [s for s in traj["steps"] if s["thought"].startswith("Retyping my name")][0]
+            assert [a["type"] for a in seq_step["actions"]] == ["click", "type", "click"], seq_step["actions"]
+            assert (traj_dir / seq_step["screenshot"]).read_bytes() == base64.b64decode(observed_png), \
+                "observation PNG must be byte-identical to the recorded step screenshot"
 
         logger.info("Driver smoke test PASSED")
         return True

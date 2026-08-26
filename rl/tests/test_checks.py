@@ -1,0 +1,36 @@
+from rl.checks import CHECKS, build_context, evaluate
+
+SNAPSHOT = {"url": "https://example.com/cart?id=7", "title": "Your Cart — Example",
+            "snapshot": '## Page text\nOrder confirmed. Thanks!\n## Interactive elements (in viewport)\n[1] button "Checkout"\n[2] textbox "Coupon" value="SAVE10"\n[3] checkbox "Gift wrap" (checked)\n'}
+
+
+def _ctx(terminal="done"):
+    return build_context(SNAPSHOT, lambda: {"cookies": [{"name": "session_id"}]}, {"terminal_reason": terminal})
+
+
+def test_context_parses_elements():
+    ctx = _ctx()
+    assert ctx["elements"][1] == {"ref": 2, "role": "textbox", "name": "Coupon", "extra": 'value="SAVE10"'}
+
+
+def test_each_check():
+    ctx = _ctx()
+    assert evaluate({"url_matches": r"/cart\?id=\d+"}, ctx)["passed"]
+    assert evaluate({"url_contains": "/cart"}, ctx)["passed"]
+    assert evaluate({"title_contains": "your cart"}, ctx)["passed"]
+    assert evaluate({"text_visible": "order confirmed"}, ctx)["passed"]
+    assert not evaluate({"text_absent": "order confirmed"}, ctx)["passed"]
+    assert evaluate({"element_present": {"role": "button", "name_regex": "^check"}}, ctx)["passed"]
+    assert evaluate({"element_absent": {"name_regex": "Delete"}}, ctx)["passed"]
+    assert evaluate({"element_value": {"name_regex": "Coupon", "equals": "SAVE10"}}, ctx)["passed"]
+    assert evaluate({"cookie_present": "^session"}, ctx)["passed"]
+    assert evaluate({"done_emitted": True}, ctx)["passed"] and not evaluate({"done_emitted": True}, _ctx("step_cap"))["passed"]
+    assert evaluate({"terminal_reason_in": ["done", "handoff"]}, ctx)["passed"]
+
+
+def test_composition_and_unknown_check():
+    ctx = _ctx()
+    spec = {"all_of": [{"text_visible": "thanks"}, {"any_of": [{"url_contains": "nope"}, {"url_contains": "cart"}]}]}
+    assert evaluate(spec, ctx) == {"passed": True, "results": {"all_of": True}}
+    assert evaluate({"bogus": 1}, ctx) == {"passed": False, "results": {"bogus": False}}
+    assert set(CHECKS) >= {"url_matches", "text_visible", "element_present", "all_of", "any_of"}

@@ -149,6 +149,40 @@ def format_action_summary(action):
 # bloat the prompt, and at inference the runtime keeps a bounded history too.
 HISTORY_WINDOW = 10
 
+
+def build_step_user_text(instruction, action_history):
+    """The student's user turn: task + windowed text history; shared by convert and the RL env."""
+    user_text = f"Task: {instruction}"
+    if action_history:
+        window = action_history[-HISTORY_WINDOW:]
+        omitted = len(action_history) - len(window)
+        prefix = f"... {omitted} earlier actions, " if omitted > 0 else ""
+        user_text += f"\nPrevious actions: [{prefix}{', '.join(window)}]"
+    user_text += "\nWhat action should you take?"
+    return user_text
+
+
+def history_entries_for_step(step):
+    actions = step.get("actions", [])
+    if not actions and "action" in step:
+        actions = [step["action"]]
+    entries = [format_action_summary(a) for a in actions]
+    event = step.get("event") or {}
+    if event.get("kind") == "approval":
+        entries.append(f"[watchdog: {event.get('decision', '?')}]")
+    return entries
+
+
+def build_step_messages(system, user_text, image_ref):
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": [
+            {"type": "image", "image": image_ref},
+            {"type": "text", "text": user_text},
+        ]},
+    ]
+
+
 # Step-level waste filter (opt-in via --exclude-waste-steps). A single-click step whose target
 # lands within WASTE_CLICK_RADIUS_PX of a click in the previous WASTE_LOOKBACK_STEPS is a
 # retry/backtrack — the "click didn't register, click again" pattern that survives the stuck-loop
@@ -234,36 +268,15 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_ste
         if emit and i in waste:
             waste_dropped += 1
         elif emit:
-            user_text = f"Task: {instruction}"
-            if action_history:
-                window = action_history[-HISTORY_WINDOW:]
-                omitted = len(action_history) - len(window)
-                prefix = f"... {omitted} earlier actions, " if omitted > 0 else ""
-                user_text += f"\nPrevious actions: [{prefix}{', '.join(window)}]"
-            user_text += "\nWhat action should you take?"
-
+            user_text = build_step_user_text(instruction, action_history)
             action_str = "\n".join(format_action_for_training(a) for a in actions)
             assistant_content = f"<think>{thought}</think>\n{action_str}" if thought else action_str
+            examples.append({"messages": [
+                *build_step_messages(SYSTEM_PROMPT, user_text, str(screenshot_path)),
+                {"role": "assistant", "content": assistant_content},
+            ]})
 
-            examples.append({
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": [
-                        {"type": "image", "image": str(screenshot_path)},
-                        {"type": "text", "text": user_text},
-                    ]},
-                    {"role": "assistant", "content": assistant_content},
-                ]
-            })
-
-        for a in actions:
-            action_history.append(format_action_summary(a))
-
-        # Watchdog verdict observation: thread it into history so the next step's context shows the
-        # approval BETWEEN the confirm and the execute — the student learns to act only once approved.
-        event = step.get("event") or {}
-        if event.get("kind") == "approval":
-            action_history.append(f"[watchdog: {event.get('decision', '?')}]")
+        action_history.extend(history_entries_for_step(step))
 
     return examples, waste_dropped
 
@@ -317,7 +330,7 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
 
         # An explicit exclusion (quality audit, dedup, per-repo cap, contamination) overrides
         # everything below — these are KNOWN-BAD recordings, regardless of provenance.
-        if metadata.get("excluded_reason"):
+        if metadata.get("excluded_reason") or capture_meta.get("excluded_reason"):
             skipped["excluded"] += 1
             continue
 

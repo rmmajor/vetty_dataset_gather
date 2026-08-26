@@ -22,6 +22,7 @@
  *   POST /navigate {url}                        -> goto (NOT recorded as a step; logged in meta)
  *   POST /wait     {seconds}                    -> settle; no step recorded
  *   POST /finish   {agent_outcome, agent_summary} -> finalize trajectory.json + final screenshot
+ *   POST /observe                               -> {b64 (PNG), url, title, step_next}; the PNG becomes the next recorded step's screenshot
  *
  * /act kinds:
  *   click     {ref, button?, dblclick?}         -> {type:"click", x, y, button}
@@ -35,6 +36,7 @@
  *   wait      {seconds}                         -> {type:"wait"} (recorded: waiting is learnable)
  *   select    {ref, value}                      -> {type:"click", x, y} (native <select>)
  *   upload    {ref, filename?, content?}        -> meta only (no replayable pixel equivalent)
+ *   sequence  {actions:[contract dicts]}         -> records ONE step with those dicts verbatim, executes them in order (RL policy path)
  *
  * POST /affordances reports counts of sophistication signals (draggables, sliders, canvases,
  * rich-text editors...) for boot-gate profiling and task-proposer quotas.
@@ -295,7 +297,10 @@ async function recordStep(thought, actions, target, event) {
   const stepNum = t.steps.length + 1;
   const screenshotName = `step_${String(stepNum).padStart(3, '0')}_screenshot.png`;
   await scrubDevOverlays();
-  await state.page.screenshot({ path: path.join(t.dir, screenshotName) });
+  const pending = t.pendingShot;
+  t.pendingShot = null;
+  if (pending) fs.writeFileSync(path.join(t.dir, screenshotName), pending);
+  else await state.page.screenshot({ path: path.join(t.dir, screenshotName) });
 
   const step = { step: stepNum, screenshot: screenshotName, thought: thought || '', actions };
   if (target) {
@@ -455,6 +460,115 @@ function resolveSecrets(text) {
   const secrets = state.secrets || {};
   if (typeof text !== 'string') return text;
   return text.replace(/<secret:([^>]+)>/g, (m, key) => (key in secrets ? secrets[key] : m));
+}
+
+/* ------------------------------ RL sequence path ------------------------------ */
+
+const SEQUENCE_TYPES = new Set(['click', 'double_click', 'move', 'type', 'keypress', 'scroll', 'drag', 'wait', 'navigate', 'done', 'handoff', 'confirm', 'screenshot']);
+const TERMINAL_TYPES = new Set(['done', 'handoff', 'confirm']);
+const SEQUENCE_WAIT_MS = parseInt(process.env.SEQUENCE_WAIT_MS || '2000', 10);
+
+function inViewport(x, y) {
+  return x >= 0 && x < VIEWPORT.width && y >= 0 && y < VIEWPORT.height;
+}
+
+// Validate + normalize one contract action dict; the recorded dict is exactly what the student emitted.
+function normalizeContractAction(a) {
+  if (!a || typeof a !== 'object' || !SEQUENCE_TYPES.has(a.type)) {
+    throw new Error(`sequence: unsupported action ${JSON.stringify(a).slice(0, 80)}`);
+  }
+  const out = { type: a.type };
+  if (['click', 'double_click', 'move', 'scroll'].includes(a.type)) {
+    out.x = Math.round(Number(a.x));
+    out.y = Math.round(Number(a.y));
+    if (!inViewport(out.x, out.y)) throw new Error(`sequence: ${a.type} (${out.x},${out.y}) outside the ${VIEWPORT.width}x${VIEWPORT.height} viewport`);
+  }
+  if (a.type === 'click') out.button = a.button === 'right' ? 'right' : 'left';
+  if (a.type === 'type') {
+    if (typeof a.text !== 'string') throw new Error('sequence: type requires text');
+    out.text = a.text;
+  }
+  if (a.type === 'keypress') {
+    out.keys = (Array.isArray(a.keys) ? a.keys : [a.keys]).map(String);
+    if (!out.keys.length) throw new Error('sequence: keypress requires keys');
+  }
+  if (a.type === 'scroll') {
+    out.scroll_x = Math.round(Number(a.scroll_x) || 0);
+    out.scroll_y = Math.round(Number(a.scroll_y) || 0);
+  }
+  if (a.type === 'drag') {
+    out.path = (Array.isArray(a.path) ? a.path : []).map((p) => ({ x: Math.round(Number(p.x)), y: Math.round(Number(p.y)) }));
+    if (out.path.length < 2 || !out.path.every((p) => inViewport(p.x, p.y))) throw new Error('sequence: drag requires >=2 in-viewport points');
+  }
+  if (a.type === 'navigate') {
+    if (!a.url) throw new Error('sequence: navigate requires url');
+    out.url = String(a.url);
+  }
+  if (a.type === 'handoff') out.reason = String(a.reason || 'login');
+  if (a.type === 'confirm') {
+    out.proposed_action = a.proposed_action || {};
+    out.risk_category = String(a.risk_category || '');
+  }
+  return out;
+}
+
+async function focusedIsEditable() {
+  return state.page.evaluate(() => {
+    const el = document.activeElement;
+    if (!el) return false;
+    return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable === true;
+  }).catch(() => false);
+}
+
+const SEQUENCE_EXECUTORS = {
+  click: async (a) => state.page.mouse.click(a.x, a.y, { button: a.button }),
+  double_click: async (a) => state.page.mouse.dblclick(a.x, a.y),
+  move: async (a) => { await state.page.mouse.move(a.x, a.y); await state.page.waitForTimeout(500); },
+  type: async (a) => {
+    // Ref-free typing goes to the focused element; `replace` mirrors the teacher's select-all-then-type.
+    if (state.typeMode !== 'append' && await focusedIsEditable()) await state.page.keyboard.press('ControlOrMeta+a').catch(() => {});
+    await state.page.keyboard.type(resolveSecrets(a.text), { delay: 15 });
+  },
+  keypress: async (a) => state.page.keyboard.press(a.keys.join('+')),
+  scroll: async (a) => { await state.page.mouse.move(a.x, a.y); await state.page.mouse.wheel(a.scroll_x, a.scroll_y); },
+  drag: async (a) => {
+    await state.page.mouse.move(a.path[0].x, a.path[0].y);
+    await state.page.mouse.down();
+    for (const p of a.path.slice(1)) await state.page.mouse.move(p.x, p.y, { steps: 8 });
+    await state.page.mouse.up();
+  },
+  wait: async () => state.page.waitForTimeout(SEQUENCE_WAIT_MS),
+  navigate: async (a) => { await state.page.goto(a.url, { waitUntil: 'domcontentloaded', timeout: 30000 }); await settle(); },
+  done: async () => {},
+  handoff: async () => {},
+  confirm: async () => {},
+  screenshot: async () => {},
+};
+
+async function executeSequence(actions) {
+  let executed = 0;
+  for (const a of actions) {
+    try {
+      await SEQUENCE_EXECUTORS[a.type](a);
+      executed += 1;
+    } catch (e) {
+      return { executed, error_at: executed, error: String(e && e.message ? e.message : e).slice(0, 300) };
+    }
+    if (TERMINAL_TYPES.has(a.type)) break;
+  }
+  return { executed, error_at: null, error: null };
+}
+
+async function handleObserve() {
+  if (!state.page) throw new Error('no active session — call /session first');
+  await scrubDevOverlays();
+  await settle();
+  const buf = await state.page.screenshot();
+  state.task.pendingShot = buf;
+  return {
+    ok: true, b64: buf.toString('base64'), mime: 'image/png', url: state.page.url(),
+    title: await state.page.title(), step_next: state.task.steps.length + 1,
+  };
 }
 
 async function handleAct(body) {
@@ -658,6 +772,20 @@ async function handleAct(body) {
     // actions + an `event` payload; convert excludes it as an SFT target and threads it into history.
     await recordStep('', [], null, body.event || {});
     return { ok: true, step: state.task.steps.length, url: state.page.url(), snapshot: '(verdict recorded)' };
+  } else if (kind === 'sequence') {
+    const list = Array.isArray(body.actions) ? body.actions : [];
+    if (!list.length) throw new Error("kind 'sequence' requires a non-empty 'actions' list");
+    actions = list.map(normalizeContractAction);
+    loopGuard(`sequence:${JSON.stringify(actions)}`);
+    await recordStep(thought, actions, null);
+    const outcome = await executeSequence(actions);
+    if (actions.some((a) => a.type === 'done')) state.task.meta.done_recorded = true;
+    await settle();
+    return {
+      ok: true, step: state.task.steps.length, url: state.page.url(),
+      executed: outcome.executed, error_at: outcome.error_at, error: outcome.error,
+      terminal: actions.some((a) => TERMINAL_TYPES.has(a.type)),
+    };
   } else {
     throw new Error(`unknown action kind '${kind}'`);
   }
@@ -716,6 +844,7 @@ async function handleSession(body) {
   // Session-scoped burner credentials for masked typing (resolveSecrets); held in memory only,
   // never written to a trajectory. Reset every session.
   state.secrets = body.secrets || {};
+  state.typeMode = body.type_mode === 'append' ? 'append' : 'replace';
   // Follow popups/new tabs, and auto-accept JS dialogs on every page (they block otherwise).
   state.context.on('page', (p) => {
     state.page = p;
@@ -742,6 +871,7 @@ async function handleSession(body) {
       task_meta: body.task_meta || {},
     },
     recentActions: [],
+    pendingShot: null,
   };
 
   // Auth-flow capture: pre-authenticate the scenario webmail so the agent finds a ready inbox when
@@ -807,6 +937,7 @@ function readBody(req) {
 const routes = {
   'POST /session': handleSession,
   'POST /act': handleAct,
+  'POST /observe': handleObserve,
   'POST /finish': handleFinish,
   'POST /snapshot': async () => {
     if (!state.page) throw new Error('no active session');

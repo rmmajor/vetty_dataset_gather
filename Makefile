@@ -107,6 +107,26 @@ test-sandbox: build-sandbox ## Test sandbox container lifecycle
 test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
 	python -m repo_pipeline.driver_smoke
 
+test-rl-unit: ## Unit tests for the RL rollout harness (no Docker, no LLM)
+	python -m rl.tests
+
+test-rl: ## Docker-only end-to-end smoke of the RL harness (static page + scripted policy, no LLM)
+	python -m rl.smoke
+
+rl-tasks: ## Build + check the RL task suite (disjoint from anything trained on; RL_TRAJ_DIR overrides trajectories/)
+	python -m rl.tasks build $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR)) && python -m rl.tasks check $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR))
+
+rl-serve: ## Start the RL env service for the GPU trainer (127.0.0.1:8900; RL_SPLIT, RL_WORKERS, RL_ARGS)
+	python -m rl.service --split $(or $(RL_SPLIT),train) --workers $(or $(RL_WORKERS),3) $(RL_ARGS)
+
+rl-rollout: ## Local rollouts against an OpenAI-compatible endpoint (RL_ENDPOINT, RL_MODEL, RL_K, RL_ARGS)
+	python -m rl.rollout --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) --k $(or $(RL_K),4) $(RL_ARGS)
+
+rl-eval: ## E3 student eval on held-out tasks (RL_ENDPOINT, RL_MODEL, RL_BASELINE=report.json, RL_ARGS)
+	python -m rl.eval --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) $(if $(RL_BASELINE),--baseline $(RL_BASELINE)) $(RL_ARGS)
+
+eval: rl-eval ## Alias for rl-eval
+
 audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on defects)
 	python -m repo_pipeline.corpus_audit trajectories/
 
