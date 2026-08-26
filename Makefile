@@ -97,6 +97,9 @@ test-sandbox: build-sandbox ## Test sandbox container lifecycle
 test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
 	python -m repo_pipeline.driver_smoke
 
+test-verify-gate: ## Scripted (no-LLM/Docker/network) check that the capture success gate never rejects a verified trajectory
+	python -m repo_pipeline.verify_gate_smoke
+
 audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on defects)
 	python -m repo_pipeline.corpus_audit trajectories/
 
