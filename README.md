@@ -432,6 +432,65 @@ inflates the after side and not the baseline.
 The honest claim is therefore "this corpus taught the model to emit valid actions and to browse
 better, at the cost of knowing when to stop" — not a single headline number.
 
+### Grounding: ScreenSpot (SFT v1)
+
+Pixel-level grounding — predict a click point from a screenshot + instruction, score whether it
+lands inside the target bbox. Complements the agentic eval above: it isolates *pointing* from
+*task completion*. 300 samples of `rootsautomation/ScreenSpot` `test`, both models served from one
+vLLM container so hardware and sampling are identical.
+
+| metric | before (base) | after (SFT v1) | delta |
+| --- | ---: | ---: | ---: |
+| **overall accuracy** | **89.0%** | **85.0%** | **-4.0 pp** |
+| parse rate | 94.7% | 97.0% | +2.3 pp |
+| type: icon | 80.3% (98/122) | 75.4% (92/122) | -4.9 pp |
+| type: text | 94.9% (169/178) | 91.6% (163/178) | -3.3 pp |
+| source: macOS | 87.0% (120/138) | 86.2% (119/138) | -0.8 pp |
+| source: Windows | 90.7% (147/162) | 84.0% (136/162) | -6.7 pp |
+
+Per-model coordinate spaces, as `eval_screenspot.py` requires: base in `normalized_1000`, LoRA in
+`viewport_abs`. Scoring one in the other's convention is meaningless: in a separate 100-sample check the
+same base-model predictions scored 85% under `normalized_1000` and 25% under `viewport_abs`.
+
+**The regression is real, not a resizing artifact.** `viewport_abs` resizes screenshots to
+1280x720, which distorts non-16:9 images, so the after-run was split by whether the resize actually
+changes the aspect ratio: distorted samples scored **88.6%** (n=167), near-16:9 samples **86.3%**
+(n=124). Distorted scored higher, so distortion does not explain the drop.
+
+Paired per-sample: 244 both hit, **23 lost**, 11 gained, 22 neither — net -12 of 300, which is the
+-4.0 pp exactly. A modest shift, not a collapse.
+
+### What SFT actually traded
+
+Both evaluations agree on the shape:
+
+| axis | direction | evidence |
+| --- | --- | --- |
+| output format compliance | **up** | ScreenSpot parse 94.7% -> 97.0%; OM2W canonical form 26.8% -> 100% |
+| agentic task success | **up** | OM2W 8.8% -> 23.5% (audited) |
+| raw pointing accuracy | **down** | ScreenSpot 89.0% -> 85.0% |
+| verbosity | down | mean response 532 -> 196 chars |
+
+The corpus is 5,477 web-browsing steps at a fixed 1280x720 viewport; ScreenSpot is desktop and
+mobile UI pointing at native resolutions. Gaining format discipline and task completion while losing
+~4 points of general-purpose grounding is the expected narrow-SFT trade. State both halves.
+
+Reproduce with the `openai` backend (added so the harness can evaluate any OpenAI-compatible
+endpoint instead of shelling out to `swift infer`):
+
+```bash
+modal run modal_serve.py::warm                  # populate the weight cache on CPU first
+modal deploy modal_serve.py                     # serves base + LoRA from one container
+SCREENSPOT_ENDPOINT=<url>/v1 SCREENSPOT_API_KEY=<key> \
+  python eval_screenspot.py run --models-config eval_models_served.yaml \
+  --dataset rootsautomation/ScreenSpot --split test \
+  --bbox-format xyxy --bbox-normalized --limit 300
+```
+
+`eval_models_served.yaml` carries the vLLM *served* names (`cua-student`, `cua-student-lora`) and
+`backend: openai` per spec; `eval_models.yaml` is the local `swift infer` lane and takes a repo id
+plus an adapters directory instead.
+
 ## Cost Estimates
 
 **GPT-5.4 CUA distillation:**
