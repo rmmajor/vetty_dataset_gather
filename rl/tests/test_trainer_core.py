@@ -1,6 +1,8 @@
 import base64
+import io
 import json
 import tempfile
+import urllib.error
 from pathlib import Path
 
 from rl.actions import encode_step
@@ -8,10 +10,53 @@ from rl.trainer.core import (ENV_CLIENTS, EpisodeRecorder, HttpEnvClient, MockEn
                              env_client_for, episode_records, observation_to_user_message)
 
 
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode()
+
+
+def _http_error(code, body):
+    return urllib.error.HTTPError("http://x/reset", code, "err", {}, io.BytesIO(json.dumps(body).encode()))
+
+
 def test_registry_and_scheme_dispatch():
     assert set(ENV_CLIENTS) == {"http", "mock"}
     assert isinstance(env_client_for("mock://"), MockEnvClient)
     assert isinstance(env_client_for("http://127.0.0.1:8900"), HttpEnvClient)
+
+
+def test_http_client_reset_waits_through_5xx_and_fails_fast_on_4xx():
+    outcomes = [_http_error(524, {}), _http_error(503, {"retry_after": 0}), FakeResponse({"episode_id": "e", "observation": {}})]
+    calls = []
+
+    def opener(request, timeout):
+        calls.append(json.loads(request.data))
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    client = HttpEnvClient("http://x", backoff_s=0, reset_wait_s=5, opener=opener)
+    assert client.reset("t", 0, "r", 0, "")["episode_id"] == "e"
+    assert len(calls) == 3 and calls[0]["request_id"] == calls[2]["request_id"]
+
+    def not_found(request, timeout):
+        raise _http_error(404, {"error": "unknown episode"})
+
+    try:
+        HttpEnvClient("http://x", backoff_s=0, opener=not_found).step("e", "x", seq=1)
+        raise AssertionError("4xx must raise")
+    except urllib.error.HTTPError as e:
+        assert e.code == 404
 
 
 def test_mock_env_round_trip_rewards_parseable_actions():

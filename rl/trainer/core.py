@@ -3,9 +3,11 @@ import base64
 import io
 import json
 import logging
+import os
 import time
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 
 from PIL import Image
@@ -14,39 +16,56 @@ from rl.actions import decode_step
 from rl.observation import build_observation
 
 logger = logging.getLogger(__name__)
+RL_RESET_WAIT_S = float(os.environ.get("RL_RESET_WAIT_S", "1800"))
+
+
+def _retry_after(error):
+    try:
+        return float(json.loads(error.read()).get("retry_after") or 0) or None
+    except Exception:
+        return None
 
 
 class HttpEnvClient:
-    """Talks to rl/service.py (through the reverse SSH tunnel on the box); retries so a tunnel blip is not an episode failure."""
+    """Talks to rl/service.py through the ingress; every 5xx (the service's 503 or the tunnel's own 502/524) is retried, 4xx is fatal."""
 
-    def __init__(self, base_url, token="", timeout_s=600, retries=6, backoff_s=5, **_):
-        self.base_url, self.token, self.timeout_s, self.retries, self.backoff_s = base_url.rstrip("/"), token, timeout_s, retries, backoff_s
+    def __init__(self, base_url, token="", timeout_s=600, retries=6, backoff_s=5, reset_wait_s=RL_RESET_WAIT_S,
+                 opener=urllib.request.urlopen, **_):
+        self.base_url, self.token, self.timeout_s = base_url.rstrip("/"), token, timeout_s
+        self.retries, self.backoff_s, self.reset_wait_s, self.opener = retries, backoff_s, reset_wait_s, opener
 
-    def _request(self, method, path, body=None):
+    def _request(self, method, path, body=None, wait_s=None):
         headers = {"Content-Type": "application/json"}
         if self.token:
             headers["X-RL-Token"] = self.token
         data = json.dumps(body).encode() if body is not None else None
-        last = None
-        for attempt in range(self.retries):
+        deadline = time.monotonic() + wait_s if wait_s else None
+        last, attempt = None, 0
+        while True:
             try:
                 request = urllib.request.Request(f"{self.base_url}{path}", data=data, headers=headers, method=method)
-                with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
+                with self.opener(request, timeout=self.timeout_s) as response:
                     return json.loads(response.read())
             except urllib.error.HTTPError as e:
-                if e.code != 503:
+                if e.code < 500:
                     raise
-                last = e
+                last, delay = e, _retry_after(e)
             except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
-                last = e
-            time.sleep(self.backoff_s * (attempt + 1))
-        raise ConnectionError(f"env service unreachable after {self.retries} attempts: {last}")
+                last, delay = e, None
+            attempt += 1
+            if (deadline is None and attempt >= self.retries) or (deadline is not None and time.monotonic() >= deadline):
+                break
+            time.sleep(delay or self.backoff_s * min(attempt, 6))
+        raise ConnectionError(f"env service unreachable after {attempt} attempts: {last}")
 
     def reset(self, task_id, sample_idx, run_id, iteration, policy_tag):
-        return self._request("POST", "/reset", {"task_id": task_id, "sample_k": sample_idx, "run_id": run_id, "iter": iteration, "policy_tag": policy_tag})
+        # Queueing for a slot is the normal case at generation start, so a reset waits far longer than a step; request_id makes a cut-off retry land on the same episode.
+        body = {"task_id": task_id, "sample_k": sample_idx, "run_id": run_id, "iter": iteration, "policy_tag": policy_tag,
+                "request_id": uuid.uuid4().hex}
+        return self._request("POST", "/reset", body, wait_s=self.reset_wait_s)
 
-    def step(self, episode_id, response_text):
-        return self._request("POST", "/step", {"episode_id": episode_id, "response_text": response_text})
+    def step(self, episode_id, response_text, seq=None):
+        return self._request("POST", "/step", {"episode_id": episode_id, "response_text": response_text, "seq": seq})
 
     def close(self, episode_id, reason="external"):
         return self._request("POST", "/close", {"episode_id": episode_id, "reason": reason})
@@ -73,7 +92,7 @@ class MockEnvClient:
         self.episodes[episode_id] = {"task_id": task_id, "history": [], "n": 0}
         return {"episode_id": episode_id, "observation": build_observation(f"mock task {task_id}", [], self.png, 0)}
 
-    def step(self, episode_id, response_text):
+    def step(self, episode_id, response_text, seq=None):
         state = self.episodes[episode_id]
         decoded = decode_step(response_text)
         state["n"] += 1

@@ -62,17 +62,22 @@ def test_http_round_trip_and_slot_exhaustion():
         health = _get(f"{base}/health")
         assert health["ok"] and health["free_slots"] == 1
         assert _get(f"{base}/tasks?split=train")["tasks"] == [tasks["t1"]]
-        first = _post(f"{base}/reset", {"task_id": "t1", "run_id": "r", "iter": 0, "sample_k": 0})
+        first = _post(f"{base}/reset", {"task_id": "t1", "run_id": "r", "iter": 0, "sample_k": 0, "request_id": "req-1"})
         assert first["observation"]["text"] == "obs0"
+        assert _post(f"{base}/reset", {"task_id": "t1", "request_id": "req-1"}) == first
         try:
             _post(f"{base}/reset", {"task_id": "t1"})
             raise AssertionError("second reset must 503")
         except urllib.error.HTTPError as e:
             assert e.code == 503 and json.loads(e.read())["retry_after"] > 0
-        stepped = _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: wait()"})
+        stepped = _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: wait()", "seq": 1})
         assert stepped["done"] is False and stepped["observation"]["text"] == "obs1"
-        final = _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: done()"})
+        assert _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: wait()", "seq": 1}) == stepped
+        final = _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: done()", "seq": 2})
         assert final["done"] is True and final["reward"] == 1.0 and final["observation"] is None
+        replayed = _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: done()", "seq": 2})
+        assert replayed["done"] is True and replayed["reward"] == 1.0
+        assert _post(f"{base}/close", {"episode_id": first["episode_id"]})["reward"] == 1.0
         assert _get(f"{base}/episode/{first['episode_id']}")["reward"] == 1.0
         assert service.pool.free.qsize() == 1
         try:

@@ -21,8 +21,13 @@ logger = logging.getLogger(__name__)
 RL_ENV_HOST = os.environ.get("RL_ENV_HOST", "127.0.0.1")
 RL_ENV_PORT = int(os.environ.get("RL_ENV_PORT", "8900"))
 RL_ENV_TOKEN = os.environ.get("RL_ENV_TOKEN", "")
-RL_RESET_TIMEOUT_S = float(os.environ.get("RL_RESET_TIMEOUT_S", "300"))
+# Below the ingress's ~100 s origin timeout (Cloudflare): a longer server-side wait is cut off by the tunnel before the 503 reaches the client.
+RL_RESET_TIMEOUT_S = float(os.environ.get("RL_RESET_TIMEOUT_S", "45"))
 RL_EPISODE_IDLE_S = float(os.environ.get("RL_EPISODE_IDLE_S", "600"))
+
+
+def _terminal_payload(record):
+    return {"observation": None, "reward": record.get("reward"), "done": True, "info": record.get("info", {})}
 
 
 class EnvService:
@@ -31,12 +36,17 @@ class EnvService:
         self.episode_cls, self.reset_timeout_s = episode_cls, reset_timeout_s
         self.episodes = {}
         self.finished = {}
+        self.reset_ids = {}
         self.lock = threading.Lock()
 
     def health(self):
         return {"ok": True, "free_slots": self.pool.free.qsize(), "live_episodes": len(self.episodes), "tasks": len(self.tasks)}
 
     def reset(self, body):
+        request_id = body.get("request_id")
+        replay = self._replay_reset(request_id)
+        if replay is not None:
+            return replay
         task = self.tasks[body["task_id"]]
         worker, slot = self.pool.acquire(timeout=self.reset_timeout_s)
         run_ctx = self.run_ctx_factory(body.get("run_id", "service"), int(body.get("iter", 0)), body.get("policy_tag", ""))
@@ -48,8 +58,17 @@ class EnvService:
             raise
         episode_id = uuid.uuid4().hex
         with self.lock:
-            self.episodes[episode_id] = {"episode": episode, "lock": threading.Lock(), "worker": worker, "slot": slot, "last": time.time()}
+            self.episodes[episode_id] = {"episode": episode, "lock": threading.Lock(), "worker": worker, "slot": slot, "last": time.time(),
+                                         "observation0": observation, "responses": {}}
+            if request_id:
+                self.reset_ids[request_id] = episode_id
         return {"episode_id": episode_id, "observation": observation}
+
+    def _replay_reset(self, request_id):
+        with self.lock:
+            episode_id = self.reset_ids.get(request_id) if request_id else None
+            entry = self.episodes.get(episode_id) if episode_id else None
+        return {"episode_id": episode_id, "observation": entry["observation0"]} if entry is not None else None
 
     def _entry(self, episode_id):
         with self.lock:
@@ -60,22 +79,36 @@ class EnvService:
 
     def _finish(self, episode_id, entry):
         with self.lock:
-            self.episodes.pop(episode_id, None)
+            live = self.episodes.pop(episode_id, None)
             self.finished[episode_id] = entry["episode"].record
-        self.pool.release(entry["worker"], entry["slot"])
+        if live is not None:
+            self.pool.release(entry["worker"], entry["slot"])
 
     def step(self, body):
-        episode_id = body["episode_id"]
+        episode_id, seq = body["episode_id"], body.get("seq")
+        finished = self.finished.get(episode_id)
+        if finished is not None:
+            return _terminal_payload(finished)
         entry = self._entry(episode_id)
         with entry["lock"]:
+            if seq is not None and seq in entry["responses"]:
+                return entry["responses"][seq]
+            if getattr(entry["episode"], "closed", False):
+                return _terminal_payload(entry["episode"].record or {})
             entry["last"] = time.time()
             observation, reward, done, info = entry["episode"].step(body["response_text"])
+            response = {"observation": observation, "reward": reward, "done": done, "info": info}
+            if seq is not None:
+                entry["responses"] = {seq: response}
         if done:
             self._finish(episode_id, entry)
-        return {"observation": observation, "reward": reward, "done": done, "info": info}
+        return response
 
     def close(self, body):
         episode_id = body["episode_id"]
+        finished = self.finished.get(episode_id)
+        if finished is not None:
+            return {"reward": finished.get("reward"), "info": finished.get("info", {})}
         entry = self._entry(episode_id)
         with entry["lock"]:
             record = entry["episode"].close(body.get("reason", "external"))

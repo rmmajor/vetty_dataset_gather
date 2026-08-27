@@ -41,7 +41,7 @@ class BrowserEnv(Env):
     async def step(self, action):
         response_text = action[-1]["content"] if action and action[-1]["role"] == "assistant" else ""
         try:
-            result = self.client.step(self.episode_id, response_text)
+            result = self.client.step(self.episode_id, response_text, seq=self.turn)
         except Exception as e:
             return "", 0.0, True, {"env_error": str(e)[:300]}
         self.turn += 1
