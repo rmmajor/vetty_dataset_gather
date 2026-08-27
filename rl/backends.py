@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 RL_CONTAINER_TIMEOUT = int(os.environ.get("RL_CONTAINER_TIMEOUT", str(4 * 3600)))
 RL_RECYCLE_RESERVE_S = int(os.environ.get("RL_RECYCLE_RESERVE_S", "1200"))
 RL_DRIVERS_PER_SANDBOX = int(os.environ.get("RL_DRIVERS_PER_SANDBOX", "1"))
+# The capture-time guard (3) ended two thirds of RL episodes; 5 lets a recoverable retry survive while a true loop still terminates.
+RL_LOOP_GUARD_REPEATS = int(os.environ.get("RL_LOOP_GUARD_REPEATS", "5"))
 
 
 def resolve_preconditions(task):
@@ -85,10 +87,11 @@ BACKENDS = {PublicSiteBackend.key: PublicSiteBackend, StaticPageBackend.key: Sta
 class RolloutWorker:
     """One sandbox hosting N driver slots; recycled (when idle) before the container self-expires."""
 
-    def __init__(self, worker_id, backend, drivers_per_sandbox=RL_DRIVERS_PER_SANDBOX):
+    def __init__(self, worker_id, backend, drivers_per_sandbox=RL_DRIVERS_PER_SANDBOX, driver_env=None):
         self.worker_id = worker_id
         self.backend = backend
         self.drivers_per_sandbox = drivers_per_sandbox
+        self.driver_env = driver_env or {}
         self.sandbox = None
         self.clients = []
         self.live = 0
@@ -101,7 +104,7 @@ class RolloutWorker:
         driver_session.install_driver(self.sandbox)
         self.clients = []
         for i in range(self.drivers_per_sandbox):
-            driver_session.start_driver(self.sandbox, port=DRIVER_PORT + i)
+            driver_session.start_driver(self.sandbox, env=self.driver_env, port=DRIVER_PORT + i)
             self.clients.append(DriverClient(self.sandbox, port=DRIVER_PORT + i))
         logger.info(f"worker {self.worker_id}: sandbox up with {len(self.clients)} driver slot(s)")
 
@@ -130,8 +133,10 @@ class RolloutWorker:
 class WorkerPool:
     """Free-slot queue over N workers; a slot (worker, index) hosts exactly one live episode."""
 
-    def __init__(self, backend, requested_workers, drivers_per_sandbox=RL_DRIVERS_PER_SANDBOX):
-        self.workers = [RolloutWorker(i, backend, drivers_per_sandbox) for i in range(safe_parallel_sandboxes(requested_workers))]
+    def __init__(self, backend, requested_workers, drivers_per_sandbox=RL_DRIVERS_PER_SANDBOX, loop_guard_repeats=RL_LOOP_GUARD_REPEATS):
+        self.loop_guard_repeats = loop_guard_repeats
+        driver_env = {"DRIVER_LOOP_GUARD_REPEATS": str(loop_guard_repeats)}
+        self.workers = [RolloutWorker(i, backend, drivers_per_sandbox, driver_env) for i in range(safe_parallel_sandboxes(requested_workers))]
         self.free = queue.Queue()
 
     @property

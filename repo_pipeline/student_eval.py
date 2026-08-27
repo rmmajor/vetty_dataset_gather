@@ -95,7 +95,7 @@ class OpenAIChatStudent(StudentClient):
     """Any OpenAI-compatible /chat/completions endpoint (vLLM, `swift deploy`, SGLang, a hosted API)."""
 
     def __init__(self, endpoint: str, model: str, api_key: str = "", max_tokens: int = 512,
-                 temperature: float = 0.0, timeout_s: int = 180, retries: int = 2):
+                 temperature: float = 0.0, timeout_s: int = 180, retries: int = 2, retry_backoff_s: int = 90):
         self.url = self._chat_url(endpoint)
         self.model = model
         self.api_key = api_key
@@ -103,6 +103,7 @@ class OpenAIChatStudent(StudentClient):
         self.temperature = temperature
         self.timeout_s = timeout_s
         self.retries = retries
+        self.retry_backoff_s = retry_backoff_s
 
     @staticmethod
     def _chat_url(endpoint: str) -> str:
@@ -126,10 +127,16 @@ class OpenAIChatStudent(StudentClient):
 
         last_error = None
         for attempt in range(self.retries + 1):
+            if attempt:
+                time.sleep(self.retry_backoff_s * attempt)
             try:
                 response = requests.post(self.url, json=payload, headers=headers, timeout=self.timeout_s)
             except requests.RequestException as e:
                 last_error = f"transport error: {e}"
+                continue
+            if response.status_code >= 500:
+                # A served model that was preempted or is restarting answers 5xx for minutes; that is a retry, not a verdict on the episode.
+                last_error = f"HTTP {response.status_code}: {response.text[:200]}"
                 continue
             if response.status_code != 200:
                 raise StudentError(f"{self.url} returned HTTP {response.status_code}: {response.text[:300]}")

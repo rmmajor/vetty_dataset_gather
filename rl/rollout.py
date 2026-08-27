@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from repo_pipeline.sandbox import install_sigterm_handler
-from rl.backends import BACKENDS, WorkerPool
+from rl.backends import BACKENDS, RL_LOOP_GUARD_REPEATS, WorkerPool
 from rl.episode import EpisodeConfig
 from rl.judge import AsyncBridge
 from rl.policies import make_policy
@@ -30,6 +30,7 @@ def add_common_args(parser):
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--drivers-per-sandbox", type=int, default=1)
+    parser.add_argument("--loop-guard-repeats", type=int, default=RL_LOOP_GUARD_REPEATS)
     parser.add_argument("--backend", default="public_site", choices=sorted(BACKENDS))
     parser.add_argument("--max-steps", type=int, default=30)
     parser.add_argument("--verifier-mode", default="fallback", choices=["always", "fallback", "never"])
@@ -47,7 +48,7 @@ def policy_spec(args):
 def build_pool(args):
     backend_cls = BACKENDS[args.backend]
     backend = backend_cls("<html><body>static</body></html>") if args.backend == "static_page" else backend_cls()
-    return WorkerPool(backend, args.workers, args.drivers_per_sandbox)
+    return WorkerPool(backend, args.workers, args.drivers_per_sandbox, loop_guard_repeats=args.loop_guard_repeats)
 
 
 def selected_tasks(args):

@@ -1,4 +1,10 @@
-from rl.backends import BACKENDS, StaticPageBackend, resolve_preconditions
+from rl.backends import BACKENDS, RL_LOOP_GUARD_REPEATS, StaticPageBackend, WorkerPool, resolve_preconditions
+
+
+def test_pool_passes_the_loop_guard_to_every_driver():
+    pool = WorkerPool(StaticPageBackend("<html></html>"), requested_workers=1, drivers_per_sandbox=2, loop_guard_repeats=7)
+    assert pool.loop_guard_repeats == 7 and all(w.driver_env == {"DRIVER_LOOP_GUARD_REPEATS": "7"} for w in pool.workers)
+    assert WorkerPool(StaticPageBackend("<html></html>"), requested_workers=1).loop_guard_repeats == RL_LOOP_GUARD_REPEATS
 
 
 def test_no_session_needed_is_empty_kwargs():

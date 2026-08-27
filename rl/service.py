@@ -10,8 +10,10 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from repo_pipeline.sandbox import install_sigterm_handler
+from rl.backends import RL_LOOP_GUARD_REPEATS
 from rl.episode import Episode, EpisodeConfig
 from rl.judge import AsyncBridge
 from rl.rollout import build_pool
@@ -219,6 +221,7 @@ def main():
     parser.add_argument("--split", default="train")
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--drivers-per-sandbox", type=int, default=1)
+    parser.add_argument("--loop-guard-repeats", type=int, default=RL_LOOP_GUARD_REPEATS)
     parser.add_argument("--backend", default="public_site")
     parser.add_argument("--max-steps", type=int, default=30)
     parser.add_argument("--verifier-mode", default="fallback", choices=["always", "fallback", "never"])
@@ -236,14 +239,16 @@ def main():
     cfg = EpisodeConfig(max_steps=args.max_steps, verifier_mode=args.verifier_mode)
 
     def run_ctx_factory(run_id, iteration, tag):
-        return make_run_context(run_id or args.run_id, args.out, iteration, policy_tag=tag, bridge=bridge)
+        run_id = run_id or args.run_id
+        return make_run_context(run_id, Path(args.out) / run_id, iteration, policy_tag=tag, bridge=bridge)
 
     service = EnvService(pool, tasks, run_ctx_factory, cfg)
     server = serve(service, args.host, args.port, RL_ENV_TOKEN)
     try:
         pool.start()
         threading.Thread(target=_reap_forever, args=(service,), daemon=True).start()
-        logger.info(f"env service on {args.host}:{args.port} with {pool.slot_count} slot(s), {len(tasks)} tasks (suite {suite['suite_sha256'][:12]})")
+        logger.info(f"env service on {args.host}:{args.port} with {pool.slot_count} slot(s), {len(tasks)} tasks (suite {suite['suite_sha256'][:12]}), "
+                    f"driver loop guard at {pool.loop_guard_repeats} repeats")
         server.serve_forever()
     finally:
         server.shutdown()

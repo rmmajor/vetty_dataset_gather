@@ -69,8 +69,8 @@ def install_driver(sandbox):
         raise DriverError(f"playwright-core install failed: {(stdout + stderr)[-300:]}")
 
 
-def start_driver(sandbox, port: int = DRIVER_PORT, env: dict | None = None):
-    """Daemonize the driver on `port` (one process per port; RL runs several per sandbox); `env` prefixes the node invocation."""
+def start_driver(sandbox, env: dict | None = None, port: int = DRIVER_PORT):
+    """Daemonize the driver on `port` (one process per port; RL runs several per sandbox); `env` prefixes the node invocation and stays the positional second argument for the eval harness."""
     prefix = "".join(f"{k}={v} " for k, v in {**(env or {}), "DRIVER_PORT": port}.items())
     log_path = DRIVER_LOG if port == DRIVER_PORT else f"{DRIVER_LOG}.{port}"
     sandbox.start_background(f"{prefix}node {DRIVER_DIR}/browser_driver.js", log_path)

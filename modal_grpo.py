@@ -29,7 +29,8 @@ image = (
     .entrypoint([])
     .apt_install("git")
     .uv_pip_install(*_RL_REQUIREMENTS, "accelerate>=1.0", "huggingface_hub[hf_transfer]")
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    # Baked at deploy time so the container's summary names the GPU actually rented, not the module default.
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "CUA_GRPO_GPU": GPU})
     .add_local_file("rl_train.py", f"{CODE_ROOT}/rl_train.py")
     .add_local_file("train_qwen.py", f"{CODE_ROOT}/train_qwen.py")
     .add_local_file("rl_config.yaml", f"{CODE_ROOT}/rl_config.yaml")
