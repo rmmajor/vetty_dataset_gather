@@ -2,13 +2,52 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 import yaml
 
+from repo_pipeline import operator_pii
 from repo_pipeline.corpus_audit import LOOP_RUN_LIMIT, _action_signature
+
+
+# Unambiguous secret literals that must NEVER reach the training corpus. Masked credentials are
+# recorded as `<secret:NAME>` placeholders (driver-side substitution), so any of these appearing as
+# a literal is a real leak. Scoped to high-entropy keys/tokens that CANNOT be legitimate page
+# content — the gate must never false-positive on normal UI text. Credit-card numbers are
+# deliberately NOT matched: we never type real cards (payments are denied/handed-off), so the only
+# card-shaped strings in the corpus are page content (year dropdowns, UUIDs) and public test cards
+# (4111…/4242…) used in test-env checkout tasks — all false positives. Arbitrary leaked
+# passwords/usernames can't be pattern-matched without false positives; the structural guarantee
+# (driver records placeholders, asserted by driver_smoke) is their primary defense.
+_SECRET_PATTERNS = [
+    ("private_key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("openai_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b")),
+    ("github_token", re.compile(r"\bghp_[A-Za-z0-9]{30,}\b")),
+    ("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
+]
+
+
+def _scan_text_for_secrets(text: str) -> list[str]:
+    return [name for name, pat in _SECRET_PATTERNS if pat.search(text)] + operator_pii.scan_text(text)
+
+
+def _scan_examples_for_secrets(examples) -> list[str]:
+    """Distinct findings across every message of one trajectory's examples — the text that would ship."""
+    findings = []
+    for example in examples:
+        for message in example["messages"]:
+            content = message["content"]
+            text = content if isinstance(content, str) else " ".join(
+                c.get("text", "") for c in content if isinstance(c, dict)
+            )
+            for finding in _scan_text_for_secrets(text):
+                if finding not in findings:
+                    findings.append(finding)
+    return findings
 
 
 SYSTEM_PROMPT = """You are a GUI agent that operates a web browser at a 1280x720 resolution. \
@@ -24,9 +63,15 @@ action: keypress(["Enter"])
 action: scroll(<ref>(x, y)</ref>, scrollX=0, scrollY=500)
 action: drag(<ref>(x1, y1)</ref> -> <ref>(x2, y2)</ref>)
 action: wait()
+action: navigate("https://...")
+action: handoff(reason=login)
+action: confirm(propose=click(<ref>(x, y)</ref>), risk=purchase)
 action: done()
 
-Use done() only when the task is fully accomplished and the screen confirms it."""
+Use done() only when the task is fully accomplished and the screen confirms it.
+Use handoff(reason=...) to yield control for a login, payment entry, CAPTCHA, or 2FA — never type \
+those yourself. Use confirm(propose=..., risk=...) to PAUSE before a consequential, hard-to-undo \
+action (purchase, payment, send, publish, delete, consent) and wait for approval instead of doing it."""
 
 
 def format_action_for_training(action):
@@ -67,6 +112,23 @@ def format_action_for_training(action):
     elif action_type == "wait":
         return "action: wait()"
 
+    elif action_type == "navigate":
+        return f'action: navigate("{action.get("url", "")}")'
+
+    elif action_type == "handoff":
+        return f'action: handoff(reason={action.get("reason", "login")})'
+
+    elif action_type == "confirm":
+        risk = action.get("risk_category", "")
+        proposed = action.get("proposed_action") or {}
+        if "x" in proposed and "y" in proposed:
+            inner = f'{proposed.get("type") or "click"}(<ref>({proposed["x"]}, {proposed["y"]})</ref>)'
+        elif proposed.get("type"):
+            inner = f'{proposed["type"]}()'
+        else:
+            inner = "action()"
+        return f'action: confirm(propose={inner}, risk={risk})'
+
     elif action_type == "done":
         return "action: done()"
 
@@ -90,6 +152,12 @@ def format_action_summary(action):
     elif action_type == "drag":
         path = action["path"]
         return f'drag({path[0]["x"]},{path[0]["y"]} -> {path[-1]["x"]},{path[-1]["y"]})'
+    elif action_type == "navigate":
+        return f'navigate({action.get("url", "")})'
+    elif action_type == "handoff":
+        return f'handoff({action.get("reason", "")})'
+    elif action_type == "confirm":
+        return f'confirm(risk={action.get("risk_category", "")})'
     return action_type
 
 
@@ -207,6 +275,12 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_ste
         for a in actions:
             action_history.append(format_action_summary(a))
 
+        # Watchdog verdict observation: thread it into history so the next step's context shows the
+        # approval BETWEEN the confirm and the execute — the student learns to act only once approved.
+        event = step.get("event") or {}
+        if event.get("kind") == "approval":
+            action_history.append(f"[watchdog: {event.get('decision', '?')}]")
+
     return examples, waste_dropped
 
 
@@ -217,12 +291,13 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     output_path.mkdir(parents=True, exist_ok=True)
 
     all_examples = []
+    leak_sources = []
     examples_by_group = {}
     skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0, "meandering": 0, "stuck_loop": 0}
     report = {
         "trajectories": 0, "by_source": {}, "actions": {}, "lengths": [],
         "domains": {}, "done_steps": 0, "thought_sources": {}, "meandering": 0,
-        "waste_steps_dropped": 0,
+        "waste_steps_dropped": 0, "autonomy": {}, "auth_mode": {},
     }
 
     trajectory_dirs = sorted(
@@ -308,6 +383,9 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
             continue
 
         all_examples.extend(examples)
+        leaks = _scan_examples_for_secrets(examples)
+        if leaks:
+            leak_sources.append((traj_dir, leaks))
         # Split unit: the APP/SITE, not the step. Steps of one trajectory (and trajectories of
         # one app) share screenshots and layout — splitting below app level leaks pixels into
         # val and turns val loss into a memorization check.
@@ -323,6 +401,11 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
         report["domains"][domain] = report["domains"].get(domain, 0) + 1
         ts = metadata.get("thought_source", "unknown")
         report["thought_sources"][ts] = report["thought_sources"].get(ts, 0) + 1
+        task_meta = capture_meta.get("task_meta") or {}
+        au = metadata.get("autonomy") or task_meta.get("autonomy") or "autonomous"
+        report["autonomy"][au] = report["autonomy"].get(au, 0) + 1
+        am = metadata.get("auth_mode") or task_meta.get("auth_mode") or "none"
+        report["auth_mode"][am] = report["auth_mode"].get(am, 0) + 1
         for step in trajectory.get("steps", []):
             for a in step.get("actions", []):
                 t = a.get("type", "?")
@@ -337,6 +420,7 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     print(f"\n=== Corpus report ===")
     print(f"Trajectories trained on: {report['trajectories']}  (examples: {len(all_examples)})")
     print(f"By source: {report['by_source']}")
+    print(f"Autonomy: {report['autonomy']}  Auth modes: {report['auth_mode']}")
     print(f"Thought sources: {report['thought_sources']}")
     if lengths:
         mid = lengths[len(lengths) // 2]
@@ -350,6 +434,19 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     print("Domains: " + ", ".join(f"{d}={n}" for d, n in sorted(report["domains"].items(), key=lambda kv: -kv[1])[:10]))
     print(f"Skipped: {skipped}")
     print("======================\n")
+
+    identities = operator_pii.configured_identities()
+    print("Operator-identity patterns: " + (", ".join(operator_pii.mask(v) for v in identities)
+          or "NONE — the PII gate is inert; set OPERATOR_PII or credentials/operator_pii.txt"))
+
+    # Leak gate (FAIL CLOSED): any literal secret or operator identity refuses the whole dataset.
+    if leak_sources:
+        print(f"SECRET/PII LEAK DETECTED in {len(leak_sources)} trajectories — refusing to write dataset.")
+        for traj_dir, findings in leak_sources:
+            print(f"  {traj_dir}: {', '.join(findings)}")
+        print("Quarantine each one (metadata.json excluded_reason) or re-capture: credentials belong in "
+              "<secret:NAME> placeholders, and a real person's identity belongs nowhere in the corpus.")
+        sys.exit(1)
 
     # Group-wise split: whole apps go to val, never individual steps.
     groups = list(examples_by_group.items())
@@ -381,7 +478,8 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
         print(f"Wrote {len(val_examples)} validation examples to {val_path}")
 
 
-def train_model(config_path, dataset_override=None, epochs_override=None, lr_override=None, batch_size_override=None):
+def train_model(config_path, dataset_override=None, epochs_override=None, lr_override=None,
+                batch_size_override=None, passthrough_args=None):
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
@@ -394,12 +492,30 @@ def train_model(config_path, dataset_override=None, epochs_override=None, lr_ove
     if batch_size_override:
         config["per_device_train_batch_size"] = batch_size_override
 
+    # convert writes sft_val.jsonl beside the train file; without this it was generated and discarded,
+    # so no eval_loss was ever computed and overfitting was invisible.
+    if not config.get("val_dataset") and config.get("dataset"):
+        sibling = Path(config["dataset"]).parent / "sft_val.jsonl"
+        if sibling.is_file():
+            config["val_dataset"] = str(sibling)
+            print(f"Validation split found: {sibling}")
+        else:
+            # eval_strategy without a val set makes the trainer raise at startup, so honour the
+            # warning instead of dying: no split means no evaluation.
+            dropped = config.pop("eval_strategy", None)
+            print(f"No validation split at {sibling} — training will report no eval_loss"
+                  + (f" (eval_strategy={dropped} dropped)" if dropped else ""))
+
     cmd = ["swift", "sft"]
 
     flag_map = {
         "model": "--model",
-        "train_type": "--train_type",
+        "train_type": "--tuner_type",
         "dataset": "--dataset",
+        "val_dataset": "--val_dataset",
+        "eval_strategy": "--eval_strategy",
+        "packing": "--packing",
+        "attn_impl": "--attn_impl",
         "torch_dtype": "--torch_dtype",
         "num_train_epochs": "--num_train_epochs",
         "per_device_train_batch_size": "--per_device_train_batch_size",
@@ -420,6 +536,9 @@ def train_model(config_path, dataset_override=None, epochs_override=None, lr_ove
             if isinstance(value, bool):
                 value = str(value).lower()
             cmd.extend([flag, str(value)])
+
+    # Anything argparse did not recognise is a swift flag; forwarding beats growing flag_map per knob.
+    cmd.extend(passthrough_args or [])
 
     env = os.environ.copy()
     max_pixels = config.get("max_pixels")
@@ -458,14 +577,14 @@ def main():
     train_parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
     train_parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
 
-    args = parser.parse_args()
+    args, passthrough = parser.parse_known_args()
 
     if args.command == "convert":
         convert_trajectories(args.input, args.output, args.val_split, include_replay=args.include_replay,
                              exclude_meandering=args.exclude_meandering,
                              exclude_waste_steps=args.exclude_waste_steps)
     elif args.command == "train":
-        train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size)
+        train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size, passthrough)
 
 
 if __name__ == "__main__":

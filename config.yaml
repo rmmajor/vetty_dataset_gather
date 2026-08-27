@@ -1,4 +1,4 @@
-model: Qwen/Qwen3.5-9B-Base
+model: Qwen/Qwen3.5-9B
 train_type: lora
 torch_dtype: bfloat16
 num_train_epochs: 3
@@ -9,6 +9,8 @@ lora_alpha: 128
 target_modules: all-linear
 gradient_accumulation_steps: 8
 max_length: 4096
+packing: true
+eval_strategy: epoch
 warmup_ratio: 0.05
 freeze_vit: true
 max_pixels: 1003520

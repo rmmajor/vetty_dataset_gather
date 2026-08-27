@@ -18,12 +18,17 @@ samples, requiring no model, GPU, or network.
 """
 
 import argparse
+import base64
+import concurrent.futures
+import io
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -38,7 +43,11 @@ GROUNDING_USER_TEMPLATE = "Task: {instruction}\nWhat action should you take?"
 DEFAULT_MAX_PIXELS = 1003520
 DEFAULT_VIEWPORT_W = 1280
 DEFAULT_VIEWPORT_H = 720
-DEFAULT_DATASET = "os-copilot/ScreenSpot-v2"
+# `os-copilot/ScreenSpot-v2` is NOT usable here: that repo is raw JSON + an image zip, with no
+# `test` split and no image column, so load_dataset() cannot read it. This mirror ships real
+# parquet with a 1272-row `test` split and a proper image column. Its annotation convention —
+# bbox as (x1,y1,x2,y2) NORMALIZED to 0-1 — is what the bbox defaults below encode.
+DEFAULT_DATASET = "rootsautomation/ScreenSpot"
 DEFAULT_SPLIT = "test"
 
 DEFAULT_PARSE_PATTERNS = [
@@ -67,14 +76,23 @@ class ModelSpec:
     model: str
     adapters: Optional[str] = None
     backend: Optional[str] = None     # overrides EvalConfig.backend when set
+    # Overrides EvalConfig.coord_space for THIS model. Different checkpoints answer in different
+    # coordinate conventions: a stock Qwen emits `normalized_1000`, while a model fine-tuned on
+    # this project's corpus emits `viewport_abs` (1280x720). A before/after comparison is
+    # therefore only meaningful if each spec is scored in its own space — a single global
+    # --coord-space silently mis-scores one side of the comparison.
+    coord_space: Optional[str] = None
 
 
 @dataclass
 class EvalConfig:
     dataset: str = DEFAULT_DATASET
     split: str = DEFAULT_SPLIT
-    bbox_format: str = "xywh"
-    bbox_normalized: bool = False
+    # Defaults match DEFAULT_DATASET's convention. Get these wrong and the eval does not crash —
+    # it reports a confident, wrong number. Scoring normalized bbox as absolute pixels shrinks
+    # every target to a sub-pixel box at the origin: 0% accuracy regardless of the model.
+    bbox_format: str = "xyxy"
+    bbox_normalized: bool = True
     viewport_w: int = DEFAULT_VIEWPORT_W
     viewport_h: int = DEFAULT_VIEWPORT_H
     coord_space: str = "viewport_abs"
@@ -163,13 +181,18 @@ COORD_SPACES: dict = {
 }
 
 
-def build_coord_space(cfg):
-    if cfg.coord_space not in COORD_SPACES:
+def resolve_coord_space(cfg, spec=None) -> str:
+    """The coord space for one spec: its own if set, else the global default."""
+    return (spec.coord_space if spec is not None and spec.coord_space else cfg.coord_space)
+
+
+def build_coord_space(cfg, spec=None):
+    name = resolve_coord_space(cfg, spec)
+    if name not in COORD_SPACES:
         raise ValueError(
-            f"Unknown coord space {cfg.coord_space!r}. "
-            f"Available: {sorted(COORD_SPACES)}"
+            f"Unknown coord space {name!r}. Available: {sorted(COORD_SPACES)}"
         )
-    return COORD_SPACES[cfg.coord_space](cfg)
+    return COORD_SPACES[name](cfg)
 
 
 # ----------------------------------------------------------------------------
@@ -361,6 +384,55 @@ def read_swift_results(result_path, expected):
     return responses[:expected]
 
 
+class OpenAIPredictor(Predictor):
+    """Any OpenAI-compatible /chat/completions endpoint, same wire format the student eval uses."""
+
+    def __init__(self, model, cfg):
+        self.model = model
+        self.endpoint = (os.environ.get("SCREENSPOT_ENDPOINT") or "").rstrip("/")
+        self.api_key = os.environ.get("SCREENSPOT_API_KEY", "")
+        self.workers = int(os.environ.get("SCREENSPOT_WORKERS", "8"))
+        if not self.endpoint:
+            raise ValueError("set SCREENSPOT_ENDPOINT to the /v1 base url of the served model")
+        self.cfg = cfg
+
+    def _encode(self, image):
+        buf = io.BytesIO()
+        image.convert("RGB").save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+
+    def _one(self, sample, coord_space):
+        image = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
+        messages = build_messages(sample.instruction, "")
+        messages[1]["content"] = [
+            {"type": "image_url",
+             "image_url": {"url": f"data:image/png;base64,{self._encode(image)}"}},
+            {"type": "text", "text": messages[1]["content"][1]["text"]},
+        ]
+        body = json.dumps({"model": self.model, "messages": messages,
+                           "temperature": 0.0, "max_tokens": 512}).encode()
+        req = urllib.request.Request(
+            f"{self.endpoint}/chat/completions", data=body,
+            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=180) as r:
+                    return json.load(r)["choices"][0]["message"]["content"] or ""
+            except Exception:
+                if attempt == 2:
+                    return ""
+                time.sleep(2 * (attempt + 1))
+        return ""
+
+    def predict_batch(self, samples, cfg, coord_space):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
+            return list(pool.map(lambda s: self._one(s, coord_space), samples))
+
+
+def build_openai_predictor(spec, cfg):
+    return OpenAIPredictor(model=spec.model, cfg=cfg)
+
+
 def build_swift_predictor(spec, cfg):
     return SwiftPredictor(model=spec.model, adapters=spec.adapters, cfg=cfg)
 
@@ -371,6 +443,7 @@ def build_mock_predictor(spec, cfg):
 
 PREDICTOR_BACKENDS: dict = {
     "swift": build_swift_predictor,
+    "openai": build_openai_predictor,
     "mock": build_mock_predictor,
 }
 
@@ -446,7 +519,7 @@ def aggregate(records):
 
 
 def run_eval_for_spec(spec, samples, cfg):
-    coord_space = build_coord_space(cfg)
+    coord_space = build_coord_space(cfg, spec)
     predictor = build_predictor(spec, cfg)
     return evaluate(samples, predictor, cfg, coord_space)
 
@@ -464,7 +537,9 @@ def write_results(path, spec, cfg, summary, records):
         "backend": spec.backend or cfg.backend,
         "dataset": cfg.dataset,
         "split": cfg.split,
-        "coord_space": cfg.coord_space,
+        "coord_space": resolve_coord_space(cfg, spec),
+        "bbox_format": cfg.bbox_format,
+        "bbox_normalized": cfg.bbox_normalized,
         "viewport": [cfg.viewport_w, cfg.viewport_h],
         "summary": summary,
         "records": [
@@ -552,11 +627,13 @@ def load_model_specs(args):
                 model=spec["model"],
                 adapters=spec.get("adapters"),
                 backend=spec.get("backend"),
+                coord_space=spec.get("coord_space"),
             )
             for spec in raw_specs
         ]
     if args.model:
-        return [ModelSpec(label=args.label or "model", model=args.model, adapters=args.adapters)]
+        return [ModelSpec(label=args.label or "model", model=args.model, adapters=args.adapters,
+                          coord_space=args.coord_space)]
     raise ValueError("Provide --models-config or --model (or use --smoke-test).")
 
 
@@ -718,11 +795,18 @@ def build_parser():
     run_parser.add_argument("--backend", default="swift", choices=sorted(PREDICTOR_BACKENDS))
     run_parser.add_argument("--dataset", default=DEFAULT_DATASET)
     run_parser.add_argument("--split", default=DEFAULT_SPLIT)
-    run_parser.add_argument("--bbox-format", default="xywh", choices=["xywh", "xyxy"])
-    run_parser.add_argument("--bbox-normalized", action="store_true")
+    run_parser.add_argument("--bbox-format", default="xyxy", choices=["xywh", "xyxy"],
+                            help="Annotation convention of --dataset (default matches DEFAULT_DATASET).")
+    run_parser.add_argument("--bbox-normalized", action=argparse.BooleanOptionalAction, default=True,
+                            help="Dataset bbox is 0-1 rather than pixels. Use --no-bbox-normalized "
+                                 "for a mirror that stores absolute pixels.")
     run_parser.add_argument("--limit", type=int)
     run_parser.add_argument("--viewport", default=f"{DEFAULT_VIEWPORT_W}x{DEFAULT_VIEWPORT_H}")
-    run_parser.add_argument("--coord-space", default="viewport_abs", choices=sorted(COORD_SPACES))
+    run_parser.add_argument("--coord-space", default="viewport_abs", choices=sorted(COORD_SPACES),
+                            help="Global default. A spec in --models-config may override it with "
+                                 "`coord_space:` — a stock Qwen answers in normalized_1000, a model "
+                                 "fine-tuned on this corpus answers in viewport_abs, so a before/after "
+                                 "comparison MUST score each side in its own space.")
     run_parser.add_argument("--parse-pattern", action="append", help="Override default regex(es); repeatable.")
     run_parser.add_argument("--output-dir", default="eval_results")
     run_parser.add_argument("--max-pixels", type=int, default=DEFAULT_MAX_PIXELS)

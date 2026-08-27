@@ -15,6 +15,7 @@ Used by stage 5 (boot-gate probe) and stage 6 (agent capture).
 import logging
 import os
 import re
+import shlex
 
 from repo_pipeline import app_runner
 from repo_pipeline.instrumentation import INSTRUMENTATION_DIR, RESULTS_DIR
@@ -27,7 +28,9 @@ DRIVER_BAKED_DIR = "/opt/driver"
 DRIVER_LOG = "/workspace/driver.log"
 APP_LOG = "/workspace/app.log"
 # Pinned to the sandbox image's Playwright base (browsers in /ms-playwright are this revision).
-PLAYWRIGHT_CORE_VERSION = os.environ.get("DRIVER_PLAYWRIGHT_CORE_VERSION", "1.50.0")
+# 1.55 (>=1.51) so storageState({indexedDB:true}) can carry IndexedDB-based auth for SPA apps
+# (workflowy/appflowy/…) whose session cookies alone do not authenticate a reused context.
+PLAYWRIGHT_CORE_VERSION = os.environ.get("DRIVER_PLAYWRIGHT_CORE_VERSION", "1.55.0")
 DRIVER_READY_TIMEOUT = int(os.environ.get("DRIVER_READY_TIMEOUT", "60"))
 
 _REF_LINE_RE = re.compile(r"^\[\d+\] ", re.MULTILINE)
@@ -66,9 +69,10 @@ def install_driver(sandbox):
         raise DriverError(f"playwright-core install failed: {(stdout + stderr)[-300:]}")
 
 
-def start_driver(sandbox):
-    """Daemonize the driver and wait for its HTTP port."""
-    sandbox.start_background(f"node {DRIVER_DIR}/browser_driver.js", DRIVER_LOG)
+def start_driver(sandbox, env: dict | None = None):
+    """Daemonize the driver and wait for its HTTP port; `env` prefixes the node invocation."""
+    prefix = "".join(f"{k}={v} " for k, v in (env or {}).items())
+    sandbox.start_background(f"{prefix}node {DRIVER_DIR}/browser_driver.js", DRIVER_LOG)
     if not sandbox.wait_for_port(DRIVER_PORT, DRIVER_READY_TIMEOUT):
         log_tail, _, _ = sandbox.exec_command(f"tail -20 {DRIVER_LOG}")
         raise DriverError(f"driver did not open port {DRIVER_PORT}; log tail: {log_tail[-400:]}")
@@ -106,12 +110,16 @@ def app_is_up(sandbox, app_url: str) -> bool:
     return out.strip()[:1] in ("2", "3")
 
 
-def start_app(sandbox, profile) -> str | None:
+def start_app(sandbox, profile, extra_env: dict | None = None) -> str | None:
     """Detect, build, and daemonize the repo's bundled app; return its base URL or None.
 
     Agent capture (unlike test replay) has no Playwright run to honour a `webServer` config,
     so detection runs with for_agent=True: package.json start scripts are used even when a
     webServer block exists — those blocks almost always wrap the same script.
+
+    `extra_env` (auth-flow capture) is exported into the app's shell before it starts — used to
+    point its SMTP at the shared GreenMail (mail_service.mail_env_for_app) so its verification /
+    reset mail lands in a mailbox the agent can read through the webmail.
     """
     spec = app_runner.detect_app_start(sandbox, profile, for_agent=True)
     if spec is None:
@@ -123,7 +131,11 @@ def start_app(sandbox, profile) -> str | None:
     # in APP_LOG, which is what the boot gate reports.
     sandbox.exec_command(spec.install_cmd, timeout=600)
     app_runner.build_app(sandbox, spec)
-    sandbox.start_background(spec.start_cmd, APP_LOG)
+    start_cmd = spec.start_cmd
+    if extra_env:
+        prefix = "; ".join(f"export {k}={shlex.quote(str(v))}" for k, v in extra_env.items())
+        start_cmd = f"{prefix}; {start_cmd}"
+    sandbox.start_background(start_cmd, APP_LOG)
     port = _wait_for_http_port(sandbox, spec.port, app_runner.APP_READY_TIMEOUT)
     if port is None:
         log_tail, _, _ = sandbox.exec_command(f"tail -25 {APP_LOG}")
@@ -157,11 +169,35 @@ class DriverClient:
     def status(self) -> dict:
         return self.sandbox.http_json("GET", f"{self.base}/status", timeout=30)
 
-    def session(self, task_id: str, start_url: str, instruction: str = "", task_meta: dict | None = None) -> dict:
-        return self._post("/session", {
+    def session(
+        self,
+        task_id: str,
+        start_url: str,
+        instruction: str = "",
+        task_meta: dict | None = None,
+        auth_config: dict | None = None,
+        secrets: dict | None = None,
+        mail_config: dict | None = None,
+    ) -> dict:
+        # `auth_config` carries the pre_session `storage_state` (cookies) the driver injects at
+        # context creation; `secrets` is the session-scoped credential map the driver uses to
+        # substitute `<secret:NAME>` placeholders at type time (never recorded). Both are set once
+        # here rather than per /act, to keep the secret-transport surface minimal. Travels
+        # base64-encoded via http_json (not plaintext on any command line, not logged).
+        # `mail_config` ({url, address, password}) pre-authenticates the scenario webmail at session
+        # setup so the agent finds a ready inbox when it navigates there for email verification /
+        # password reset (auth-flow capture); the login is non-recorded, like the initial goto.
+        body = {
             "task_id": task_id, "start_url": start_url,
             "instruction": instruction, "task_meta": task_meta or {},
-        })
+        }
+        if auth_config:
+            body["auth_config"] = auth_config
+        if secrets:
+            body["secrets"] = secrets
+        if mail_config:
+            body["mail_config"] = mail_config
+        return self._post("/session", body)
 
     def act(self, payload: dict) -> dict:
         return self._post("/act", payload)
@@ -169,11 +205,16 @@ class DriverClient:
     def snapshot(self) -> dict:
         return self._post("/snapshot")
 
-    def screenshot_b64(self) -> str:
-        return self._post("/screenshot")["b64"]
+    def screenshot_b64(self, image_format: str = "jpeg") -> str:
+        return self._post("/screenshot", {"format": image_format})["b64"]
 
     def navigate(self, url: str) -> dict:
         return self._post("/navigate", {"url": url})
+
+    def storage_state(self) -> dict:
+        """The active context's cookies + localStorage — captured after a register/login task so a
+        later task can be started already-authenticated (auth_mode=pre_session)."""
+        return self._post("/storage_state")["storage_state"]
 
     def wait(self, seconds: float) -> dict:
         return self._post("/wait", {"seconds": seconds})

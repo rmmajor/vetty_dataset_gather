@@ -1,0 +1,37 @@
+# Remote-training config for `python -m remote_train` (Vast.ai by default).
+# Precedence: these values < env vars < CLI flags. Secrets live in env only:
+#   VAST_API_KEY (required), HF_TOKEN (optional, for --push-hf).
+
+provider: vastai
+
+# ----- GPU offer selection -----
+gpu_name: ""              # substring filter on GPU name (e.g. "A100"); "" = any
+min_vram_gb: 48           # 9B LoRA + vision; raise to 80 for 27B+ (weights must stay resident)
+min_compute_cap: 800      # bf16 needs Ampere sm_80+. Turing (750, e.g. Q RTX 8000) is cheaper but CANNOT run bf16.
+num_gpus: 1
+max_price_per_hour: 2.0   # hard cap on $/hr; offers above this are skipped
+min_reliability: 0.90     # Vast host uptime score; a dead host mid-run wastes the rental
+exclude_countries: [RU, CN]   # never rent here (also via REMOTE_TRAIN_EXCLUDE_COUNTRIES)
+
+# ----- Instance -----
+instance_label: roman.maior   # every instance is tagged with this; powers orphan cleanup
+image: "pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel"
+disk_gb: 80
+
+# ----- Lifecycle / safety -----
+max_runtime_hours: 48.0   # watchdog force-destroys past this (backstop for a hung run)
+ready_timeout_s: 900
+poll_interval_s: 30
+ssh_key_path: "~/.ssh/id_rsa"   # private key whose public half is attached to the Vast.ai account
+remote_workdir: "/workspace"
+
+# ----- Data / training -----
+trajectories_dir: trajectories
+train_config: config.yaml
+output_dir: output
+val_split: 0.1
+
+# ----- Optional post-train steps (default off) -----
+run_eval: false           # run eval_screenspot.py before/after on the box (needs that file)
+push_hf_repo: ""          # e.g. "rmmajor/qwen-cua-lora"; needs HF_TOKEN
+notify: false             # Telegram ping on completion (needs TELEGRAM_BOT_TOKEN/CHAT_ID)

@@ -1,0 +1,67 @@
+{
+  "dataset": "rootsautomation/ScreenSpot",
+  "split": "test",
+  "coord_space": "viewport_abs",
+  "summaries": {
+    "before": {
+      "total": 300,
+      "hits": 267,
+      "accuracy": 0.89,
+      "parse_rate": 0.9466666666666667,
+      "by_data_type": {
+        "icon": {
+          "total": 122,
+          "hits": 98,
+          "accuracy": 0.8032786885245902
+        },
+        "text": {
+          "total": 178,
+          "hits": 169,
+          "accuracy": 0.949438202247191
+        }
+      },
+      "by_data_source": {
+        "macos": {
+          "total": 138,
+          "hits": 120,
+          "accuracy": 0.8695652173913043
+        },
+        "windows": {
+          "total": 162,
+          "hits": 147,
+          "accuracy": 0.9074074074074074
+        }
+      }
+    },
+    "after": {
+      "total": 300,
+      "hits": 255,
+      "accuracy": 0.85,
+      "parse_rate": 0.97,
+      "by_data_type": {
+        "icon": {
+          "total": 122,
+          "hits": 92,
+          "accuracy": 0.7540983606557377
+        },
+        "text": {
+          "total": 178,
+          "hits": 163,
+          "accuracy": 0.9157303370786517
+        }
+      },
+      "by_data_source": {
+        "macos": {
+          "total": 138,
+          "hits": 119,
+          "accuracy": 0.8623188405797102
+        },
+        "windows": {
+          "total": 162,
+          "hits": 136,
+          "accuracy": 0.8395061728395061
+        }
+      }
+    }
+  }
+}

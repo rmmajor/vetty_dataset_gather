@@ -1,0 +1,20 @@
+# Model specs for the vLLM-served lane (backend: openai), as used for the SFT v1 ScreenSpot run.
+#
+# `model` is the vLLM SERVED name, not a HuggingFace repo id, and the LoRA is served under its own
+# served name rather than through an `adapters` path — vLLM loads it via --lora-modules, so the
+# harness selects it by asking for that model. See eval_models.yaml for the local `swift infer`
+# lane, which does take a repo id plus a local adapters directory.
+#
+# coord_space is per-model and load-bearing: the base model answers in normalized_1000, a model
+# fine-tuned on this corpus answers in viewport_abs. Scoring one in the other's convention silently
+# produces a wrong number rather than an error.
+
+- label: before
+  model: cua-student
+  backend: openai
+  coord_space: normalized_1000
+
+- label: after
+  model: cua-student-lora
+  backend: openai
+  coord_space: viewport_abs

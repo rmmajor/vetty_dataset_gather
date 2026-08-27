@@ -43,6 +43,8 @@ TEST_PAGE = """<!doctype html>
       ondrop="var s=document.getElementById(event.dataTransfer.getData('text'));this.parentNode.insertBefore(s,this.nextSibling);document.getElementById('status').innerText='reordered'">Beta</li>
 </ul>
 
+<iframe id="embed" width="320" height="90" srcdoc="<button id='ibtn' onclick='document.body.innerHTML=&quot;<h2>iframe action done</h2>&quot;'>Inside-frame button</button>"></iframe>
+
 <div style="height: 1500px"></div>
 <a href="#bottom" id="bottom-link">Bottom link</a>
 </body></html>"""
@@ -62,7 +64,13 @@ def run_smoke() -> bool:
         driver_session.start_driver(sandbox)
         client = driver_session.DriverClient(sandbox)
 
-        session = client.session("smoke_test", "http://127.0.0.1:3000/", instruction="Greet yourself by name")
+        # Session-scoped burner secret + a (here empty, but valid) pre_session storage_state exercise
+        # the login-gated plumbing: masked typing and storageState injection.
+        session = client.session(
+            "smoke_test", "http://127.0.0.1:3000/", instruction="Greet yourself by name",
+            secrets={"smoke_secret": "RealSecretValue"},
+            auth_config={"auth_mode": "pre_session", "storage_state": {"cookies": [], "origins": []}},
+        )
         snapshot = session["snapshot"]
         logger.info(f"session snapshot:\n{snapshot}")
         n_elements = driver_session.count_interactive_elements(snapshot)
@@ -112,6 +120,17 @@ def run_smoke() -> bool:
         })
         assert "reordered" in result["snapshot"], f"drag (html5 fallback) had no effect: {result['snapshot'][:300]}"
 
+        # Cross-iframe resolution: an element inside a same-origin iframe must be snapshot-visible
+        # and clickable by ref (the path that lets the agent click a verification/reset link inside
+        # a webmail message body).
+        snapshot = client.snapshot()["snapshot"]
+        result = client.act({
+            "kind": "click", "ref": ref_for("Inside-frame button"),
+            "thought": "Clicking the button inside the embedded frame to test iframe interaction.",
+        })
+        assert "iframe action done" in result["snapshot"], \
+            f"iframe element was not reachable/clickable: {result['snapshot'][:300]}"
+
         # Coordinate tools for canvas surfaces + a recorded wait.
         client.act({"kind": "click_xy", "x": 200, "y": 400,
                     "thought": "Clicking directly on the canvas area."})
@@ -119,6 +138,29 @@ def run_smoke() -> bool:
                     "thought": "Drawing a stroke across the canvas."})
         client.act({"kind": "wait", "seconds": 0.5,
                     "thought": "Letting the page settle before continuing."})
+
+        # Masked credential: the recorded action keeps the <secret:...> placeholder; the page
+        # receives the real value (proving driver-side substitution + leak-free recording).
+        client.act({
+            "kind": "type", "ref": ref_for("Your name"), "text": "<secret:smoke_secret>",
+            "thought": "Entering the provided test username into the name field.",
+        })
+        result = client.act({
+            "kind": "click", "ref": ref_for("Greet"),
+            "thought": "Submitting to confirm the entered value took effect.",
+        })
+        assert "hello RealSecretValue" in result["snapshot"], \
+            f"masked secret was not typed as the real value: {result['snapshot'][:300]}"
+
+        # Guarded-mode driver actions: handoff, confirm, and the watchdog approval_event observation.
+        client.act({"kind": "handoff", "reason": "login",
+                    "thought": "The next step needs a login I should not perform myself; handing off."})
+        client.act({"kind": "confirm", "risk_category": "publish",
+                    "proposed_action": {"type": "click", "ref": ref_for("Greet")},
+                    "thought": "About to publish, so I pause and ask for confirmation first."})
+        client.act({"kind": "approval_event",
+                    "event": {"kind": "approval", "decision": "deny",
+                              "rationale": "publishing on a live site is irreversible", "by": "watchdog"}})
 
         # The loop guard must refuse a third identical scroll from the same position only if no
         # progress was made; instead verify the explicit guard with repeated clicks.
@@ -152,7 +194,10 @@ def run_smoke() -> bool:
             assert traj["success"] is False, "success must stay False until the verifier confirms"
             for step in traj["steps"]:
                 assert (traj_dir / step["screenshot"]).exists(), f"missing {step['screenshot']}"
-                assert step["thought"].strip(), f"step {step['step']} has no thought"
+                # Observation steps (watchdog approval events) carry an event + empty actions and no
+                # thought by design; every ACTION step must have a thought.
+                if step.get("actions"):
+                    assert step["thought"].strip(), f"step {step['step']} has no thought"
                 for action in step["actions"]:
                     if "x" in action:
                         assert 0 <= action["x"] <= 1280 and 0 <= action["y"] <= 720, f"bad coords: {action}"
@@ -168,6 +213,28 @@ def run_smoke() -> bool:
             assert meta.get("done_recorded") is True, "capture_meta missing done_recorded"
             recorded_kinds = {a["type"] for s in traj["steps"] for a in s["actions"]}
             assert {"move", "drag", "wait", "done"} <= recorded_kinds, f"missing action kinds: {recorded_kinds}"
+
+            # --- login-gated additions ---
+            # Masked credential: the placeholder is recorded; the resolved value never appears.
+            blob = json.dumps(traj)
+            assert "RealSecretValue" not in blob, "SECRET LEAK: resolved credential found in trajectory"
+            masked = [a for s in traj["steps"] for a in s["actions"]
+                      if a.get("type") == "type" and a.get("text") == "<secret:smoke_secret>"]
+            assert masked, "masked type action did not record the <secret:smoke_secret> placeholder"
+
+            # handoff + confirm recorded as student-target actions.
+            handoffs = [a for s in traj["steps"] for a in s["actions"] if a.get("type") == "handoff"]
+            assert handoffs and handoffs[0].get("reason") == "login", f"handoff not recorded: {handoffs}"
+            confirms = [a for s in traj["steps"] for a in s["actions"] if a.get("type") == "confirm"]
+            assert confirms and confirms[0].get("risk_category") == "publish" and confirms[0].get("proposed_action"), \
+                f"confirm not recorded correctly: {confirms}"
+
+            # approval_event: an observation step with the watchdog verdict and EMPTY actions.
+            event_steps = [s for s in traj["steps"] if s.get("event")]
+            assert event_steps, "no watchdog approval event step recorded"
+            ev = event_steps[0]
+            assert ev["actions"] == [] and ev["event"].get("decision") == "deny", \
+                f"approval event malformed (must be observation-only): {ev}"
 
         logger.info("Driver smoke test PASSED")
         return True

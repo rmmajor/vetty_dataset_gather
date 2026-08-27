@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.50.0-noble
+FROM mcr.microsoft.com/playwright:v1.55.0-noble
 
 RUN apt-get update && apt-get install -y \
     python3 python3-pip python3-venv git \
@@ -10,7 +10,7 @@ RUN pip3 install playwright pytest pytest-playwright --break-system-packages
 # Pinned to the image's Playwright revision so the bundled /ms-playwright browsers match; the
 # driver also falls back to a runtime npm install when this directory is absent (older images).
 RUN mkdir -p /opt/driver && cd /opt/driver && npm init -y >/dev/null \
-    && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install playwright-core@1.50.0 --no-audit --no-fund
+    && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install playwright-core@1.55.0 --no-audit --no-fund
 
 WORKDIR /workspace
 

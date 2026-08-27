@@ -55,17 +55,36 @@ python -m repo_pipeline.orchestrator --status
 make convert               # trajectories/ -> training_data/sft_dataset.jsonl
 make train                 # invokes `swift sft` (needs ms-swift on a GPU box)
 
+# Student eval (did the checkpoint actually get better? — see "Student eval" below)
+make eval-sources                                                     # registered task sources
+make eval-online-mind2web EVAL_ENDPOINT=http://gpu:8000/v1 EVAL_MODEL=qwen EVAL_LABEL=before \
+     EVAL_COORD_SPACE=normalized_1000                                 # stock model's convention
+make eval-online-mind2web EVAL_ENDPOINT=http://gpu:8000/v1 EVAL_MODEL=qwen EVAL_LABEL=after \
+     EVAL_ADAPTER=output/checkpoint-500 EVAL_COORD_SPACE=viewport_abs # fine-tuned convention
+make eval-held-out EVAL_ENDPOINT=... EVAL_LABEL=before                # our own unseen tasks
+make eval-compare EVAL_RUNS="eval_runs/before_... eval_runs/after_..."  # the delta table
+make test-student-eval                                                # harness self-test
 # Eval grounding before/after SFT (ScreenSpot)
 make install-eval          # eval deps (GPU box)
 make eval-screenspot       # evals every model in eval_models.yaml, writes eval_results/
 make test-eval             # harness smoke test (no model/GPU/network)
 ```
 
-There is no test suite. The executable checks are `make test-sandbox` (container smoke test), `make test-driver` (scripted no-LLM browser-driver session asserting the trajectory contract), `make test-notifier` (Telegram bot), and `make test-eval` (ScreenSpot eval harness smoke test). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
+Two eval lanes, deliberately complementary: `eval_screenspot.py` measures GROUNDING (one screenshot, one instruction, is the predicted point inside the target box), and `repo_pipeline/student_eval.py` measures whether the model can actually complete a task across many steps in a live browser. Grounding can be excellent while task success is near zero, which is exactly what the baseline shows.
+
+There is no test suite. The executable checks are `make test-sandbox` (container smoke test), `make test-driver` (scripted no-LLM browser-driver session asserting the trajectory contract), `make test-eval` (ScreenSpot eval harness smoke test), `make test-student-eval` (episode-eval parser round-trip + mock replay episode + judge), and `make test-notifier` (Telegram bot). Verify changes by running the relevant stage with a small `--limit`/`--budget`.
 
 ## Evaluation (`eval_screenspot.py`)
 
-ScreenSpot grounding eval: predicted click point vs. target bbox. Mirrors `train_qwen.py`'s style and **imports `SYSTEM_PROMPT` from it** to guarantee train/eval prompt parity. Everything is registry/flag-driven so it works for other models: coordinate spaces (`COORD_SPACES`: `viewport_abs` default matches our 1280x720 training, plus `normalized_1000`/`native_abs`), inference backends (`PREDICTOR_BACKENDS`: `swift` shells out to `swift infer` like training shells out to `swift sft`; `mock` for tests), a configurable output parser (`DEFAULT_PARSE_PATTERNS`, tries `<ref>(x,y)</ref>` first), and a configurable dataset/bbox adapter. Evaluates N model specs from `eval_models.yaml` (default before/after) on one dataset. The `swift infer` flags/result schema and the ScreenSpot-v2 column/bbox conventions are assumptions that must be validated on the GPU box / against the real dataset — they are isolated behind flags and `SwiftPredictor`. Heavy deps (`datasets`) are imported lazily so `make test-eval` needs none.
+ScreenSpot grounding eval: predicted click point vs. target bbox. Mirrors `train_qwen.py`'s style and **imports `SYSTEM_PROMPT` from it** to guarantee train/eval prompt parity (so `train_qwen.py` — and the `repo_pipeline.corpus_audit` it imports — must be present wherever the eval runs). Registry/flag-driven: `COORD_SPACES`, `PREDICTOR_BACKENDS` (`swift` shells out to `swift infer`; `mock` for tests), a configurable parser (`DEFAULT_PARSE_PATTERNS`, tries `<ref>(x,y)</ref>` first), and a configurable dataset/bbox adapter. Evaluates N specs from `eval_models.yaml`. Heavy deps (`datasets`) load lazily so `make test-eval` needs none. Validated end-to-end on a rented GPU (`swift infer` flags confirmed).
+
+**Measured baseline:** `Qwen/Qwen3.5-9B` (instruct, no SFT) scores **85.0%** on `rootsautomation/ScreenSpot` `test` (n=100, 93% parse, text 96% / icon 86%). That is the bar SFT must beat.
+
+**The scoring conventions are the whole ballgame — get one wrong and the eval reports a confident WRONG number instead of crashing.** All were verified against real model output:
+- **`coord_space` is PER-MODEL** (`ModelSpec.coord_space`, set it in `eval_models.yaml`). A stock Qwen answers in `normalized_1000`; a checkpoint fine-tuned on this corpus answers in `viewport_abs` (the 1280x720 training viewport). The *same* base-model predictions score **85% as `normalized_1000` and 25% as `viewport_abs`** — so a before/after comparison scored with one global coord space is meaningless.
+- **`--bbox-normalized` (default on)** — the default dataset stores bbox in 0-1, not pixels. Treating it as pixels shrinks every target to a sub-pixel box at the origin: **0% by construction, regardless of the model.**
+- **`--bbox-format xyxy` (default)** — that mirror stores `(x1,y1,x2,y2)`, not `xywh`.
+- The default dataset is `rootsautomation/ScreenSpot`, **not** `os-copilot/ScreenSpot-v2` (that repo is raw JSON + an image zip: no `test` split, no image column, `load_dataset` cannot read it). Re-check all three conventions against any other mirror you point `--dataset` at.
 
 ## Path B architecture (`repo_pipeline/`)
 
@@ -115,8 +134,118 @@ LLM stages run with an `asyncio.Semaphore(workers)`; the orchestrator caps worke
 
 `OPENAI_API_KEY` (Path A), `GITHUB_TOKEN` + `ANTHROPIC_API_KEY` (Path B), `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` (optional, for overnight reports). `crontab.example` shows the nightly `--overnight` job.
 
+Student eval: `HF_READ_TOKEN` (or `HF_TOKEN`) for the gated Online-Mind2Web dataset, and `EVAL_ENDPOINT` / `EVAL_MODEL` / `EVAL_API_KEY` / `EVAL_ADAPTER` as make-level defaults for the served model.
+
 Sandbox resource caps (per Docker container, `repo_pipeline/sandbox.py`) are env-tunable so a run can't exhaust host RAM: `SANDBOX_MEM_LIMIT` (default `2g`), `SANDBOX_MEMSWAP_LIMIT` (default = mem limit ⇒ no swap, hard cap), `SANDBOX_PIDS_LIMIT` (`1024`), `SANDBOX_CPUS` (`2`), `SANDBOX_TMP_SIZE` (RAM-backed `/tmp`, `1g`), `SANDBOX_SHM_SIZE` (`256m`). Peak ≈ `workers * (mem + tmpfs)`; keep it under the Docker VM memory. Raise `SANDBOX_MEM_LIMIT` if a legitimately heavy suite gets OOM-killed.
+
+## Student eval (`repo_pipeline/student_eval.py`)
+
+The measurement side of the loop: run a served model through real browser episodes and report
+whether a fine-tuned checkpoint beat the base model. A single number is useless — **the
+deliverable is a delta**, so every run takes a `--label` (`before` / `after`), writes to
+`eval_runs/<run_id>/{report.md,results.json,run.log,episodes/}`, and `compare` renders the
+before/after table plus a **harness parity check** that flags any field the two runs disagree on.
+
+- **Prompt parity is the point.** The per-step user message is built by the same rules as
+  `train_qwen.convert_trajectory_to_examples` (same `SYSTEM_PROMPT`, `Task:` / `Previous actions:`
+  / `What action should you take?`, same `HISTORY_WINDOW`). An eval that prompts differently
+  measures the prompt.
+- **Model remote, browser local.** `--endpoint` is any OpenAI-compatible `/chat/completions`
+  (vLLM, `swift deploy`, a rented Vast.ai box); the browser is a `DockerSandbox` on the invoking
+  machine so live sites see a residential IP. Never assume the two are co-located.
+- **Task sources are a registry** (`repo_pipeline/eval_task_sources.py`): `TaskSource` +
+  `TASK_SOURCES`, same idiom as `frameworks.PROFILES`. `online_mind2web` (gated HF dataset,
+  300 tasks, columns `task_id` / `confirmed_task` / `website` / `reference_length` / `level`) and
+  `held_out` (our own never-captured `public_sites.json` + `proposed_tasks.json` tasks, proven
+  unseen by an on-disk check against the corpus). Adding an eval is a data entry.
+- **HF gating.** The dataset is `gated: auto`. The token is resolved explicitly — `HF_TOKEN`,
+  `HUGGING_FACE_HUB_TOKEN`, `HUGGINGFACE_HUB_TOKEN`, then `HF_READ_TOKEN` from `.env` (this repo's
+  name, which no HF library looks for), then `~/.cache/huggingface/token`. A 401/403 fails loudly
+  naming the URL to accept terms at; there is never a stub fallback.
+- **`--coord-space` is PER MODEL and never auto-detected.** A model fine-tuned here answers in
+  `viewport_abs` (1280x720 pixels); a stock Qwen answers in `normalized_1000`. Emitted positions
+  are scaled to viewport pixels before dispatch (scroll *deltas* are relative motion and are not
+  scaled), and `trajectory.json` records the EXECUTED pixel coordinates while the raw model text
+  stays in `raw_last_response`. Getting this wrong does not error — it silently produces a
+  confident wrong number, so the harness warns at the first impossible coordinate and prints a
+  `COORDINATE SPACE SUSPECT` banner in `report.md` when >25% of emitted coordinates fall outside
+  the viewport under `viewport_abs`. Same reasoning as `eval_models.yaml`'s `coord_space`.
+  In `compare`, a `coord_space` difference is an *expected, annotated* model-side difference, not
+  a parity violation — a before/after pair is supposed to differ here.
+- **The action grammar is tolerant by design, and canonical form is its own metric.** The base
+  model has never been trained on our grammar — the system prompt only *describes* it — so
+  penalising surface deviation measures "can it imitate an unfamiliar convention", not "can it
+  browse". The parser therefore accepts any **unambiguous** spelling of a call and reports
+  `canonical_form_rate` (share of parsed actions spelled exactly as `format_action_for_training`
+  emits) plus an `action_form_deviations` breakdown, instead of charging deviation to the success
+  rate. The fine-tuned model emitting the canonical form is a real improvement and gets reported
+  in that column. Tolerance is a **parity key** (`action_grammar: tolerant|canonical`), so
+  `compare` proves both sides were parsed identically; `--strict-action-grammar` accepts canonical
+  only. Accepted (canonical first):
+
+  | verb | accepted spellings |
+  | --- | --- |
+  | `click` | `click(<ref>(x, y)</ref>, button=left)` · `(x, y)` · `x, y` · trailing `left`/`right` · button omitted (defaults left) |
+  | `double_click`, `move` | `<ref>(x, y)</ref>` · `(x, y)` · `x, y` |
+  | `drag` | both endpoints in any coordinate spelling, separated by `->` or `,` |
+  | `scroll` | `scrollX=`/`scrollY=`, `scroll_x=`/`scroll_y=`, `dx=`/`dy=`, positional deltas, or omitted (defaults `0, 500`) |
+  | `type` | `type("text")` · `type('text')` |
+  | `keypress` | `["Enter"]` · `"Enter"` · `Enter` · `Control, a` · `Control+a` |
+  | `wait`, `done`, `screenshot` | `verb()` · `verb` |
+  | everywhere | optional `action:` prefix, bullets/backticks/whitespace stripped, unknown kwargs ignored, floats rounded |
+
+  **Rejected as genuinely ambiguous** (not merely unfamiliar): `type(hello world)` and
+  `type(a, b)` — an unquoted string cannot be told from an argument list; `scroll(500)` — one
+  number reads equally as an x coordinate or a scrollY delta; `click(100)`, `drag((10, 20))`,
+  `keypress()` — incomplete. Loosening the *shape* of a call never loosens the rule that the line
+  **is** a call: prose wrapped around a valid call is `malformed`, narration with no call is
+  ignored.
+- **Outcome categories, not one bucket.** `completed` / `step_cap` / `stuck` /
+  `parse_failure_abort` / `timeout` are scored; `site_blocked` (CAPTCHA/WAF/interstitial, via
+  `BLOCK_SIGNATURES`), `unreachable` and `harness_error` are environment failures, excluded from
+  the success denominator and reported separately. The headline carries all three headline numbers.
+- **Two abort rules, kept separate because they diagnose different things.** 3 consecutive steps
+  with no parseable action → `parse_failure_abort` (the model is not speaking the action
+  language); 5 consecutive steps that execute *zero* actions for any reason → `stuck` (it speaks
+  the language but nothing lands). The parse rule fires first on a parse-failure run, which is the
+  more specific diagnosis. Both are `--max-parse-failures` / `--max-unproductive-steps` and both
+  are in the harness fingerprint. This replaces the driver's own loop guard, which eval disables.
+- **Metrics split by `level`** (easy/medium/hard, as the source paper reports) and by domain;
+  step efficiency is `steps / reference_length`, and the **step cap is derived per task**
+  (`3x reference_length`, clamped to `[15, 50]`) because `reference_length` runs 1..36 — a flat
+  cap truncates the hardest tasks. `--max-steps N` pins a flat cap; the effective cap is recorded
+  per episode either way.
+- **The judge is `agent_capture.verify_trajectory`** (the WebJudge analogue), reached through the
+  `run_agent` chokepoint on the logged-in `claude` CLI — never `ANTHROPIC_API_KEY`. Screenshots per
+  verdict are the dominant cost: `--judge-mid-screenshots` (default 2, plus the final) and the new
+  `VERIFY_MID_SCREENSHOTS` env knob control it.
+- **Comparability — our numbers are NOT rankable against published Online-Mind2Web figures.**
+  Two deliberate differences. (1) *Denominator*: this harness excludes `site_blocked` /
+  `unreachable` / `harness_error` episodes from the success denominator, because a CAPTCHA wall
+  measures the network rather than the model. The Online-Mind2Web paper and the published results
+  tables (e.g. Fara-1.5) do NOT do this — there an unreachable site is simply a failed task. Always
+  report both denominators; `report.md` prints the all-episode rate next to the scored one for
+  exactly this reason. (2) *Judge*: ours is the capture pipeline's `verify_trajectory` rubric on
+  the latest Sonnet, not the paper's WebJudge/o4-mini, so absolute levels are not on the same
+  scale. Both are fine for a **before/after delta measured through this same harness**, which is
+  what the harness exists for; neither licenses putting our number in someone else's league table.
+- **Eval episodes must never enter training.** They land under `eval_runs/`, outside the
+  `trajectories/**` glob `convert` walks, and each carries `metadata.excluded_reason=eval_episode`.
+- Driver support for a coordinate-only agent lives in `browser_driver.js` as the `move_xy`,
+  `type_text` and `scroll_xy` `/act` kinds plus `POST /screenshot {format:"png"}`;
+  `DRIVER_LOOP_GUARD_REPEATS=0` disables the capture-time loop guard so a stuck student is
+  observed rather than refused.
 
 ## Training
 
 `config.yaml` holds hyperparameters from the blueprint (Qwen3.5-9B-Base, LoRA r64/α128, lr 5e-5, 3 epochs, max_length 4096, `freeze_vit: true`, `max_pixels` exported as `MAX_PIXELS`). `train_qwen.py train` maps these keys to `swift sft` CLI flags; CLI overrides (`--epochs/--lr/--batch-size`) win over the config.
+
+## Remote training (`remote_train/`, Vast.ai; provider-pluggable)
+
+`make remote-train` runs the whole SFT on a rented cloud GPU instead of a hand-managed box: rent a GPU → ship `trajectories/` + the training code → run the **unchanged** `train_qwen.py convert` + `train_qwen.py train` on the box → pull the LoRA adapter back to `./output` → **destroy the instance**. No training logic is duplicated — the cloud layer only orchestrates.
+
+- **Provider-pluggable by design.** `remote_train/base.py` defines a `ComputeProvider` interface and a `PROVIDERS` registry of factory functions (same idiom as `eval_screenspot.py`'s `PREDICTOR_BACKENDS`). Vast.ai (`remote_train/vastai.py`, shells out to the `vastai` CLI) is impl #1; a second provider is a new module implementing 8 methods + one line appending its factory to `PROVIDERS` — `lifecycle.py`/CLI/Makefile never change. Offer selection (geo/price/VRAM policy) is the pure shared `base.select_cheapest_allowed`.
+- **Teardown is the #1 invariant** (never waste credits): `lifecycle.run_remote_training` destroys in `try/finally`, on SIGINT/SIGTERM/SIGHUP, via a `destroy` that polls until the box is **confirmed gone**, via a crash-safe `.remote_train_state.json` + the `cleanup` orphan sweep (by instance label), and via an independent max-runtime watchdog thread. `make remote-train-cleanup` force-destroys leftovers.
+- **Constraints baked in:** offers in `exclude_countries` (default `RU, CN`) are never rented; every instance is labeled `roman.maior` (also the orphan-sweep key). Both configurable in `remote_train.yaml` / env.
+- **Config:** `remote_train.yaml` (defaults < env < CLI), secrets via env only — `VAST_API_KEY` (required), `HF_TOKEN` (optional). Optional post-train flags (default off): `--eval` (PR #12's `eval_screenspot.py` before/after), `--push-hf`, `--notify` (reuses `repo_pipeline/notifier.py`).
+- **Verify:** `make test-remote` (no-cost mock-provider self-test whose central assertion is "destroy ran in every exit path: success, exception, SIGINT"); `make remote-train-dry` (real API, prints the cheapest geo-allowed offer, provisions nothing). The exact `vastai` CLI flags / JSON fields are documented assumptions isolated in `vastai.py` — validate with the dry run before a real run.

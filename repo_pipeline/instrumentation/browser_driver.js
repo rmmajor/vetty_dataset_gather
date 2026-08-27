@@ -32,6 +32,9 @@
  *   hover     {ref}                             -> {type:"move", x, y} (hover-revealed UI)
  *   click_xy  {x, y, button?, dblclick?}        -> {type:"click", x, y} (canvas/maps, no DOM ref)
  *   drag_path {path:[{x,y},...]}                -> {type:"drag", path} (canvas drawing/dragging)
+ *   move_xy   {x, y}                            -> {type:"move", x, y} (hover at raw coordinates)
+ *   type_text {text, press_enter?}              -> {type:"type", text} (types into the focused element)
+ *   scroll_xy {x, y, dx?, dy?}                  -> {type:"scroll", x, y, scroll_x, scroll_y}
  *   wait      {seconds}                         -> {type:"wait"} (recorded: waiting is learnable)
  *   select    {ref, value}                      -> {type:"click", x, y} (native <select>)
  *   upload    {ref, filename?, content?}        -> meta only (no replayable pixel equivalent)
@@ -49,7 +52,8 @@ const PORT = parseInt(process.env.DRIVER_PORT || '8765', 10);
 const RESULTS_ROOT = process.env.TRAJECTORY_DIR || '/workspace/results';
 const VIEWPORT = { width: 1280, height: 720 };
 const SNAPSHOT_MAX_ELEMENTS = 150;
-const LOOP_GUARD_REPEATS = 3;
+// 0 disables the guard: student eval must let a stuck model actually repeat itself.
+const LOOP_GUARD_REPEATS = parseInt(process.env.DRIVER_LOOP_GUARD_REPEATS || '3', 10);
 
 function requirePlaywright() {
   const candidates = [
@@ -94,11 +98,15 @@ const state = {
 
 // Serialized into the page; walks the DOM, tags interactive elements with data-cua-ref and
 // returns {elements: [...], texts: [...]} for the compact text tree rendered host-side below.
-function pageCollectSnapshot(maxElements) {
+function pageCollectSnapshot(opts) {
+  // `startRef` offsets this frame's ref numbering so refs stay globally unique when the host
+  // collects across multiple frames (main page + iframes, e.g. a webmail message body).
+  const maxElements = (opts && opts.maxElements) || 60;
+  const startRef = (opts && opts.startRef) || 0;
   const INTERACTIVE = 'a[href], button, input, select, textarea, summary, [role], [onclick], '
     + '[contenteditable="true"], [tabindex], [draggable="true"], [data-rbd-draggable-id], canvas';
   const out = [];
-  let refCounter = 1;
+  let refCounter = startRef + 1;
   document.querySelectorAll('[data-cua-ref]').forEach((el) => el.removeAttribute('data-cua-ref'));
 
   function visible(el) {
@@ -243,8 +251,29 @@ async function scrubDevOverlays() {
 
 async function takeSnapshot() {
   await scrubDevOverlays();
-  const data = await state.page.evaluate(pageCollectSnapshot, SNAPSHOT_MAX_ELEMENTS);
-  return renderSnapshot(data);
+  // Collect across the main frame AND every child iframe, with a running ref offset so refs are
+  // globally unique. Elements inside iframes (e.g. a webmail message body with a verification or
+  // password-reset link) become first-class, ref-clickable targets — Playwright's frame locators
+  // and boundingBox() resolve them in main-frame coordinates, so clicks land correctly.
+  const frames = state.page.frames();
+  let startRef = 0;
+  let merged = null;
+  for (const frame of frames) {
+    let data;
+    try {
+      data = await frame.evaluate(pageCollectSnapshot, { maxElements: SNAPSHOT_MAX_ELEMENTS, startRef });
+    } catch (e) {
+      continue;  // detached or unreachable frame — skip
+    }
+    if (merged === null) {
+      merged = data;  // main frame: keep its scroll geometry + page text
+    } else {
+      merged.elements.push(...data.elements);
+      merged.texts.push(...data.texts);
+    }
+    startRef += data.elements.length;
+  }
+  return renderSnapshot(merged || { elements: [], texts: [], scrollY: 0, scrollHeight: 0, innerHeight: 0 });
 }
 
 /* ------------------------------ recording ------------------------------ */
@@ -265,7 +294,7 @@ function writeTrajectory(success) {
   fs.writeFileSync(path.join(t.dir, 'capture_meta.json'), JSON.stringify(t.meta, null, 2));
 }
 
-async function recordStep(thought, actions, target) {
+async function recordStep(thought, actions, target, event) {
   const t = state.task;
   const stepNum = t.steps.length + 1;
   const screenshotName = `step_${String(stepNum).padStart(3, '0')}_screenshot.png`;
@@ -278,6 +307,9 @@ async function recordStep(thought, actions, target) {
     step.name = target.name || null;
     step.bbox = target.bbox || null;
   }
+  // Watchdog verdict observation (login-gated capture): an event step has empty actions; convert
+  // excludes it as an SFT target but threads it into history.
+  if (event) step.event = event;
   t.steps.push(step);
   t.meta.steps[String(stepNum)] = {
     role: target ? target.role : null,
@@ -293,13 +325,34 @@ async function recordStep(thought, actions, target) {
 /* ------------------------------ element resolution ------------------------------ */
 
 async function resolveRef(ref) {
-  const locator = state.page.locator(`[data-cua-ref="${ref}"]`).first();
-  if ((await locator.count()) === 0) {
+  // The ref may live in the main frame or any child iframe (page.locator does not pierce iframes,
+  // so search each frame). boundingBox() on a frame locator is already main-frame-relative, so the
+  // recorded coordinates and the page.mouse clicks line up regardless of which frame owns the ref.
+  let locator = null;
+  for (const frame of state.page.frames()) {
+    const cand = frame.locator(`[data-cua-ref="${ref}"]`).first();
+    try {
+      if ((await cand.count()) > 0) { locator = cand; break; }
+    } catch (e) {
+      continue;
+    }
+  }
+  if (locator === null) {
     throw new Error(`ref ${ref} not found on the current page — it may be stale. Take a new snapshot.`);
   }
   await locator.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
-  const box = await locator.boundingBox();
+  let box = await locator.boundingBox();
   if (!box) throw new Error(`ref ${ref} has no visible bounding box. Take a new snapshot.`);
+  // scrollIntoViewIfNeeded only scrolls within the element's OWN frame; an element inside an iframe
+  // (e.g. a link in a webmail message body) can still sit outside the MAIN viewport. boundingBox()
+  // is main-frame-relative, so if the center is off-screen, scroll the main window to it and re-read
+  // — otherwise the clamp below would push the click to the viewport edge and miss the element.
+  let centerY = box.y + box.height / 2;
+  if (centerY < 0 || centerY > VIEWPORT.height) {
+    await state.page.evaluate((dy) => window.scrollBy(0, dy), Math.round(centerY - VIEWPORT.height / 2)).catch(() => {});
+    await state.page.waitForTimeout(200);
+    box = (await locator.boundingBox()) || box;
+  }
   let cx = Math.round(box.x + box.width / 2);
   let cy = Math.round(box.y + box.height / 2);
   // Clamp the click point into the viewport for oversized elements (e.g. full-page sections).
@@ -381,6 +434,7 @@ async function html5DragFallback(sourceLocator, destLocator) {
 /* ------------------------------ loop guard ------------------------------ */
 
 function loopGuard(signature) {
+  if (!LOOP_GUARD_REPEATS) return;
   const t = state.task;
   t.recentActions.push(signature);
   if (t.recentActions.length > LOOP_GUARD_REPEATS) t.recentActions.shift();
@@ -398,11 +452,28 @@ function loopGuard(signature) {
 
 /* ------------------------------ action handlers ------------------------------ */
 
+function requireInViewport(x, y, label) {
+  if (!(x >= 0 && x < VIEWPORT.width && y >= 0 && y < VIEWPORT.height)) {
+    throw new Error(`${label} (${x},${y}) outside the ${VIEWPORT.width}x${VIEWPORT.height} viewport`);
+  }
+}
+
+// Substitute `<secret:NAME>` placeholders with the session's real (burner) credential values at
+// TYPE time only. The placeholder is what gets recorded into the trajectory; the resolved value is
+// only ever keystroked into the page, never written to disk or returned. Unknown keys are left as
+// the literal placeholder (fail-visible, not fail-leak).
+function resolveSecrets(text) {
+  const secrets = state.secrets || {};
+  if (typeof text !== 'string') return text;
+  return text.replace(/<secret:([^>]+)>/g, (m, key) => (key in secrets ? secrets[key] : m));
+}
+
 async function handleAct(body) {
   if (!state.page) throw new Error('no active session — call /session first');
   const { kind, thought } = body;
-  // Upload is an unrecorded enabler (see below); every recorded action requires a thought.
-  if (kind !== 'upload' && (!thought || !String(thought).trim())) {
+  // Upload is an unrecorded enabler; approval_event is a watchdog observation, not an agent action.
+  // Every other recorded action requires a thought.
+  if (kind !== 'upload' && kind !== 'approval_event' && (!thought || !String(thought).trim())) {
     throw new Error("every action requires a non-empty 'thought' explaining the intent behind it");
   }
 
@@ -419,12 +490,25 @@ async function handleAct(body) {
     const button = body.button === 'right' ? 'right' : 'left';
     actions = [{ type: 'click', x: target.cx, y: target.cy, button }];
     await recordStep(thought, actions, target);
-    if (body.dblclick) await state.page.mouse.dblclick(target.cx, target.cy, { button });
-    else await state.page.mouse.click(target.cx, target.cy, { button });
+    if (body.dblclick) {
+      await state.page.mouse.dblclick(target.cx, target.cy, { button });
+    } else {
+      // Prefer the locator click: it dispatches a real DOM click through nested iframes (e.g. a
+      // link in a webmail message body, which a raw coordinate click may not activate) and follows
+      // target=_blank into a new tab. Fall back to the coordinate click if the element isn't
+      // actionable (covered/animating) so behavior never regresses for the main page.
+      try {
+        await target.locator.click({ button, timeout: 4000 });
+      } catch (e) {
+        await state.page.mouse.click(target.cx, target.cy, { button });
+      }
+    }
   } else if (kind === 'type') {
     loopGuard(`type:${body.ref}:${body.text}`);
     if (typeof body.text !== 'string') throw new Error("kind 'type' requires 'text'");
     target = await resolveRef(body.ref);
+    // Record the placeholder (body.text); type the resolved real value. For non-secret text the
+    // two are identical.
     actions = [
       { type: 'click', x: target.cx, y: target.cy, button: 'left' },
       { type: 'type', text: body.text },
@@ -434,7 +518,7 @@ async function handleAct(body) {
     await state.page.mouse.click(target.cx, target.cy);
     // Clear any existing value the way a user would: select-all then retype.
     await state.page.keyboard.press('ControlOrMeta+a').catch(() => {});
-    await state.page.keyboard.type(body.text, { delay: 15 });
+    await state.page.keyboard.type(resolveSecrets(body.text), { delay: 15 });
     if (body.press_enter) await state.page.keyboard.press('Enter');
   } else if (kind === 'press') {
     const keys = Array.isArray(body.keys) ? body.keys : [body.keys];
@@ -486,9 +570,7 @@ async function handleAct(body) {
     // Coordinate-grounded click for surfaces with no DOM to reference (canvas, maps,
     // drawing apps). The agent supplies coordinates read from a screenshot.
     const x = Math.round(body.x), y = Math.round(body.y);
-    if (!(x >= 0 && x < VIEWPORT.width && y >= 0 && y < VIEWPORT.height)) {
-      throw new Error(`click_xy (${x},${y}) outside the ${VIEWPORT.width}x${VIEWPORT.height} viewport`);
-    }
+    requireInViewport(x, y, 'click_xy');
     loopGuard(`click_xy:${x},${y}`);
     const button = body.button === 'right' ? 'right' : 'left';
     actions = [{ type: 'click', x, y, button }];
@@ -498,11 +580,7 @@ async function handleAct(body) {
   } else if (kind === 'drag_path') {
     const path = Array.isArray(body.path) ? body.path.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) })) : [];
     if (path.length < 2) throw new Error("kind 'drag_path' requires a 'path' of at least 2 points");
-    for (const p of path) {
-      if (!(p.x >= 0 && p.x < VIEWPORT.width && p.y >= 0 && p.y < VIEWPORT.height)) {
-        throw new Error(`drag_path point (${p.x},${p.y}) outside the viewport`);
-      }
-    }
+    for (const p of path) requireInViewport(p.x, p.y, 'drag_path point');
     loopGuard(`drag_path:${path[0].x},${path[0].y}:${path[path.length - 1].x},${path[path.length - 1].y}`);
     actions = [{ type: 'drag', path }];
     await recordStep(thought, actions, null);
@@ -510,6 +588,44 @@ async function handleAct(body) {
     await state.page.mouse.down();
     for (const p of path.slice(1)) await state.page.mouse.move(p.x, p.y, { steps: 8 });
     await state.page.mouse.up();
+  } else if (kind === 'move_xy') {
+    const x = Math.round(body.x), y = Math.round(body.y);
+    requireInViewport(x, y, 'move_xy');
+    loopGuard(`move_xy:${x},${y}`);
+    actions = [{ type: 'move', x, y }];
+    await recordStep(thought, actions, null);
+    await state.page.mouse.move(x, y);
+    await state.page.waitForTimeout(500);
+  } else if (kind === 'type_text') {
+    // Coordinate-emitting agents type into whatever is focused; there is no ref to click first.
+    if (typeof body.text !== 'string') throw new Error("kind 'type_text' requires 'text'");
+    loopGuard(`type_text:${body.text}`);
+    actions = [{ type: 'type', text: body.text }];
+    if (body.press_enter) actions.push({ type: 'keypress', keys: ['Enter'] });
+    await recordStep(thought, actions, null);
+    await state.page.keyboard.type(resolveSecrets(body.text), { delay: 15 });
+    if (body.press_enter) await state.page.keyboard.press('Enter');
+  } else if (kind === 'scroll_xy') {
+    const x = Math.round(body.x), y = Math.round(body.y);
+    requireInViewport(x, y, 'scroll_xy');
+    const dx = Number.isFinite(body.dx) ? Math.round(body.dx) : 0;
+    const dy = Number.isFinite(body.dy) ? Math.round(body.dy) : 500;
+    loopGuard(`scroll_xy:${x},${y}:${dx},${dy}:${await state.page.evaluate(() => Math.round(window.scrollY))}`);
+    actions = [{ type: 'scroll', x, y, scroll_x: dx, scroll_y: dy }];
+    await recordStep(thought, actions, null);
+    await state.page.mouse.move(x, y);
+    await state.page.mouse.wheel(dx, dy);
+  } else if (kind === 'navigate') {
+    // Recorded cross-site navigation: the agent deliberately goes somewhere — e.g. to its webmail
+    // to read a verification / reset email mid-flow. Unlike the setup-only POST /navigate, this IS
+    // a recorded step (the "before" screenshot is the page where the decision is made), so the
+    // student learns that checking email is part of the flow. The destination url is the target.
+    if (!body.url) throw new Error("kind 'navigate' requires a 'url'");
+    loopGuard(`navigate:${body.url}`);
+    actions = [{ type: 'navigate', url: String(body.url) }];
+    await recordStep(thought, actions, null);
+    await state.page.goto(String(body.url), { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await settle();
   } else if (kind === 'done') {
     // Terminal step: the screen state that justifies declaring the goal met, plus a
     // {type:"done"} action — the student must learn WHEN to stop, not just how to act.
@@ -546,6 +662,34 @@ async function handleAct(body) {
     await target.locator.selectOption(String(body.value));
     state.task.meta.steps[String(state.task.steps.length)].select_value = String(body.value);
     writeTrajectory(false);
+  } else if (kind === 'handoff') {
+    // Guarded mode: the agent yields control for login / a fresh secret / CAPTCHA / 2FA. Recorded
+    // as a student target; no page action (auth is provisioned out-of-band).
+    actions = [{ type: 'handoff', reason: String(body.reason || 'login') }];
+    await recordStep(thought, actions, null);
+  } else if (kind === 'confirm') {
+    // Guarded mode: the agent proposes a consequential action INSTEAD of executing it. Recorded as
+    // the student target; the watchdog verdict lands next as an approval_event step. No page action.
+    if (!body.proposed_action || typeof body.proposed_action !== 'object') {
+      throw new Error("kind 'confirm' requires a 'proposed_action' object");
+    }
+    let proposed = body.proposed_action;
+    // Resolve a proposed snapshot ref to pixel coordinates so the training target carries real
+    // coords (<ref>(x,y)</ref>), matching every other recorded action. Best-effort: a stale ref
+    // keeps the proposal as the agent gave it.
+    if (proposed.ref !== undefined && proposed.ref !== null) {
+      try {
+        target = await resolveRef(proposed.ref);
+        proposed = { ...proposed, x: target.cx, y: target.cy };
+      } catch (e) { target = null; }
+    }
+    actions = [{ type: 'confirm', proposed_action: proposed, risk_category: String(body.risk_category || '') }];
+    await recordStep(thought, actions, target);
+  } else if (kind === 'approval_event') {
+    // Host-internal observation (not an agent action): the watchdog verdict after a confirm. Empty
+    // actions + an `event` payload; convert excludes it as an SFT target and threads it into history.
+    await recordStep('', [], null, body.event || {});
+    return { ok: true, step: state.task.steps.length, url: state.page.url(), snapshot: '(verdict recorded)' };
   } else {
     throw new Error(`unknown action kind '${kind}'`);
   }
@@ -572,15 +716,38 @@ async function ensureBrowser() {
   });
 }
 
+async function mailPreLogin(cfg) {
+  // Log the scenario mailbox into Roundcube (standard form: #rcmloginuser / #rcmloginpwd /
+  // #rcmloginsubmit). GreenMail has auth disabled, so any password authenticates the address.
+  // Best-effort: on any failure the agent can still drive the webmail login itself.
+  try {
+    await state.page.goto(cfg.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await state.page.fill('#rcmloginuser', cfg.address, { timeout: 8000 }).catch(() => {});
+    await state.page.fill('#rcmloginpwd', cfg.password || 'qa', { timeout: 8000 }).catch(() => {});
+    await Promise.all([
+      state.page.waitForLoadState('domcontentloaded').catch(() => {}),
+      state.page.click('#rcmloginsubmit, button[type=submit], input[type=submit]', { timeout: 8000 }).catch(() => {}),
+    ]);
+    await state.page.waitForTimeout(1200);
+  } catch (e) {
+    console.error(`mail pre-login failed (continuing): ${e.message}`);
+  }
+}
+
 async function handleSession(body) {
   if (!body.task_id || !body.start_url) throw new Error('/session requires task_id and start_url');
   await ensureBrowser();
   if (state.context) await state.context.close().catch(() => {});
 
-  state.context = await state.browser.newContext({
-    viewport: VIEWPORT,
-    deviceScaleFactor: 1,
-  });
+  const contextOpts = { viewport: VIEWPORT, deviceScaleFactor: 1 };
+  // pre_session auth mode: inject a saved (burner) storage_state so the agent starts logged in.
+  if (body.auth_config && body.auth_config.storage_state) {
+    contextOpts.storageState = body.auth_config.storage_state;
+  }
+  state.context = await state.browser.newContext(contextOpts);
+  // Session-scoped burner credentials for masked typing (resolveSecrets); held in memory only,
+  // never written to a trajectory. Reset every session.
+  state.secrets = body.secrets || {};
   // Follow popups/new tabs, and auto-accept JS dialogs on every page (they block otherwise).
   state.context.on('page', (p) => {
     state.page = p;
@@ -608,6 +775,14 @@ async function handleSession(body) {
     },
     recentActions: [],
   };
+
+  // Auth-flow capture: pre-authenticate the scenario webmail so the agent finds a ready inbox when
+  // it navigates there to verify an email or reset a password. Non-recorded setup, like the goto
+  // below; the resulting Roundcube session cookie lives in this context for the whole task.
+  if (body.mail_config && body.mail_config.url && body.mail_config.address) {
+    await mailPreLogin(body.mail_config);
+    state.task.meta.mail_webmail_url = body.mail_config.url;
+  }
 
   await state.page.goto(body.start_url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   // SPAs (React/Vue/Vite/Next) render their UI only after hydration, which lands well after
@@ -669,14 +844,18 @@ const routes = {
     if (!state.page) throw new Error('no active session');
     return { ok: true, url: state.page.url(), title: await state.page.title(), snapshot: (await takeSnapshot()).slice(0, 15000) };
   },
-  'POST /screenshot': async () => {
+  'POST /screenshot': async (body) => {
     if (!state.page) throw new Error('no active session');
     await scrubDevOverlays();
     // JPEG for the AGENT'S eyes only: image-heavy pages (map tiles, photo grids) produce
     // PNGs whose base64 exceeds the SDK's 1MB message buffer and kills the whole query.
     // Recorded training screenshots (recordStep) remain lossless PNG per the contract.
-    const buf = await state.page.screenshot({ type: 'jpeg', quality: 60 });
-    return { ok: true, b64: buf.toString('base64'), mime: 'image/jpeg' };
+    // format:'png' is for student eval, whose observations must match the trained PNG inputs.
+    const png = String((body && body.format) || 'jpeg').toLowerCase() === 'png';
+    const buf = png
+      ? await state.page.screenshot({ type: 'png' })
+      : await state.page.screenshot({ type: 'jpeg', quality: 60 });
+    return { ok: true, b64: buf.toString('base64'), mime: png ? 'image/png' : 'image/jpeg' };
   },
   'POST /affordances': async () => {
     if (!state.page) throw new Error('no active session');
@@ -725,6 +904,17 @@ const routes = {
     const seconds = Math.min(Math.max(Number(body.seconds) || 1, 0.2), 10);
     await state.page.waitForTimeout(seconds * 1000);
     return { ok: true, url: state.page.url(), snapshot: (await takeSnapshot()).slice(0, 8000) };
+  },
+  'POST /storage_state': async () => {
+    // Export the current context's cookies + localStorage + IndexedDB so a register/login
+    // trajectory's authenticated session can be injected into later tasks (auth_mode=pre_session) —
+    // letting most downstream tasks start already signed in instead of repeating a login. IndexedDB
+    // is required for SPA apps (workflowy/appflowy/…) that keep their auth token there rather than in
+    // cookies; without it the injected session is empty and every reuse task re-hits the login wall.
+    // `{indexedDB:true}` needs Playwright >=1.51 (the sandbox image is pinned to 1.55); newContext
+    // restores IndexedDB automatically when the storage_state carries it.
+    if (!state.context) throw new Error('no active session');
+    return { ok: true, storage_state: await state.context.storageState({ indexedDB: true }) };
   },
   'GET /status': async () => ({
     ok: true,

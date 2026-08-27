@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from claude_agent_sdk import ClaudeAgentOptions
 
-from repo_pipeline import app_runner, driver_session
+from repo_pipeline import app_runner, app_secrets, driver_session, mail_service
 from repo_pipeline._processing import run_repo
 from repo_pipeline.agent_capture import run_teacher_task, verify_trajectory
 from repo_pipeline.agent_runner import run_agent
@@ -48,6 +48,9 @@ AGENT_MAX_KEPT = int(os.environ.get("AGENT_MAX_KEPT_PER_REPO", "10"))
 # auth wall blocks every flow (e.g. TREK) otherwise grinds through its whole task list — minutes
 # per doomed task. A productive task resets the counter.
 AGENT_MAX_CONSECUTIVE_FAILS = int(os.environ.get("AGENT_MAX_CONSECUTIVE_FAILS", "3"))
+# Bounds re-capture of failed trajectories so a permanently-blocked task cannot burn a sandbox forever.
+CAPTURE_MAX_ATTEMPTS = int(os.environ.get("CAPTURE_MAX_ATTEMPTS", "2"))
+ATTEMPTS_FILE = "capture_attempts.json"
 
 INSTRUCTION_PROMPT = """You are reading an automated browser test for a web application.
 Your job is to write a one-sentence INSTRUCTION describing what user-facing scenario the
@@ -130,9 +133,63 @@ def _has_valid_trajectories(repo_traj_dir: Path) -> bool:
     return repo_traj_dir.exists() and any(_is_valid_trajectory(d) for d in repo_traj_dir.glob("task_*/"))
 
 
+def capture_attempts(traj_dir: Path) -> int:
+    """How many finalized capture attempts this trajectory has already cost."""
+    try:
+        return int(json.loads((traj_dir / ATTEMPTS_FILE).read_text()).get("attempts", 0))
+    except (OSError, ValueError, TypeError):
+        return 0
+
+
+def record_capture_attempt(traj_dir: Path, outcome: str) -> int:
+    """Count one finalized capture attempt against this trajectory's retry bound."""
+    # Host-only sidecar: every copy_out overwrites capture_meta.json, so a counter kept there resets.
+    attempts = capture_attempts(traj_dir) + 1
+    (traj_dir / ATTEMPTS_FILE).write_text(
+        json.dumps({"attempts": attempts, "last_outcome": outcome}, indent=2))
+    return attempts
+
+
+def capture_verdict(traj_dir: Path) -> str | None:
+    """A recorded trajectory's settled verdict, or None when the verifier never judged it."""
+    try:
+        if "verifier" not in json.loads((traj_dir / "capture_meta.json").read_text()):
+            return None
+        succeeded = json.loads((traj_dir / "trajectory.json").read_text()).get("success")
+    except (OSError, ValueError):
+        return None
+    return "success" if succeeded else "failed"
+
+
+def is_capture_exhausted(traj_dir: Path) -> bool:
+    """A recorded trajectory that failed verification and has no attempts left."""
+    return capture_verdict(traj_dir) == "failed" and capture_attempts(traj_dir) >= CAPTURE_MAX_ATTEMPTS
+
+
+def is_capture_settled(traj_dir: Path) -> bool:
+    """Whether task-level resume must leave this recorded trajectory alone."""
+    if not _is_valid_trajectory(traj_dir):
+        return False
+    # A None verdict is an interrupted run's orphan awaiting finalization, not a failure to re-capture.
+    return capture_verdict(traj_dir) != "failed" or is_capture_exhausted(traj_dir)
+
+
 def _safe_task_id(task_id: str) -> str:
     """Mirror of the driver's task-id sanitization, so host code can predict task dir names."""
     return re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(task_id))[:120]
+
+
+def _use_discovered(account_index: int, ratio: float) -> bool:
+    """Decide whether the Nth `auth=="account"` task should run in `discovered` mode (start
+    signed out WITH creds and only sign in if the app forces it — the realistic 'hit the wall,
+    then log in' pattern) instead of `pre_session` (start already signed in via the captured
+    session). Deterministic so task-level resume picks the same mode on re-run. `ratio` is the
+    target fraction of account tasks that exercise the discover-then-login pattern; the rest reuse
+    the session — which keeps login from being skewed onto every trajectory."""
+    if ratio <= 0:
+        return False
+    step = max(2, round(1 / ratio))
+    return account_index % step == 0
 
 
 def _load_proposed_tasks(repo_traj_dir: Path) -> list[dict] | None:
@@ -232,8 +289,19 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
     # the repo's tests, and the browser driver needs this image's /ms-playwright browsers.
     sandbox = DockerSandbox(container_timeout=AGENT_CONTAINER_TIMEOUT)
     captured_anything = False
+    # Auth-flow capture: bring up the shared mail stack and attach this sandbox to it, so the app's
+    # verification/reset mail lands in GreenMail and the agent can read it through Roundcube.
+    auth_flow = schemas.AUTH_FLOW_CAPTURE
+    mail_stack = await _run(mail_service.ensure_mail_stack) if auth_flow else None
+    # App env for auth-flow capture: SMTP pointed at GreenMail + dummy auth secrets (JWT_SECRET,
+    # NEXTAUTH_URL, ...) most auth apps need just to boot. Without the latter a Next/Express auth
+    # app throws at startup before the agent ever sees it.
+    mail_env = {**mail_service.mail_env_for_app(mail_stack), **app_secrets.boot_env_secrets()} if auth_flow else None
+    known = app_secrets.known_account(repo_name) if auth_flow else None
     try:
         await _run(sandbox.start, repo_name)
+        if auth_flow:
+            await _run(mail_service.attach_sandbox, sandbox.client, sandbox.container)
 
         _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
         if exit_code != 0:
@@ -244,7 +312,7 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
         # gate does. A pre-install would populate node_modules *before* detection runs, and the
         # thousands of vendored package.json files starve app-dir detection (see _find_app_dir),
         # making a repo that booted in stage 5 falsely fail to boot here.
-        app_url = await _run(driver_session.start_app, sandbox, profile)
+        app_url = await _run(driver_session.start_app, sandbox, profile, mail_env)
         if app_url is None:
             log_tail, _, _ = await _run(sandbox.exec_command, f"tail -15 {driver_session.APP_LOG} 2>/dev/null")
             raise QualityReject(
@@ -274,7 +342,8 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
             readme, test_hints = await _run(_read_app_context, sandbox)
             proposal = await propose_tasks(
                 repo, homepage_snapshot, homepage_screenshot, readme, test_hints,
-                registry=registry, affordances=affordances,
+                registry=registry, affordances=affordances, auth_flow=auth_flow,
+                inbox=(known is None),
             )
             if proposal is None:
                 raise RetryableFailure(FailureCategory.SDK_ERROR, "task proposal failed or unparseable")
@@ -297,6 +366,18 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
 
         # Tasks share one app server (state accumulates realistically) but each gets a fresh
         # browser context, so login/session state never leaks between trajectories.
+        #
+        # Auth-mode distribution (so login is NOT skewed onto every trajectory):
+        #   - register/login tasks (the proposer orders these FIRST) sign in / create the account
+        #     and, on success, MINT the captured session below.
+        #   - "account" tasks (an ordinary action behind login) mostly start ALREADY signed in via
+        #     that captured session (auth_mode=pre_session) — no login ritual recorded; a minority
+        #     (AUTH_DISCOVERED_RATIO) start signed out with creds and log in only when blocked.
+        #   - "none" tasks never touch auth.
+        # One app account per run (`scenario_address(repo_name, "account")`): the register task
+        # creates it, every later auth task reuses that same address/password.
+        captured_session = None
+        account_index = 0
         consecutive_fails = 0
         for i, task in enumerate(tasks):
             if _is_valid_trajectory(repo_traj_dir / f"task_{_safe_task_id(task['id'])}"):
@@ -315,7 +396,7 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
             # with CONNECTION_REFUSED. Probe and restart before the task so the list isn't wasted.
             if not driver_session.app_is_up(sandbox, app_url):
                 rlog.warning(f"app at {app_url} unresponsive before task '{task['id']}'; restarting")
-                restarted = await _run(driver_session.start_app, sandbox, profile)
+                restarted = await _run(driver_session.start_app, sandbox, profile, mail_env)
                 if restarted is None:
                     rlog.warning(f"app restart failed; stopping after {i} of {len(tasks)} tasks")
                     break
@@ -327,14 +408,58 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
             # tasks we most want are the priciest), an SDK error, or a browser crash — must
             # NEVER discard the repo's already-captured trajectories. The repo is judged on
             # what it captured, in post-processing. Only a global usage-limit stop propagates.
+            # Per-task auth wiring (see the distribution comment above). The account is either a
+            # pre-existing KNOWN login (demo/seeded account — pre-verified, no inbox needed) or a
+            # generated disposable address whose verification mail the agent reads in the webmail.
+            # Auth tasks type the creds as masked <secret:...>; pre_session tasks instead get the
+            # captured storage_state injected and no creds.
+            auth = task.get("auth", "none") if auth_flow else "none"
+            if known and auth == "register":
+                # The account already exists and is verified, and there is no inbox to complete a
+                # NEW registration — so a register task can't be done. Skip it rather than relabel
+                # (its instruction still says "register", which would mismatch a login and fail).
+                rlog.info(f"task '{task['id']}': skipping register task (known account, no inbox)")
+                continue
+            acct_email = known["email"] if known else mail_service.scenario_address(repo_name, "account")
+            acct_password = known["password"] if known else mail_service.scenario_password(repo_name, "account")
+            acct_creds = {"email": acct_email, "password": acct_password}
+            # A generated account must read its verification mail in the webmail; a known account is
+            # already verified, so no inbox is wired (its mail may not even reach GreenMail).
+            acct_mail = None if known else {"url": mail_stack.webmail_url, "address": acct_email, "password": "qa"}
+
+            task_secrets = task_mail = task_authcfg = None
+            auth_mode = "none"
+            capture_session = False
+            if auth in ("register", "login"):
+                auth_mode = "login"
+                capture_session = True
+                task_secrets = acct_creds
+                task_mail = acct_mail
+            elif auth == "account":
+                if captured_session is not None and not _use_discovered(account_index, schemas.AUTH_DISCOVERED_RATIO):
+                    auth_mode = "pre_session"
+                    task_authcfg = {"auth_mode": "pre_session", "storage_state": captured_session}
+                else:
+                    auth_mode = "discovered"
+                    task_secrets = acct_creds
+                    task_mail = acct_mail
+                account_index += 1
             unproductive = False
             try:
-                state = await run_teacher_task(client, task, app_url, registry=registry, full_name=repo_name)
+                state = await run_teacher_task(client, task, app_url, registry=registry, full_name=repo_name,
+                                               auth_mode=auth_mode, secrets=task_secrets, auth_config=task_authcfg,
+                                               mail_config=task_mail, capture_session=capture_session)
                 rlog.info(
-                    f"task '{task['id']}': {state['actions']} actions, "
+                    f"task '{task['id']}': {state['actions']} actions, auth={auth_mode}, "
                     f"outcome={state['agent_outcome'] or 'none'}"
                 )
                 unproductive = (state.get("agent_outcome") or "") == "failed"
+                # A successful register/login mints the session every later pre_session task reuses.
+                # Only on a CLAIMED-complete run, so a half-finished login can't inject a logged-out
+                # session that makes pre_session tasks start broken.
+                if capture_session and state.get("storage_state") and state.get("agent_outcome") == "completed":
+                    captured_session = state["storage_state"]
+                    rlog.info(f"captured auth session from '{task['id']}' for pre_session reuse")
             except UsageLimitReached:
                 raise
             except Exception as e:
