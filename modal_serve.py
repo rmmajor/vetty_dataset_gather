@@ -1,10 +1,12 @@
 """Serve the CUA student on a Modal GPU as an OpenAI-compatible endpoint, with or without a LoRA adapter."""
+# A second lane is env vars, not a fork: `CUA_SERVE_APP=... CUA_EVAL_SECRET=... modal deploy modal_serve.py`.
 import os
 import pathlib
 
 import modal
 
-APP_NAME = "cua-serve"
+APP_NAME = os.environ.get("CUA_SERVE_APP", "cua-serve")
+EVAL_SECRET = os.environ.get("CUA_EVAL_SECRET", "cua-eval")
 MODEL = os.environ.get("CUA_SERVE_MODEL", "Qwen/Qwen3.5-9B")
 SERVED_NAME = os.environ.get("CUA_SERVED_NAME", "cua-student")
 ADAPTER_NAME = os.environ.get("CUA_ADAPTER_NAME", "")
@@ -28,8 +30,11 @@ image = (
     .entrypoint([])
     .uv_pip_install("vllm==0.28.0", "huggingface_hub[hf_transfer]")
     # Baked at deploy time: module-level env reads re-run in the container, where these are unset.
+    # APP_NAME and EVAL_SECRET are read again when the container re-imports this module, so they
+    # are baked too — otherwise a renamed lane would resolve differently there than at deploy.
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "VLLM_LOG_STATS_INTERVAL": "10",
-          "CUA_ADAPTER_NAME": ADAPTER_NAME, "CUA_SERVED_NAME": SERVED_NAME})
+          "CUA_ADAPTER_NAME": ADAPTER_NAME, "CUA_SERVED_NAME": SERVED_NAME,
+          "CUA_SERVE_APP": APP_NAME, "CUA_EVAL_SECRET": EVAL_SECRET})
 )
 
 
@@ -66,7 +71,7 @@ def warm(model: str = MODEL):
     image=image,
     gpu=GPU,
     volumes={HF_CACHE_MOUNT: hf_cache, VLLM_CACHE_MOUNT: vllm_cache, ADAPTERS_MOUNT: outputs},
-    secrets=[modal.Secret.from_name("cua-eval"), modal.Secret.from_name("huggingface")],
+    secrets=[modal.Secret.from_name(EVAL_SECRET), modal.Secret.from_name("huggingface")],
     port=8000,
     # Gaps between requests are seconds within an episode, so 5 min never evicts mid-run but caps idle billing.
     scaledown_window=300,
