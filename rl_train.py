@@ -12,13 +12,14 @@ from pathlib import Path
 import yaml
 
 ROLLOUT_FLAG_MAP = {
-    "merged_model": "--model", "template": "--template", "vllm_gpu_memory_utilization": "--vllm_gpu_memory_utilization",
+    "merged_model": "--model", "template": "--template", "response_prefix": "--response_prefix",
+    "vllm_gpu_memory_utilization": "--vllm_gpu_memory_utilization",
     "vllm_max_model_len": "--vllm_max_model_len", "vllm_max_lora_rank": "--vllm_max_lora_rank",
     "vllm_limit_mm_per_prompt": "--vllm_limit_mm_per_prompt", "external_plugins": "--external_plugins",
     "multi_turn_scheduler": "--multi_turn_scheduler", "gym_env": "--gym_env", "max_turns": "--max_turns", "rollout_port": "--port",
 }
 RLHF_FLAG_MAP = {
-    "merged_model": "--model", "template": "--template", "tuner_type": "--tuner_type", "lora_rank": "--lora_rank",
+    "merged_model": "--model", "template": "--template", "response_prefix": "--response_prefix", "tuner_type": "--tuner_type", "lora_rank": "--lora_rank",
     "lora_alpha": "--lora_alpha", "target_modules": "--target_modules", "freeze_vit": "--freeze_vit", "torch_dtype": "--torch_dtype",
     "rollout_port": "--vllm_server_port", "external_plugins": "--external_plugins", "reward_funcs": "--reward_funcs",
     "dataset": "--dataset", "max_length": "--max_length", "max_completion_length": "--max_completion_length",
@@ -29,7 +30,7 @@ RLHF_FLAG_MAP = {
     "save_total_limit": "--save_total_limit", "async_generate": "--async_generate", "dynamic_sample": "--dynamic_sample",
     "log_completions": "--log_completions", "report_to": "--report_to", "output_dir": "--output_dir",
 }
-DEPLOY_FLAG_MAP = {"merged_model": "--model", "template": "--template", "vllm_max_lora_rank": "--vllm_max_lora_rank",
+DEPLOY_FLAG_MAP = {"merged_model": "--model", "template": "--template", "response_prefix": "--response_prefix", "vllm_max_lora_rank": "--vllm_max_lora_rank",
                    "vllm_limit_mm_per_prompt": "--vllm_limit_mm_per_prompt", "max_completion_length": "--max_new_tokens"}
 ROLLOUT_FIXED = ["--vllm_use_async_engine", "true", "--vllm_enable_lora", "true", "--use_gym_env", "true", "--host", "127.0.0.1"]
 RLHF_FIXED = ["--rlhf_type", "grpo", "--use_vllm", "true", "--vllm_mode", "server", "--vllm_server_host", "127.0.0.1",
@@ -77,11 +78,14 @@ def build_deploy_command(cfg, adapters=None):
     return argv
 
 
-def build_env(cfg, run_dir):
+def build_env(cfg, run_dir, workdir=None):
     env = {**os.environ, "MAX_PIXELS": str(cfg["max_pixels"]), "RL_ENV_URL": cfg["env_url"], "RL_RUN_DIR": str(run_dir),
            "RL_RUN_ID": Path(run_dir).name, "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES", "0")}
     if cfg.get("env_token"):
         env["RL_ENV_TOKEN"] = str(cfg["env_token"])
+    if workdir:
+        # swift loads --external_plugins as a top-level module, so the repo root must be importable for `rl.*` / train_qwen.
+        env["PYTHONPATH"] = os.pathsep.join(p for p in (str(workdir), os.environ.get("PYTHONPATH", "")) if p)
     return env
 
 
@@ -121,7 +125,7 @@ class PhaseDriver:
                  sleep=time.sleep, clock=time.time):
         self.cfg, self.run_dir, self.workdir = cfg, Path(run_dir), Path(workdir)
         self.launcher, self.run_cmd, self.http_ok, self.sleep, self.clock = launcher, run, http_ok, sleep, clock
-        self.env = build_env(cfg, self.run_dir)
+        self.env = build_env(cfg, self.run_dir, self.workdir)
 
     def set_phase(self, phase):
         (self.workdir / PHASE_FILE).write_text(phase + "\n")
@@ -162,7 +166,7 @@ class PhaseDriver:
         return self.run_foreground(build_merge_command(self.cfg), self.env)
 
     def serve_phase(self, phase, adapters=None):
-        proc = self.launcher(build_deploy_command(self.cfg, adapters), env=self.env)
+        proc = self.launcher(build_deploy_command(self.cfg, adapters), env=self.device_env("rollout"))
         try:
             self.wait_healthy(f"http://127.0.0.1:{self.cfg['compute']['serve_port']}/v1/models")
             self.set_phase(phase)
@@ -187,14 +191,18 @@ class PhaseDriver:
         shutil.copytree(checkpoint, latest)
         return latest
 
+    def device_env(self, role):
+        compute = self.cfg.get("compute") or {}
+        return dict(self.env, CUDA_VISIBLE_DEVICES=str(compute.get(f"{role}_devices", self.env.get("CUDA_VISIBLE_DEVICES", "0"))))
+
     def train_phase(self):
-        rollout = self.launcher(build_rollout_command(self.cfg), env=self.env)
+        rollout = self.launcher(build_rollout_command(self.cfg), env=self.device_env("rollout"))
         try:
             if not self.wait_healthy(f"http://127.0.0.1:{self.cfg['rollout_port']}/health/"):
                 print("[rl_train] rollout server never became healthy", flush=True)
                 return 1
             self.set_phase("TRAINING")
-            rc = self.run_foreground(build_rlhf_command(self.cfg), self.env)
+            rc = self.run_foreground(build_rlhf_command(self.cfg), self.device_env("trainer"))
         finally:
             self._stop(rollout)
         self.publish_latest()

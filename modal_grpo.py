@@ -1,10 +1,12 @@
 """Run the GRPO phase driver (rl_train.py run) on a Modal GPU against the Mac env service exposed through a public ingress."""
 import os
+import pathlib
 
 import modal
 
 APP_NAME = "cua-grpo"
-GPU = os.environ.get("CUA_GRPO_GPU", "A100-80GB")
+# Two GPUs: ms-swift server mode syncs weights over NCCL, which cannot host the trainer and the rollout engine on one device.
+GPU = os.environ.get("CUA_GRPO_GPU", "A100-80GB:2")
 GRPO_TIMEOUT = int(os.environ.get("CUA_GRPO_TIMEOUT", str(9 * 3600)))
 COMMIT_EVERY_S = int(os.environ.get("CUA_GRPO_COMMIT_EVERY_S", "600"))
 
@@ -17,7 +19,10 @@ app = modal.App(APP_NAME)
 outputs = modal.Volume.from_name("cua-outputs", create_if_missing=True)
 hf_cache = modal.Volume.from_name("cua-hf-cache", create_if_missing=True)
 
-_RL_REQUIREMENTS = [line.strip() for line in open("requirements-rl.txt") if line.strip() and not line.startswith("#")]
+_RL_REQUIREMENTS_FILE = pathlib.Path("requirements-rl.txt")
+# Module-level reads re-run inside the container, where this file is absent and the image is already built.
+_RL_REQUIREMENTS = ([line.strip() for line in _RL_REQUIREMENTS_FILE.read_text().splitlines() if line.strip() and not line.startswith("#")]
+                    if _RL_REQUIREMENTS_FILE.is_file() else [])
 
 image = (
     modal.Image.from_registry("nvidia/cuda:12.8.1-devel-ubuntu22.04", add_python="3.12")

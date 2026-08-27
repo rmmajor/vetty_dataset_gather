@@ -29,6 +29,8 @@ def test_commands_are_argv_lists_with_expected_flags():
     deploy = build_deploy_command(CFG, adapters="/workspace/rl_output/latest")
     assert deploy[:2] == ["swift", "deploy"] and deploy[deploy.index("--adapters") + 1] == "/workspace/rl_output/latest" and "--port" in deploy
     assert "--adapters" not in build_deploy_command(CFG)
+    for argv in (rollout, rlhf, deploy):
+        assert argv[argv.index("--response_prefix") + 1] == ""
 
 
 def test_env_carries_pixels_and_service_url():
@@ -36,6 +38,7 @@ def test_env_carries_pixels_and_service_url():
     assert env["MAX_PIXELS"] == "1003520" and env["RL_ENV_URL"] == CFG["env_url"] and env["RL_RUN_DIR"] == "/workspace/rl_runs/r1"
     assert "RL_ENV_TOKEN" not in env or env["RL_ENV_TOKEN"] == ""
     assert build_env(dict(CFG, env_token="s3cret"), "/x")["RL_ENV_TOKEN"] == "s3cret"
+    assert build_env(CFG, "/x", workdir="/workspace")["PYTHONPATH"].split(":")[0] == "/workspace"
 
 
 def test_derive_run_config_merges_compute_and_ignores_none():
@@ -82,10 +85,11 @@ class FakeRun:
 def test_phase_driver_runs_all_phases_with_handshake():
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)
-        launched, calls, acks = [], [], []
+        launched, calls, acks, devices = [], [], [], []
 
         def launcher(argv, **kw):
             launched.append(FakeProc(argv))
+            devices.append((argv[1], kw["env"]["CUDA_VISIBLE_DEVICES"]))
             return launched[-1]
 
         cfg = dict(CFG, merged_model=str(workdir / "merged"), output_dir=str(workdir / "rl_output"), sft_adapter_remote=str(workdir / "sft_adapter"))
@@ -93,6 +97,7 @@ def test_phase_driver_runs_all_phases_with_handshake():
 
         def run_foreground(argv, env):
             calls.append(argv[:2])
+            devices.append((argv[1], env["CUDA_VISIBLE_DEVICES"]))
             if argv[1] == "rlhf":
                 (Path(cfg["output_dir"]) / "checkpoint-5").mkdir(parents=True)
                 (Path(cfg["output_dir"]) / "checkpoint-5" / "adapter_config.json").write_text("{}")
@@ -106,6 +111,7 @@ def test_phase_driver_runs_all_phases_with_handshake():
         assert (Path(cfg["output_dir"]) / "latest" / "adapter_config.json").exists()
         assert (workdir / "PHASE").read_text().strip() == "DONE"
         assert [p.argv[1] for p in launched] == ["deploy", "rollout", "deploy"] and all(p.killed for p in launched)
+        assert dict(devices) == {"export": "0", "deploy": "0", "rollout": "0", "rlhf": "1"}
         assert [p.argv[p.argv.index("--adapters") + 1] for p in launched if "--adapters" in p.argv] == [str(Path(cfg["output_dir"]) / "latest")]
         versions = json.loads((workdir / "run" / "versions.json").read_text())
         assert versions["mode"] == "swift" and versions["packages"] == ["torch==2.11.0"]
