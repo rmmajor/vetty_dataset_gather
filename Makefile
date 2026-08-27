@@ -3,7 +3,8 @@
        capture-public provision-human capture-human \
        install-eval eval-screenspot test-eval \
        install-remote remote-train remote-eval remote-train-dry remote-train-cleanup test-remote \
-       test-rl-unit test-rl rl-tasks rl-serve rl-rollout rl-eval eval remote-grpo remote-serve test-grpo grpo-dataset
+       eval-online-mind2web eval-held-out eval-compare eval-sources test-student-eval test-verify-gate \
+       test-rl-unit test-rl rl-tasks rl-serve rl-rollout rl-eval remote-grpo remote-serve test-grpo grpo-dataset
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -21,13 +22,24 @@ PIPELINE_BUDGET ?= 30
 PIPELINE_WORKERS ?= 5
 PIPELINE_LIMIT ?=
 PIPELINE_LIMIT_PCT ?= 100
+# ScreenSpot grounding eval
 EVAL_MODELS      ?= eval_models.yaml
 EVAL_DATASET     ?= rootsautomation/ScreenSpot
 EVAL_SPLIT       ?= test
 EVAL_BACKEND     ?= swift
-EVAL_COORD_SPACE ?=            # empty: each spec's own coord_space in EVAL_MODELS wins
 EVAL_VIEWPORT    ?= 1280x720
 EVAL_OUTPUT_DIR  ?= eval_results
+# Student episode eval
+EVAL_ENDPOINT    ?=
+EVAL_MODEL       ?=
+EVAL_ADAPTER     ?=
+EVAL_API_KEY     ?=
+EVAL_LABEL       ?= baseline
+EVAL_RUNS        ?=
+EVAL_ARGS        ?=
+# Shared by both eval lanes.
+# Empty coord space: each ScreenSpot spec's own coord_space in EVAL_MODELS wins.
+EVAL_COORD_SPACE ?=
 EVAL_LIMIT       ?=
 
 help: ## Show this help
@@ -108,6 +120,9 @@ test-sandbox: build-sandbox ## Test sandbox container lifecycle
 test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
 	python -m repo_pipeline.driver_smoke
 
+test-verify-gate: ## Scripted (no-LLM/Docker/network) check that the capture success gate never rejects a verified trajectory
+	python -m repo_pipeline.verify_gate_smoke
+
 test-rl-unit: ## Unit tests for the RL rollout harness (no Docker, no LLM)
 	python -m rl.tests
 
@@ -125,8 +140,6 @@ rl-rollout: ## Local rollouts against an OpenAI-compatible endpoint (RL_ENDPOINT
 
 rl-eval: ## E3 student eval on held-out tasks (RL_ENDPOINT, RL_MODEL, RL_BASELINE=report.json, RL_ARGS)
 	python -m rl.eval --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) $(if $(RL_BASELINE),--baseline $(RL_BASELINE)) $(RL_ARGS)
-
-eval: rl-eval ## Alias for rl-eval
 
 audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on defects)
 	python -m repo_pipeline.corpus_audit trajectories/
@@ -178,6 +191,43 @@ pipeline-status: ## Show pipeline registry stats
 
 test-notifier: ## Test Telegram bot notification
 	python -m repo_pipeline.notifier --test
+
+# ---------- Student eval (before/after a training run) ----------
+
+eval-online-mind2web: ## Run Online-Mind2Web against a served model (EVAL_ENDPOINT=, EVAL_MODEL=, EVAL_LABEL=before|after)
+	@test -n "$(EVAL_ENDPOINT)" || (echo "ERROR: set EVAL_ENDPOINT=http://<host>:8000/v1 (the served model; the browser runs locally)" && exit 1)
+	python -m repo_pipeline.student_eval run \
+		--task-source online_mind2web \
+		--endpoint $(EVAL_ENDPOINT) \
+		$(if $(EVAL_MODEL),--model $(EVAL_MODEL)) \
+		$(if $(EVAL_ADAPTER),--adapter $(EVAL_ADAPTER)) \
+		$(if $(EVAL_API_KEY),--api-key $(EVAL_API_KEY)) \
+		--label $(EVAL_LABEL) \
+		$(if $(EVAL_COORD_SPACE),--coord-space $(EVAL_COORD_SPACE)) \
+		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT) --stratify) \
+		$(EVAL_ARGS)
+
+eval-held-out: ## Same harness over our own never-captured public-site tasks
+	@test -n "$(EVAL_ENDPOINT)" || (echo "ERROR: set EVAL_ENDPOINT=http://<host>:8000/v1" && exit 1)
+	python -m repo_pipeline.student_eval run \
+		--task-source held_out \
+		--endpoint $(EVAL_ENDPOINT) \
+		$(if $(EVAL_MODEL),--model $(EVAL_MODEL)) \
+		$(if $(EVAL_ADAPTER),--adapter $(EVAL_ADAPTER)) \
+		--label $(EVAL_LABEL) \
+		$(if $(EVAL_COORD_SPACE),--coord-space $(EVAL_COORD_SPACE)) \
+		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT)) \
+		$(EVAL_ARGS)
+
+eval-compare: ## Before/after table from two or more runs (EVAL_RUNS="eval_runs/before_... eval_runs/after_...")
+	@test -n "$(EVAL_RUNS)" || (echo 'ERROR: set EVAL_RUNS="eval_runs/<before_id> eval_runs/<after_id>"' && exit 1)
+	python -m repo_pipeline.student_eval compare $(EVAL_RUNS)
+
+eval-sources: ## List the registered eval task sources
+	python -m repo_pipeline.student_eval sources
+
+test-student-eval: ## Self-test the eval harness (parser round-trip + mock replay episode + judge)
+	python -m repo_pipeline.student_eval_smoke $(EVAL_ARGS)
 
 # ---------- Evaluation (ScreenSpot grounding) ----------
 

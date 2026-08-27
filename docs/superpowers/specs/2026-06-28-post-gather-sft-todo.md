@@ -40,3 +40,18 @@ trajectories exist.
   (does the model see approval before execute? are secrets masked?).
 - Real task-success eval = the Phase 2 eval/deploy harness (separate future phase, see the
   design doc §10).
+
+## Disposable-email wall (deferred — 2026-08-26)
+
+A growing set of sites reject mail.tm addresses at signup outright ("This email domain has been
+banned due to policy violations"): teable, scribbles, outline-wiki confirmed, and it is expected to
+hit a meaningful share of the 63 mainstream targets (etsy/ebay/canva/figma class). Neither lane can
+pass it — the autonomous lane has nothing else to offer, and a human with the same burner hits the
+identical wall, so it is NOT a human-provisioning problem.
+
+Fix: own a cheap domain with catch-all forwarding and mint burners on it instead of mail.tm. Keeps
+the burner-only invariant fully intact (still disposable, still never the operator's identity) while
+presenting a non-disposable domain. Blocks the whole class at once; touches `mailtm.py`'s mailbox
+minting and nothing else, since the rest of the pipeline only ever sees `{address, password}`.
+
+Related: `provisioning_status` gained an `email_blocked` class to keep both lanes off these sites.

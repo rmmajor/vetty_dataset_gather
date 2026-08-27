@@ -21,8 +21,11 @@ from pathlib import Path
 from claude_agent_sdk import ClaudeAgentOptions
 
 from repo_pipeline.agent_runner import run_agent
+from repo_pipeline.corpus_audit import _action_signature
 from repo_pipeline.driver_session import DriverClient, DriverError
+from repo_pipeline import operator_pii
 from repo_pipeline.llm_config import MODEL_FOR_REASONING, MODEL_FOR_TEACHER_AGENT
+from repo_pipeline.persona import MASKED_FIELDS, default_persona, persona_secrets
 from repo_pipeline.safety_watchdog import get_policy
 from repo_pipeline.sdk_runner import UsageLimitReached
 
@@ -34,12 +37,11 @@ AGENT_MAX_TURNS = int(os.environ.get("AGENT_MAX_TURNS", "150"))
 VERIFY_BUDGET_USD = float(os.environ.get("VERIFY_BUDGET_USD", "0.30"))
 # Hindsight relabeling only makes sense for trajectories with real substance.
 RELABEL_MIN_STEPS = int(os.environ.get("AGENT_RELABEL_MIN_STEPS", "3"))
-# A "meandering" grade normally forces success:false (the model shouldn't learn wandering), but a
-# run that REACHED the goal within this many times the expected action count is clean enough to
-# keep — the few extra steps are noise, not a different lesson. The verifier's qualitative
-# "meandering" grade is noisy (it fires on repeated actions and has flagged runs at ratio ~1.05),
-# so this quantitative ratio overrides it. Env-tunable; raise to keep looser runs.
-MEANDER_OK_RATIO = float(os.environ.get("AGENT_MEANDER_OK_RATIO", "2.0"))
+# Degeneracy — one action over this share of the UI steps, repeated at least this often — is the ONLY override of a confirmed goal.
+DEGENERATE_LOOP_FRACTION = float(os.environ.get("AGENT_DEGENERATE_LOOP_FRACTION", "0.6"))
+DEGENERATE_MIN_REPEATS = int(os.environ.get("AGENT_DEGENERATE_MIN_REPEATS", "3"))
+# Mid-run frames per verdict beyond the final one; ~1230 tokens each, so the eval-scale cost dial.
+VERIFY_MID_SCREENSHOTS = int(os.environ.get("VERIFY_MID_SCREENSHOTS", "2"))
 
 TEACHER_PROMPT = """You are a skilled computer user accomplishing a goal in a web application. \
 Work through the app's UI exactly as a careful human would.
@@ -69,6 +71,9 @@ the page is visibly loading. On canvas/drawing surfaces (no listed elements), ta
 screenshot and act with click_xy / drag_path at pixel coordinates.
 - If an action is refused or the page doesn't react as expected, re-snapshot, reconsider, and \
 try a DIFFERENT approach rather than repeating the same action.
+- NEVER type a real person's identity anywhere — not in a form, not in a thought. Identity fields \
+take the disposable persona given above (or an obviously fictional value); never a real name, email \
+address, phone number or address, and never anything you recall from your own environment.
 - Distinguish YOUR mistakes (recover and continue) from a BROKEN APP (error pages, missing \
 content, dead backend). If the app itself cannot support the goal, confirm the blockage once \
 — one re-snapshot or one alternate route — then call task_complete with outcome='failed' \
@@ -156,17 +161,45 @@ _SECRET_KEY_DESC = {
     "new_password": "<secret:new_password> = a new password to set whenever you must choose one "
                     "(e.g. when resetting or changing your password)",
     "username": "<secret:username> = your username",
+    "phone": "<secret:phone> = your phone number",
 }
 
 
+def render_identity_block(persona: dict | None, secret_keys: list[str]) -> str:
+    """Who the agent IS, injected into every mode: a disposable persona plus the ban on real identities."""
+    if not persona:
+        return ""
+    unclaimed = [k for k in MASKED_FIELDS if k not in secret_keys]
+    contact_line = ""
+    if unclaimed:
+        items = "; ".join(_SECRET_KEY_DESC.get(k, f"<secret:{k}>") for k in unclaimed)
+        contact_line = (
+            "- When a form asks for your contact details, type the placeholder EXACTLY into the field "
+            f"it belongs in and the system fills in your disposable value: {items}.\n"
+        )
+    return (
+        "\nYOUR IDENTITY — you are a disposable QA test persona, not a real person:\n"
+        f"- Your name is {persona['full_name']} (username {persona['username']}). Use it wherever a "
+        "form, profile, or message asks who you are.\n"
+        + contact_line +
+        "- NEVER type a real person's identity — no real name, email address, phone number, or postal "
+        "address, and above all nothing from your own environment, configuration, or memory of who is "
+        "running you. Those belong to real people and must never enter a form.\n"
+        "- If a field wants identity data not listed above (date of birth, address, company), invent a "
+        "plainly fictional value that fits this persona rather than recalling a real one.\n"
+    )
+
+
 def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str],
-                        webmail_url: str = "", webmail_preauthed: bool = True) -> str:
+                        webmail_url: str = "", webmail_preauthed: bool = True,
+                        persona: dict | None = None) -> str:
     """The operating-mode instructions injected into TEACHER_PROMPT. This describes the agent's
     RESOURCES (it has credentials, it has an email inbox) and its stop condition — NOT a step-by-step
     procedure. The recorded `instruction` stays a terse user goal; the agent figures out the process.
-    Empty for the default autonomous-without-credentials case, so pre-existing repo captures are
-    unchanged. `webmail_preauthed` distinguishes the sandbox webmail (Roundcube, already signed in)
+    Every mode ends with the disposable-identity block, so no capture can leave the teacher to invent
+    an identity. `webmail_preauthed` distinguishes the sandbox webmail (Roundcube, already signed in)
     from a real disposable inbox (mail.tm) the agent must sign into itself."""
+    identity_block = render_identity_block(persona, secret_keys)
     if autonomy == "guarded":
         return (
             "\nOPERATING MODE — guarded (a real person is supervising a live account):\n"
@@ -179,6 +212,7 @@ def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str],
             "reason; assume control returns and continue.\n"
             "- Everything safe and reversible (browse, search, fill non-sensitive forms, add-to-cart, "
             "create drafts) you do normally.\n"
+            + identity_block
         )
     cred_items = "; ".join(_SECRET_KEY_DESC.get(k, f"<secret:{k}>") for k in secret_keys)
     creds_line = (
@@ -213,9 +247,13 @@ def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str],
 
     if auth_mode == "pre_session":
         # The session is injected — the agent is ALREADY signed in. No login ritual: just do the task.
+        # Without this a PERSISTED session that expired between runs dead-ends every task on the site.
+        expired_line = ("- If the session has expired and the app shows a login screen anyway, sign in "
+                        "with your credentials and carry on.\n" if secret_keys else "")
         return ("\nOPERATING MODE — autonomous QA (you are already signed in):\n"
                 "- You are signed in to the app. Pursue the goal directly; do NOT log out or look "
-                "for a login screen unless the task itself asks you to.\n")
+                "for a login screen unless the task itself asks you to.\n"
+                + expired_line + creds_line + mail_line + identity_block)
     if auth_mode == "discovered":
         # Start signed out WITH credentials available — sign in only if the task can't proceed
         # without it (the realistic 'hit the wall, then log in' pattern), otherwise just work.
@@ -223,15 +261,15 @@ def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str],
                 "- Pursue the goal directly. ONLY if the app blocks you until you sign in should you "
                 "sign in (creating the account first with your credentials if you do not have one "
                 "yet), then continue toward the goal. Do not seek out a login if the task does "
-                "not require one.\n" + creds_line + mail_line)
+                "not require one.\n" + creds_line + mail_line + identity_block)
     if auth_mode == "login":
         # Logging in / creating (or recovering) an account IS the goal of this task. The recorded
         # instruction is a terse user goal; the agent works out the steps from these resources.
         return ("\nOPERATING MODE — autonomous QA (disposable test environment):\n"
                 "- Pursue the goal end-to-end, including signing in / creating or recovering the "
                 "account; the environment resets after the run, so finishing real flows is safe.\n"
-                + creds_line + mail_line + done_line)
-    return ""
+                + creds_line + mail_line + done_line + identity_block)
+    return identity_block
 
 
 def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str = "browser",
@@ -261,6 +299,15 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         if state["actions"] >= MAX_ACTIONS_PER_TASK:
             return _text(
                 "action budget exhausted. Call task_complete now with an honest outcome.",
+                is_error=True,
+            )
+        # Refuse BEFORE the driver runs: an operator-identity leak must never reach the recording.
+        leaks = operator_pii.scan_text(json.dumps(payload, default=str))
+        if leaks:
+            return _text(
+                f"refused: that text contains a real person's identity ({', '.join(leaks)}). You are a "
+                "disposable QA persona — use your persona's name and the <secret:...> placeholders, or "
+                "an obviously fictional value. Never a real name, email address, or phone number.",
                 is_error=True,
             )
         try:
@@ -496,11 +543,14 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         outcome = args.get("outcome", "")
         # A confirmed completion records a terminal `done` step (screenshot of the final state
         # + the agent's goal-is-met observation) — the supervision that teaches WHEN to stop.
-        if outcome == "completed" and not state["completed"]:
+        # Guarded by done-recording rather than `completed`: a watchdog DENY already set
+        # `completed`, and that trajectory still needs its terminal stop supervision.
+        if outcome == "completed" and not state.get("done_recorded"):
             thought = (args.get("closing_thought") or "").strip() or (args.get("summary") or "").strip()
             try:
                 await _run(client.act, {"kind": "done", "thought": thought})
                 state["actions"] += 1
+                state["done_recorded"] = True
             except Exception as e:
                 logger.warning(f"done-step recording failed: {e}")
         state["completed"] = True
@@ -537,7 +587,9 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
             "kind": "confirm", "proposed_action": proposed,
             "risk_category": risk, "thought": args.get("thought", ""),
         })
-        if state["completed"]:
+        # A refused confirm (budget exhausted, driver error) recorded no step, so there is nothing
+        # for a verdict to attach to — never spend a watchdog call or emit an orphan event step.
+        if res.get("is_error") or state["completed"]:
             return res
         try:
             screen_b64 = await _run(client.screenshot_b64)
@@ -609,6 +661,7 @@ async def run_teacher_task(
     webmail_url: str = "",
     webmail_preauthed: bool = True,
     capture_session: bool = False,
+    persona: dict | None = None,
 ) -> dict:
     """Run one task end-to-end: open a driver session, let the teacher act, ensure the
     trajectory is finalized in-container. Returns the per-task state record.
@@ -617,8 +670,10 @@ async def run_teacher_task(
     is the session-scoped burner credential map (placeholders only ever reach the recording);
     `auth_config` carries a pre_session `storage_state`; `mail_config` ({url,address,password})
     pre-authenticates the scenario webmail so the agent can read verification/reset email in the
-    browser (auth-flow capture). All default so existing callers (repo capture) keep their current
-    autonomous behavior."""
+    browser (auth-flow capture). `persona` is the disposable identity the teacher answers name/email/
+    phone fields with; it defaults to the run's shared one so no caller can omit it. All default so
+    existing callers (repo capture) keep their current autonomous behavior."""
+    persona = persona or default_persona()
     state = {
         "actions": 0, "completed": False, "agent_outcome": "", "agent_summary": "",
         "instruction": task["instruction"], "autonomy": autonomy, "auth_mode": auth_mode,
@@ -628,11 +683,14 @@ async def run_teacher_task(
     loop = asyncio.get_running_loop()
     task_meta = {
         "difficulty": task.get("difficulty", ""), "expected_actions": task.get("expected_actions", 0),
-        "autonomy": autonomy, "auth_mode": auth_mode, "env": env,
+        "autonomy": autonomy, "auth_mode": auth_mode, "env": env, "persona": persona["username"],
     }
+    # A lane's provisioned credential always wins over the persona's fallback under the same key.
+    session_secrets = {**persona_secrets(persona), **(secrets or {})}
     session = await loop.run_in_executor(
         None, lambda: client.session(task["id"], app_url, task["instruction"], task_meta=task_meta,
-                                     auth_config=auth_config, secrets=secrets, mail_config=mail_config)
+                                     auth_config=auth_config, secrets=session_secrets,
+                                     mail_config=mail_config)
     )
 
     server, allowed = build_driver_mcp_server(client, state, autonomy=autonomy)
@@ -643,7 +701,7 @@ async def run_teacher_task(
         max_actions=MAX_ACTIONS_PER_TASK,
         policy_block=render_policy_block(autonomy, auth_mode, list((secrets or {}).keys()),
                                          webmail_url=((mail_config or {}).get("url") or webmail_url),
-                                         webmail_preauthed=webmail_preauthed),
+                                         webmail_preauthed=webmail_preauthed, persona=persona),
     )
 
     final_text = ""
@@ -737,20 +795,23 @@ def _verify_prompt_stream(text: str, screenshot_paths: list[Path]):
     return stream()
 
 
-def _verification_screenshots(traj_dir: Path, steps: list) -> tuple[list[Path], str]:
-    """Final screenshot plus 2 sampled mid-trajectory frames. A final-screenshot-only verifier
-    is process-blind: a run that wandered into the right end state trains wandering as
+def _verification_screenshots(traj_dir: Path, steps: list,
+                              mid_screenshots: int = None) -> tuple[list[Path], str]:
+    """Final screenshot plus evenly-sampled mid-trajectory frames. A final-screenshot-only
+    verifier is process-blind: a run that wandered into the right end state trains wandering as
     positive. Mid frames let the judge see whether progress was actually being made."""
+    n_mid = VERIFY_MID_SCREENSHOTS if mid_screenshots is None else mid_screenshots
     paths = []
     labels = []
     ui_steps = [s for s in steps if s.get("actions") and s["actions"][0].get("type") != "done"]
-    if len(ui_steps) >= 6:
-        for fraction, label in ((1 / 3, "mid-run (1/3)"), (2 / 3, "mid-run (2/3)")):
+    if len(ui_steps) >= 6 and n_mid > 0:
+        for i in range(1, n_mid + 1):
+            fraction = i / (n_mid + 1)
             step = ui_steps[int(len(ui_steps) * fraction)]
             p = traj_dir / step.get("screenshot", "")
             if p.exists():
                 paths.append(p)
-                labels.append(f"{label} — before step {step.get('step')}")
+                labels.append(f"mid-run ({i}/{n_mid + 1}) — before step {step.get('step')}")
     final = traj_dir / "final_screenshot.png"
     if not final.exists() and steps:
         final = traj_dir / steps[-1].get("screenshot", "")
@@ -777,11 +838,27 @@ def _parse_first_json_object(text: str) -> dict:
         return json.JSONDecoder().raw_decode(repaired)[0]
 
 
+def degenerate_loop_evidence(steps: list[dict]) -> dict:
+    """UI-step count plus the repeat count of the single most-repeated action — the evidence behind the degeneracy override."""
+    ui_steps = [s for s in steps if s.get("actions") and s["actions"][0].get("type") != "done"]
+    repeats_by_action = {}
+    for step in ui_steps:
+        signature = _action_signature(step)
+        if signature:
+            repeats_by_action[signature] = repeats_by_action.get(signature, 0) + 1
+    dominant_repeats = max(repeats_by_action.values(), default=0)
+    # Far stricter than the converter's stuck-loop DEFECT check: a real run that retried one control four times must survive this.
+    degenerate = bool(ui_steps) and dominant_repeats >= DEGENERATE_MIN_REPEATS and \
+        dominant_repeats / len(ui_steps) >= DEGENERATE_LOOP_FRACTION
+    return {"ui_steps": len(ui_steps), "dominant_action_repeats": dominant_repeats, "degenerate": degenerate}
+
+
 async def verify_trajectory(
     traj_dir: Path,
     state: dict | None = None,
     registry=None,
     full_name: str = "",
+    mid_screenshots: int = None,
     autonomy: str | None = None,
 ) -> dict:
     """Judge one captured trajectory on the host (after copy_out) and apply the verdict:
@@ -800,7 +877,7 @@ async def verify_trajectory(
     agent_summary = (state or {}).get("agent_summary") or capture_meta.get("agent_summary") or "(none)"
 
     steps = traj.get("steps", [])
-    screenshots, image_labels = _verification_screenshots(traj_dir, steps)
+    screenshots, image_labels = _verification_screenshots(traj_dir, steps, mid_screenshots)
     expected_actions = (capture_meta.get("task_meta") or {}).get("expected_actions") or "(unspecified)"
 
     prompt_template = GUARDED_VERIFY_PROMPT if effective_autonomy == "guarded" else VERIFY_PROMPT
@@ -843,23 +920,19 @@ async def verify_trajectory(
     except Exception as e:
         logger.warning(f"verification failed for {traj_dir.name}: {e}")
 
-    # Efficiency ratio is computed up front so the success gate can use it to keep near-efficient
-    # meanders (MEANDER_OK_RATIO), not just record it after the fact.
-    ui_steps = sum(1 for s in steps if s.get("actions") and s["actions"][0].get("type") != "done")
+    # Efficiency stays a recorded quality TAG that the converter and corpus report consume — it is never a veto.
+    evidence = degenerate_loop_evidence(steps)
+    ui_steps = evidence["ui_steps"]
     expected = (capture_meta.get("task_meta") or {}).get("expected_actions") or 0
     efficiency_ratio = round(ui_steps / expected, 2) if expected else None
 
+    # Hindsight-RECLASSIFICATION is forbidden: success is judged ONLY against the original instruction, never a sub-goal the agent reached instead.
     relabeled = False
-    # Hindsight-RECLASSIFICATION is forbidden: success is judged ONLY against the original
-    # instruction, never rewritten to a sub-goal the agent happened to accomplish (which used to
-    # turn "compress a PDF" into "navigate to the compress page"). A near-efficient meander that met
-    # the ORIGINAL goal is still kept (tagged); an unbounded meander is discarded.
-    # Falls back to discard when the ratio is unknown (no expected_actions).
-    efficiency_ok = (
-        verdict.get("efficiency") != "meandering"
-        or (efficiency_ratio is not None and efficiency_ratio <= MEANDER_OK_RATIO)
-    )
-    traj["success"] = bool(verdict["success"] and efficiency_ok)
+    # A goal the verifier confirmed was met is never overturned by step count; only a degenerate recording, which by construction accomplished nothing, is.
+    traj["success"] = bool(verdict["success"] and not evidence["degenerate"])
+    if verdict["success"] and evidence["degenerate"]:
+        logger.warning(f"{traj_dir.name}: verified success overridden — degenerate recording "
+                       f"({evidence['dominant_action_repeats']}/{ui_steps} UI steps are one repeated action)")
 
     capture_meta["verifier"] = {
         **verdict,
@@ -867,10 +940,13 @@ async def verify_trajectory(
         "ui_steps": ui_steps,
         "expected_actions": expected,
         "efficiency_ratio": efficiency_ratio,
+        "degenerate": evidence["degenerate"],
+        "dominant_action_repeats": evidence["dominant_action_repeats"],
     }
     trajectory_file.write_text(json.dumps(traj, indent=2))
     meta_file.write_text(json.dumps(capture_meta, indent=2))
-    return {**verdict, "relabeled": relabeled, "final_success": traj["success"]}
+    return {**verdict, "relabeled": relabeled, "degenerate": evidence["degenerate"],
+            "final_success": traj["success"]}
 
 
 SESSION_PROBE_PROMPT = """An automated agent just attempted to register and/or sign in on {site}, \
