@@ -18,6 +18,8 @@ from rl.observation import build_observation
 
 logger = logging.getLogger(__name__)
 RL_RESET_WAIT_S = float(os.environ.get("RL_RESET_WAIT_S", "1800"))
+# A terminal step can wait on the verifier through a usage-limit pause; the retries are idempotent, so waiting beats a fabricated reward.
+RL_STEP_WAIT_S = float(os.environ.get("RL_STEP_WAIT_S", "2400"))
 
 
 def _retry_after(error):
@@ -31,7 +33,8 @@ class HttpEnvClient:
     """Talks to rl/service.py through the ingress; every 5xx (the service's 503 or the tunnel's own 502/524) is retried, 4xx is fatal."""
 
     def __init__(self, base_url, token="", timeout_s=600, retries=6, backoff_s=5, reset_wait_s=RL_RESET_WAIT_S,
-                 opener=urllib.request.urlopen, **_):
+                 step_wait_s=RL_STEP_WAIT_S, opener=urllib.request.urlopen, **_):
+        self.step_wait_s = step_wait_s
         # A comma-separated list is an ordered set of ingresses to the same service; attempts rotate through it so one dead tunnel does not end the run.
         self.base_urls = [u.strip().rstrip("/") for u in base_url.split(",") if u.strip()]
         self.token, self.timeout_s = token, timeout_s
@@ -71,10 +74,10 @@ class HttpEnvClient:
         return self._request("POST", "/reset", body, wait_s=self.reset_wait_s)
 
     def step(self, episode_id, response_text, seq=None):
-        return self._request("POST", "/step", {"episode_id": episode_id, "response_text": response_text, "seq": seq})
+        return self._request("POST", "/step", {"episode_id": episode_id, "response_text": response_text, "seq": seq}, wait_s=self.step_wait_s)
 
     def close(self, episode_id, reason="external"):
-        return self._request("POST", "/close", {"episode_id": episode_id, "reason": reason})
+        return self._request("POST", "/close", {"episode_id": episode_id, "reason": reason}, wait_s=self.step_wait_s)
 
     def tasks(self, split="train"):
         return self._request("GET", f"/tasks?split={split}")["tasks"]

@@ -3,7 +3,31 @@ import tempfile
 from pathlib import Path
 
 from repo_pipeline.agent_capture import verdict_from_parsed
-from rl.judge import AsyncBridge, judge_success
+from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from rl.judge import VERIFY_RETRY_S, AsyncBridge, judge_success
+
+
+def test_verifier_retries_through_a_stale_usage_limit():
+    attempts, sleeps = [], []
+
+    async def flaky_verify(traj_dir, autonomy, full_name):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise UsageLimitReached("HTTP 429")
+        t = json.loads((traj_dir / "trajectory.json").read_text())
+        t["success"] = True
+        (traj_dir / "trajectory.json").write_text(json.dumps(t))
+        (traj_dir / "capture_meta.json").write_text(json.dumps({"verifier": {"success": True}}))
+
+    rate_limit_tracker.mark_rejected()
+    bridge = AsyncBridge()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = judge_success(_traj_dir(tmp), {"task_id": "t"}, None, "fallback", bridge, verify=flaky_verify, sleep=sleeps.append)
+    finally:
+        bridge.close()
+    assert result == (True, "verifier", "final") and len(attempts) == 2 and sleeps == [VERIFY_RETRY_S]
+    assert rate_limit_tracker.limit_reached() is False
 
 
 def test_verdict_success_requires_every_criterion_met():
