@@ -69,11 +69,13 @@ def install_driver(sandbox):
         raise DriverError(f"playwright-core install failed: {(stdout + stderr)[-300:]}")
 
 
-def start_driver(sandbox, port: int = DRIVER_PORT):
-    """Daemonize the driver on `port` and wait for it (one process per port; RL runs several per sandbox)."""
-    sandbox.start_background(f"DRIVER_PORT={port} node {DRIVER_DIR}/browser_driver.js", f"{DRIVER_LOG}.{port}")
+def start_driver(sandbox, port: int = DRIVER_PORT, env: dict | None = None):
+    """Daemonize the driver on `port` (one process per port; RL runs several per sandbox); `env` prefixes the node invocation."""
+    prefix = "".join(f"{k}={v} " for k, v in {**(env or {}), "DRIVER_PORT": port}.items())
+    log_path = DRIVER_LOG if port == DRIVER_PORT else f"{DRIVER_LOG}.{port}"
+    sandbox.start_background(f"{prefix}node {DRIVER_DIR}/browser_driver.js", log_path)
     if not sandbox.wait_for_port(port, DRIVER_READY_TIMEOUT):
-        log_tail, _, _ = sandbox.exec_command(f"tail -20 {DRIVER_LOG}.{port}")
+        log_tail, _, _ = sandbox.exec_command(f"tail -20 {log_path}")
         raise DriverError(f"driver did not open port {port}; log tail: {log_tail[-400:]}")
 
 
@@ -214,8 +216,8 @@ class DriverClient:
     def snapshot(self) -> dict:
         return self._post("/snapshot")
 
-    def screenshot_b64(self) -> str:
-        return self._post("/screenshot")["b64"]
+    def screenshot_b64(self, image_format: str = "jpeg") -> str:
+        return self._post("/screenshot", {"format": image_format})["b64"]
 
     def navigate(self, url: str) -> dict:
         return self._post("/navigate", {"url": url})
