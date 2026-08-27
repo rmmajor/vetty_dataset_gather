@@ -2,7 +2,18 @@ import json
 import tempfile
 from pathlib import Path
 
+from repo_pipeline.agent_capture import verdict_from_parsed
 from rl.judge import AsyncBridge, judge_success
+
+
+def test_verdict_success_requires_every_criterion_met():
+    verdict = verdict_from_parsed({"criteria": ["sorted by most helpful", "5-star filter on"], "criteria_met": [True, False],
+                                   "success": True, "efficiency": "meandering", "reasoning": "not filtered for 5-star"})
+    assert verdict["success"] is False and verdict["claimed_success"] is True and verdict["contradiction"] is True
+    assert verdict["efficiency"] == "meandering" and verdict["criteria_met"] == [True, False]
+    assert verdict_from_parsed({"criteria_met": [True, True], "success": True})["success"] is True
+    assert verdict_from_parsed({"success": True})["contradiction"] is False
+    assert verdict_from_parsed({"success": False, "criteria_met": [True]})["success"] is False
 
 
 def _traj_dir(tmp, success=False, verifier=None):

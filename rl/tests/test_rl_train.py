@@ -54,12 +54,16 @@ def test_derive_run_config_merges_compute_and_ignores_none():
 def test_make_dataset_rows():
     with tempfile.TemporaryDirectory() as tmp:
         suite = Path(tmp) / "suite.json"
-        suite.write_text(json.dumps({"suite_sha256": "x", "tasks": [{"task_id": "a", "split": "train"}, {"task_id": "b", "split": "eval_unseen_site"}]}))
+        suite.write_text(json.dumps({"suite_sha256": "x", "tasks": [{"task_id": "a", "split": "train", "expected_actions": 12},
+                                                                    {"task_id": "b", "split": "eval_unseen_site"},
+                                                                    {"task_id": "c", "split": "train", "expected_actions": 30}]}))
         out = Path(tmp) / "rl_tasks.jsonl"
-        assert make_dataset(suite, out, split="train", repeats=2) == 2
+        assert make_dataset(suite, out, split="train", repeats=2) == 4
         rows = [json.loads(line) for line in out.read_text().splitlines()]
         assert rows[0]["messages"] == [{"role": "user", "content": "<placeholder:a>"}]
-        assert rows[0]["env_config"] == {"name": "browser_env", "task_id": "a", "sample_idx": 0} and rows[1]["env_config"]["sample_idx"] == 1
+        assert rows[0]["env_config"] == {"name": "browser_env", "task_id": "a", "sample_idx": 0} and rows[2]["env_config"]["sample_idx"] == 1
+        assert make_dataset(suite, out, split="train", repeats=1, max_expected_actions=18) == 1
+        assert json.loads(out.read_text())["env_config"]["task_id"] == "a"
 
 
 class FakeProc:

@@ -63,7 +63,8 @@ def grpo(run_name: str, env_url: str, env_token: str = "", sft_adapter: str = "s
     if sft_adapter_local.exists():
         shutil.rmtree(sft_adapter_local)
     shutil.copytree(adapter_src, sft_adapter_local)
-    rows = make_dataset(workdir / "rl" / "rl_tasks.json", workdir / "rl_tasks.jsonl", "train", 1)
+    base_cfg = load_rl_config(str(workdir / "rl_config.yaml"))
+    rows = make_dataset(workdir / "rl" / "rl_tasks.json", workdir / "rl_tasks.jsonl", "train", 1, base_cfg.get("train_max_expected_actions"))
     if rows == 0:
         raise RuntimeError("rl/rl_tasks.json has no train tasks — run `make rl-tasks` before deploying")
     print(f"{rows} train rows from rl/rl_tasks.json", flush=True)
@@ -78,7 +79,7 @@ def grpo(run_name: str, env_url: str, env_token: str = "", sft_adapter: str = "s
     }
     if smoke:
         overrides.update({"max_steps": max_steps or 1, "num_generations": num_generations or 2, "max_turns": max_turns or 3})
-    cfg = derive_run_config(load_rl_config(str(workdir / "rl_config.yaml")), overrides)
+    cfg = derive_run_config(base_cfg, overrides)
     run_config = run_dir / "rl_config.yaml"
     run_config.write_text(yaml.safe_dump(cfg, sort_keys=False))
 

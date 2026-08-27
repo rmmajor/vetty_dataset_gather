@@ -12,7 +12,7 @@ from repo_pipeline.stage6_generate import _safe_task_id
 from rl import checks
 from rl.actions import decode_step
 from rl.executor import control_index, to_sequence_payload, validate_actions
-from rl.judge import judge_success
+from rl.judge import cached_verdict, judge_success
 from rl.observation import build_observation
 from rl.rewards import compute_reward
 from train_qwen import history_entries_for_step
@@ -196,13 +196,15 @@ class Episode:
         return sum(1 for s in steps if s.get("actions") and s["actions"][0].get("type") != "done")
 
     def _build_record(self, check_result):
-        success, source, status = None, "none", "final"
+        success, source, status, verdict = None, "none", "final", {}
         if self.traj_dir.exists():
             success, source, status = judge_success(self.traj_dir, self.task, check_result, self.cfg.verifier_mode, self.ctx.bridge)
+            verdict = cached_verdict(self.traj_dir) or {}
         record = {
             "episode_id": self.episode_id, "task_id": self.task["task_id"], "site": self.task.get("site"), "split": self.task.get("split"),
             "k": self.k, "iter": self.ctx.iteration, "traj_dir": str(self.traj_dir), "terminal_reason": self.terminal_reason,
             "steps": self.step_index, "ui_steps": self._ui_steps(), "turns": self.turns, "success": success,
+            "efficiency_grade": verdict.get("efficiency"), "verdict_contradiction": bool(verdict.get("contradiction")),
             "success_source": source, "reward_status": status, "navigate_blocked": self.navigate_blocked,
             "duration_s": round(time.time() - self.started, 1), "check": check_result,
         }

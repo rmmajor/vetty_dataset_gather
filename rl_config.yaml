@@ -19,9 +19,11 @@ vllm_gpu_memory_utilization: 0.8
 vllm_max_model_len: 4096
 vllm_max_lora_rank: 64
 vllm_limit_mm_per_prompt: '{"image": 1}'
-max_turns: 15
+# Train tasks expect at most train_max_expected_actions actions; 28 turns lets a ~2x-reference wanderer still finish, so a group's samples do not all hit the cap alike (zero advantage).
+max_turns: 28
 # trainer (swift rlhf --rlhf_type grpo)
 dataset: rl_tasks.jsonl
+train_max_expected_actions: 18
 learning_rate: 1.0e-5
 beta: 0.01
 epsilon: 0.2

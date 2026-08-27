@@ -78,6 +78,21 @@ Preferred, in order:
 3. **Keep `judged_success` and `verified_success` genuinely distinct, or collapse them to one.**
    Two names for one value implies a check that does not exist.
 
+## Resolution (2026-08-27)
+
+Done on the RL harness branch, because this verifier is also the GRPO reward:
+
+1. The verdict JSON now lists the goal's `criteria` and a `criteria_met` checklist BEFORE `success`,
+   and the recorded `success` is the judge's claim AND every checklist entry
+   (`agent_capture.verdict_from_parsed`). The raw claim survives as `claimed_success`, and a
+   disagreement is logged and stored as `contradiction` so its rate can be tracked per run.
+2. The eval harness records `judged_success` = the raw claim and `verified_success` = the
+   consistent verdict, so the two names are two values.
+3. The RL reward (`rl/reward_config.json`) discounts a meandering success (x0.6) instead of vetoing
+   it, slopes step efficiency to zero at 2x the expected actions, pays the done() bonus only on
+   success, and penalises both a false done() and running into either step cap — so wandering,
+   under-stopping and overclaiming are each priced separately rather than folded into success.
+
 ## Standing caveat for any published number
 
 This harness's judge is `claude-sonnet-5` on the capture pipeline's rubric, not WebJudge/o4-mini.

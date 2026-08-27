@@ -27,6 +27,7 @@ class BrowserEnv(Env):
         self.turn = 0
         self.last_image_path = None
         self.observation = None
+        self.close_reason = "external"
 
     async def reset(self, config):
         env_config = (config.data_dict or {}).get("env_config", {})
@@ -54,7 +55,7 @@ class BrowserEnv(Env):
     async def close(self):
         if self.episode_id is not None:
             try:
-                self.client.close(self.episode_id, "external")
+                self.client.close(self.episode_id, self.close_reason)
             except Exception:
                 pass
 
@@ -79,7 +80,11 @@ class BrowserScheduler(GYMScheduler):
             turn_result = await self.on_turn_end(infer_request, choice, turn)
             turns.append({"response": response, "user": prompt[-1], "assistant": choice.message.content,
                           "token_ids": list(choice.token_ids or []), "image": image})
-            if turn_result.get("done") or self.check_finished(infer_request, choice, turn):
+            if turn_result.get("done"):
+                break
+            if self.check_finished(infer_request, choice, turn):
+                # The env only sees a close for a trainer-side cut, so name it: the reward treats max_turns like its own step cap.
+                env.close_reason = "length" if choice.finish_reason == "length" else "max_turns"
                 break
             infer_request.messages, infer_request.images = self._fresh_prompt(env)
             turn += 1

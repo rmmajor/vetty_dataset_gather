@@ -101,12 +101,14 @@ def derive_run_config(cfg, overrides):
     return derived
 
 
-def make_dataset(suite_path, out_path, split="train", repeats=1):
+def make_dataset(suite_path, out_path, split="train", repeats=1, max_expected_actions=None):
     suite = json.loads(Path(suite_path).read_text())
+    tasks = [t for t in suite["tasks"] if (t.get("split") == split or split == "all")
+             and (max_expected_actions is None or (t.get("expected_actions") or 0) <= max_expected_actions)]
     # The trainer groups GRPO advantages by the row's messages, so the placeholder must be unique per task.
     rows = [{"messages": [{"role": "user", "content": f"<placeholder:{t['task_id']}>"}],
              "env_config": {"name": "browser_env", "task_id": t["task_id"], "sample_idx": r}}
-            for r in range(repeats) for t in suite["tasks"] if t.get("split") == split or split == "all"]
+            for r in range(repeats) for t in tasks]
     Path(out_path).write_text("".join(json.dumps(r) + "\n" for r in rows))
     return len(rows)
 
@@ -245,6 +247,7 @@ def main():
     d.add_argument("--out", default="rl_tasks.jsonl")
     d.add_argument("--split", default="train")
     d.add_argument("--repeats", type=int, default=1)
+    d.add_argument("--max-expected-actions", type=int)
     r = sub.add_parser("run")
     r.add_argument("--config", default="rl_config.yaml")
     r.add_argument("--run-dir", required=True)
@@ -258,7 +261,7 @@ def main():
             print(f"# {name}\n{' '.join(argv)}\n")
         return 0
     if args.command == "make-dataset":
-        print(f"wrote {make_dataset(args.tasks, args.out, args.split, args.repeats)} rows -> {args.out}")
+        print(f"wrote {make_dataset(args.tasks, args.out, args.split, args.repeats, args.max_expected_actions)} rows -> {args.out}")
         return 0
     return PhaseDriver(load_rl_config(args.config), args.run_dir, args.workdir).run(mode=args.mode)
 

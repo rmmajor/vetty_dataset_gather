@@ -234,7 +234,7 @@ class GrpoJob(RemoteJob):
         if not suite_path.is_file():
             raise FileNotFoundError("rl/rl_tasks.json missing — run `make rl-tasks`")
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        rows = make_dataset(suite_path, self.dataset_path, "train", 1)
+        rows = make_dataset(suite_path, self.dataset_path, "train", 1, self.rl.get("train_max_expected_actions"))
         if rows == 0:
             raise ValueError("no train tasks in rl/rl_tasks.json")
         env_url = self.rl["env_url"]

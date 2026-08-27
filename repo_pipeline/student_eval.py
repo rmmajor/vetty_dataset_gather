@@ -951,7 +951,7 @@ async def judge_episode(record: EpisodeRecord, cfg: EvalConfig):
         episode_dir, full_name=f"eval:{cfg.label}:{record.task_id}",
         mid_screenshots=cfg.judge_mid_screenshots,
     )
-    record.judged_success = bool(verdict.get("success"))
+    record.judged_success = bool(verdict.get("claimed_success", verdict.get("success")))
     record.verified_success = bool(verdict.get("success"))
     record.efficiency = verdict.get("efficiency") or ""
     record.judge_reasoning = (verdict.get("reasoning") or "")[:400]
@@ -1228,8 +1228,9 @@ def render_report(results: dict) -> str:
         f"| mean steps (all) | {metrics['mean_steps_all']} |",
         f"| episodes that hit the step cap | {metrics['step_cap_hits']} |",
         "",
-        "`verified` is the judge's verdict on the ORIGINAL goal; the efficiency grade is reported "
-        "beside it rather than folded into it. `steps / reference_length` compares against the "
+        "`verified` is the judge's verdict on the ORIGINAL goal after its own criteria checklist is "
+        "enforced (`judged` is the raw claim); the efficiency grade is reported beside it rather than "
+        "folded into it. `steps / reference_length` compares against the "
         "benchmark's own human step count, which is a more defensible efficiency denominator than "
         "our raw step counts.",
         "",
