@@ -1,3 +1,4 @@
+import gzip
 import json
 import queue
 import threading
@@ -51,6 +52,14 @@ def _post(url, body, token="t"):
         return json.loads(response.read())
 
 
+def _post_gzip(url, body, token="t"):
+    headers = {"Content-Type": "application/json", "X-RL-Token": token, "Accept-Encoding": "gzip"}
+    request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers)
+    with urllib.request.urlopen(request, timeout=10) as response:
+        assert response.headers.get("Content-Encoding") == "gzip"
+        return json.loads(gzip.decompress(response.read()))
+
+
 def test_http_round_trip_and_slot_exhaustion():
     tasks = {"t1": {"task_id": "t1", "split": "train"}}
     service = EnvService(FakePool(1), tasks, lambda run_id, it, tag: None, None, episode_cls=FakeEpisode, reset_timeout_s=0.2)
@@ -72,7 +81,7 @@ def test_http_round_trip_and_slot_exhaustion():
             assert e.code == 503 and json.loads(e.read())["retry_after"] > 0
         stepped = _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: wait()", "seq": 1})
         assert stepped["done"] is False and stepped["observation"]["text"] == "obs1"
-        assert _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: wait()", "seq": 1}) == stepped
+        assert _post_gzip(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: wait()", "seq": 1}) == stepped
         final = _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: done()", "seq": 2})
         assert final["done"] is True and final["reward"] == 1.0 and final["observation"] is None
         replayed = _post(f"{base}/step", {"episode_id": first["episode_id"], "response_text": "action: done()", "seq": 2})

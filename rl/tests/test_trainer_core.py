@@ -11,6 +11,8 @@ from rl.trainer.core import (ENV_CLIENTS, EpisodeRecorder, HttpEnvClient, MockEn
 
 
 class FakeResponse:
+    headers = {}
+
     def __init__(self, payload):
         self.payload = payload
 
@@ -39,15 +41,16 @@ def test_http_client_reset_waits_through_5xx_and_fails_fast_on_4xx():
     calls = []
 
     def opener(request, timeout):
-        calls.append(json.loads(request.data))
+        calls.append((request.full_url, json.loads(request.data)))
         outcome = outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
 
-    client = HttpEnvClient("http://x", backoff_s=0, reset_wait_s=5, opener=opener)
+    client = HttpEnvClient("http://primary, http://fallback/", backoff_s=0, reset_wait_s=5, opener=opener)
     assert client.reset("t", 0, "r", 0, "")["episode_id"] == "e"
-    assert len(calls) == 3 and calls[0]["request_id"] == calls[2]["request_id"]
+    assert len(calls) == 3 and calls[0][1]["request_id"] == calls[2][1]["request_id"]
+    assert [url.split("/")[2] for url, _ in calls] == ["primary", "fallback", "primary"]
 
     def not_found(request, timeout):
         raise _http_error(404, {"error": "unknown episode"})

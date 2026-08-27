@@ -1,5 +1,6 @@
 """HTTP env service for the GPU-side trainer plugin: reset/step/close over the worker pool (loopback, token-guarded)."""
 import argparse
+import gzip
 import json
 import logging
 import os
@@ -136,6 +137,10 @@ def make_handler(service, token):
             data = json.dumps(payload).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
+            # Observations are base64 PNGs, which gzip by ~25%; that margin matters against a metered ingress.
+            if status == 200 and "gzip" in (self.headers.get("Accept-Encoding") or ""):
+                data = gzip.compress(data, 6)
+                self.send_header("Content-Encoding", "gzip")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)

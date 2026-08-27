@@ -1,5 +1,7 @@
 """ms-swift plugin: BrowserEnv (gym Env over the Mac env service), BrowserScheduler (one record per turn), ActionFormatORM. Module paths verified against ms-swift 4.5.2."""
+import asyncio
 import copy
+import functools
 import os
 import uuid
 
@@ -8,7 +10,9 @@ from swift.rewards.orm import ORM, orms
 from swift.rollout.gym_env import Env, envs
 from swift.rollout.multi_turn import GYMScheduler, multi_turns
 
-from rl.trainer.core import EpisodeRecorder, action_format_score, env_client_for, episode_records, observation_to_user_message
+from rl.observation import build_observation
+from rl.trainer.core import (EpisodeRecorder, action_format_score, blank_png_b64, env_client_for, episode_records,
+                             observation_to_user_message)
 from train_qwen import SYSTEM_PROMPT
 
 RL_ENV_URL = os.environ.get("RL_ENV_URL", "http://127.0.0.1:8900")
@@ -28,20 +32,32 @@ class BrowserEnv(Env):
         self.last_image_path = None
         self.observation = None
         self.close_reason = "external"
+        self.close_reward = None
+        self.env_error = None
+
+    async def _call(self, fn, *args, **kwargs):
+        # The env round-trips (slot waits, the verifier on a terminal step) must not block the rollout server's loop, or every concurrent episode stalls with them.
+        return await asyncio.get_running_loop().run_in_executor(None, functools.partial(fn, *args, **kwargs))
 
     async def reset(self, config):
         env_config = (config.data_dict or {}).get("env_config", {})
-        result = self.client.reset(env_config["task_id"], int(env_config.get("sample_idx", 0)), RL_RUN_ID,
-                                   int(env_config.get("iteration", 0)), env_config.get("policy_tag", ""))
+        try:
+            result = await self._call(self.client.reset, env_config["task_id"], int(env_config.get("sample_idx", 0)), RL_RUN_ID,
+                                      int(env_config.get("iteration", 0)), env_config.get("policy_tag", ""))
+        except Exception as e:
+            self.env_error = str(e)[:300]
+            result = {"episode_id": None, "observation": build_observation("(env unavailable)", [], blank_png_b64((1280, 720)), 0)}
         self.episode_id = result["episode_id"]
         self.observation = result["observation"]
         self.last_image_path = self.recorder.save_png(self.trajectory_uuid, 0, self.observation["image_b64"])
-        return self.observation["text"], {"episode_id": self.episode_id}, SYSTEM_PROMPT
+        return self.observation["text"], {"episode_id": self.episode_id, "env_error": self.env_error}, SYSTEM_PROMPT
 
     async def step(self, action):
+        if self.env_error:
+            return "", 0.0, True, {"env_error": self.env_error}
         response_text = action[-1]["content"] if action and action[-1]["role"] == "assistant" else ""
         try:
-            result = self.client.step(self.episode_id, response_text, seq=self.turn)
+            result = await self._call(self.client.step, self.episode_id, response_text, seq=self.turn)
         except Exception as e:
             return "", 0.0, True, {"env_error": str(e)[:300]}
         self.turn += 1
@@ -55,7 +71,7 @@ class BrowserEnv(Env):
     async def close(self):
         if self.episode_id is not None:
             try:
-                self.client.close(self.episode_id, self.close_reason)
+                self.close_reward = (await self._call(self.client.close, self.episode_id, self.close_reason)).get("reward")
             except Exception:
                 pass
 
@@ -89,7 +105,10 @@ class BrowserScheduler(GYMScheduler):
             infer_request.messages, infer_request.images = self._fresh_prompt(env)
             turn += 1
         await self._close_and_remove(infer_request.uuid)
+        # A trainer-side cut (max_turns / length) is scored by the service at close, not by any step, so that reward must be read back here.
         total_reward = float((turn_result.get("rollout_infos") or {}).get("total_reward", 0.0))
+        if not turn_result.get("done"):
+            total_reward = float(env.close_reward or 0.0)
         records = episode_records(SYSTEM_PROMPT, turns, total_reward, infer_request.uuid)
         return [RolloutOutput(response=t["response"], messages=r["messages"], response_token_ids=[t["token_ids"]] if t["token_ids"] else None,
                               rollout_infos=r["rollout_infos"]) for t, r in zip(turns, records)]

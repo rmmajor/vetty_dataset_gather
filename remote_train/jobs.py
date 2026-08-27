@@ -238,7 +238,7 @@ class GrpoJob(RemoteJob):
         if rows == 0:
             raise ValueError("no train tasks in rl/rl_tasks.json")
         env_url = self.rl["env_url"]
-        if not env_url.startswith("mock://") and not self.http_ok(f"{env_url}/health"):
+        if not env_url.startswith("mock://") and not self.http_ok(f"{env_url.split(',')[0].strip()}/health"):
             raise ConnectionError(f"env service not answering at {env_url}/health — start `make rl-serve` first")
         weights = Path(cfg.output_dir) / "adapter_model.safetensors"
         header = {

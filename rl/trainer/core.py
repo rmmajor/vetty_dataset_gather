@@ -1,5 +1,6 @@
 """ms-swift-free half of the GRPO plugin: env clients, message/record shaping, format reward — unit-tested on the Mac."""
 import base64
+import gzip
 import io
 import json
 import logging
@@ -31,11 +32,13 @@ class HttpEnvClient:
 
     def __init__(self, base_url, token="", timeout_s=600, retries=6, backoff_s=5, reset_wait_s=RL_RESET_WAIT_S,
                  opener=urllib.request.urlopen, **_):
-        self.base_url, self.token, self.timeout_s = base_url.rstrip("/"), token, timeout_s
+        # A comma-separated list is an ordered set of ingresses to the same service; attempts rotate through it so one dead tunnel does not end the run.
+        self.base_urls = [u.strip().rstrip("/") for u in base_url.split(",") if u.strip()]
+        self.token, self.timeout_s = token, timeout_s
         self.retries, self.backoff_s, self.reset_wait_s, self.opener = retries, backoff_s, reset_wait_s, opener
 
     def _request(self, method, path, body=None, wait_s=None):
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "Accept-Encoding": "gzip"}
         if self.token:
             headers["X-RL-Token"] = self.token
         data = json.dumps(body).encode() if body is not None else None
@@ -43,9 +46,12 @@ class HttpEnvClient:
         last, attempt = None, 0
         while True:
             try:
-                request = urllib.request.Request(f"{self.base_url}{path}", data=data, headers=headers, method=method)
+                request = urllib.request.Request(f"{self.base_urls[attempt % len(self.base_urls)]}{path}", data=data, headers=headers, method=method)
                 with self.opener(request, timeout=self.timeout_s) as response:
-                    return json.loads(response.read())
+                    raw = response.read()
+                    if (getattr(response, "headers", None) or {}).get("Content-Encoding") == "gzip":
+                        raw = gzip.decompress(raw)
+                    return json.loads(raw)
             except urllib.error.HTTPError as e:
                 if e.code < 500:
                     raise
@@ -74,7 +80,7 @@ class HttpEnvClient:
         return self._request("GET", f"/tasks?split={split}")["tasks"]
 
 
-def _blank_png_b64(size):
+def blank_png_b64(size):
     buffer = io.BytesIO()
     Image.new("RGB", size, (250, 250, 250)).save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode()
@@ -84,7 +90,7 @@ class MockEnvClient:
     """Offline stand-in for the env service: fixed PNG, reward 1.0 iff the final response decodes, done after `steps`."""
 
     def __init__(self, steps=3, image_size=(1280, 720), **_):
-        self.steps, self.png = steps, _blank_png_b64(image_size)
+        self.steps, self.png = steps, blank_png_b64(image_size)
         self.episodes = {}
 
     def reset(self, task_id, sample_idx, run_id, iteration, policy_tag):
