@@ -72,7 +72,15 @@ class Episode:
         return self._observe()
 
     def _observe(self):
-        shot = self.client.observe()
+        # A navigation can still be committing right after an action, and the driver's title/screenshot reads then fail transiently.
+        for attempt in range(3):
+            try:
+                shot = self.client.observe()
+                break
+            except DriverError:
+                if attempt == 2:
+                    raise
+                time.sleep(1.0)
         return build_observation(self.task["instruction"], self.history, shot["b64"], self.step_index)
 
     def step(self, response_text):

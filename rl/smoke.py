@@ -105,7 +105,7 @@ def run_service_round_trip(pool, cfg, out_root, texts):
             if step["done"]:
                 break
         assert step and step["done"] and step["reward"] is not None and step["reward"] > 1.0, step
-        assert (out_root / "iter_001" / TASK["task_id"] / "k03").exists()
+        assert (out_root / "iter_001" / TASK["task_id"] / "k00").exists(), "the service numbers k itself"
         logger.info("service round-trip PASSED")
     finally:
         server.shutdown()

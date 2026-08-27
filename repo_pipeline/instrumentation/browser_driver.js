@@ -572,14 +572,22 @@ async function executeSequence(actions) {
 
 async function handleObserve() {
   if (!state.page) throw new Error('no active session — call /session first');
-  await scrubDevOverlays();
-  await settle();
-  const buf = await state.page.screenshot();
-  state.task.pendingShot = buf;
-  return {
-    ok: true, b64: buf.toString('base64'), mime: 'image/png', url: state.page.url(),
-    title: await state.page.title(), step_next: state.task.steps.length + 1,
-  };
+  let last;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await scrubDevOverlays();
+      await settle();
+      const buf = await state.page.screenshot();
+      const title = await state.page.title();
+      state.task.pendingShot = buf;
+      return { ok: true, b64: buf.toString('base64'), mime: 'image/png', url: state.page.url(), title, step_next: state.task.steps.length + 1 };
+    } catch (e) {
+      // A navigation committing right after the action destroys the execution context mid-read; settle again and retry.
+      last = e;
+      await state.page.waitForTimeout(500);
+    }
+  }
+  throw last;
 }
 
 async function handleAct(body) {

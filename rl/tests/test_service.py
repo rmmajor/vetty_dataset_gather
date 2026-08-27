@@ -31,6 +31,8 @@ class FakeEpisode:
 
     def step(self, text):
         self.n += 1
+        if text == "boom":
+            raise RuntimeError("driver exploded")
         if text == "action: done()":
             self.record = {"reward": 1.0, "info": {"reward_status": "final"}}
             return None, 1.0, True, {"terminal_reason": "done"}
@@ -88,6 +90,12 @@ def test_http_round_trip_and_slot_exhaustion():
         assert replayed["done"] is True and replayed["reward"] == 1.0
         assert _post(f"{base}/close", {"episode_id": first["episode_id"]})["reward"] == 1.0
         assert _get(f"{base}/episode/{first['episode_id']}")["reward"] == 1.0
+        assert service.pool.free.qsize() == 1
+        second = _post(f"{base}/reset", {"task_id": "t1", "run_id": "r", "iter": 0, "sample_k": 0, "request_id": "req-2"})
+        assert service.episodes[second["episode_id"]]["episode"].episode_id == "t1__k1"
+        failed = _post(f"{base}/step", {"episode_id": second["episode_id"], "response_text": "boom", "seq": 1})
+        assert failed["done"] is True and failed["info"]["terminal_reason"] == "step_error" and "error" in failed["info"]
+        assert _post(f"{base}/step", {"episode_id": second["episode_id"], "response_text": "boom", "seq": 1})["done"] is True
         assert service.pool.free.qsize() == 1
         try:
             _post(f"{base}/reset", {"task_id": "t1"}, token="wrong")

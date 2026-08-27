@@ -38,6 +38,7 @@ class EnvService:
         self.episodes = {}
         self.finished = {}
         self.reset_ids = {}
+        self.k_counters = {}
         self.lock = threading.Lock()
 
     def health(self):
@@ -50,8 +51,9 @@ class EnvService:
             return replay
         task = self.tasks[body["task_id"]]
         worker, slot = self.pool.acquire(timeout=self.reset_timeout_s)
-        run_ctx = self.run_ctx_factory(body.get("run_id", "service"), int(body.get("iter", 0)), body.get("policy_tag", ""))
-        episode = self.episode_cls(task, worker, slot, int(body.get("sample_k", 0)), run_ctx, self.cfg)
+        run_id, iteration = body.get("run_id", "service"), int(body.get("iter", 0))
+        run_ctx = self.run_ctx_factory(run_id, iteration, body.get("policy_tag", ""))
+        episode = self.episode_cls(task, worker, slot, self._next_k(run_id, iteration, task["task_id"]), run_ctx, self.cfg)
         try:
             observation = episode.reset()
         except Exception:
@@ -64,6 +66,13 @@ class EnvService:
             if request_id:
                 self.reset_ids[request_id] = episode_id
         return {"episode_id": episode_id, "observation": observation}
+
+    def _next_k(self, run_id, iteration, task_id):
+        # The trainer's GRPO samples of one task all carry the same sample_idx, so the service numbers them; k is what keeps their trajectory dirs apart.
+        with self.lock:
+            key = (run_id, iteration, task_id)
+            self.k_counters[key] = self.k_counters.get(key, -1) + 1
+            return self.k_counters[key]
 
     def _replay_reset(self, request_id):
         with self.lock:
@@ -97,7 +106,13 @@ class EnvService:
             if getattr(entry["episode"], "closed", False):
                 return _terminal_payload(entry["episode"].record or {})
             entry["last"] = time.time()
-            observation, reward, done, info = entry["episode"].step(body["response_text"])
+            try:
+                observation, reward, done, info = entry["episode"].step(body["response_text"])
+            except Exception as e:
+                # A step that raised after acting must end the episode here: a retried request would otherwise execute the action again.
+                logger.exception(f"{episode_id}: step failed — closing the episode")
+                record = entry["episode"].close("step_error")
+                observation, reward, done, info = None, record.get("reward"), True, {**record.get("info", {}), "error": str(e)[:200]}
             response = {"observation": observation, "reward": reward, "done": done, "info": info}
             if seq is not None:
                 entry["responses"] = {seq: response}
