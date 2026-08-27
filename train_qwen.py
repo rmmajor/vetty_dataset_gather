@@ -478,7 +478,8 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
         print(f"Wrote {len(val_examples)} validation examples to {val_path}")
 
 
-def train_model(config_path, dataset_override=None, epochs_override=None, lr_override=None, batch_size_override=None):
+def train_model(config_path, dataset_override=None, epochs_override=None, lr_override=None,
+                batch_size_override=None, passthrough_args=None):
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
@@ -495,7 +496,7 @@ def train_model(config_path, dataset_override=None, epochs_override=None, lr_ove
 
     flag_map = {
         "model": "--model",
-        "train_type": "--train_type",
+        "train_type": "--tuner_type",
         "dataset": "--dataset",
         "torch_dtype": "--torch_dtype",
         "num_train_epochs": "--num_train_epochs",
@@ -517,6 +518,9 @@ def train_model(config_path, dataset_override=None, epochs_override=None, lr_ove
             if isinstance(value, bool):
                 value = str(value).lower()
             cmd.extend([flag, str(value)])
+
+    # Anything argparse did not recognise is a swift flag; forwarding beats growing flag_map per knob.
+    cmd.extend(passthrough_args or [])
 
     env = os.environ.copy()
     max_pixels = config.get("max_pixels")
@@ -555,14 +559,14 @@ def main():
     train_parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
     train_parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
 
-    args = parser.parse_args()
+    args, passthrough = parser.parse_known_args()
 
     if args.command == "convert":
         convert_trajectories(args.input, args.output, args.val_split, include_replay=args.include_replay,
                              exclude_meandering=args.exclude_meandering,
                              exclude_waste_steps=args.exclude_waste_steps)
     elif args.command == "train":
-        train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size)
+        train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size, passthrough)
 
 
 if __name__ == "__main__":
