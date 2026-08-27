@@ -389,6 +389,49 @@ trained on this corpus answers in viewport pixels, not normalised units) and oth
 flags, then `make eval-compare`. Read the harness-parity section of the comparison before
 trusting the delta.
 
+### Fine-tuned result (SFT v1)
+
+`Qwen/Qwen3.5-9B` + LoRA r64/alpha128 on 5,477 training examples (616 val) from 456 trajectories,
+3 epochs = 2,055 optimizer steps at effective batch 8, A100-80GB, ~7h35m. Adapter on the
+`cua-outputs` Modal volume at `sft-v1/adapter`; per-epoch checkpoints at
+`checkpoint-685` / `checkpoint-1370` / `checkpoint-2055`. Evaluated on the **same 50 tasks** as the
+baseline, same judge, same step-cap policy; the only intended difference is `coord_space`
+(`normalized_1000` -> `viewport_abs`, since a model trained on this corpus answers in viewport pixels).
+
+| metric | baseline | fine-tuned | delta |
+| --- | --- | --- | --- |
+| verified success (scored), as measured | 8.8% | 29.4% | +20.6 pp |
+| **verified success (scored), audited** | **8.8%** | **23.5%** | **+14.7 pp** |
+| verified success (all 50), audited | 6.0% | 16.0% | +10.0 pp |
+| parse-failure rate | 22.3% | 7.4% | -15.0 pp |
+| canonical action form | 26.8% | **100.0%** | +73.2 pp |
+| `done()` rate | 28.0% | 18.0% | **-10.0 pp** |
+| steps / reference on success | 1.36x | 2.14x | worse |
+| site-blocked | 28.0% | 28.0% | unchanged |
+
+By difficulty (scored episodes):
+
+| level | baseline | fine-tuned |
+| --- | --- | --- |
+| easy | 18.2% (2/11) | 36.4% (4/11) |
+| medium | **0.0%** (0/10) | 30.0% (3/10) |
+| hard | 7.7% (1/13) | 23.1% (3/13) |
+
+**Quote the audited row.** Two of the ten verified successes are confirmed false positives, checked
+against their final screenshots — see `docs/decisions/judge-consistency-audit.md`. The judge's
+leniency is concentrated on `meandering` episodes, which only the fine-tuned model produces, so it
+inflates the after side and not the baseline.
+
+**What the model learned, decomposed.** Reporting these separately is the point of the extra columns:
+
+- *Format: fully learned.* Canonical action form 26.8% -> 100%, parse failures 22.3% -> 7.4%.
+- *Browsing: genuinely improved.* Medium tasks went 0% -> 30%, which format alone cannot explain.
+- *Stopping: regressed.* `done()` fell 28% -> 18% and steps/reference rose 1.36x -> 2.14x; 4 of 10
+  successes were graded meandering. The model acts more persistently but terminates worse.
+
+The honest claim is therefore "this corpus taught the model to emit valid actions and to browse
+better, at the cost of knowing when to stop" — not a single headline number.
+
 ## Cost Estimates
 
 **GPT-5.4 CUA distillation:**
