@@ -1,0 +1,85 @@
+{
+  "generated_for": "SFT v1 (Qwen/Qwen3.5-9B + LoRA r64/a128, 3 epochs, 5477 train examples)",
+  "adapter": "cua-outputs:/sft-v1/adapter (Modal); local copy models/cua-sft-v1/",
+  "screenspot": {
+    "dataset": "rootsautomation/ScreenSpot",
+    "split": "test",
+    "n": 300,
+    "before": {
+      "model": "cua-student",
+      "coord_space": "normalized_1000",
+      "accuracy": 0.89
+    },
+    "after": {
+      "model": "cua-student-lora",
+      "coord_space": "viewport_abs",
+      "accuracy": 0.85
+    }
+  },
+  "online_mind2web": {
+    "dataset": "osunlp/Online-Mind2Web",
+    "revision": "eacad896a84d",
+    "n": 50,
+    "before": {
+      "verified_success_scored": 0.088,
+      "verified_success_all": 0.06
+    },
+    "after_as_measured": {
+      "verified_success_scored": 0.294,
+      "verified_success_all": 0.2
+    },
+    "after_audited": {
+      "verified_success_scored": 0.235,
+      "verified_success_all": 0.16,
+      "note": "2 of 10 successes are confirmed judge false positives"
+    }
+  },
+  "not_archived_here": "per-episode screenshots (~166 MB); see eval_archive/README.md",
+  "files": [
+    {
+      "path": "screenspot_sft_v1/before.json",
+      "bytes": 274569,
+      "sha256": "5e4cf1b748105a43d48dcb7f0b1de0c0a5d20d13446379d2529410a00b504644"
+    },
+    {
+      "path": "screenspot_sft_v1/after.json",
+      "bytes": 171641,
+      "sha256": "c6dbb9ebc9131b86cc5999d376849475a20903116f988bf5a2b0cb3c1130791d"
+    },
+    {
+      "path": "screenspot_sft_v1/comparison.json",
+      "bytes": 1426,
+      "sha256": "40ea12c35d7d092965dc40fd868e52daf00e2074bfd6521d8d8e47237126eb3e"
+    },
+    {
+      "path": "online_mind2web/baseline/results.json",
+      "bytes": 134779,
+      "sha256": "bbe11cd0479146df65e65aa020837da942b4fa7ee686067dcca2fbac5ae01e8e"
+    },
+    {
+      "path": "online_mind2web/baseline/report.md",
+      "bytes": 16238,
+      "sha256": "1335e6ef8d5297ca991cd4fc22577f4c4b32c744d11c306ca62141c21d0bec8e"
+    },
+    {
+      "path": "online_mind2web/baseline/run.log",
+      "bytes": 42508,
+      "sha256": "53282f765c2d12b0a135ba412e4de5314c51513f2c274d2ea7039a7dc96eb91c"
+    },
+    {
+      "path": "online_mind2web/after/results.json",
+      "bytes": 98315,
+      "sha256": "f8a6657fd64f587b7a988ebede037508b83545547c8aedc5fa2a40f3d96380c3"
+    },
+    {
+      "path": "online_mind2web/after/report.md",
+      "bytes": 16335,
+      "sha256": "ffc7839e8df6c23083fddcdab11d83b7e7c4f404fe1fe31f3ecf2b4777811b73"
+    },
+    {
+      "path": "online_mind2web/after/run.log",
+      "bytes": 31413,
+      "sha256": "0eb84e9f2952b1735cb1b15a09fbad57304dbee953f81096ffd1505a701d75dd"
+    }
+  ]
+}
