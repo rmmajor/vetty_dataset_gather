@@ -26,7 +26,9 @@ image = (
     modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
     .uv_pip_install("vllm==0.28.0", "huggingface_hub[hf_transfer]")
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "VLLM_LOG_STATS_INTERVAL": "10"})
+    # Baked at deploy time: module-level env reads re-run in the container, where these are unset.
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "VLLM_LOG_STATS_INTERVAL": "10",
+          "CUA_ADAPTER_NAME": ADAPTER_NAME, "CUA_SERVED_NAME": SERVED_NAME})
 )
 
 
