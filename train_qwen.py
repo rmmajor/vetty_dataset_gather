@@ -492,12 +492,30 @@ def train_model(config_path, dataset_override=None, epochs_override=None, lr_ove
     if batch_size_override:
         config["per_device_train_batch_size"] = batch_size_override
 
+    # convert writes sft_val.jsonl beside the train file; without this it was generated and discarded,
+    # so no eval_loss was ever computed and overfitting was invisible.
+    if not config.get("val_dataset") and config.get("dataset"):
+        sibling = Path(config["dataset"]).parent / "sft_val.jsonl"
+        if sibling.is_file():
+            config["val_dataset"] = str(sibling)
+            print(f"Validation split found: {sibling}")
+        else:
+            # eval_strategy without a val set makes the trainer raise at startup, so honour the
+            # warning instead of dying: no split means no evaluation.
+            dropped = config.pop("eval_strategy", None)
+            print(f"No validation split at {sibling} — training will report no eval_loss"
+                  + (f" (eval_strategy={dropped} dropped)" if dropped else ""))
+
     cmd = ["swift", "sft"]
 
     flag_map = {
         "model": "--model",
         "train_type": "--tuner_type",
         "dataset": "--dataset",
+        "val_dataset": "--val_dataset",
+        "eval_strategy": "--eval_strategy",
+        "packing": "--packing",
+        "attn_impl": "--attn_impl",
         "torch_dtype": "--torch_dtype",
         "num_train_epochs": "--num_train_epochs",
         "per_device_train_batch_size": "--per_device_train_batch_size",
