@@ -1,0 +1,3 @@
+source_id,claim,value,n,venue,year,reference,used_on,notes
+hammoudi-2016-locator-staleness,Share of record/replay web test breakages caused by stale locators,0.736,1065,ICST,2016,10.1109/ICST.2016.16,"deck slide 3, thesis ch.1","1065 breakages studied across 453 application versions."
+zhang-2025-legacy-decay,Legacy GUI tests on live sites that stopped passing within 18 months,1.000,120,ASE,2025,10.1109/ASE63991.2025.00251,"deck slide 3, thesis ch.1",All 120 tests in the studied set failed; quoted as 100 % on the slide.

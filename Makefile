@@ -260,3 +260,12 @@ remote-train-cleanup: ## Destroy any leftover instance (state file + label 'roma
 
 test-remote: ## No-cost self-test of the remote-train lifecycle (mock provider; asserts teardown)
 	python -m remote_train run --smoke
+
+# ---------- Experiment registry ----------
+
+registry: ## Re-render experiments/*.csv into the README registry block
+	python experiments/render_registry.py --fill-ci
+	python experiments/render_registry.py
+
+registry-check: ## Fail if the README registry block is out of date
+	python experiments/render_registry.py --check
