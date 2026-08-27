@@ -18,12 +18,17 @@ samples, requiring no model, GPU, or network.
 """
 
 import argparse
+import base64
+import concurrent.futures
+import io
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -379,6 +384,55 @@ def read_swift_results(result_path, expected):
     return responses[:expected]
 
 
+class OpenAIPredictor(Predictor):
+    """Any OpenAI-compatible /chat/completions endpoint, same wire format the student eval uses."""
+
+    def __init__(self, model, cfg):
+        self.model = model
+        self.endpoint = (os.environ.get("SCREENSPOT_ENDPOINT") or "").rstrip("/")
+        self.api_key = os.environ.get("SCREENSPOT_API_KEY", "")
+        self.workers = int(os.environ.get("SCREENSPOT_WORKERS", "8"))
+        if not self.endpoint:
+            raise ValueError("set SCREENSPOT_ENDPOINT to the /v1 base url of the served model")
+        self.cfg = cfg
+
+    def _encode(self, image):
+        buf = io.BytesIO()
+        image.convert("RGB").save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+
+    def _one(self, sample, coord_space):
+        image = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
+        messages = build_messages(sample.instruction, "")
+        messages[1]["content"] = [
+            {"type": "image_url",
+             "image_url": {"url": f"data:image/png;base64,{self._encode(image)}"}},
+            {"type": "text", "text": messages[1]["content"][1]["text"]},
+        ]
+        body = json.dumps({"model": self.model, "messages": messages,
+                           "temperature": 0.0, "max_tokens": 512}).encode()
+        req = urllib.request.Request(
+            f"{self.endpoint}/chat/completions", data=body,
+            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=180) as r:
+                    return json.load(r)["choices"][0]["message"]["content"] or ""
+            except Exception:
+                if attempt == 2:
+                    return ""
+                time.sleep(2 * (attempt + 1))
+        return ""
+
+    def predict_batch(self, samples, cfg, coord_space):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
+            return list(pool.map(lambda s: self._one(s, coord_space), samples))
+
+
+def build_openai_predictor(spec, cfg):
+    return OpenAIPredictor(model=spec.model, cfg=cfg)
+
+
 def build_swift_predictor(spec, cfg):
     return SwiftPredictor(model=spec.model, adapters=spec.adapters, cfg=cfg)
 
@@ -389,6 +443,7 @@ def build_mock_predictor(spec, cfg):
 
 PREDICTOR_BACKENDS: dict = {
     "swift": build_swift_predictor,
+    "openai": build_openai_predictor,
     "mock": build_mock_predictor,
 }
 

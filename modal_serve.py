@@ -1,5 +1,6 @@
 """Serve the CUA student on a Modal GPU as an OpenAI-compatible endpoint, with or without a LoRA adapter."""
 import os
+import pathlib
 
 import modal
 
@@ -32,15 +33,44 @@ image = (
 )
 
 
+warm_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .uv_pip_install("huggingface_hub[hf_xet]")
+    .env({"HF_XET_HIGH_PERFORMANCE": "1"})
+)
+
+
+@app.function(image=warm_image, volumes={HF_CACHE_MOUNT: hf_cache},
+              secrets=[modal.Secret.from_name("huggingface")], timeout=3600, cpu=4)
+def warm_cache(model: str = MODEL):
+    """Populate the weight cache on CPU so the GPU container starts against a warm volume."""
+    import huggingface_hub
+
+    path = huggingface_hub.snapshot_download(
+        model,
+        token=os.environ.get("HF_TOKEN") or os.environ.get("HF_READ_TOKEN"),
+        allow_patterns=["*.safetensors", "*.json", "*.txt", "*.py", "*.jinja"],
+    )
+    hf_cache.commit()
+    total = sum(f.stat().st_size for f in pathlib.Path(path).rglob("*") if f.is_file())
+    print(f"warmed {model} -> {path} ({total / 1e9:.1f} GB)")
+    return {"model": model, "path": path, "bytes": total}
+
+
+@app.local_entrypoint()
+def warm(model: str = MODEL):
+    print(warm_cache.remote(model))
+
+
 @app.server(
     image=image,
     gpu=GPU,
     volumes={HF_CACHE_MOUNT: hf_cache, VLLM_CACHE_MOUNT: vllm_cache, ADAPTERS_MOUNT: outputs},
-    secrets=[modal.Secret.from_name("cua-eval")],
+    secrets=[modal.Secret.from_name("cua-eval"), modal.Secret.from_name("huggingface")],
     port=8000,
     # Gaps between requests are seconds within an episode, so 5 min never evicts mid-run but caps idle billing.
     scaledown_window=300,
-    startup_timeout=900,
+    startup_timeout=1800,
     target_concurrency=16,
     max_containers=1,
     unauthenticated=True,
