@@ -1,0 +1,14 @@
+model_id,kind,base_model,dataset_version,dataset_size,method,hyperparams_ref,train_commit,train_cost_usd,trained_on,artifacts_path,status,notes
+qwen35-9b-base,base,Qwen/Qwen3.5-9B,,,,,,,,,done,Stock checkpoint. Answers in normalized_1000 coordinates; served as `cua-student`.
+cua-sft-v1,sft,Qwen/Qwen3.5-9B-Base,v1,5477,LoRA r64/a128 3ep lr5e-5,config.yaml,8d63b7d,,Modal L40S,cua-outputs:/sft-v1/adapter,done,5477 step-level examples from 504 trainable trajectories. Answers in viewport_abs (1280x720). Served as `cua-student-lora`.
+cua-sft-v1-ep1,sft,Qwen/Qwen3.5-9B-Base,v1,5477,LoRA r64/a128 lr5e-5,config.yaml,8d63b7d,,Modal L40S,,done,Epoch-1 checkpoint of cua-sft-v1; kept to show the epoch trend.
+cua-sft-v1-ep2,sft,Qwen/Qwen3.5-9B-Base,v1,5477,LoRA r64/a128 lr5e-5,config.yaml,8d63b7d,,Modal L40S,,done,Epoch-2 checkpoint of cua-sft-v1.
+cua-sft-v2,sft,Qwen/Qwen3.5-9B-Base,v2,,LoRA,config.yaml,,,,,planned,Retrain on corpus v2 once the login-gated capture lane lands.
+cua-sft-v1-nologin,sft,Qwen/Qwen3.5-9B-Base,v1-nologin,,LoRA r64/a128 3ep lr5e-5,config.yaml,,,,,planned,Ablation: same recipe with post-authentication trajectories removed. Isolates what the auth-gated data buys.
+cua-grpo-v1,grpo,cua-sft-v1,v1,,GRPO,,,,,,planned,Experimental; do not report until it has a verified run.
+claude-sonnet-5,frontier,,,,,,,,,,done,Frontier executor inside the full vetty agent (explore/plan/execute/report on the claude-sdk backbone).
+claude-opus-5,frontier,,,,,,,,,,done,"Used as verdict and match-judge for every QA-bench column, never as an executor."
+scripted-playwright,tool,,,,13 hand-written Playwright tests,benchmark/subjects/refapp/tests_playwright/suite.py,,,,,done,Incumbent-method comparison arm: locator-based (#id) suite in the vetty benchmark.
+corpus-v1,dataset,,v1,5477,,,,,,,done,Snapshot the SFT v1 model was trained on. Frozen; the deck describes this snapshot.
+corpus-current,dataset,,v2-wip,,,,,,,,running,"Live corpus, still growing. Basis for the planned v2 retrain."
+qa-bench-refapp,benchmark,,,,,,,,,vetty benchmark/subjects/refapp,done,"Reference app plus one-defect-per-run mutants; defect injected by config, not by patching code."

@@ -170,3 +170,12 @@ test-eval: ## Smoke-test the eval harness (no model/GPU/network)
 
 dashboard: ## Launch trajectory SFT-readiness dashboard (Streamlit, localhost:8501)
 	streamlit run repo_pipeline/dashboard/app.py
+
+# ---------- Experiment registry ----------
+
+registry: ## Re-render experiments/*.csv into the README registry block
+	python experiments/render_registry.py --fill-ci
+	python experiments/render_registry.py
+
+registry-check: ## Fail if the README registry block is out of date
+	python experiments/render_registry.py --check
