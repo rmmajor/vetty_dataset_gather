@@ -292,8 +292,17 @@ See `config.yaml` for default hyperparameters. Key settings from the blueprint:
 
 ## Evaluation: Online-Mind2Web baseline
 
+> **Raw records for every figure in this section and the three below are committed to
+> [`eval_archive/`](eval_archive/)** — 300 per-sample ScreenSpot records per model, both 50-episode
+> Online-Mind2Web runs (`results.json`, `report.md`, `run.log`), and a `manifest.json` carrying the
+> headline figures plus a sha256 for each file. The working directories these were produced in
+> (`eval_runs/`, `eval_results/`) are gitignored, so the archive is the durable copy. Per-episode
+> screenshots (~166 MB) are packed separately alongside the adapter — see
+> [`eval_archive/README.md`](eval_archive/README.md).
+
 The pre-training baseline every fine-tune is compared against. Captured 2026-08-26 with
-`make eval-online-mind2web`; raw artefacts in `eval_runs/baseline_qwen35_9b_online_mind2web_20260826T165014Z/`.
+`make eval-online-mind2web`; raw artefacts archived at `eval_archive/online_mind2web/baseline/`
+(produced in `eval_runs/baseline_qwen35_9b_online_mind2web_20260826T165014Z/`).
 
 **Model:** `Qwen/Qwen3.5-9B` (post-trained checkpoint, no adapter) served by vLLM 0.28.0 on a
 Modal L40S via `modal_serve.py`. Browser ran locally in `DockerSandbox` on a residential IP —
