@@ -42,7 +42,8 @@ image = (
         "huggingface_hub[hf_transfer]",
     )
     # Xet backend ignores the hub/ cache this volume already holds and re-pulls 18GB; keep the old path.
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    # USE_HF sends ms-swift to HuggingFace instead of its ModelScope default, whose cache is not mounted.
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "USE_HF": "1"})
     .add_local_file("train_qwen.py", f"{CODE_ROOT}/train_qwen.py")
     .add_local_file("config.yaml", f"{CODE_ROOT}/config.yaml")
     .add_local_dir("repo_pipeline", f"{CODE_ROOT}/repo_pipeline", ignore=["**/__pycache__", "**/*.pyc"])
@@ -53,6 +54,7 @@ image = (
     image=image,
     gpu=GPU,
     volumes={DATA_MOUNT: trajectories, OUT_MOUNT: outputs, HF_CACHE_MOUNT: hf_cache},
+    secrets=[modal.Secret.from_name("huggingface")],
     timeout=TRAIN_TIMEOUT,
 )
 def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_examples: int = 0,
