@@ -24,7 +24,9 @@ def test_commands_are_argv_lists_with_expected_flags():
     assert rollout[rollout.index("--multi_turn_scheduler") + 1] == "browser_scheduler" and "--vllm_enable_lora" in rollout
     rlhf = build_rlhf_command(CFG)
     assert rlhf[:2] == ["swift", "rlhf"] and rlhf[rlhf.index("--rlhf_type") + 1] == "grpo" and rlhf[rlhf.index("--vllm_mode") + 1] == "server"
-    assert rlhf[rlhf.index("--reward_weights"):rlhf.index("--reward_weights") + 3] == ["--reward_weights", "0.2", "1.0"]
+    assert "--reward_weights" not in rlhf and "--reward_funcs" not in rlhf
+    weighted = build_rlhf_command(dict(CFG, reward_funcs="action_format", reward_weights="0.2 1.0"))
+    assert weighted[weighted.index("--reward_weights"):weighted.index("--reward_weights") + 3] == ["--reward_weights", "0.2", "1.0"]
     assert rlhf[rlhf.index("--num_generations") + 1] == "4" and rlhf[rlhf.index("--freeze_vit") + 1] == "true"
     deploy = build_deploy_command(CFG, adapters="/workspace/rl_output/latest")
     assert deploy[:2] == ["swift", "deploy"] and deploy[deploy.index("--adapters") + 1] == "/workspace/rl_output/latest" and "--port" in deploy
@@ -56,7 +58,7 @@ def test_make_dataset_rows():
         out = Path(tmp) / "rl_tasks.jsonl"
         assert make_dataset(suite, out, split="train", repeats=2) == 2
         rows = [json.loads(line) for line in out.read_text().splitlines()]
-        assert rows[0]["messages"] == [{"role": "user", "content": "<placeholder>"}]
+        assert rows[0]["messages"] == [{"role": "user", "content": "<placeholder:a>"}]
         assert rows[0]["env_config"] == {"name": "browser_env", "task_id": "a", "sample_idx": 0} and rows[1]["env_config"]["sample_idx"] == 1
 
 

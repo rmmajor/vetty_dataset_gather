@@ -46,8 +46,7 @@ output_dir: /workspace/rl_output
 external_plugins: rl/trainer/swift_plugin.py
 gym_env: browser_env
 multi_turn_scheduler: browser_scheduler
-reward_funcs: action_format
-reward_weights: "0.2 1.0"
+# Gym reward only: the trainer requires identical rewards across a request's per-turn records, which a per-turn ORM violates; format validity is already inside the episode reward.
 env_url: http://127.0.0.1:8900
 env_retry_s: 180
 # eval phases (swift deploy on serve_port; the Mac runs rl.eval through the tunnel and acks)

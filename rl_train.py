@@ -103,7 +103,8 @@ def derive_run_config(cfg, overrides):
 
 def make_dataset(suite_path, out_path, split="train", repeats=1):
     suite = json.loads(Path(suite_path).read_text())
-    rows = [{"messages": [{"role": "user", "content": "<placeholder>"}],
+    # The trainer groups GRPO advantages by the row's messages, so the placeholder must be unique per task.
+    rows = [{"messages": [{"role": "user", "content": f"<placeholder:{t['task_id']}>"}],
              "env_config": {"name": "browser_env", "task_id": t["task_id"], "sample_idx": r}}
             for r in range(repeats) for t in suite["tasks"] if t.get("split") == split or split == "all"]
     Path(out_path).write_text("".join(json.dumps(r) + "\n" for r in rows))
