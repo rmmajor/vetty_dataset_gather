@@ -78,8 +78,23 @@ def build_deploy_command(cfg, adapters=None):
 
 
 def build_env(cfg, run_dir):
-    return {**os.environ, "MAX_PIXELS": str(cfg["max_pixels"]), "RL_ENV_URL": cfg["env_url"], "RL_RUN_DIR": str(run_dir),
-            "RL_RUN_ID": Path(run_dir).name, "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES", "0")}
+    env = {**os.environ, "MAX_PIXELS": str(cfg["max_pixels"]), "RL_ENV_URL": cfg["env_url"], "RL_RUN_DIR": str(run_dir),
+           "RL_RUN_ID": Path(run_dir).name, "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES", "0")}
+    if cfg.get("env_token"):
+        env["RL_ENV_TOKEN"] = str(cfg["env_token"])
+    return env
+
+
+def derive_run_config(cfg, overrides):
+    """A run-specific copy of rl_config: `compute`-free overrides win, nested `compute` keys merge."""
+    derived = {k: v for k, v in cfg.items()}
+    derived["compute"] = dict(cfg.get("compute") or {})
+    for key, value in overrides.items():
+        if key == "compute":
+            derived["compute"].update(value or {})
+        elif value is not None:
+            derived[key] = value
+    return derived
 
 
 def make_dataset(suite_path, out_path, split="train", repeats=1):

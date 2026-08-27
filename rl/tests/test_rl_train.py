@@ -6,7 +6,7 @@ from remote_train.config import RemoteTrainConfig
 from remote_train.jobs import JOBS, GrpoJob, ServeJob
 from remote_train.mock import MockProvider
 from rl_train import (PhaseDriver, build_deploy_command, build_env, build_merge_command, build_rlhf_command,
-                      build_rollout_command, load_rl_config, make_dataset)
+                      build_rollout_command, derive_run_config, load_rl_config, make_dataset)
 
 CFG = load_rl_config("rl_config.yaml")
 
@@ -34,6 +34,16 @@ def test_commands_are_argv_lists_with_expected_flags():
 def test_env_carries_pixels_and_service_url():
     env = build_env(CFG, "/workspace/rl_runs/r1")
     assert env["MAX_PIXELS"] == "1003520" and env["RL_ENV_URL"] == CFG["env_url"] and env["RL_RUN_DIR"] == "/workspace/rl_runs/r1"
+    assert "RL_ENV_TOKEN" not in env or env["RL_ENV_TOKEN"] == ""
+    assert build_env(dict(CFG, env_token="s3cret"), "/x")["RL_ENV_TOKEN"] == "s3cret"
+
+
+def test_derive_run_config_merges_compute_and_ignores_none():
+    derived = derive_run_config(CFG, {"env_url": "https://x.ngrok.app", "max_steps": 1, "eval_before": False, "template": None,
+                                      "compute": {"serve_port": 9001}})
+    assert derived["env_url"] == "https://x.ngrok.app" and derived["max_steps"] == 1 and derived["eval_before"] is False
+    assert derived["template"] == CFG["template"] and derived["compute"]["serve_port"] == 9001 and derived["compute"]["min_vram_gb"] == 80
+    assert CFG["max_steps"] == 30 and CFG["compute"]["serve_port"] == 8001
 
 
 def test_make_dataset_rows():

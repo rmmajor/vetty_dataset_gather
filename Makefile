@@ -4,7 +4,8 @@
        install-eval eval-screenspot test-eval \
        install-remote remote-train remote-eval remote-train-dry remote-train-cleanup test-remote \
        eval-online-mind2web eval-held-out eval-compare eval-sources test-student-eval test-verify-gate \
-       test-rl-unit test-rl rl-tasks rl-serve rl-rollout rl-eval remote-grpo remote-serve test-grpo grpo-dataset
+       test-rl-unit test-rl rl-tasks rl-serve rl-rollout rl-eval remote-grpo remote-serve test-grpo grpo-dataset \
+       rl-expose modal-grpo-smoke modal-grpo
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -297,3 +298,15 @@ test-grpo: ## No-cost GRPO self-test: mock provider + mock env (teardown, tunnel
 
 grpo-dataset: ## Write rl_tasks.jsonl (train split) for the GRPO trainer
 	python rl_train.py make-dataset --tasks rl/rl_tasks.json --out rl_tasks.jsonl
+
+rl-expose: ## Expose the local env service (127.0.0.1:8900) to Modal through a public ingress (RL_INGRESS_CMD overrides ngrok)
+	@test -n "$$RL_ENV_TOKEN" || (echo "ERROR: set RL_ENV_TOKEN (the same value `make rl-serve` runs with)" && exit 1)
+	$(or $(RL_INGRESS_CMD),ngrok http 127.0.0.1:8900)
+
+modal-grpo-smoke: ## Modal: merge + one GRPO step against the in-container mock env (validates pins, plugin, weight sync; ~$$2)
+	modal run modal_grpo.py --smoke --run-name $(or $(GRPO_RUN),grpo-smoke)
+
+modal-grpo: ## Modal: full GRPO run against the exposed env service (RL_ENV_URL=https://... from rl-expose, RL_ENV_TOKEN)
+	@test -n "$(RL_ENV_URL)" || (echo "ERROR: set RL_ENV_URL=https://<ingress-host> (from make rl-expose)" && exit 1)
+	@test -n "$$RL_ENV_TOKEN" || (echo "ERROR: set RL_ENV_TOKEN" && exit 1)
+	modal run modal_grpo.py --run-name $(or $(GRPO_RUN),grpo-v1) --env-url $(RL_ENV_URL) $(if $(GRPO_MAX_STEPS),--max-steps $(GRPO_MAX_STEPS))
