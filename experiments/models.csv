@@ -5,10 +5,10 @@ cua-sft-v1-ep1,sft,Qwen/Qwen3.5-9B-Base,v1,5477,LoRA r64/a128 lr5e-5,config.yaml
 cua-sft-v1-ep2,sft,Qwen/Qwen3.5-9B-Base,v1,5477,LoRA r64/a128 lr5e-5,config.yaml,8d63b7d,,Modal L40S,,done,Epoch-2 checkpoint of cua-sft-v1.
 cua-sft-v2,sft,Qwen/Qwen3.5-9B-Base,v2,,LoRA,config.yaml,,,,,planned,Retrain on corpus v2 once the login-gated capture lane lands.
 cua-sft-v1-nologin,sft,Qwen/Qwen3.5-9B-Base,v1-nologin,,LoRA r64/a128 3ep lr5e-5,config.yaml,,,,,planned,Ablation: same recipe with post-authentication trajectories removed. Isolates what the auth-gated data buys.
-cua-grpo-v1,grpo,cua-sft-v1,v1,,GRPO,,,,,,planned,Experimental; do not report until it has a verified run.
 claude-sonnet-5,frontier,,,,,,,,,,done,Frontier executor inside the full vetty agent (explore/plan/execute/report on the claude-sdk backbone).
 claude-opus-5,frontier,,,,,,,,,,done,"Used as verdict and match-judge for every QA-bench column, never as an executor."
 scripted-playwright,tool,,,,13 hand-written Playwright tests,benchmark/subjects/refapp/tests_playwright/suite.py,,,,,done,Incumbent-method comparison arm: locator-based (#id) suite in the vetty benchmark.
 corpus-v1,dataset,,v1,5477,,,,,,,done,Snapshot the SFT v1 model was trained on. Frozen; the deck describes this snapshot.
 corpus-current,dataset,,v2-wip,,,,,,,,running,"Live corpus, still growing. Basis for the planned v2 retrain."
 qa-bench-refapp,benchmark,,,,,,,,,vetty benchmark/subjects/refapp,done,"Reference app plus one-defect-per-run mutants; defect injected by config, not by patching code."
+cua-grpo-v2,grpo,cua-sft-v1 (merged),rl-suite f5dda31d,240,GRPO LoRA r64/a128 15 steps G=4 lr1e-5 beta0.01,rl_config.yaml,c04becc,20,Modal 2xL40S,cua-outputs:/grpo-v2/adapter,done,"First live GRPO run: 240 episodes on 12 train tasks against live sites, reward v2 (docs/decisions/grpo-v2-first-live-run.md). LoRA over the MERGED sft-v1 weights; serve it on those, never on the raw base. Answers in viewport_abs."
