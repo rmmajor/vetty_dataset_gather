@@ -107,3 +107,36 @@ the merge timestamp.
 silpo (8), novaposhta (8), dom.ria (7). Cleared only by a person in a real browser — see item 4 for
 the one experiment that could shrink this list. A further 11 UA sites are phone-gated and are
 permanently out of scope under the burner-only invariant.
+
+## 8. RL / GRPO — what would move the score
+
+Written 2026-08-28 after the first live GRPO run (`docs/decisions/grpo-v2-first-live-run.md`:
+sft-v1 9.4% → grpo-v2 11.8% verified on the archived 50-task Online-Mind2Web sample, inside
+noise). The harness is done; the ceiling is what it is fed. Ranked by expected effect per dollar.
+
+1. **Train on the student's frontier.** 8 of the 12 train tasks were all-fail groups and gave no
+   advantage; the run learned from 3–4 tasks. Before the next run, roll the SFT policy k=8 over a
+   pool of ~60 short, idempotent tasks on sites outside the eval splits (the proposer can author
+   them) and keep tasks with 20–70% success. ~$3 of serve and judge calls.
+2. **Parse-failure aborts are the largest recoverable loss** on Online-Mind2Web — 13/50 tasks for
+   SFT and GRPO alike: on 403/blocked/error pages the student narrates and never emits an
+   `action:` line. Cheapest fix is SFT data (a few dozen error-page examples answered with
+   `done()` / `navigate`; the teacher never met the walls the student hits). Second: put
+   blocked-page tasks in the RL pool so the −0.5 parse penalty is exercised; the loop guard ended
+   every such episode first this time.
+3. **Group size 8, rollout temperature 1.0.** At 10–30% success a group of 4 is often
+   zero-variance; 8 samples roughly doubles the share of groups with gradient at the same
+   16-episode step cost. Config only (`num_generations`, `temperature`).
+4. **`success_check`s for the frontier tasks** (`rl/checks.py` registry) so rewards stop
+   depending on the judge's throughput, which is what caps steps per hour; the loop guard is
+   already a service knob defaulting to 5.
+5. **40–60 steps** (~$15–25 at the observed ~$0.9/step) once 1–4 are in place; leave β 0.01 and
+   lr 1e-5 alone until a curve exists.
+6. **Measure with enough episodes.** n≈34 scored at ~10% success is ±8 pp; a real delta needs
+   ~150 scored tasks per side (~1.5 h, ~$5 per side). Serve the after-adapter on the merged SFT
+   base (`CUA_SERVE_MODEL`), never on raw `Qwen/Qwen3.5-9B`.
+
+Outside RL but bounding the ceiling: 28% of the eval sample is site-blocked from the sandbox IP
+(excluded from the score, a hard cap on the all-episode rate), and the judge is an LLM reading
+three screenshots — the right instrument for a before/after under one rubric, not for absolute
+claims (`docs/decisions/judge-consistency-audit.md`).

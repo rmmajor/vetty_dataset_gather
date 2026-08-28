@@ -18,27 +18,58 @@ noise and the run's value is in what it proved and what it found.
 
 ## Result
 
-| | `sft-v1` | `grpo-v2` | Δ |
+All three policies, the same night, the same 50 tasks, the same criteria-first judge, harness parity
+confirmed by `compare` (`eval_archive/online_mind2web/{qwen-base-judge2,sft-v1-judge2,grpo-v2-judge2}`):
+
+| | base `Qwen3.5-9B` | `sft-v1` | `grpo-v2` |
 | --- | --- | --- | --- |
-| verified success, scored | 9.4% (3/32) | 11.8% (4/34) | +2.4 pp |
-| verified success, all 50 | 6.0% | 8.0% | +2.0 pp |
-| easy / medium / hard | 3/11 · 0/9 · 0/12 | 3/11 · 0/10 · 1/13 | hard +1 |
-| done() rate | 16% | 22% | +6 pp |
-| steps / reference on successes | 1.33× | 1.12× | −0.21 |
-| parse-failure rate (per step) | 8.0% | 8.7% | +0.7 pp |
-| canonical action form | 100% | 100% | — |
-| site-blocked | 28% | 28% | — |
+| verified success, scored | 14.7% (5/34) | 9.4% (3/32) | 11.8% (4/34) |
+| verified success, all 50 | 10.0% | 6.0% | 8.0% |
+| easy / medium / hard | 4/11 · 0/10 · 1/13 | 3/11 · 0/9 · 0/12 | 3/11 · 0/10 · 1/13 |
+| per-step parse failure | 20.6% | 8.0% | 8.7% |
+| parse-failure aborts (episodes) | 19 | 13 | 13 |
+| canonical action form | 18.8% | 100% | 100% |
+| done() rate | 22% | 16% | 22% |
+| steps / reference on successes | 1.92× | 1.33× | 1.12× |
+| site-blocked / unreachable / harness | 14 / 2 / 0 | 14 / 2 / 2 | 14 / 2 / 0 |
 
-All three SFT successes held; the one new success is gov.uk (`efficient`, 8 steps) where SFT hit the
-step cap. One task out of fifty is inside noise; what is not noise is that nothing regressed and
-the two behaviours the reward was built to move — stopping with done() and step efficiency —
-moved in the intended direction.
+Three tasks are solved by every policy (cookpad, Google Finance, theweathernetwork). The base model
+adds americashealthrankings (graded `meandering`, the audit's known false-positive site) and a second
+Google task; GRPO adds gov.uk (`efficient`, 8 steps, where SFT hit the cap). **Five, three and four
+successes out of ~34 are indistinguishable at this sample size** — the honest headline is that task
+success did not measurably change with training. What did change, and by far more than the noise:
+format compliance (canonical form 19% → 100%), per-step parse failures (21% → 8%), and steps on
+successes (1.92× → 1.12× of the reference length). GRPO against SFT moves the two behaviours its
+reward targets — stopping with done() (16% → 22%) and step efficiency (1.33× → 1.12×) — the intended
+way, with nothing regressing.
 
-The SFT baseline under this judge is 9.4%, not the archived 29.4% (old judge): of the ten archived
-successes, three hold, two were font-wait screenshot timeouts tonight (carnival, webmd), three are
-step-cap episodes the criteria-first judge rejects (gov.uk, recreation.gov, ca.gov — recreation.gov
-was the audit's confirmed false positive), and two played out differently. Numbers judged by the two
-rubrics must not be put in one table.
+The archived "base 8.8% → sft-v1 29.4%" (old judge, 2026-08-26) does not survive re-measurement:
+of the ten archived SFT successes, three hold, two were font-wait screenshot timeouts tonight
+(carnival, webmd), three are step-cap episodes the criteria-first judge rejects (gov.uk,
+recreation.gov, ca.gov — recreation.gov was the audit's confirmed false positive), and two played out
+differently on a different night. Numbers judged by the two rubrics must not share a table.
+
+## Grounding did not regress
+
+ScreenSpot (`rootsautomation/ScreenSpot` test, the archived desktop-300 split: 162 windows +
+138 macos), the same night, every endpoint warm, each model scored in its own coordinate space
+(`eval_archive/screenspot_grpo_v2/`):
+
+| | base `Qwen3.5-9B` | base + `sft-v1` LoRA | merged `sft-v1` | `grpo-v2` | archived (2026-08-26) |
+| --- | --- | --- | --- | --- | --- |
+| accuracy, n=300 | 89.0% | 85.3% | 85.3% | 85.0% | base 89.0% · sft-v1 85.0% |
+| parse rate | 94.3% | 97.3% | 97.3% | 96.7% | 94.7% · 97.0% |
+| icon / text | 80.3 / 94.9 | 75.4 / 92.1 | 76.2 / 91.6 | 75.4 / 91.6 | — |
+
+GRPO sits on top of SFT within noise (85.0 vs 85.3); the −4 pp against the base is the SFT-era trade
+already recorded on `main`. The merged weights score exactly what base + LoRA scores (85.3 vs 85.3),
+which validates the merge the RL run trained on. On the full 1,272-sample split (desktop + mobile +
+web) GRPO scores 78.6%.
+
+One harness lesson: a serve that has scaled to zero answers nothing for its first minutes, and the
+grounding client's 2–4 s retries then record empty predictions as misses — the first pass of the
+merged-SFT spec read 25.7% on the first 300 for exactly that reason. Warm the endpoint before any
+grounding run.
 
 ## What the run proved
 
