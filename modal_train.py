@@ -1,5 +1,7 @@
 """Run the unchanged train_qwen.py convert+train on a Modal GPU, leaving the adapter on a volume the serve app mounts."""
+# Variants are configs, not forks: `modal run modal_train.py --config config_sft_v2_conservative.yaml --run-name sft-v2`.
 import os
+import pathlib
 
 import modal
 
@@ -12,6 +14,10 @@ DATA_MOUNT = "/data"
 OUT_MOUNT = "/outputs"
 HF_CACHE_MOUNT = "/root/.cache/huggingface"
 CODE_ROOT = "/workspace"
+# Every config*.yaml ships in the image so --config picks one per run without a rebuild.
+CONFIG_DIR = pathlib.Path(__file__).parent
+CONFIGS = sorted(path.name for path in CONFIG_DIR.glob("config*.yaml"))
+DEFAULT_CONFIG = "config.yaml"
 
 app = modal.App(APP_NAME)
 
@@ -42,21 +48,25 @@ image = (
         "huggingface_hub[hf_transfer]",
     )
     # Xet backend ignores the hub/ cache this volume already holds and re-pulls 18GB; keep the old path.
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    # USE_HF sends ms-swift to HuggingFace instead of its ModelScope default, whose cache is not mounted.
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "USE_HF": "1"})
     .add_local_file("train_qwen.py", f"{CODE_ROOT}/train_qwen.py")
-    .add_local_file("config.yaml", f"{CODE_ROOT}/config.yaml")
     .add_local_dir("repo_pipeline", f"{CODE_ROOT}/repo_pipeline", ignore=["**/__pycache__", "**/*.pyc"])
 )
+for _name in CONFIGS:
+    image = image.add_local_file(str(CONFIG_DIR / _name), f"{CODE_ROOT}/{_name}")
 
 
 @app.function(
     image=image,
     gpu=GPU,
     volumes={DATA_MOUNT: trajectories, OUT_MOUNT: outputs, HF_CACHE_MOUNT: hf_cache},
+    secrets=[modal.Secret.from_name("huggingface")],
     timeout=TRAIN_TIMEOUT,
 )
 def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_examples: int = 0,
-          run_name: str = "", extra_convert_args: list = None, extra_train_args: list = None):
+          run_name: str = "", config: str = DEFAULT_CONFIG,
+          extra_convert_args: list = None, extra_train_args: list = None):
     import json
     import shutil
     import subprocess
@@ -96,7 +106,11 @@ def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_example
         dataset_file.write_text("\n".join(kept) + "\n")
         print(f"smoke mode: training on {len(kept)} examples", flush=True)
 
-    config = yaml.safe_load(Path(CODE_ROOT, "config.yaml").read_text())
+    config_path = Path(CODE_ROOT, config)
+    if not config_path.is_file():
+        raise RuntimeError(f"config {config!r} is not in the image; shipped: {CONFIGS}")
+    print(f"training config: {config}", flush=True)
+    config = yaml.safe_load(config_path.read_text())
     config["output_dir"] = str(swift_out)
     run_config = run_dir / "config.yaml"
     run_config.write_text(yaml.safe_dump(config, sort_keys=False))
@@ -130,11 +144,11 @@ def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_example
 
 @app.local_entrypoint()
 def main(val_split: float = 0.1, data_subdir: str = "trajectories", max_examples: int = 0,
-         epochs: int = 0, run_name: str = "", train_args: str = ""):
+         epochs: int = 0, run_name: str = "", config: str = DEFAULT_CONFIG, train_args: str = ""):
     extra_train_args = ["--epochs", str(epochs)] if epochs else []
     extra_train_args += train_args.split()
     extra_train_args = extra_train_args or None
     result = train.remote(val_split=val_split, data_subdir=data_subdir, max_examples=max_examples,
-                          run_name=run_name, extra_train_args=extra_train_args)
+                          run_name=run_name, config=config, extra_train_args=extra_train_args)
     print(f"\nadapter ready on volume cua-outputs at {result['adapter']}")
     print(f"serve it with:  CUA_ADAPTER_NAME={result['run']}/adapter modal serve modal_serve.py")

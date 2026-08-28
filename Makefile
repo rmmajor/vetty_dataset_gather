@@ -310,3 +310,12 @@ modal-grpo: ## Modal: full GRPO run against the exposed env service (RL_ENV_URL=
 	@test -n "$(RL_ENV_URL)" || (echo "ERROR: set RL_ENV_URL=https://<ingress-host> (from make rl-expose)" && exit 1)
 	@test -n "$$RL_ENV_TOKEN" || (echo "ERROR: set RL_ENV_TOKEN" && exit 1)
 	modal run modal_grpo.py --run-name $(or $(GRPO_RUN),grpo-v1) --env-url $(RL_ENV_URL) $(if $(GRPO_MAX_STEPS),--max-steps $(GRPO_MAX_STEPS))
+
+# ---------- Experiment registry ----------
+
+registry: ## Re-render experiments/*.csv into the README registry block
+	python experiments/render_registry.py --fill-ci
+	python experiments/render_registry.py
+
+registry-check: ## Fail if the README registry block is out of date
+	python experiments/render_registry.py --check
