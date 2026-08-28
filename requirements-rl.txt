@@ -1,0 +1,13 @@
+# GRPO box deps — the ms-swift-recommended column (vLLM 0.23.0 <-> torch 2.11.0 <-> transformers 5.12.1); resolved and installed on Modal 2026-08-27.
+torch==2.11.0
+vllm==0.23.0
+transformers==5.12.1
+ms-swift==4.5.2
+peft<0.21
+trl<1.0
+qwen-vl-utils
+flash-linear-attention
+datasets<4.8.5
+Pillow
+pyyaml
+requests

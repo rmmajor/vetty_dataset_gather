@@ -3,7 +3,9 @@
        capture-public provision-human capture-human \
        install-eval eval-screenspot test-eval \
        install-remote remote-train remote-eval remote-train-dry remote-train-cleanup test-remote \
-       eval-online-mind2web eval-held-out eval-compare eval-sources test-student-eval
+       eval-online-mind2web eval-held-out eval-compare eval-sources test-student-eval test-verify-gate \
+       test-rl-unit test-rl rl-tasks rl-serve rl-rollout rl-eval remote-grpo remote-serve test-grpo grpo-dataset \
+       rl-expose modal-grpo-smoke modal-grpo
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -121,6 +123,24 @@ test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
 
 test-verify-gate: ## Scripted (no-LLM/Docker/network) check that the capture success gate never rejects a verified trajectory
 	python -m repo_pipeline.verify_gate_smoke
+
+test-rl-unit: ## Unit tests for the RL rollout harness (no Docker, no LLM)
+	python -m rl.tests
+
+test-rl: ## Docker-only end-to-end smoke of the RL harness (static page + scripted policy, no LLM)
+	python -m rl.smoke
+
+rl-tasks: ## Build + check the RL task suite (disjoint from anything trained on; RL_TRAJ_DIR overrides trajectories/)
+	python -m rl.tasks build $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR)) && python -m rl.tasks check $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR))
+
+rl-serve: ## Start the RL env service for the GPU trainer (127.0.0.1:8900; RL_SPLIT, RL_WORKERS, RL_ARGS)
+	python -m rl.service --split $(or $(RL_SPLIT),train) --workers $(or $(RL_WORKERS),3) $(RL_ARGS)
+
+rl-rollout: ## Local rollouts against an OpenAI-compatible endpoint (RL_ENDPOINT, RL_MODEL, RL_K, RL_ARGS)
+	python -m rl.rollout --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) --k $(or $(RL_K),4) $(RL_ARGS)
+
+rl-eval: ## E3 student eval on held-out tasks (RL_ENDPOINT, RL_MODEL, RL_BASELINE=report.json, RL_ARGS)
+	python -m rl.eval --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) $(if $(RL_BASELINE),--baseline $(RL_BASELINE)) $(RL_ARGS)
 
 audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on defects)
 	python -m repo_pipeline.corpus_audit trajectories/
@@ -260,6 +280,36 @@ remote-train-cleanup: ## Destroy any leftover instance (state file + label 'roma
 
 test-remote: ## No-cost self-test of the remote-train lifecycle (mock provider; asserts teardown)
 	python -m remote_train run --smoke
+
+# ---------- GRPO (RL) on the rented GPU ----------
+
+remote-grpo: ## Rent a GPU, run GRPO against the local env service (make rl-serve first), pull adapters, ALWAYS destroy
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train grpo $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+
+remote-serve: ## Rent a GPU and serve the student on 127.0.0.1:8001 through a tunnel (SERVE_ADAPTER=output, SERVE_SECONDS=0)
+	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	python -m remote_train serve $(if $(SERVE_ADAPTER),--adapter $(SERVE_ADAPTER)) $(if $(SERVE_SECONDS),--for-seconds $(SERVE_SECONDS)) $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+
+test-grpo: ## No-cost GRPO self-test: mock provider + mock env (teardown, tunnel, phase handshake) + command builders + unit tests
+	python -m remote_train run --smoke
+	python rl_train.py print-commands --config rl_config.yaml
+	python -m rl.tests test_trainer_core test_rl_train test_tunnel
+
+grpo-dataset: ## Write rl_tasks.jsonl (train split) for the GRPO trainer
+	python rl_train.py make-dataset --tasks rl/rl_tasks.json --out rl_tasks.jsonl
+
+rl-expose: ## Expose the local env service (127.0.0.1:8900) to Modal through a public ingress (RL_INGRESS_CMD overrides ngrok)
+	@test -n "$$RL_ENV_TOKEN" || (echo "ERROR: set RL_ENV_TOKEN (the same value `make rl-serve` runs with)" && exit 1)
+	$(or $(RL_INGRESS_CMD),ngrok http 127.0.0.1:8900)
+
+modal-grpo-smoke: ## Modal: merge + one GRPO step against the in-container mock env (validates pins, plugin, weight sync; ~$$2)
+	modal run modal_grpo.py --smoke --run-name $(or $(GRPO_RUN),grpo-smoke)
+
+modal-grpo: ## Modal: full GRPO run against the exposed env service (RL_ENV_URL=https://... from rl-expose, RL_ENV_TOKEN)
+	@test -n "$(RL_ENV_URL)" || (echo "ERROR: set RL_ENV_URL=https://<ingress-host> (from make rl-expose)" && exit 1)
+	@test -n "$$RL_ENV_TOKEN" || (echo "ERROR: set RL_ENV_TOKEN" && exit 1)
+	modal run modal_grpo.py --run-name $(or $(GRPO_RUN),grpo-v1) --env-url $(RL_ENV_URL) $(if $(GRPO_MAX_STEPS),--max-steps $(GRPO_MAX_STEPS))
 
 # ---------- Experiment registry ----------
 

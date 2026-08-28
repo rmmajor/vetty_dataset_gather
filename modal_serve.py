@@ -33,7 +33,7 @@ image = (
     # APP_NAME and EVAL_SECRET are read again when the container re-imports this module, so they
     # are baked too — otherwise a renamed lane would resolve differently there than at deploy.
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "VLLM_LOG_STATS_INTERVAL": "10",
-          "CUA_ADAPTER_NAME": ADAPTER_NAME, "CUA_SERVED_NAME": SERVED_NAME,
+          "CUA_ADAPTER_NAME": ADAPTER_NAME, "CUA_SERVED_NAME": SERVED_NAME, "CUA_SERVE_MODEL": MODEL,
           "CUA_SERVE_APP": APP_NAME, "CUA_EVAL_SECRET": EVAL_SECRET})
 )
 

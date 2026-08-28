@@ -25,7 +25,7 @@ from pathlib import Path
 from remote_train import state
 from remote_train.base import Instance, ProviderError
 from remote_train.config import RemoteTrainConfig
-from remote_train.jobs import build_job
+from remote_train.jobs import GrpoJob, build_job
 from remote_train.mock import MockProvider
 
 try:
@@ -63,17 +63,19 @@ def _run_job(provider, cfg, job, *, enable_safety: bool = True) -> int:
             _start_watchdog(provider, instance, cfg, stop)
 
         provider.wait_ready(instance, cfg.ready_timeout_s)
-        job.upload(provider, instance, cfg)
-        _launch(provider, instance, cfg, job.remote_command(cfg))
+        # Job resources (SSH tunnels) live inside the try/finally and close BEFORE the instance is destroyed.
+        with job.resources(provider, instance, cfg):
+            job.upload(provider, instance, cfg)
+            _launch(provider, instance, cfg, job.remote_command(cfg))
 
-        deadline = time.time() + cfg.max_runtime_hours * 3600
-        ok = _wait_for_completion(provider, instance, cfg, deadline)
-        _pull_logs(provider, instance, cfg, job.results_dest(cfg))
-        if not ok:
-            logger.error(f"Remote {job.name} reported FAILED — see ./{job.results_dest(cfg)}/{_LOG_FILE}")
-            return 1
+            deadline = time.time() + cfg.max_runtime_hours * 3600
+            ok = _wait_for_completion(provider, instance, cfg, deadline, job)
+            _pull_logs(provider, instance, cfg, job.results_dest(cfg))
+            if not ok:
+                logger.error(f"Remote {job.name} reported FAILED — see ./{job.results_dest(cfg)}/{_LOG_FILE}")
+                return 1
 
-        job.collect(provider, instance, cfg)
+            job.collect(provider, instance, cfg)
         summary = job.report(cfg)
         if summary:
             print(f"\n=== {job.name} results ===\n{summary}\n")
@@ -232,10 +234,16 @@ def _launch(provider, instance, cfg, body: str) -> None:
     raise ProviderError("remote job never started — no STATUS sentinel appeared within 60s")
 
 
-def _wait_for_completion(provider, instance, cfg, deadline: float) -> bool:
+def _wait_for_completion(provider, instance, cfg, deadline: float, job=None) -> bool:
     wd = cfg.remote_workdir
     last_line = ""
     while time.time() < deadline:
+        if job is not None:
+            try:
+                if job.on_poll(provider, instance, cfg):
+                    return True
+            except Exception as e:
+                logger.warning(f"on_poll hook failed (ignored): {e}")
         out, _, _ = provider.exec(instance, f"cat {wd}/{_STATUS_FILE} 2>/dev/null || echo MISSING", timeout=45)
         status = (out.strip().splitlines() or ["MISSING"])[-1].strip()
         tail, _, _ = provider.exec(instance, f"tail -n 3 {wd}/{_LOG_FILE} 2>/dev/null", timeout=45)
@@ -284,6 +292,9 @@ def run_smoke_test() -> int:
     (tmp / "trajectories" / "task_x").mkdir(parents=True)
     (tmp / "trajectories" / "task_x" / "trajectory.json").write_text("{}")
     (tmp / "config.yaml").write_text("model: test\noutput_dir: ./output\n")
+    (tmp / "output").mkdir()
+    (tmp / "output" / "adapter_config.json").write_text("{}")
+    (tmp / "output" / "adapter_model.safetensors").write_bytes(b"0" * 16)
     state.STATE_FILE = tmp / ".remote_train_state.json"
 
     def make_cfg(job="train"):
@@ -294,6 +305,10 @@ def run_smoke_test() -> int:
         cfg.eval_results_dir = str(tmp / "eval_results")
         cfg.eval_models = ("Qwen/Qwen3.5-9B-Base",)
         cfg.poll_interval_s = 0
+        cfg.rl_runs_dir = str(tmp / "rl_runs")
+        cfg.env_url = "mock://"
+        cfg.serve_adapter = str(tmp / "output")
+        cfg.serve_seconds = 1
         return cfg
 
     def check(name, cond):
@@ -308,11 +323,18 @@ def run_smoke_test() -> int:
     check("excluded offers were actually present", any(o.country in ("RU", "CN") for o in provider._fake_offers))
     check("instance is labeled roman.maior", provider.provision(offer, cfg).label == "roman.maior")
 
-    for job_name in ("train", "eval"):
+    real_run_eval = GrpoJob.run_eval
+    GrpoJob.run_eval = lambda self, phase: {"phase": phase}
+    for job_name in ("train", "eval", "grpo", "serve"):
         happy = MockProvider(make_cfg())
         rc = run_remote_job(happy, make_cfg(), job_name, enable_safety=False)
         check(f"{job_name}: happy path returns 0", rc == 0)
         check(f"{job_name}: happy path destroyed the instance", len(happy.destroyed) == 1)
+        if job_name == "grpo":
+            check("grpo: tunnel opened R:8900 + L:8001", happy.tunnels == [[("R", 8900), ("L", 8001)]])
+            check("grpo: both eval phases acked", sum("PHASE_ACK" in c for c in happy.exec_log) == 2)
+        if job_name == "serve":
+            check("serve: tunnel opened L:8001", happy.tunnels == [[("L", 8001)]])
 
         class _RaiseProvider(MockProvider):
             def wait_ready(self, instance, timeout):
@@ -335,6 +357,7 @@ def run_smoke_test() -> int:
         except KeyboardInterrupt:
             pass
         check(f"{job_name}: SIGINT path still destroyed the instance", len(interrupted.destroyed) == 1)
+    GrpoJob.run_eval = real_run_eval
 
     print(f"\nremote_train self-test: {'ALL PASS' if not failures else f'{len(failures)} FAILURES'}")
     return 0 if not failures else 1

@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 
 from remote_train.base import ComputeProvider, Instance, Offer, PROVIDERS, select_cheapest_allowed
+from remote_train.tunnel import NullTunnel
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ class MockProvider(ComputeProvider):
         self.cfg = cfg
         self.destroyed: list = []
         self.exec_log: list = []
+        self.tunnels: list = []
+        self.phases = list(getattr(cfg, "mock_phases", ()))
+        self.phase_calls = 0
         self._fake_offers = [
             Offer("cn-1", 0.30, "RTX 4090", 48, 1, "CN", 0.99),
             Offer("ru-1", 0.35, "RTX 4090", 48, 1, "RU", 0.99),
@@ -40,9 +44,21 @@ class MockProvider(ComputeProvider):
 
     def exec(self, instance, command, *, stream=False, timeout=0) -> tuple:
         self.exec_log.append(command)
+        if "PHASE_ACK" in command:
+            return "", "", 0
+        if "/PHASE" in command:
+            phase = self.phases[min(self.phase_calls, len(self.phases) - 1)] if self.phases else ""
+            self.phase_calls += 1
+            return phase, "", 0
         if "STATUS" in command:
-            return "DONE", "", 0
+            # A job that reads phases keeps the box "RUNNING" until its scripted phases are consumed.
+            running = 0 < self.phase_calls < len(self.phases)
+            return ("RUNNING" if running else "DONE"), "", 0
         return "", "", 0
+
+    def tunnel(self, instance, cfg, forwards):
+        self.tunnels.append(list(forwards))
+        return NullTunnel(forwards)
 
     def upload(self, instance, local_path, remote_path) -> None:
         self.exec_log.append(f"UPLOAD {local_path} -> {remote_path}")

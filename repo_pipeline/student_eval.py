@@ -95,7 +95,7 @@ class OpenAIChatStudent(StudentClient):
     """Any OpenAI-compatible /chat/completions endpoint (vLLM, `swift deploy`, SGLang, a hosted API)."""
 
     def __init__(self, endpoint: str, model: str, api_key: str = "", max_tokens: int = 512,
-                 temperature: float = 0.0, timeout_s: int = 180, retries: int = 2):
+                 temperature: float = 0.0, timeout_s: int = 180, retries: int = 2, retry_backoff_s: int = 90):
         self.url = self._chat_url(endpoint)
         self.model = model
         self.api_key = api_key
@@ -103,6 +103,7 @@ class OpenAIChatStudent(StudentClient):
         self.temperature = temperature
         self.timeout_s = timeout_s
         self.retries = retries
+        self.retry_backoff_s = retry_backoff_s
 
     @staticmethod
     def _chat_url(endpoint: str) -> str:
@@ -126,10 +127,16 @@ class OpenAIChatStudent(StudentClient):
 
         last_error = None
         for attempt in range(self.retries + 1):
+            if attempt:
+                time.sleep(self.retry_backoff_s * attempt)
             try:
                 response = requests.post(self.url, json=payload, headers=headers, timeout=self.timeout_s)
             except requests.RequestException as e:
                 last_error = f"transport error: {e}"
+                continue
+            if response.status_code >= 500:
+                # A served model that was preempted or is restarting answers 5xx for minutes; that is a retry, not a verdict on the episode.
+                last_error = f"HTTP {response.status_code}: {response.text[:200]}"
                 continue
             if response.status_code != 200:
                 raise StudentError(f"{self.url} returned HTTP {response.status_code}: {response.text[:300]}")
@@ -951,7 +958,7 @@ async def judge_episode(record: EpisodeRecord, cfg: EvalConfig):
         episode_dir, full_name=f"eval:{cfg.label}:{record.task_id}",
         mid_screenshots=cfg.judge_mid_screenshots,
     )
-    record.judged_success = bool(verdict.get("success"))
+    record.judged_success = bool(verdict.get("claimed_success", verdict.get("success")))
     record.verified_success = bool(verdict.get("success"))
     record.efficiency = verdict.get("efficiency") or ""
     record.judge_reasoning = (verdict.get("reasoning") or "")[:400]
@@ -1228,8 +1235,9 @@ def render_report(results: dict) -> str:
         f"| mean steps (all) | {metrics['mean_steps_all']} |",
         f"| episodes that hit the step cap | {metrics['step_cap_hits']} |",
         "",
-        "`verified` is the judge's verdict on the ORIGINAL goal; the efficiency grade is reported "
-        "beside it rather than folded into it. `steps / reference_length` compares against the "
+        "`verified` is the judge's verdict on the ORIGINAL goal after its own criteria checklist is "
+        "enforced (`judged` is the raw claim); the efficiency grade is reported beside it rather than "
+        "folded into it. `steps / reference_length` compares against the "
         "benchmark's own human step count, which is a more defensible efficiency denominator than "
         "our raw step counts.",
         "",

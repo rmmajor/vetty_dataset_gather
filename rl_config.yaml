@@ -1,0 +1,68 @@
+# GRPO run config for `python rl_train.py` (box) and `python -m remote_train grpo` (Mac). Mirrors config.yaml's style.
+base_model: Qwen/Qwen3.5-9B            # the SFT base (config.yaml); the SFT LoRA is merged into it before RL (spec D1)
+sft_adapter: output                     # Mac path of the SFT adapter to ship
+sft_adapter_remote: /workspace/sft_adapter
+merged_model: /workspace/merged
+template: qwen3_5
+# No generation prefix: the student emits <think>…</think> + actions itself (as in SFT), so completion == training target; the template's default would force an empty think block.
+response_prefix: ""
+tuner_type: lora
+lora_rank: 64
+lora_alpha: 128
+target_modules: all-linear
+freeze_vit: true
+torch_dtype: bfloat16
+max_pixels: 1003520
+# rollout server (swift rollout, vLLM inside) — its own GPU: server mode syncs weights over an NCCL communicator, which cannot host both ranks on one device
+rollout_port: 8000
+vllm_gpu_memory_utilization: 0.8
+vllm_max_model_len: 4096
+vllm_max_lora_rank: 64
+vllm_limit_mm_per_prompt: '{"image": 1}'
+# Train tasks expect at most train_max_expected_actions actions; 28 turns lets a ~2x-reference wanderer still finish, so a group's samples do not all hit the cap alike (zero advantage).
+max_turns: 28
+# trainer (swift rlhf --rlhf_type grpo)
+dataset: rl_tasks.jsonl
+train_max_expected_actions: 18
+learning_rate: 1.0e-5
+beta: 0.01
+epsilon: 0.2
+num_generations: 4
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 16
+steps_per_generation: 16
+max_length: 3072
+max_completion_length: 512
+completion_length_limit_scope: per_round
+temperature: 0.7
+top_p: 0.95
+max_steps: 30
+save_steps: 5
+save_total_limit: 3
+async_generate: true
+dynamic_sample: false
+log_completions: true
+report_to: tensorboard
+output_dir: /workspace/rl_output
+# plugin / env
+external_plugins: rl/trainer/swift_plugin.py
+gym_env: browser_env
+multi_turn_scheduler: browser_scheduler
+# Gym reward only: the trainer requires identical rewards across a request's per-turn records, which a per-turn ORM violates; format validity is already inside the episode reward.
+env_url: http://127.0.0.1:8900
+env_retry_s: 180
+# eval phases (swift deploy on serve_port; the Mac runs rl.eval through the tunnel and acks)
+eval_before: true
+eval_after: true
+eval_wait_s: 7200
+# compute overrides applied onto remote_train.yaml by GrpoJob.preflight
+compute:
+  num_gpus: 2
+  rollout_devices: "0"
+  trainer_devices: "1"
+  min_vram_gb: 80
+  disk_gb: 120
+  image: pytorch/pytorch:2.11.0-cuda12.8-cudnn9-devel
+  max_runtime_hours: 8
+  serve_port: 8001
+  env_port: 8900

@@ -69,13 +69,14 @@ def install_driver(sandbox):
         raise DriverError(f"playwright-core install failed: {(stdout + stderr)[-300:]}")
 
 
-def start_driver(sandbox, env: dict | None = None):
-    """Daemonize the driver and wait for its HTTP port; `env` prefixes the node invocation."""
-    prefix = "".join(f"{k}={v} " for k, v in (env or {}).items())
-    sandbox.start_background(f"{prefix}node {DRIVER_DIR}/browser_driver.js", DRIVER_LOG)
-    if not sandbox.wait_for_port(DRIVER_PORT, DRIVER_READY_TIMEOUT):
-        log_tail, _, _ = sandbox.exec_command(f"tail -20 {DRIVER_LOG}")
-        raise DriverError(f"driver did not open port {DRIVER_PORT}; log tail: {log_tail[-400:]}")
+def start_driver(sandbox, env: dict | None = None, port: int = DRIVER_PORT):
+    """Daemonize the driver on `port` (one process per port; RL runs several per sandbox); `env` prefixes the node invocation and stays the positional second argument for the eval harness."""
+    prefix = "".join(f"{k}={v} " for k, v in {**(env or {}), "DRIVER_PORT": port}.items())
+    log_path = DRIVER_LOG if port == DRIVER_PORT else f"{DRIVER_LOG}.{port}"
+    sandbox.start_background(f"{prefix}node {DRIVER_DIR}/browser_driver.js", log_path)
+    if not sandbox.wait_for_port(port, DRIVER_READY_TIMEOUT):
+        log_tail, _, _ = sandbox.exec_command(f"tail -20 {log_path}")
+        raise DriverError(f"driver did not open port {port}; log tail: {log_tail[-400:]}")
 
 
 def _wait_for_http_port(sandbox, preferred: int, timeout: int) -> int | None:
@@ -156,9 +157,9 @@ class DriverClient:
     """Typed calls to the in-container driver. Raises DriverError with the driver's own
     (agent-readable) message when a request is rejected."""
 
-    def __init__(self, sandbox):
+    def __init__(self, sandbox, port: int = DRIVER_PORT):
         self.sandbox = sandbox
-        self.base = f"http://127.0.0.1:{DRIVER_PORT}"
+        self.base = f"http://127.0.0.1:{port}"
 
     def _post(self, path: str, payload: dict | None = None, timeout: int = 120) -> dict:
         response = self.sandbox.http_json("POST", f"{self.base}{path}", payload or {}, timeout=timeout)
@@ -178,6 +179,7 @@ class DriverClient:
         auth_config: dict | None = None,
         secrets: dict | None = None,
         mail_config: dict | None = None,
+        type_mode: str | None = None,
     ) -> dict:
         # `auth_config` carries the pre_session `storage_state` (cookies) the driver injects at
         # context creation; `secrets` is the session-scoped credential map the driver uses to
@@ -197,10 +199,19 @@ class DriverClient:
             body["secrets"] = secrets
         if mail_config:
             body["mail_config"] = mail_config
+        if type_mode:
+            body["type_mode"] = type_mode
         return self._post("/session", body)
 
     def act(self, payload: dict) -> dict:
         return self._post("/act", payload)
+
+    def observe(self) -> dict:
+        """PNG observation whose bytes become the next recorded step's screenshot (RL parity)."""
+        return self._post("/observe")
+
+    def act_sequence(self, thought: str, actions: list[dict]) -> dict:
+        return self._post("/act", {"kind": "sequence", "thought": thought, "actions": actions})
 
     def snapshot(self) -> dict:
         return self._post("/snapshot")

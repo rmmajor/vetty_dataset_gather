@@ -215,13 +215,13 @@ that must not be quoted.
 | cua-sft-v1-ep2 | sft | Qwen/Qwen3.5-9B-Base | v1 | LoRA r64/a128 lr5e-5 | done | Epoch-2 checkpoint of cua-sft-v1. |
 | cua-sft-v2 | sft | Qwen/Qwen3.5-9B-Base | v2 | LoRA | planned | Retrain on corpus v2 once the login-gated capture lane lands. |
 | cua-sft-v1-nologin | sft | Qwen/Qwen3.5-9B-Base | v1-nologin | LoRA r64/a128 3ep lr5e-5 | planned | Ablation: same recipe with post-authentication trajectories removed. Isolates what the auth-gated data buys. |
-| cua-grpo-v1 | grpo | cua-sft-v1 | v1 | GRPO | planned | Experimental; do not report until it has a verified run. |
 | claude-sonnet-5 | frontier |  |  |  | done | Frontier executor inside the full vetty agent (explore/plan/execute/report on the claude-sdk backbone). |
 | claude-opus-5 | frontier |  |  |  | done | Used as verdict and match-judge for every QA-bench column, never as an executor. |
 | scripted-playwright | tool |  |  | 13 hand-written Playwright tests | done | Incumbent-method comparison arm: locator-based (#id) suite in the vetty benchmark. |
 | corpus-v1 | dataset |  | v1 |  | done | Snapshot the SFT v1 model was trained on. Frozen; the deck describes this snapshot. |
 | corpus-current | dataset |  | v2-wip |  | running | Live corpus, still growing. Basis for the planned v2 retrain. |
 | qa-bench-refapp | benchmark |  |  |  | done | Reference app plus one-defect-per-run mutants; defect injected by config, not by patching code. |
+| cua-grpo-v2 | grpo | cua-sft-v1 (merged) | rl-suite f5dda31d | GRPO LoRA r64/a128 15 steps G=4 lr1e-5 beta0.01 | done | First live GRPO run: 240 episodes on 12 train tasks against live sites, reward v2 (docs/decisions/grpo-v2-first-live-run.md). LoRA over the MERGED sft-v1 weights; serve it on those, never on the raw base. Answers in viewport_abs. |
 
 ### Results
 
@@ -246,24 +246,50 @@ that must not be quoted.
 
 | model_id | subset | metric | value | n | status | notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| cua-grpo-v2 | all | parse_failure_rate | 8.7 % |  | done | Denominator is harness-internal; not a per-episode proportion. |
+| cua-grpo-v2 | all-episodes | done_rate | 22.0 % <sub>[13–35]</sub> | 50 | done | Episodes the policy ended with done(). |
+| cua-grpo-v2 | all-episodes | verified_success_rate | 8.0 % <sub>[3–19]</sub> | 50 | done | Denominator includes blocked and unreachable sites. |
+| cua-grpo-v2 | easy | verified_success_rate | 27.3 % <sub>[10–57]</sub> | 11 | done | 3/11. |
+| cua-grpo-v2 | hard | verified_success_rate | 7.7 % <sub>[1–33]</sub> | 13 | done | 1/13. |
+| cua-grpo-v2 | medium | verified_success_rate | 0.0 % <sub>[0–28]</sub> | 10 | done | 0/10. |
+| cua-grpo-v2 | parsed-actions | canonical_form_rate | 100.0 % <sub>[99–100]</sub> | 518 | done | 518/518 parsed actions in canonical form. |
+| cua-grpo-v2 | scored | verified_success_rate | 11.8 % <sub>[5–27]</sub> | 34 | done | 4/34 scored episodes. Criteria-first judge (judge_prompt_sha), all three policies the same night; not comparable to rows without a judge_prompt_sha. |
+| cua-grpo-v2 | successes | steps_over_reference_on_success | 1.12 | 4 | done | Mean steps / reference_length over verified successes. |
 | cua-sft-v1 | all | parse_failure_rate | 7.4 % |  | done | Denominator is harness-internal; not a per-episode proportion. |
+| cua-sft-v1 | all | parse_failure_rate | 8.0 % |  | done | Denominator is harness-internal; not a per-episode proportion. |
+| cua-sft-v1 | all-episodes | done_rate | 16.0 % <sub>[8–29]</sub> | 50 | done | Episodes the policy ended with done(). |
 | cua-sft-v1 | all-episodes | verified_success_rate | 20.0 % <sub>[11–33]</sub> | 50 | done | Audited equivalent is 0.16. |
+| cua-sft-v1 | all-episodes | verified_success_rate | 6.0 % <sub>[2–16]</sub> | 50 | done | Denominator includes blocked and unreachable sites. |
 | cua-sft-v1 | easy | verified_success_rate | 36.4 % <sub>[15–65]</sub> | 11 | done | As measured; the audit did not publish a per-level breakdown. |
+| cua-sft-v1 | easy | verified_success_rate | 27.3 % <sub>[10–57]</sub> | 11 | done | 3/11. |
 | cua-sft-v1 | hard | verified_success_rate | 23.1 % <sub>[8–50]</sub> | 13 | done | As measured. |
+| cua-sft-v1 | hard | verified_success_rate | 0.0 % <sub>[0–24]</sub> | 12 | done | 0/12. |
 | cua-sft-v1 | medium | verified_success_rate | 30.0 % <sub>[11–60]</sub> | 10 | done | Base scored 0/10 here; the headline qualitative claim. |
+| cua-sft-v1 | medium | verified_success_rate | 0.0 % <sub>[0–30]</sub> | 9 | done | 0/9. |
 | cua-sft-v1 | parsed-actions | canonical_form_rate | 100.0 % <sub>[99–100]</sub> | 584 | done | 584/584 parsed actions in canonical form. |
+| cua-sft-v1 | parsed-actions | canonical_form_rate | 100.0 % <sub>[99–100]</sub> | 509 | done | 509/509 parsed actions in canonical form. |
 | cua-sft-v1 | scored | verified_success_rate | 29.4 % <sub>[17–46]</sub> | 34 | done | 10/34 as measured by the judge before audit. |
+| cua-sft-v1 | scored | verified_success_rate | 9.4 % <sub>[3–24]</sub> | 32 | done | 3/32 scored episodes. Criteria-first judge (judge_prompt_sha), all three policies the same night; not comparable to rows without a judge_prompt_sha. |
 | cua-sft-v1 | scored | verified_success_rate_audited | 23.5 % <sub>[12–40]</sub> | 34 | done | 8/34 after manual audit removed 2 confirmed judge false positives. THIS is the number quoted in the thesis and the deck. |
+| cua-sft-v1 | successes | steps_over_reference_on_success | 1.33 | 3 | done | Mean steps / reference_length over verified successes. |
 | cua-sft-v1-ep1 | scored | verified_success_rate | 11.8 % <sub>[5–27]</sub> | 34 | done | 4/34. |
 | cua-sft-v1-ep2 | scored | verified_success_rate | 14.7 % <sub>[6–30]</sub> | 34 | done | 5/34. Epoch trend is monotone: 0.118 -> 0.147 -> 0.294. |
 | qwen35-9b-base | all | parse_failure_rate | 22.3 % |  | done | Denominator is harness-internal; not a per-episode proportion. |
+| qwen35-9b-base | all | parse_failure_rate | 20.6 % |  | done | Denominator is harness-internal; not a per-episode proportion. |
+| qwen35-9b-base | all-episodes | done_rate | 22.0 % <sub>[13–35]</sub> | 50 | done | Episodes the policy ended with done(). |
 | qwen35-9b-base | all-episodes | verified_success_rate | 6.0 % <sub>[2–16]</sub> | 50 | done | Denominator includes blocked and unreachable episodes. |
+| qwen35-9b-base | all-episodes | verified_success_rate | 10.0 % <sub>[4–21]</sub> | 50 | done | Denominator includes blocked and unreachable sites. |
 | qwen35-9b-base | easy | verified_success_rate | 18.2 % <sub>[5–48]</sub> | 11 | done |  |
+| qwen35-9b-base | easy | verified_success_rate | 36.4 % <sub>[15–65]</sub> | 11 | done | 4/11. |
 | qwen35-9b-base | hard | verified_success_rate | 7.7 % <sub>[1–33]</sub> | 13 | done |  |
+| qwen35-9b-base | hard | verified_success_rate | 7.7 % <sub>[1–33]</sub> | 13 | done | 1/13. |
 | qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–28]</sub> | 10 | done |  |
+| qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–28]</sub> | 10 | done | 0/10. |
 | qwen35-9b-base | parsed-actions | canonical_form_rate | 26.8 % <sub>[22–32]</sub> | 276 | done | 74/276 parsed actions in canonical form. |
+| qwen35-9b-base | parsed-actions | canonical_form_rate | 18.8 % <sub>[15–24]</sub> | 282 | done | 53/282 parsed actions in canonical form. |
 | qwen35-9b-base | scored | verified_success_rate | 8.8 % <sub>[3–23]</sub> | 34 | done | 3/34 scored episodes; 50 sampled, 14 site-blocked, 2 unreachable. |
-| cua-grpo-v1 | scored | verified_success_rate | _not measured_ | 34 | planned | Experimental; keep out of any external presentation until verified. |
+| qwen35-9b-base | scored | verified_success_rate | 14.7 % <sub>[6–30]</sub> | 34 | done | 5/34 scored episodes. Criteria-first judge (judge_prompt_sha), all three policies the same night; not comparable to rows without a judge_prompt_sha. |
+| qwen35-9b-base | successes | steps_over_reference_on_success | 1.92 | 5 | done | Mean steps / reference_length over verified successes. |
 | cua-sft-v1-nologin | scored | verified_success_rate | _not measured_ | 34 | planned | Ablation that turns the post-authentication novelty claim into a result. |
 
 #### `qa-bench-refapp` — catalog-v1@0f3d7f88e85a
@@ -299,7 +325,7 @@ that must not be quoted.
 | qwen35-9b-base | 6-defect-subset | done_rate | 0.0 % <sub>[0–39]</sub> | 6 | done | All 6 hit the 15-step cap; 1 crashed on a malformed keypress. |
 | claude-sonnet-5 | 6-defect-subset | ddr | _not measured_ | 6 | pending | All 6 defect runs plus clean completed; the judge pass has not been run so no DDR exists yet. |
 | claude-sonnet-5 | skin-v2 | pass_rate_retained | _not measured_ |  | planned | Agent arm of the same comparison. |
-| cua-grpo-v1 | 6-defect-subset | ddr | _not measured_ | 6 | planned | Experimental. |
+| cua-grpo-v2 | 6-defect-subset | ddr | _not measured_ | 6 | planned | Experimental. |
 | cua-sft-v1 | skin-v2 | pass_rate_retained | _not measured_ |  | planned | Needs an ids-only skin to separate DOM change from label change. |
 | cua-sft-v1-nologin | 6-defect-subset | ddr | _not measured_ | 6 | planned | Same ablation measured in the QA harness. |
 | scripted-playwright | skin-v2 | pass_rate_retained | _not measured_ | 13 | planned | Central thesis claim. Skin v2 renames all 32 ids, so an #id suite should collapse. |
@@ -314,19 +340,35 @@ that must not be quoted.
 
 | model_id | subset | metric | value | n | status | notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| cua-grpo-v2 | all | accuracy | 85.0 % <sub>[81–89]</sub> | 300 | done | coord_space=viewport_abs. Merged SFT + GRPO LoRA, viewport_abs. No grounding regression against sft-v1. |
+| cua-grpo-v2 | all | parse_rate | 96.7 % <sub>[94–98]</sub> | 300 | done |  |
+| cua-grpo-v2 | full-split | accuracy | 78.6 % <sub>[76–81]</sub> | 1272 | done | Full 1,272-sample test split (desktop + mobile + web); the desktop-300 rows are the comparable ones. |
+| cua-grpo-v2 | icon | accuracy | 75.4 % <sub>[67–82]</sub> | 122 | done |  |
+| cua-grpo-v2 | text | accuracy | 91.6 % <sub>[87–95]</sub> | 178 | done |  |
 | cua-sft-v1 | all | accuracy | 85.0 % <sub>[81–89]</sub> | 300 | done | coord_space=viewport_abs. Out-of-domain: ScreenSpot is desktop, the corpus is web-only. |
+| cua-sft-v1 | all | accuracy | 85.3 % <sub>[81–89]</sub> | 300 | done | coord_space=viewport_abs. Base + SFT LoRA served, viewport_abs, same night. |
+| cua-sft-v1 | all | accuracy | 85.3 % <sub>[81–89]</sub> | 300 | done | coord_space=viewport_abs. Merged SFT weights served without a LoRA; equals base + LoRA, so the merge the RL run trained on is faithful. |
 | cua-sft-v1 | all | parse_rate | 97.0 % <sub>[94–98]</sub> | 300 | done |  |
+| cua-sft-v1 | all | parse_rate | 97.3 % <sub>[95–99]</sub> | 300 | done |  |
+| cua-sft-v1 | all | parse_rate | 97.3 % <sub>[95–99]</sub> | 300 | done |  |
 | cua-sft-v1 | icon | accuracy | 75.4 % <sub>[67–82]</sub> | 122 | done | Most of the aggregate drop sits here. |
+| cua-sft-v1 | icon | accuracy | 75.4 % <sub>[67–82]</sub> | 122 | done |  |
+| cua-sft-v1 | icon | accuracy | 76.2 % <sub>[68–83]</sub> | 122 | done |  |
+| cua-sft-v1 | text | accuracy | 91.6 % <sub>[87–95]</sub> | 178 | done |  |
+| cua-sft-v1 | text | accuracy | 92.1 % <sub>[87–95]</sub> | 178 | done |  |
 | cua-sft-v1 | text | accuracy | 91.6 % <sub>[87–95]</sub> | 178 | done |  |
 | cua-sft-v1-ep1 | all | accuracy | 82.0 % <sub>[77–86]</sub> | 300 | done |  |
 | cua-sft-v1-ep1 | all | parse_rate | 97.7 % <sub>[95–99]</sub> | 300 | done |  |
 | cua-sft-v1-ep2 | all | accuracy | 86.3 % <sub>[82–90]</sub> | 300 | done |  |
 | cua-sft-v1-ep2 | all | parse_rate | 95.7 % <sub>[93–97]</sub> | 300 | done |  |
 | qwen35-9b-base | all | accuracy | 89.0 % <sub>[85–92]</sub> | 300 | done | coord_space=normalized_1000 |
+| qwen35-9b-base | all | accuracy | 89.0 % <sub>[85–92]</sub> | 300 | done | coord_space=normalized_1000. Served stock base, normalized_1000, same night as the grpo-v2 rows. |
 | qwen35-9b-base | all | parse_rate | 94.7 % <sub>[92–97]</sub> | 300 | done |  |
+| qwen35-9b-base | all | parse_rate | 94.3 % <sub>[91–96]</sub> | 300 | done |  |
+| qwen35-9b-base | icon | accuracy | 80.3 % <sub>[72–86]</sub> | 122 | done |  |
 | qwen35-9b-base | icon | accuracy | 80.3 % <sub>[72–86]</sub> | 122 | done |  |
 | qwen35-9b-base | text | accuracy | 94.9 % <sub>[91–97]</sub> | 178 | done |  |
-| cua-grpo-v1 | all | accuracy | _not measured_ | 300 | planned | Experimental. |
+| qwen35-9b-base | text | accuracy | 94.9 % <sub>[91–97]</sub> | 178 | done |  |
 
 ### Figures cited from other people's studies
 
@@ -335,7 +377,7 @@ that must not be quoted.
 | Share of record/replay web test breakages caused by stale locators | 73.6 % | 1065 | ICST | 2016 | 10.1109/ICST.2016.16 | deck slide 3, thesis ch.1 |
 | Legacy GUI tests on live sites that stopped passing within 18 months | 100.0 % | 120 | ASE | 2025 | 10.1109/ASE63991.2025.00251 | deck slide 3, thesis ch.1 |
 
-_83 registry rows: 68 done, 1 pending, 8 planned, 6 superseded. Percentages carry a 95 % Wilson interval where n is known._
+_125 registry rows: 112 done, 1 pending, 6 planned, 6 superseded. Percentages carry a 95 % Wilson interval where n is known._
 
 <!-- registry:end -->
 
