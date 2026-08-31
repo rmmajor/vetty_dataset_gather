@@ -19,11 +19,11 @@ vllm_gpu_memory_utilization: 0.8
 vllm_max_model_len: 4096
 vllm_max_lora_rank: 64
 vllm_limit_mm_per_prompt: '{"image": 1}'
-# Train tasks expect at most train_max_expected_actions actions; 32 turns keeps the 2x headroom the efficiency slope assumes, so a group's samples do not all hit the cap alike (zero advantage).
-max_turns: 32
+# Train tasks expect at most train_max_expected_actions actions; 36 turns keeps the 2x headroom the efficiency slope assumes, so a group's samples do not all hit the cap alike (zero advantage).
+max_turns: 36
 # trainer (swift rlhf --rlhf_type grpo)
 dataset: rl_tasks.jsonl
-train_max_expected_actions: 16
+train_max_expected_actions: 18
 learning_rate: 5.0e-6
 beta: 0.01
 epsilon: 0.2

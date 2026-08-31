@@ -79,6 +79,12 @@ on nothing.
 
 ## Standing rules this leaves behind
 
+- **Check the first checkpoint before paying for the rest of the run.** `save_steps: 5`, so pull
+  `<run>/rl_output/checkpoint-5` and compare it against the SFT adapter the run started from:
+  `python -m rl.analysis bnorm <checkpoint>/adapter_model.safetensors --ref models/cua-sft-v1/adapter_model.safetensors`.
+  It prints `B_ratio` and `dead_run`. Under 10% means the weights did not move and no further steps
+  will help — kill the run. grpo-v2 measured 0.279 against 14.345, i.e. 1.9%, and was allowed to
+  finish anyway; that is the mistake this check exists to prevent. It costs nothing and needs no eval.
 - A run whose reward can be `None` is not allowed to train; prove it with the verdictless smoke after
   any change to the reward path.
 - Never launch a training run before the pass@k band shows ≥15 tasks with mixed outcomes.
