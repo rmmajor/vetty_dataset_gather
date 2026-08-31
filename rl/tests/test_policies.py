@@ -54,7 +54,9 @@ def _policy(outcomes, slept):
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
-    return OpenAICompatiblePolicy("http://x/v1", "m", opener=opener, backoff_s=0, sleep=slept.append)
+    ticks = iter(range(0, 100000, 7))
+    return OpenAICompatiblePolicy("http://x/v1", "m", opener=opener, backoff_s=0, sleep=slept.append,
+                                  wait_s=20, clock=lambda: next(ticks))
 
 
 def test_policy_retries_a_dropped_connection_then_succeeds():
@@ -64,14 +66,14 @@ def test_policy_retries_a_dropped_connection_then_succeeds():
     assert len(slept) == 1
 
 
-def test_policy_gives_up_after_retries_and_does_not_retry_4xx():
+def test_policy_gives_up_when_the_wait_budget_runs_out_and_never_retries_4xx():
     slept = []
-    policy = _policy([ssl.SSLEOFError("EOF")] * 4, slept)
+    policy = _policy([ssl.SSLEOFError("EOF")] * 10, slept)
     try:
         policy.act({"system": "s", "text": "t", "image_b64": "", "step_index": 0})
-        raise AssertionError("must raise once retries are exhausted")
+        raise AssertionError("must raise once the budget is spent")
     except ConnectionError as e:
-        assert "after 4 attempts" in str(e)
+        assert "unreachable after" in str(e)
     fatal = _policy([urllib.error.HTTPError("http://x", 400, "bad", {}, None)], [])
     try:
         fatal.act({"system": "s", "text": "t", "image_b64": "", "step_index": 0})
