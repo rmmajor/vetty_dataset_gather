@@ -98,6 +98,7 @@ ROUND_TRIP_ACTIONS = [
     {"type": "scroll", "x": 640, "y": 360, "scroll_x": 0, "scroll_y": 500},
     {"type": "scroll", "x": 100, "y": 100, "scroll_x": -50, "scroll_y": -500},
     {"type": "drag", "path": [{"x": 10, "y": 20}, {"x": 300, "y": 400}]},
+    {"type": "navigate", "url": "https://example.com/page"},
     {"type": "wait"},
     {"type": "done"},
     {"type": "screenshot"},
@@ -114,7 +115,7 @@ def check_parser_round_trip():
         assert parsed.kind == "prefixed", f"{line!r} classified {parsed.kind}"
         assert parsed.deviations == (), f"canonical line reported deviations {parsed.deviations}"
         seen.add(action["type"])
-    required = {"click", "double_click", "move", "type", "keypress", "scroll", "drag", "wait", "done"}
+    required = {"click", "double_click", "move", "type", "keypress", "scroll", "drag", "navigate", "wait", "done"}
     assert required <= seen, f"round-trip missed action types: {required - seen}"
     logger.info(f"parser round-trip OK for {len(ROUND_TRIP_ACTIONS)} canonical actions "
                 f"over {len(seen)} types")
@@ -184,6 +185,11 @@ GRAMMAR_MATRIX = [
         "keypress(Control, a)",
         "keypress(Control+a)",
     ]),
+    ({"type": "navigate", "url": "https://example.com/a"}, [
+        'navigate("https://example.com/a")',
+        "navigate('https://example.com/a')",
+        "navigate(https://example.com/a)",
+    ]),
     ({"type": "wait"}, ["wait()", "wait", "wait( )"]),
     ({"type": "done"}, ["done()", "done"]),
     ({"type": "screenshot"}, ["screenshot()", "screenshot"]),
@@ -198,6 +204,7 @@ AMBIGUOUS_SHAPES = [
     ("drag((10, 20))", "one endpoint"),
     ("keypress()", "no keys"),
     ("click()", "no coordinates"),
+    ("navigate(back)", "not a URL — back could be a relative path, a keyword, or prose"),
 ]
 
 
@@ -367,6 +374,9 @@ def check_prefilled_think():
 def check_driver_mapping():
     """Every action type the student can emit maps onto a driver /act payload."""
     for action in ROUND_TRIP_ACTIONS:
+        # navigate is the one verb served by the driver's own /navigate endpoint rather than /act.
+        if action["type"] == "navigate":
+            continue
         assert action["type"] in ACTION_TO_DRIVER, f"no driver mapping for {action['type']}"
     payload = driver_payload({"type": "click", "x": 5, "y": 6, "button": "right"}, "because")
     assert payload == {"kind": "click_xy", "x": 5, "y": 6, "button": "right", "thought": "because"}, payload

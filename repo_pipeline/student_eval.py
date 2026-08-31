@@ -28,6 +28,7 @@ from repo_pipeline.instrumentation import RESULTS_DIR
 from repo_pipeline.llm_config import MODEL_FOR_REASONING
 from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler, safe_parallel_sandboxes
 from repo_pipeline.sdk_runner import UsageLimitReached
+from repo_pipeline.site_blocks import BLOCK_SIGNATURES, detect_block  # noqa: F401  (re-exported: student_eval's public grammar)
 from train_qwen import (
     HISTORY_WINDOW,
     SYSTEM_PROMPT,
@@ -204,7 +205,7 @@ def build_student(cfg: "EvalConfig") -> StudentClient:
 # ---------------------------------------------------------------------------
 
 ACTION_VERBS = ("click", "double_click", "move", "drag", "scroll", "type", "keypress",
-                "wait", "done", "screenshot")
+                "navigate", "wait", "done", "screenshot")
 NO_ARG_VERBS = ("wait", "done", "screenshot")
 # The system prompt documents scroll as scrollX=0, scrollY=500, and the driver defaults match.
 DEFAULT_SCROLL = (0, 500)
@@ -390,6 +391,20 @@ def _no_args(action_type: str):
     return build
 
 
+def _build_navigate(tokens, kwargs, note):
+    # One http(s) URL; the canonical spelling is double-quoted, a bare or single-quoted URL is unambiguous and accepted.
+    if len(tokens) != 1:
+        return None
+    url = _as_quoted_string(tokens[0])
+    if url is None:
+        url = tokens[0]
+    if not tokens[0].startswith('"'):
+        note("alt_quotes")
+    if not url.startswith(("http://", "https://")):
+        return None
+    return {"type": "navigate", "url": url}
+
+
 ACTION_BUILDERS: dict = {
     "click": _build_click,
     "double_click": _point_only("double_click"),
@@ -398,6 +413,7 @@ ACTION_BUILDERS: dict = {
     "scroll": _build_scroll,
     "type": _build_type,
     "keypress": _build_keypress,
+    "navigate": _build_navigate,
     "wait": _no_args("wait"),
     "done": _no_args("done"),
     "screenshot": _no_args("screenshot"),
@@ -582,34 +598,6 @@ def driver_payload(action: dict, thought: str) -> dict | None:
         return None
     payload["thought"] = thought or NO_THINK_PLACEHOLDER
     return payload
-
-
-# ---------------------------------------------------------------------------
-# Site blocking: scoring a CAPTCHA wall as a model failure measures the wrong thing.
-# ---------------------------------------------------------------------------
-
-BLOCK_SIGNATURES: list = [
-    ("captcha", re.compile(r"\b(re)?captcha\b|\bhcaptcha\b|press *(&|and) *hold", re.IGNORECASE)),
-    ("human_verification", re.compile(
-        r"verify (that )?you('re| are)( a)? human|are you a robot|i'm not a robot|"
-        r"confirm you are (a )?human|prove you('re| are) (not a robot|human)", re.IGNORECASE)),
-    ("cloudflare", re.compile(
-        r"checking your browser before accessing|cloudflare ray id|"
-        r"enable javascript and cookies to continue|attention required! \| cloudflare", re.IGNORECASE)),
-    ("waf_block", re.compile(
-        r"access denied|403 forbidden|you (have been|are) blocked|request unsuccessful|"
-        r"pardon our interruption|unusual traffic from your computer|"
-        r"your request has been blocked|bot detection", re.IGNORECASE)),
-]
-
-
-def detect_block(url: str, snapshot: str) -> str | None:
-    """Name of the first blocking signature visible in the current observation, else None."""
-    haystack = f"{url or ''}\n{snapshot or ''}"
-    for name, pattern in BLOCK_SIGNATURES:
-        if pattern.search(haystack):
-            return name
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -862,6 +850,19 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
             terminated = False
             executed_this_step = 0
             for action in parsed.actions:
+                if action["type"] == "navigate":
+                    # The trained grammar includes navigate; it goes to the driver's own endpoint, not /act.
+                    try:
+                        result = await _run(client.navigate, action["url"])
+                    except (DriverError, ConnectionError) as e:
+                        record.driver_errors += 1
+                        logger.info(f"[{task.task_id}] step {step}: navigate failed: {str(e)[:160]}")
+                        continue
+                    record.actions_executed += 1
+                    executed_this_step += 1
+                    action_history.append(format_action_summary(action))
+                    last_url = result.get("url", last_url)
+                    continue
                 payload = driver_payload(scale_action(action, cfg.coord_space), parsed.think)
                 if payload is None:
                     continue
@@ -1104,6 +1105,8 @@ def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
         # Parity key, deliberately NOT expected-to-differ: grammar tolerance is a property of
         # the harness, so both sides of a delta must have been parsed the same way.
         "action_grammar": "tolerant" if cfg.tolerant_grammar else "canonical",
+        # Parity key: runs before this key existed refused the trained navigate verb, so their parse-abort counts are not comparable.
+        "navigate_enabled": True,
         "step_cap_policy": step_cap_policy(cfg, source),
         "max_unproductive_steps": cfg.max_unproductive_steps,
         "max_parse_failures": cfg.max_parse_failures,
