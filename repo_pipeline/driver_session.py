@@ -216,6 +216,10 @@ class DriverClient:
     def snapshot(self) -> dict:
         return self._post("/snapshot")
 
+    def page_text(self) -> str:
+        """The page's rendered text, for success oracles that must see a computed result the snapshot omits."""
+        return self._post("/page_text")["text"]
+
     def screenshot_b64(self, image_format: str = "jpeg") -> str:
         return self._post("/screenshot", {"format": image_format})["b64"]
 

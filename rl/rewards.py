@@ -32,6 +32,18 @@ def _terminated_with_done(record, task, lane):
     return 1.0 if record.get("success") and record.get("terminal_reason") == "done" else 0.0
 
 
+def _progress(record, task, lane):
+    # Milestone partial credit orders failed groups; a success is scored by terminal_success alone.
+    if record.get("success"):
+        return 0.0
+    milestones = task.get("milestones") or []
+    passed = record.get("milestones") or {}
+    total = sum(float(m.get("weight", 1.0)) for m in milestones)
+    if not total:
+        return 0.0
+    return sum(float(m.get("weight", 1.0)) for m in milestones if passed.get(m.get("name", ""))) / total
+
+
 def _false_done(record, task, lane):
     return 1.0 if record.get("terminal_reason") == "done" and not record.get("success") else 0.0
 
@@ -45,6 +57,7 @@ REWARD_COMPONENTS = {
     "format_validity": _format_validity,
     "efficiency": _efficiency,
     "terminated_with_done": _terminated_with_done,
+    "progress": _progress,
 }
 
 PENALTIES = {

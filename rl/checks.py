@@ -4,11 +4,13 @@ import re
 _ELEMENT_RE = re.compile(r'^\[(\d+)\] (\S+) "([^"]*)"[ \t]*(.*)$', re.MULTILINE)
 
 
-def build_context(snapshot, storage_state_loader, record):
-    text = snapshot.get("snapshot", "")
+def build_context(snapshot, storage_state_loader, record, page_text=""):
+    snapshot_text = snapshot.get("snapshot", "")
     elements = [{"ref": int(m.group(1)), "role": m.group(2), "name": m.group(3), "extra": m.group(4).strip()}
-                for m in _ELEMENT_RE.finditer(text)]
-    return {"url": snapshot.get("url", ""), "title": snapshot.get("title", ""), "text": text, "elements": elements,
+                for m in _ELEMENT_RE.finditer(snapshot_text)]
+    # text_visible must see a computed answer wherever it rendered, so it searches the page's own text too.
+    return {"url": snapshot.get("url", ""), "title": snapshot.get("title", ""),
+            "text": f"{snapshot_text}\n{page_text}" if page_text else snapshot_text, "elements": elements,
             "storage_state": storage_state_loader, "terminal_reason": record.get("terminal_reason", "")}
 
 

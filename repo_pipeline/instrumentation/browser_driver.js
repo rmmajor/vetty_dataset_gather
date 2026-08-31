@@ -983,6 +983,19 @@ const routes = {
     if (!state.page) throw new Error('no active session');
     return { ok: true, url: state.page.url(), title: await state.page.title(), snapshot: (await takeSnapshot()).slice(0, 15000) };
   },
+  // Whole-page rendered text: /snapshot carries only headings and control names, so a computed result is invisible to it; never part of an agent observation.
+  'POST /page_text': async () => {
+    if (!state.page) throw new Error('no active session');
+    await scrubDevOverlays();
+    const frames = await Promise.all(state.page.frames().map(async (frame) => {
+      try {
+        return await frame.evaluate(() => (document.body ? document.body.innerText : ''));
+      } catch (e) {
+        return '';
+      }
+    }));
+    return { ok: true, url: state.page.url(), text: frames.join('\n').replace(/\n{3,}/g, '\n\n').slice(0, 40000) };
+  },
   'POST /screenshot': async (body) => {
     if (!state.page) throw new Error('no active session');
     await scrubDevOverlays();

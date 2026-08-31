@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from repo_pipeline.driver_session import DriverError
 from repo_pipeline.instrumentation import RESULTS_DIR
+from repo_pipeline.site_blocks import detect_block
 from repo_pipeline.stage6_generate import _safe_task_id
 from rl import checks
 from rl.actions import decode_step
@@ -52,6 +53,7 @@ class Episode:
         self.allowed_hosts = {urlparse(task["start_url"]).netloc, *task.get("allowed_hosts", [])}
         self.history, self.turns = [], []
         self.step_index = self.consecutive_parse_failures = self.navigate_blocked = 0
+        self.blocked = None
         self.terminal_reason, self.last_thought, self.record, self.closed = None, "", None, False
         self.started = time.time()
 
@@ -140,7 +142,7 @@ class Episode:
             return self.record
         self.closed = True
         self.terminal_reason = self.terminal_reason or reason
-        check_result = self._run_success_check()
+        check_result, milestones = self._run_oracles()
         try:
             self.client.finish(OUTCOME_BY_REASON.get(self.terminal_reason, "failed"), self.last_thought[:400])
         except Exception as e:
@@ -155,24 +157,40 @@ class Episode:
             self.worker.backend.post_episode(self.worker.sandbox, self.task, container_dir)
         except Exception as e:
             logger.warning(f"{self.episode_id}: post_episode failed: {e}")
-        self._write_metadata(check_result)
-        self.record = self._build_record(check_result)
+        self._write_metadata(check_result, milestones)
+        self.record = self._build_record(check_result, milestones)
         if self.traj_dir.exists():
             (self.traj_dir / "episode.json").write_text(json.dumps(self.record, indent=2))
         return self.record
 
-    def _run_success_check(self):
-        spec = self.task.get("success_check")
-        if not spec:
-            return None
+    def _page_text(self):
         try:
-            ctx = checks.build_context(self.client.snapshot(), self.client.storage_state, {"terminal_reason": self.terminal_reason})
-            return checks.evaluate(spec, ctx)
+            return self.client.page_text()
         except Exception as e:
-            logger.warning(f"{self.episode_id}: success_check failed: {e}")
-            return {"passed": False, "results": {"error": str(e)[:200]}}
+            logger.warning(f"{self.episode_id}: page_text unavailable, oracles see the snapshot only: {e}")
+            return ""
 
-    def _write_metadata(self, check_result):
+    def _run_oracles(self):
+        spec = self.task.get("success_check")
+        milestone_specs = self.task.get("milestones") or []
+        if not spec and not milestone_specs:
+            return None, None
+        try:
+            snapshot, page_text = self.client.snapshot(), self._page_text()
+            # A CAPTCHA/WAF wall is the environment refusing, not the policy failing, so the analysis drops these samples.
+            self.blocked = detect_block(snapshot.get("url", ""), f"{snapshot.get('snapshot', '')}\n{page_text}")
+            if self.blocked:
+                logger.warning(f"{self.episode_id}: site blocked ({self.blocked}) — episode is not a measurement of the policy")
+            ctx = checks.build_context(snapshot, self.client.storage_state, {"terminal_reason": self.terminal_reason}, page_text)
+        except Exception as e:
+            logger.warning(f"{self.episode_id}: oracle snapshot failed: {e}")
+            return ({"passed": False, "results": {"error": str(e)[:200]}} if spec else None,
+                    {m.get("name", ""): False for m in milestone_specs} or None)
+        check_result = checks.evaluate(spec, ctx) if spec else None
+        milestones = {m.get("name", ""): checks.evaluate(m.get("check") or {}, ctx)["passed"] for m in milestone_specs} or None
+        return check_result, milestones
+
+    def _write_metadata(self, check_result, milestones=None):
         traj_file = self.traj_dir / "trajectory.json"
         if not traj_file.exists():
             return
@@ -181,6 +199,8 @@ class Episode:
         capture_meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
         if check_result is not None:
             capture_meta["success_check"] = check_result
+        if milestones is not None:
+            capture_meta["milestones"] = milestones
         capture_meta["excluded_reason"] = "rl_rollout"
         meta_file.write_text(json.dumps(capture_meta, indent=2))
         metadata = {
@@ -203,7 +223,7 @@ class Episode:
         steps = json.loads(traj_file.read_text()).get("steps", [])
         return sum(1 for s in steps if s.get("actions") and s["actions"][0].get("type") != "done")
 
-    def _build_record(self, check_result):
+    def _build_record(self, check_result, milestones=None):
         success, source, status, verdict = None, "none", "final", {}
         if self.traj_dir.exists():
             success, source, status = judge_success(self.traj_dir, self.task, check_result, self.cfg.verifier_mode, self.ctx.bridge)
@@ -214,7 +234,8 @@ class Episode:
             "steps": self.step_index, "ui_steps": self._ui_steps(), "turns": self.turns, "success": success,
             "efficiency_grade": verdict.get("efficiency"), "verdict_contradiction": bool(verdict.get("contradiction")),
             "success_source": source, "reward_status": status, "navigate_blocked": self.navigate_blocked,
-            "duration_s": round(time.time() - self.started, 1), "check": check_result,
+            "duration_s": round(time.time() - self.started, 1), "check": check_result, "milestones": milestones,
+            "blocked": self.blocked,
         }
         reward, breakdown = (compute_reward(record, self.task, self.ctx.reward_config) if status == "final" else (None, {}))
         record.update({"reward": reward, "breakdown": breakdown,

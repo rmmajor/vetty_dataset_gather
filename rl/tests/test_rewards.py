@@ -24,8 +24,10 @@ def test_config_has_both_lanes_and_all_names():
 
 def test_perfect_episode_scores_full_weights():
     reward, breakdown = compute_reward(_record(), TASK, CONFIG)
-    assert reward == round(sum(LANE["weights"].values()), 4) and reward <= REWARD_MAX
-    assert breakdown["components"] == {"terminal_success": 1.0, "format_validity": 1.0, "efficiency": 1.0, "terminated_with_done": 1.0}
+    payable = sum(weight for name, weight in LANE["weights"].items() if name != "progress")
+    assert reward == round(payable, 4) and reward <= REWARD_MAX
+    assert breakdown["components"] == {"terminal_success": 1.0, "format_validity": 1.0, "efficiency": 1.0,
+                                       "terminated_with_done": 1.0, "progress": 0.0}
 
 
 def test_failed_parse_abort_is_negative():
@@ -59,3 +61,27 @@ def test_under_stopping_and_false_done_are_both_penalised():
 def test_unknown_success_counts_as_zero():
     reward, _ = compute_reward(_record(success=None, terminal_reason="step_cap"), TASK, CONFIG)
     assert reward < LANE["weights"]["terminal_success"]
+
+
+MILESTONE_TASK = {**TASK, "milestones": [{"name": "reached", "check": {"url_contains": "x"}, "weight": 1.0},
+                                         {"name": "filled", "check": {"text_visible": "y"}, "weight": 1.0}]}
+
+
+def test_milestones_order_failed_groups():
+    none_hit = compute_reward(_record(success=False, terminal_reason="step_cap", milestones={"reached": False, "filled": False}), MILESTONE_TASK, CONFIG)[0]
+    one_hit = compute_reward(_record(success=False, terminal_reason="step_cap", milestones={"reached": True, "filled": False}), MILESTONE_TASK, CONFIG)[0]
+    both_hit = compute_reward(_record(success=False, terminal_reason="step_cap", milestones={"reached": True, "filled": True}), MILESTONE_TASK, CONFIG)[0]
+    assert none_hit < one_hit < both_hit
+
+
+def test_milestones_never_pay_on_success():
+    plain = compute_reward(_record(), MILESTONE_TASK, CONFIG)[0]
+    with_hits = compute_reward(_record(milestones={"reached": True, "filled": True}), MILESTONE_TASK, CONFIG)[0]
+    assert plain == with_hits
+
+
+def test_failure_ordering_capped_over_loop_over_false_done():
+    capped = _reward(success=False, terminal_reason="step_cap")
+    looped = _reward(success=False, terminal_reason="loop_guard")
+    falsely_done = _reward(success=False, terminal_reason="done")
+    assert capped > looped > falsely_done
