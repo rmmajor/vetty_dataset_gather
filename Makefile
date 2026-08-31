@@ -133,6 +133,12 @@ test-rl: ## Docker-only end-to-end smoke of the RL harness (static page + script
 rl-tasks: ## Build + check the RL task suite (disjoint from anything trained on; RL_TRAJ_DIR overrides trajectories/)
 	python -m rl.tasks build $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR)) && python -m rl.tasks check $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR))
 
+rl-candidates: ## Build the oracle-checked frontier candidate pool for the pass@k sweep
+	python -m rl.tasks build-candidates $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR))
+
+rl-analyze: ## Diagnose a rollout run (RL_RUN=rl_runs/<id>/iter_000); use `python -m rl.analysis bnorm` for adapter norms
+	python -m rl.analysis rollouts $(RL_RUN)
+
 rl-serve: ## Start the RL env service for the GPU trainer (127.0.0.1:8900; RL_SPLIT, RL_WORKERS, RL_ARGS)
 	python -m rl.service --split $(or $(RL_SPLIT),train) --workers $(or $(RL_WORKERS),3) $(RL_ARGS)
 

@@ -1,0 +1,1791 @@
+{
+  "_comment": "Frontier lane for GRPO train-task selection: short (<=12 expected actions), idempotent, oracle-checked tasks on bot-wall-free sites. Every task carries a success_check (deterministic value, stable ID/slug, or URL pattern) and 1-2 milestones for partial credit. _config.exclude_domains = every domain in the archived Online-Mind2Web 50-task eval sample (benchmark stays out of training even at domain level); _config.exclude_sites = sites grpo-v2 proved bot-walled. Selection into the train set happens by measured pass@8 (rl/analysis.py select-frontier), never by hand.",
+  "_config": {
+    "exclude_sites": [
+      "bhphoto-camera",
+      "target-home-goods",
+      "wayfair-home",
+      "newegg-pc-parts",
+      "goodrx-drug-price-lookup",
+      "timeanddate",
+      "duckduckgo-html"
+    ],
+    "exclude_domains": [
+      "careers.walmart.com",
+      "cookpad.com",
+      "ohio.gov",
+      "phet.colorado.edu",
+      "raisingcanes.com",
+      "umich.edu",
+      "megabus.com",
+      "trip.com",
+      "accuweather.com",
+      "adoptapet.com",
+      "americashealthrankings.org",
+      "apartments.com",
+      "bbb.org",
+      "bestbuy.com",
+      "birkenstock.com",
+      "ca.gov",
+      "carmax.com",
+      "carnival.com",
+      "cboe.com",
+      "cbp.gov",
+      "coolmath4kids.com",
+      "dillards.com",
+      "disney.com",
+      "dmv.virginia.gov",
+      "drugs.com",
+      "flightaware.com",
+      "google.com",
+      "gov.uk",
+      "healthgrades.com",
+      "kaggle.com",
+      "kbb.com",
+      "mayoclinic.org",
+      "petfinder.com",
+      "qatarairways.com",
+      "recreation.gov",
+      "stanford.edu",
+      "stubhub.com",
+      "theweathernetwork.com",
+      "thumbtack.com",
+      "webmd.com",
+      "youtube.com"
+    ]
+  },
+  "sites": [
+    {
+      "name": "calculator-net",
+      "start_url": "https://www.calculator.net/",
+      "domain": "plan-configure",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "frontier-percentage",
+          "instruction": "Find out what 15% of 240 is using the site's percentage calculator, ending with the result shown.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "36"
+          },
+          "milestones": [
+            {
+              "name": "on_percentage_calculator",
+              "check": {
+                "url_contains": "percent"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "inputs_entered",
+              "check": {
+                "text_visible": "240"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-bmi",
+          "instruction": "Work out the BMI for someone 175 cm tall weighing 70 kg, ending with the computed BMI on screen.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "22.9"
+          },
+          "milestones": [
+            {
+              "name": "on_bmi_calculator",
+              "check": {
+                "url_contains": "bmi"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "inputs_entered",
+              "check": {
+                "text_visible": "175"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-mortgage-payment",
+          "instruction": "Find the monthly payment on a $300,000 home with 20% down, a 30-year loan at 6% interest, ending with the payment amount shown.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "1,438"
+          },
+          "milestones": [
+            {
+              "name": "on_mortgage_calculator",
+              "check": {
+                "url_contains": "mortgage"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "inputs_entered",
+              "check": {
+                "text_visible": "300,000"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-loan-payment",
+          "instruction": "Work out the monthly payment on a $20,000 loan over 5 years at 5% interest, ending with the monthly payment on screen.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "377.42"
+          },
+          "milestones": [
+            {
+              "name": "on_loan_calculator",
+              "check": {
+                "url_contains": "loan"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "amount_entered",
+              "check": {
+                "text_visible": "20,000"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-body-fat",
+          "instruction": "Use the body fat calculator for a 30-year-old man 180 cm tall weighing 80 kg with a 90 cm waist and 40 cm neck, ending with the body fat result shown.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "body-fat"
+              },
+              {
+                "text_visible": "Body Fat Percentage"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "on_body_fat_calculator",
+              "check": {
+                "url_contains": "body-fat"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "measurements_entered",
+              "check": {
+                "text_visible": "180"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "omnicalculator",
+      "start_url": "https://www.omnicalculator.com/",
+      "domain": "plan-configure",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "frontier-speed-convert",
+          "instruction": "Convert 100 mph into km/h with one of the site's speed tools, ending with the converted value on screen.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "160.9"
+          },
+          "milestones": [
+            {
+              "name": "found_a_speed_tool",
+              "check": {
+                "any_of": [
+                  {
+                    "url_contains": "speed"
+                  },
+                  {
+                    "url_contains": "conver"
+                  }
+                ]
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "value_entered",
+              "check": {
+                "text_visible": "100"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-discount-price",
+          "instruction": "Use a discount calculator to find what an $80 item costs after 25% off, ending with the final price shown.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "60"
+          },
+          "milestones": [
+            {
+              "name": "on_discount_calculator",
+              "check": {
+                "url_contains": "discount"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "inputs_entered",
+              "check": {
+                "text_visible": "80"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-bmr-calculator",
+          "instruction": "Find the BMR calculator on Omni and compute the BMR for a 30-year-old man 180 cm tall weighing 80 kg, ending with the result on screen.",
+          "difficulty": "hard",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "bmr"
+              },
+              {
+                "text_visible": "1780"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "on_bmr_calculator",
+              "check": {
+                "url_contains": "bmr"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "inputs_entered",
+              "check": {
+                "text_visible": "180"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "xe-currency",
+      "start_url": "https://www.xe.com/currencyconverter/",
+      "domain": "plan-configure",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "frontier-usd-eur",
+          "instruction": "Convert 100 US dollars to euros, ending with the conversion result on screen.",
+          "difficulty": "easy",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "100.00 US Dollars"
+          },
+          "milestones": [
+            {
+              "name": "amount_entered",
+              "check": {
+                "text_visible": "100"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "on_result",
+              "check": {
+                "url_contains": "convert"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "base64encode",
+      "start_url": "https://www.base64encode.org/",
+      "domain": "create-edit-generate",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "frontier-encode-hello",
+          "instruction": "Base64-encode the word hello, ending with the encoded string on screen.",
+          "difficulty": "easy",
+          "expected_actions": 4,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "aGVsbG8="
+          },
+          "milestones": [
+            {
+              "name": "input_entered",
+              "check": {
+                "text_visible": "hello"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-encode-sentence",
+          "instruction": "Base64-encode the text qa check 42, ending with the encoded output shown.",
+          "difficulty": "easy",
+          "expected_actions": 4,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "cWEgY2hlY2sgNDI="
+          },
+          "milestones": [
+            {
+              "name": "input_entered",
+              "check": {
+                "text_visible": "qa check 42"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "uuidgenerator",
+      "start_url": "https://www.uuidgenerator.net/",
+      "domain": "create-edit-generate",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "frontier-version4-page",
+          "instruction": "Open the version-4 UUID generator so a freshly generated v4 UUID is on screen.",
+          "difficulty": "easy",
+          "expected_actions": 4,
+          "action_kinds": [
+            "click"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "version4"
+          },
+          "milestones": [
+            {
+              "name": "left_home",
+              "check": {
+                "text_visible": "Version 4"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lipsum-generator",
+      "start_url": "https://www.lipsum.com/",
+      "domain": "create-edit-generate",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "frontier-three-paragraphs",
+          "instruction": "Generate exactly 3 paragraphs of Lorem Ipsum, ending with the generated text on screen.",
+          "difficulty": "easy",
+          "expected_actions": 5,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "Generated 3 paragraphs"
+          },
+          "milestones": [
+            {
+              "name": "count_entered",
+              "check": {
+                "text_visible": "3"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-five-lists",
+          "instruction": "Generate 5 lists of Lorem Ipsum instead of paragraphs, ending with the generated lists shown.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "Generated 5 lists"
+          },
+          "milestones": [
+            {
+              "name": "lists_selected",
+              "check": {
+                "text_visible": "lists"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "gutenberg",
+      "start_url": "https://www.gutenberg.org",
+      "domain": "post-submit-acquire",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "frontier-find-frankenstein",
+          "instruction": "Find Frankenstein by Mary Shelley on Project Gutenberg and open its book page.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "/ebooks/84"
+              },
+              {
+                "text_visible": "Frankenstein"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "text_visible": "Shelley"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-find-pride-prejudice",
+          "instruction": "Look up Pride and Prejudice on Project Gutenberg and open its book page.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "/ebooks/1342"
+              },
+              {
+                "text_visible": "Pride and Prejudice"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "text_visible": "Austen"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-browse-shelf-to-book",
+          "instruction": "Starting from the Project Gutenberg home page, browse the site's category listings (not the search box) until you reach the book page for Moby Dick.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "/ebooks/2701"
+          },
+          "milestones": [
+            {
+              "name": "left_home",
+              "check": {
+                "url_contains": "browse"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "on_a_book_page",
+              "check": {
+                "url_contains": "/ebooks/"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-sherlock-plain-text",
+          "instruction": "Find The Adventures of Sherlock Holmes on Project Gutenberg and open its plain-text version.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "1661"
+              },
+              {
+                "text_visible": "ADVENTURE I. A SCANDAL IN BOHEMIA"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "on_the_book_page",
+              "check": {
+                "url_contains": "/ebooks/1661"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "standard-ebooks",
+      "start_url": "https://standardebooks.org",
+      "domain": "post-submit-acquire",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "frontier-time-machine",
+          "instruction": "Find The Time Machine by H. G. Wells on Standard Ebooks and open its ebook page.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "/ebooks/h-g-wells/the-time-machine"
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "text_visible": "Wells"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-austen-page",
+          "instruction": "Open the Standard Ebooks page for Pride and Prejudice.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "/ebooks/jane-austen/pride-and-prejudice"
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "text_visible": "Austen"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-subject-to-book",
+          "instruction": "On Standard Ebooks, browse the ebooks collection filtered to the adventure subject and open The Count of Monte Cristo.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "/ebooks/alexandre-dumas/the-count-of-monte-cristo"
+          },
+          "milestones": [
+            {
+              "name": "browsing_ebooks",
+              "check": {
+                "url_contains": "/ebooks"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "on_a_subject",
+              "check": {
+                "url_contains": "subject"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "openlibrary-org",
+      "start_url": "https://openlibrary.org/",
+      "domain": "post-submit-acquire",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "frontier-hobbit-work",
+          "instruction": "Search Open Library for The Hobbit and open the book's page.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "/works/"
+              },
+              {
+                "text_visible": "The Hobbit"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "text_visible": "Tolkien"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-dracula-work",
+          "instruction": "Find Dracula by Bram Stoker on Open Library and open the book's page.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "/works/"
+              },
+              {
+                "text_visible": "Dracula"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "text_visible": "Stoker"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-author-page-to-work",
+          "instruction": "On Open Library, find the author page for Ursula K. Le Guin and from there open the page for her book The Left Hand of Darkness.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "/works/"
+              },
+              {
+                "text_visible": "The Left Hand of Darkness"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "on_author_page",
+              "check": {
+                "url_contains": "/authors/"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "searched",
+              "check": {
+                "text_visible": "Le Guin"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-subject-browse",
+          "instruction": "Browse Open Library's science fiction subject page and open any book listed there.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "/works/"
+          },
+          "milestones": [
+            {
+              "name": "on_subject_page",
+              "check": {
+                "url_contains": "/subjects/"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "openverse-org",
+      "start_url": "https://openverse.org/",
+      "domain": "post-submit-acquire",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "frontier-open-image-page",
+          "instruction": "Search Openverse for mountain photos and open any one image's detail page.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "/image/"
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "url_contains": "search"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-filtered-image",
+          "instruction": "Search Openverse for cat images, narrow the results to the CC0 licence using the filters, and open one result's detail page.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "/image/"
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "url_contains": "search"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "filter_applied",
+              "check": {
+                "any_of": [
+                  {
+                    "url_contains": "license"
+                  },
+                  {
+                    "url_contains": "cc0"
+                  }
+                ]
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wikisource-org",
+      "start_url": "https://en.wikisource.org/",
+      "domain": "post-submit-acquire",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "frontier-the-raven",
+          "instruction": "Open the text of The Raven by Edgar Allan Poe on Wikisource.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "The_Raven"
+              },
+              {
+                "text_visible": "Nevermore"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "text_visible": "Poe"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-author-to-work",
+          "instruction": "On Wikisource, open the author page for Oscar Wilde and from it open the text of The Happy Prince.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "The_Happy_Prince"
+              },
+              {
+                "text_visible": "swallow"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "on_author_page",
+              "check": {
+                "url_contains": "Author:Oscar_Wilde"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dpaste-com",
+      "start_url": "https://dpaste.com/",
+      "domain": "post-submit-acquire",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "frontier-paste-note",
+          "instruction": "Save a plain-text paste reading exactly: hello from the qa run",
+          "difficulty": "easy",
+          "expected_actions": 5,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "text_visible": "hello from the qa run"
+              },
+              {
+                "url_matches": "dpaste\\.com/\\w+"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "text_entered",
+              "check": {
+                "text_visible": "hello from the qa run"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-paste-python-expiry",
+          "instruction": "Save a paste containing the line print('qa') using Python syntax highlighting and a one-day expiry.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_matches": "dpaste\\.com/\\w+"
+              },
+              {
+                "text_visible": "print('qa')"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "content_entered",
+              "check": {
+                "text_visible": "print('qa')"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "options_touched",
+              "check": {
+                "any_of": [
+                  {
+                    "text_visible": "Python"
+                  },
+                  {
+                    "text_visible": "python"
+                  }
+                ]
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rentry",
+      "start_url": "https://rentry.co",
+      "domain": "post-submit-acquire",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "frontier-publish-note",
+          "instruction": "Publish a note reading exactly: qa frontier note",
+          "difficulty": "medium",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "text_visible": "qa frontier note"
+              },
+              {
+                "url_matches": "rentry\\.co/\\w+"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "text_entered",
+              "check": {
+                "text_visible": "qa frontier note"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "when2meet",
+      "start_url": "https://when2meet.com",
+      "domain": "productivity",
+      "category": "productivity",
+      "tasks": [
+        {
+          "id": "frontier-create-poll",
+          "instruction": "Set up an availability poll called QA Sync for any two days next month, ending on the poll's own page.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_matches": "\\?\\d+-"
+              },
+              {
+                "text_visible": "QA Sync"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "name_entered",
+              "check": {
+                "text_visible": "QA Sync"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "timeanddate",
+      "start_url": "https://www.timeanddate.com/",
+      "domain": "plan-configure",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "frontier-date-duration",
+          "instruction": "Find how many days passed from January 1 2020 to December 31 2020 using the date duration calculator, ending with the day count shown.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "365 days"
+          },
+          "milestones": [
+            {
+              "name": "on_duration_calculator",
+              "check": {
+                "url_contains": "duration"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "dates_entered",
+              "check": {
+                "text_visible": "2020"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-weekday-lookup",
+          "instruction": "Find out what day of the week January 1 2000 was, ending with the weekday on screen.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "Saturday"
+          },
+          "milestones": [
+            {
+              "name": "on_calendar_tool",
+              "check": {
+                "url_contains": "calendar"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "year_entered",
+              "check": {
+                "text_visible": "2000"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-timezone-converter",
+          "instruction": "Use the time zone converter to compare the current time in London and Tokyo, ending with both cities' times shown together.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "text_visible": "London"
+              },
+              {
+                "text_visible": "Tokyo"
+              },
+              {
+                "url_contains": "worldclock"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "on_converter",
+              "check": {
+                "url_contains": "worldclock"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "first_city_entered",
+              "check": {
+                "text_visible": "London"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-sunrise-lookup",
+          "instruction": "Look up today's sunrise and sunset times for Oslo, ending with them on screen.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "sun"
+              },
+              {
+                "text_visible": "Oslo"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "on_sun_section",
+              "check": {
+                "url_contains": "sun"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unitconverters-net",
+      "start_url": "https://www.unitconverters.net/",
+      "domain": "plan-configure",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "frontier-miles-to-km",
+          "instruction": "Convert 100 miles to kilometers, ending with the converted value on screen.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "160.9344"
+          },
+          "milestones": [
+            {
+              "name": "on_length_converter",
+              "check": {
+                "any_of": [
+                  {
+                    "url_contains": "length"
+                  },
+                  {
+                    "url_contains": "mile"
+                  }
+                ]
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "value_entered",
+              "check": {
+                "text_visible": "100"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-celsius-to-f",
+          "instruction": "Convert 25 degrees Celsius to Fahrenheit, ending with the converted value on screen.",
+          "difficulty": "easy",
+          "expected_actions": 6,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "77"
+          },
+          "milestones": [
+            {
+              "name": "on_temperature_converter",
+              "check": {
+                "any_of": [
+                  {
+                    "url_contains": "temperature"
+                  },
+                  {
+                    "url_contains": "celsius"
+                  }
+                ]
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "value_entered",
+              "check": {
+                "text_visible": "25"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-kg-to-pounds",
+          "instruction": "Convert 1 kilogram into pounds, ending with the converted value on screen.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "2.2046226218"
+          },
+          "milestones": [
+            {
+              "name": "on_weight_converter",
+              "check": {
+                "any_of": [
+                  {
+                    "url_contains": "weight"
+                  },
+                  {
+                    "url_contains": "kilogram"
+                  }
+                ]
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-km-to-miles",
+          "instruction": "Convert 250 kilometers into miles, ending with the converted value on screen.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "155.3427"
+          },
+          "milestones": [
+            {
+              "name": "on_length_converter",
+              "check": {
+                "any_of": [
+                  {
+                    "url_contains": "length"
+                  },
+                  {
+                    "url_contains": "kilometer"
+                  }
+                ]
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "vote-gov-state-redirect",
+      "start_url": "https://vote.gov/",
+      "domain": "gov-civic-finance",
+      "category": "gov-civic-finance",
+      "tasks": [
+        {
+          "id": "frontier-texas-info",
+          "instruction": "Get to the voter registration information for Texas.",
+          "difficulty": "easy",
+          "expected_actions": 5,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "texas"
+              },
+              {
+                "text_visible": "Texas"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "state_chooser",
+              "check": {
+                "text_visible": "state"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "darebee-workout",
+      "start_url": "https://darebee.com/workouts.html",
+      "domain": "plan-configure",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "frontier-open-named-workout",
+          "instruction": "Open the workout called Foundation from the workouts collection.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "foundation"
+              },
+              {
+                "text_visible": "Foundation"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "browsing_workouts",
+              "check": {
+                "url_contains": "workouts"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bahn",
+      "start_url": "https://www.bahn.com/en",
+      "domain": "plan-configure",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "frontier-berlin-hamburg",
+          "instruction": "Search train connections from Berlin Hbf to Hamburg Hbf for any date next week, ending with a list of connections on screen.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "text_visible": "Hamburg"
+              },
+              {
+                "any_of": [
+                  {
+                    "text_visible": "ICE"
+                  },
+                  {
+                    "text_visible": "Duration"
+                  },
+                  {
+                    "text_visible": "arrival"
+                  }
+                ]
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "destination_entered",
+              "check": {
+                "text_visible": "Hamburg"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "duckduckgo-html",
+      "start_url": "https://html.duckduckgo.com/html/",
+      "domain": "search-select-act",
+      "category": "search-select-act",
+      "tasks": [
+        {
+          "id": "frontier-find-openstreetmap",
+          "instruction": "Search for OpenStreetMap and open its official website.",
+          "difficulty": "easy",
+          "expected_actions": 5,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "openstreetmap.org"
+          },
+          "milestones": [
+            {
+              "name": "results_shown",
+              "check": {
+                "text_visible": "OpenStreetMap"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "frontier-find-wiktionary",
+          "instruction": "Search for Wiktionary and open the site itself.",
+          "difficulty": "easy",
+          "expected_actions": 5,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "url_contains": "wiktionary.org"
+          },
+          "milestones": [
+            {
+              "name": "results_shown",
+              "check": {
+                "text_visible": "Wiktionary"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-search-then-inner-page",
+          "instruction": "Search for Project Gutenberg, open its website from the results, and from there reach the page listing the site's top downloaded books.",
+          "difficulty": "hard",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "url_contains": "gutenberg.org"
+              },
+              {
+                "any_of": [
+                  {
+                    "url_contains": "top"
+                  },
+                  {
+                    "text_visible": "Top 100"
+                  }
+                ]
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "results_shown",
+              "check": {
+                "text_visible": "Gutenberg"
+              },
+              "weight": 1.0
+            },
+            {
+              "name": "on_the_site",
+              "check": {
+                "url_contains": "gutenberg.org"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wordcounter-net",
+      "start_url": "https://wordcounter.net/",
+      "domain": "create-edit-generate",
+      "category": "create-edit-generate",
+      "tasks": [
+        {
+          "id": "frontier-count-words",
+          "instruction": "Find out how many words are in the sentence: the quick brown fox jumps over the lazy dog",
+          "difficulty": "easy",
+          "expected_actions": 4,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "9 words"
+          },
+          "milestones": [
+            {
+              "name": "text_entered",
+              "check": {
+                "text_visible": "quick brown fox"
+              },
+              "weight": 1.0
+            }
+          ]
+        },
+        {
+          "id": "t2-character-count",
+          "instruction": "Enter the sentence 'the quick brown fox jumps over the lazy dog' and find its character count including spaces.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "text_visible": "quick brown fox"
+              },
+              {
+                "text_visible": "43"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "text_entered",
+              "check": {
+                "text_visible": "quick brown fox"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "calculator-net-age",
+      "start_url": "https://www.calculator.net/age-calculator.html",
+      "domain": "plan-configure",
+      "category": "plan-configure",
+      "tasks": [
+        {
+          "id": "frontier-age-between-dates",
+          "instruction": "Work out the age of someone born January 15 2000 as of January 15 2024, ending with the computed age shown.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "text_visible": "24 years"
+          },
+          "milestones": [
+            {
+              "name": "dates_entered",
+              "check": {
+                "text_visible": "2000"
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "librivox-org",
+      "start_url": "https://librivox.org/",
+      "domain": "post-submit-acquire",
+      "category": "post-submit-acquire",
+      "tasks": [
+        {
+          "id": "t2-find-audiobook",
+          "instruction": "Search LibriVox for the audiobook of Pride and Prejudice and open its listing page.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type"
+          ],
+          "idempotent": true,
+          "success_check": {
+            "all_of": [
+              {
+                "text_visible": "Pride and Prejudice"
+              },
+              {
+                "text_visible": "Austen"
+              }
+            ]
+          },
+          "milestones": [
+            {
+              "name": "searched",
+              "check": {
+                "any_of": [
+                  {
+                    "url_contains": "search"
+                  },
+                  {
+                    "text_visible": "Pride"
+                  }
+                ]
+              },
+              "weight": 1.0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

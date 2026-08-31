@@ -6,7 +6,7 @@ from remote_train.config import RemoteTrainConfig
 from remote_train.jobs import JOBS, GrpoJob, ServeJob
 from remote_train.mock import MockProvider
 from rl_train import (PhaseDriver, build_deploy_command, build_env, build_merge_command, build_rlhf_command,
-                      build_rollout_command, derive_run_config, load_rl_config, make_dataset)
+                      build_rollout_command, derive_run_config, load_rl_config, load_task_ids, make_dataset)
 
 CFG = load_rl_config("rl_config.yaml")
 
@@ -27,7 +27,9 @@ def test_commands_are_argv_lists_with_expected_flags():
     assert "--reward_weights" not in rlhf and "--reward_funcs" not in rlhf
     weighted = build_rlhf_command(dict(CFG, reward_funcs="action_format", reward_weights="0.2 1.0"))
     assert weighted[weighted.index("--reward_weights"):weighted.index("--reward_weights") + 3] == ["--reward_weights", "0.2", "1.0"]
-    assert rlhf[rlhf.index("--num_generations") + 1] == "4" and rlhf[rlhf.index("--freeze_vit") + 1] == "true"
+    assert rlhf[rlhf.index("--num_generations") + 1] == "8" and rlhf[rlhf.index("--freeze_vit") + 1] == "true"
+    assert rlhf[rlhf.index("--dynamic_sample") + 1] == "true" and rlhf[rlhf.index("--max_resample_times") + 1] == "3"
+    assert rlhf[rlhf.index("--epsilon_high") + 1] == "0.28" and rlhf[rlhf.index("--temperature") + 1] == "1.0"
     deploy = build_deploy_command(CFG, adapters="/workspace/rl_output/latest")
     assert deploy[:2] == ["swift", "deploy"] and deploy[deploy.index("--adapters") + 1] == "/workspace/rl_output/latest" and "--port" in deploy
     assert "--adapters" not in build_deploy_command(CFG)
@@ -48,7 +50,7 @@ def test_derive_run_config_merges_compute_and_ignores_none():
                                       "compute": {"serve_port": 9001}})
     assert derived["env_url"] == "https://x.ngrok.app" and derived["max_steps"] == 1 and derived["eval_before"] is False
     assert derived["template"] == CFG["template"] and derived["compute"]["serve_port"] == 9001 and derived["compute"]["min_vram_gb"] == 80
-    assert CFG["max_steps"] == 30 and CFG["compute"]["serve_port"] == 8001
+    assert CFG["max_steps"] == 50 and CFG["compute"]["serve_port"] == 8001
 
 
 def test_make_dataset_rows():
@@ -64,6 +66,12 @@ def test_make_dataset_rows():
         assert rows[0]["env_config"] == {"name": "browser_env", "task_id": "a", "sample_idx": 0} and rows[2]["env_config"]["sample_idx"] == 1
         assert make_dataset(suite, out, split="train", repeats=1, max_expected_actions=18) == 1
         assert json.loads(out.read_text())["env_config"]["task_id"] == "a"
+        assert make_dataset(suite, out, split="train", repeats=1, task_ids=["c"]) == 1
+        assert json.loads(out.read_text())["env_config"]["task_id"] == "c"
+        selection = Path(tmp) / "frontier_selection.json"
+        selection.write_text(json.dumps({"selected": ["a", "c"], "band": [0.2, 0.8]}))
+        assert load_task_ids(selection) == ["a", "c"]
+        assert make_dataset(suite, out, split="train", repeats=1, task_ids=load_task_ids(selection)) == 2
 
 
 class FakeProc:

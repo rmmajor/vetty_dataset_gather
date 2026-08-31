@@ -1,0 +1,2011 @@
+{
+ "suite_sha256": "139d64e53c263e3a6b4079dbb573ab0ba622fff719e6bb03a9dc85f0cb3f07d8",
+ "built_from": [
+  {
+   "path": "/Users/rmajor/unik/maga/dataset_gather/.claude/worktrees/binary-snacking-codd/repo_pipeline/public_sites_actions_frontier.json",
+   "sites": 23
+  },
+  {
+   "path": "/Users/rmajor/unik/maga/dataset_gather/.claude/worktrees/binary-snacking-codd/rl/rl_tasks.json",
+   "sites": null
+  }
+ ],
+ "excluded_trained": 0,
+ "dropped_unoracled": [
+  "controlc-com__set-expiry-publish",
+  "newegg-pc-parts__newegg-ssd-checkout",
+  "omnicalculator__compute-tip",
+  "openverse-org__download-cc-image",
+  "pexels-com__download-specific-size",
+  "vote-gov-state-redirect__vote-gov-michigan-redirect"
+ ],
+ "tasks": [
+  {
+   "task_id": "bahn__frontier-berlin-hamburg",
+   "site": "bahn",
+   "start_url": "https://www.bahn.com/en",
+   "instruction": "Search train connections from Berlin Hbf to Hamburg Hbf for any date next week, ending with a list of connections on screen.",
+   "difficulty": "medium",
+   "expected_actions": 12,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.bahn.com"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "text_visible": "Hamburg"
+     },
+     {
+      "any_of": [
+       {
+        "text_visible": "ICE"
+       },
+       {
+        "text_visible": "Duration"
+       },
+       {
+        "text_visible": "arrival"
+       }
+      ]
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "destination_entered",
+     "check": {
+      "text_visible": "Hamburg"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "base64encode__frontier-encode-hello",
+   "site": "base64encode",
+   "start_url": "https://www.base64encode.org/",
+   "instruction": "Base64-encode the word hello, ending with the encoded string on screen.",
+   "difficulty": "easy",
+   "expected_actions": 4,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.base64encode.org"
+   ],
+   "success_check": {
+    "text_visible": "aGVsbG8="
+   },
+   "milestones": [
+    {
+     "name": "input_entered",
+     "check": {
+      "text_visible": "hello"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "base64encode__frontier-encode-sentence",
+   "site": "base64encode",
+   "start_url": "https://www.base64encode.org/",
+   "instruction": "Base64-encode the text qa check 42, ending with the encoded output shown.",
+   "difficulty": "easy",
+   "expected_actions": 4,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.base64encode.org"
+   ],
+   "success_check": {
+    "text_visible": "cWEgY2hlY2sgNDI="
+   },
+   "milestones": [
+    {
+     "name": "input_entered",
+     "check": {
+      "text_visible": "qa check 42"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "calculator-net-age__frontier-age-between-dates",
+   "site": "calculator-net-age",
+   "start_url": "https://www.calculator.net/age-calculator.html",
+   "instruction": "Work out the age of someone born January 15 2000 as of January 15 2024, ending with the computed age shown.",
+   "difficulty": "medium",
+   "expected_actions": 8,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.calculator.net"
+   ],
+   "success_check": {
+    "text_visible": "24 years"
+   },
+   "milestones": [
+    {
+     "name": "dates_entered",
+     "check": {
+      "text_visible": "2000"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "calculator-net__frontier-bmi",
+   "site": "calculator-net",
+   "start_url": "https://www.calculator.net/",
+   "instruction": "Work out the BMI for someone 175 cm tall weighing 70 kg, ending with the computed BMI on screen.",
+   "difficulty": "easy",
+   "expected_actions": 8,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.calculator.net"
+   ],
+   "success_check": {
+    "text_visible": "22.9"
+   },
+   "milestones": [
+    {
+     "name": "on_bmi_calculator",
+     "check": {
+      "url_contains": "bmi"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "inputs_entered",
+     "check": {
+      "text_visible": "175"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "calculator-net__frontier-mortgage-payment",
+   "site": "calculator-net",
+   "start_url": "https://www.calculator.net/",
+   "instruction": "Find the monthly payment on a $300,000 home with 20% down, a 30-year loan at 6% interest, ending with the payment amount shown.",
+   "difficulty": "medium",
+   "expected_actions": 10,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.calculator.net"
+   ],
+   "success_check": {
+    "text_visible": "1,438"
+   },
+   "milestones": [
+    {
+     "name": "on_mortgage_calculator",
+     "check": {
+      "url_contains": "mortgage"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "inputs_entered",
+     "check": {
+      "text_visible": "300,000"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "calculator-net__frontier-percentage",
+   "site": "calculator-net",
+   "start_url": "https://www.calculator.net/",
+   "instruction": "Find out what 15% of 240 is using the site's percentage calculator, ending with the result shown.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.calculator.net"
+   ],
+   "success_check": {
+    "text_visible": "36"
+   },
+   "milestones": [
+    {
+     "name": "on_percentage_calculator",
+     "check": {
+      "url_contains": "percent"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "inputs_entered",
+     "check": {
+      "text_visible": "240"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "calculator-net__t2-body-fat",
+   "site": "calculator-net",
+   "start_url": "https://www.calculator.net/",
+   "instruction": "Use the body fat calculator for a 30-year-old man 180 cm tall weighing 80 kg with a 90 cm waist and 40 cm neck, ending with the body fat result shown.",
+   "difficulty": "hard",
+   "expected_actions": 16,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.calculator.net"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "body-fat"
+     },
+     {
+      "text_visible": "Body Fat Percentage"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "on_body_fat_calculator",
+     "check": {
+      "url_contains": "body-fat"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "measurements_entered",
+     "check": {
+      "text_visible": "180"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "calculator-net__t2-loan-payment",
+   "site": "calculator-net",
+   "start_url": "https://www.calculator.net/",
+   "instruction": "Work out the monthly payment on a $20,000 loan over 5 years at 5% interest, ending with the monthly payment on screen.",
+   "difficulty": "medium",
+   "expected_actions": 12,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.calculator.net"
+   ],
+   "success_check": {
+    "text_visible": "377.42"
+   },
+   "milestones": [
+    {
+     "name": "on_loan_calculator",
+     "check": {
+      "url_contains": "loan"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "amount_entered",
+     "check": {
+      "text_visible": "20,000"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "darebee-workout__frontier-open-named-workout",
+   "site": "darebee-workout",
+   "start_url": "https://darebee.com/workouts.html",
+   "instruction": "Open the workout called Foundation from the workouts collection.",
+   "difficulty": "medium",
+   "expected_actions": 8,
+   "action_kinds": [
+    "click",
+    "type",
+    "scroll"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "darebee.com"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "foundation"
+     },
+     {
+      "text_visible": "Foundation"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "browsing_workouts",
+     "check": {
+      "url_contains": "workouts"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "dpaste-com__frontier-paste-note",
+   "site": "dpaste-com",
+   "start_url": "https://dpaste.com/",
+   "instruction": "Save a plain-text paste reading exactly: hello from the qa run",
+   "difficulty": "easy",
+   "expected_actions": 5,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "dpaste.com"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "text_visible": "hello from the qa run"
+     },
+     {
+      "url_matches": "dpaste\\.com/\\w+"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "text_entered",
+     "check": {
+      "text_visible": "hello from the qa run"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "dpaste-com__t2-paste-python-expiry",
+   "site": "dpaste-com",
+   "start_url": "https://dpaste.com/",
+   "instruction": "Save a paste containing the line print('qa') using Python syntax highlighting and a one-day expiry.",
+   "difficulty": "medium",
+   "expected_actions": 11,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "dpaste.com"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_matches": "dpaste\\.com/\\w+"
+     },
+     {
+      "text_visible": "print('qa')"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "content_entered",
+     "check": {
+      "text_visible": "print('qa')"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "options_touched",
+     "check": {
+      "any_of": [
+       {
+        "text_visible": "Python"
+       },
+       {
+        "text_visible": "python"
+       }
+      ]
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "gutenberg__frontier-find-frankenstein",
+   "site": "gutenberg",
+   "start_url": "https://www.gutenberg.org",
+   "instruction": "Find Frankenstein by Mary Shelley on Project Gutenberg and open its book page.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.gutenberg.org"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "/ebooks/84"
+     },
+     {
+      "text_visible": "Frankenstein"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "text_visible": "Shelley"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "gutenberg__frontier-find-pride-prejudice",
+   "site": "gutenberg",
+   "start_url": "https://www.gutenberg.org",
+   "instruction": "Look up Pride and Prejudice on Project Gutenberg and open its book page.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.gutenberg.org"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "/ebooks/1342"
+     },
+     {
+      "text_visible": "Pride and Prejudice"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "text_visible": "Austen"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "gutenberg__t2-browse-shelf-to-book",
+   "site": "gutenberg",
+   "start_url": "https://www.gutenberg.org",
+   "instruction": "Starting from the Project Gutenberg home page, browse the site's category listings (not the search box) until you reach the book page for Moby Dick.",
+   "difficulty": "medium",
+   "expected_actions": 12,
+   "action_kinds": [
+    "click",
+    "scroll"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.gutenberg.org"
+   ],
+   "success_check": {
+    "url_contains": "/ebooks/2701"
+   },
+   "milestones": [
+    {
+     "name": "left_home",
+     "check": {
+      "url_contains": "browse"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "on_a_book_page",
+     "check": {
+      "url_contains": "/ebooks/"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "gutenberg__t2-sherlock-plain-text",
+   "site": "gutenberg",
+   "start_url": "https://www.gutenberg.org",
+   "instruction": "Find The Adventures of Sherlock Holmes on Project Gutenberg and open its plain-text version.",
+   "difficulty": "medium",
+   "expected_actions": 11,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.gutenberg.org"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "1661"
+     },
+     {
+      "text_visible": "ADVENTURE I. A SCANDAL IN BOHEMIA"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "on_the_book_page",
+     "check": {
+      "url_contains": "/ebooks/1661"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "librivox-org__t2-find-audiobook",
+   "site": "librivox-org",
+   "start_url": "https://librivox.org/",
+   "instruction": "Search LibriVox for the audiobook of Pride and Prejudice and open its listing page.",
+   "difficulty": "medium",
+   "expected_actions": 10,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "librivox.org"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "text_visible": "Pride and Prejudice"
+     },
+     {
+      "text_visible": "Austen"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "any_of": [
+       {
+        "url_contains": "search"
+       },
+       {
+        "text_visible": "Pride"
+       }
+      ]
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "lipsum-generator__frontier-five-lists",
+   "site": "lipsum-generator",
+   "start_url": "https://www.lipsum.com/",
+   "instruction": "Generate 5 lists of Lorem Ipsum instead of paragraphs, ending with the generated lists shown.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.lipsum.com"
+   ],
+   "success_check": {
+    "text_visible": "Generated 5 lists"
+   },
+   "milestones": [
+    {
+     "name": "lists_selected",
+     "check": {
+      "text_visible": "lists"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "lipsum-generator__frontier-three-paragraphs",
+   "site": "lipsum-generator",
+   "start_url": "https://www.lipsum.com/",
+   "instruction": "Generate exactly 3 paragraphs of Lorem Ipsum, ending with the generated text on screen.",
+   "difficulty": "easy",
+   "expected_actions": 5,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.lipsum.com"
+   ],
+   "success_check": {
+    "text_visible": "Generated 3 paragraphs"
+   },
+   "milestones": [
+    {
+     "name": "count_entered",
+     "check": {
+      "text_visible": "3"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "omnicalculator__frontier-discount-price",
+   "site": "omnicalculator",
+   "start_url": "https://www.omnicalculator.com/",
+   "instruction": "Use a discount calculator to find what an $80 item costs after 25% off, ending with the final price shown.",
+   "difficulty": "easy",
+   "expected_actions": 8,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.omnicalculator.com"
+   ],
+   "success_check": {
+    "text_visible": "60"
+   },
+   "milestones": [
+    {
+     "name": "on_discount_calculator",
+     "check": {
+      "url_contains": "discount"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "inputs_entered",
+     "check": {
+      "text_visible": "80"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "omnicalculator__frontier-speed-convert",
+   "site": "omnicalculator",
+   "start_url": "https://www.omnicalculator.com/",
+   "instruction": "Convert 100 mph into km/h with one of the site's speed tools, ending with the converted value on screen.",
+   "difficulty": "easy",
+   "expected_actions": 8,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.omnicalculator.com"
+   ],
+   "success_check": {
+    "text_visible": "160.9"
+   },
+   "milestones": [
+    {
+     "name": "found_a_speed_tool",
+     "check": {
+      "any_of": [
+       {
+        "url_contains": "speed"
+       },
+       {
+        "url_contains": "conver"
+       }
+      ]
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "value_entered",
+     "check": {
+      "text_visible": "100"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "omnicalculator__t2-bmr-calculator",
+   "site": "omnicalculator",
+   "start_url": "https://www.omnicalculator.com/",
+   "instruction": "Find the BMR calculator on Omni and compute the BMR for a 30-year-old man 180 cm tall weighing 80 kg, ending with the result on screen.",
+   "difficulty": "hard",
+   "expected_actions": 15,
+   "action_kinds": [
+    "click",
+    "type",
+    "scroll"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.omnicalculator.com"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "bmr"
+     },
+     {
+      "text_visible": "1780"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "on_bmr_calculator",
+     "check": {
+      "url_contains": "bmr"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "inputs_entered",
+     "check": {
+      "text_visible": "180"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "openlibrary-org__frontier-dracula-work",
+   "site": "openlibrary-org",
+   "start_url": "https://openlibrary.org/",
+   "instruction": "Find Dracula by Bram Stoker on Open Library and open the book's page.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "openlibrary.org"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "/works/"
+     },
+     {
+      "text_visible": "Dracula"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "text_visible": "Stoker"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "openlibrary-org__frontier-hobbit-work",
+   "site": "openlibrary-org",
+   "start_url": "https://openlibrary.org/",
+   "instruction": "Search Open Library for The Hobbit and open the book's page.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "openlibrary.org"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "/works/"
+     },
+     {
+      "text_visible": "The Hobbit"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "text_visible": "Tolkien"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "openlibrary-org__t2-author-page-to-work",
+   "site": "openlibrary-org",
+   "start_url": "https://openlibrary.org/",
+   "instruction": "On Open Library, find the author page for Ursula K. Le Guin and from there open the page for her book The Left Hand of Darkness.",
+   "difficulty": "medium",
+   "expected_actions": 12,
+   "action_kinds": [
+    "click",
+    "type",
+    "scroll"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "openlibrary.org"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "/works/"
+     },
+     {
+      "text_visible": "The Left Hand of Darkness"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "on_author_page",
+     "check": {
+      "url_contains": "/authors/"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "searched",
+     "check": {
+      "text_visible": "Le Guin"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "openlibrary-org__t2-subject-browse",
+   "site": "openlibrary-org",
+   "start_url": "https://openlibrary.org/",
+   "instruction": "Browse Open Library's science fiction subject page and open any book listed there.",
+   "difficulty": "medium",
+   "expected_actions": 10,
+   "action_kinds": [
+    "click",
+    "scroll"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "openlibrary.org"
+   ],
+   "success_check": {
+    "url_contains": "/works/"
+   },
+   "milestones": [
+    {
+     "name": "on_subject_page",
+     "check": {
+      "url_contains": "/subjects/"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "openverse-org__frontier-open-image-page",
+   "site": "openverse-org",
+   "start_url": "https://openverse.org/",
+   "instruction": "Search Openverse for mountain photos and open any one image's detail page.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "openverse.org"
+   ],
+   "success_check": {
+    "url_contains": "/image/"
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "url_contains": "search"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "openverse-org__t2-filtered-image",
+   "site": "openverse-org",
+   "start_url": "https://openverse.org/",
+   "instruction": "Search Openverse for cat images, narrow the results to the CC0 licence using the filters, and open one result's detail page.",
+   "difficulty": "medium",
+   "expected_actions": 13,
+   "action_kinds": [
+    "click",
+    "type",
+    "scroll"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "openverse.org"
+   ],
+   "success_check": {
+    "url_contains": "/image/"
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "url_contains": "search"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "filter_applied",
+     "check": {
+      "any_of": [
+       {
+        "url_contains": "license"
+       },
+       {
+        "url_contains": "cc0"
+       }
+      ]
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "rentry__frontier-publish-note",
+   "site": "rentry",
+   "start_url": "https://rentry.co",
+   "instruction": "Publish a note reading exactly: qa frontier note",
+   "difficulty": "medium",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "rentry.co"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "text_visible": "qa frontier note"
+     },
+     {
+      "url_matches": "rentry\\.co/\\w+"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "text_entered",
+     "check": {
+      "text_visible": "qa frontier note"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "standard-ebooks__frontier-austen-page",
+   "site": "standard-ebooks",
+   "start_url": "https://standardebooks.org",
+   "instruction": "Open the Standard Ebooks page for Pride and Prejudice.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "standardebooks.org"
+   ],
+   "success_check": {
+    "url_contains": "/ebooks/jane-austen/pride-and-prejudice"
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "text_visible": "Austen"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "standard-ebooks__frontier-time-machine",
+   "site": "standard-ebooks",
+   "start_url": "https://standardebooks.org",
+   "instruction": "Find The Time Machine by H. G. Wells on Standard Ebooks and open its ebook page.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "standardebooks.org"
+   ],
+   "success_check": {
+    "url_contains": "/ebooks/h-g-wells/the-time-machine"
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "text_visible": "Wells"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "standard-ebooks__t2-subject-to-book",
+   "site": "standard-ebooks",
+   "start_url": "https://standardebooks.org",
+   "instruction": "On Standard Ebooks, browse the ebooks collection filtered to the adventure subject and open The Count of Monte Cristo.",
+   "difficulty": "medium",
+   "expected_actions": 12,
+   "action_kinds": [
+    "click",
+    "scroll"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "standardebooks.org"
+   ],
+   "success_check": {
+    "url_contains": "/ebooks/alexandre-dumas/the-count-of-monte-cristo"
+   },
+   "milestones": [
+    {
+     "name": "browsing_ebooks",
+     "check": {
+      "url_contains": "/ebooks"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "on_a_subject",
+     "check": {
+      "url_contains": "subject"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "unitconverters-net__frontier-celsius-to-f",
+   "site": "unitconverters-net",
+   "start_url": "https://www.unitconverters.net/",
+   "instruction": "Convert 25 degrees Celsius to Fahrenheit, ending with the converted value on screen.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.unitconverters.net"
+   ],
+   "success_check": {
+    "text_visible": "77"
+   },
+   "milestones": [
+    {
+     "name": "on_temperature_converter",
+     "check": {
+      "any_of": [
+       {
+        "url_contains": "temperature"
+       },
+       {
+        "url_contains": "celsius"
+       }
+      ]
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "value_entered",
+     "check": {
+      "text_visible": "25"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "unitconverters-net__frontier-miles-to-km",
+   "site": "unitconverters-net",
+   "start_url": "https://www.unitconverters.net/",
+   "instruction": "Convert 100 miles to kilometers, ending with the converted value on screen.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.unitconverters.net"
+   ],
+   "success_check": {
+    "text_visible": "160.9344"
+   },
+   "milestones": [
+    {
+     "name": "on_length_converter",
+     "check": {
+      "any_of": [
+       {
+        "url_contains": "length"
+       },
+       {
+        "url_contains": "mile"
+       }
+      ]
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "value_entered",
+     "check": {
+      "text_visible": "100"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "unitconverters-net__t2-kg-to-pounds",
+   "site": "unitconverters-net",
+   "start_url": "https://www.unitconverters.net/",
+   "instruction": "Convert 1 kilogram into pounds, ending with the converted value on screen.",
+   "difficulty": "medium",
+   "expected_actions": 10,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.unitconverters.net"
+   ],
+   "success_check": {
+    "text_visible": "2.2046226218"
+   },
+   "milestones": [
+    {
+     "name": "on_weight_converter",
+     "check": {
+      "any_of": [
+       {
+        "url_contains": "weight"
+       },
+       {
+        "url_contains": "kilogram"
+       }
+      ]
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "unitconverters-net__t2-km-to-miles",
+   "site": "unitconverters-net",
+   "start_url": "https://www.unitconverters.net/",
+   "instruction": "Convert 250 kilometers into miles, ending with the converted value on screen.",
+   "difficulty": "medium",
+   "expected_actions": 10,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.unitconverters.net"
+   ],
+   "success_check": {
+    "text_visible": "155.3427"
+   },
+   "milestones": [
+    {
+     "name": "on_length_converter",
+     "check": {
+      "any_of": [
+       {
+        "url_contains": "length"
+       },
+       {
+        "url_contains": "kilometer"
+       }
+      ]
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "uuidgenerator__frontier-version4-page",
+   "site": "uuidgenerator",
+   "start_url": "https://www.uuidgenerator.net/",
+   "instruction": "Open the version-4 UUID generator so a freshly generated v4 UUID is on screen.",
+   "difficulty": "easy",
+   "expected_actions": 4,
+   "action_kinds": [
+    "click"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.uuidgenerator.net"
+   ],
+   "success_check": {
+    "url_contains": "version4"
+   },
+   "milestones": [
+    {
+     "name": "left_home",
+     "check": {
+      "text_visible": "Version 4"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "vote-gov-state-redirect__frontier-texas-info",
+   "site": "vote-gov-state-redirect",
+   "start_url": "https://vote.gov/",
+   "instruction": "Get to the voter registration information for Texas.",
+   "difficulty": "easy",
+   "expected_actions": 5,
+   "action_kinds": [
+    "click",
+    "scroll"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "vote.gov"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "texas"
+     },
+     {
+      "text_visible": "Texas"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "state_chooser",
+     "check": {
+      "text_visible": "state"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "when2meet__frontier-create-poll",
+   "site": "when2meet",
+   "start_url": "https://when2meet.com",
+   "instruction": "Set up an availability poll called QA Sync for any two days next month, ending on the poll's own page.",
+   "difficulty": "medium",
+   "expected_actions": 9,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "when2meet.com"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_matches": "\\?\\d+-"
+     },
+     {
+      "text_visible": "QA Sync"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "name_entered",
+     "check": {
+      "text_visible": "QA Sync"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "wikisource-org__frontier-the-raven",
+   "site": "wikisource-org",
+   "start_url": "https://en.wikisource.org/",
+   "instruction": "Open the text of The Raven by Edgar Allan Poe on Wikisource.",
+   "difficulty": "easy",
+   "expected_actions": 6,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "en.wikisource.org"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "The_Raven"
+     },
+     {
+      "text_visible": "Nevermore"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "searched",
+     "check": {
+      "text_visible": "Poe"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "wikisource-org__t2-author-to-work",
+   "site": "wikisource-org",
+   "start_url": "https://en.wikisource.org/",
+   "instruction": "On Wikisource, open the author page for Oscar Wilde and from it open the text of The Happy Prince.",
+   "difficulty": "medium",
+   "expected_actions": 11,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "en.wikisource.org"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "url_contains": "The_Happy_Prince"
+     },
+     {
+      "text_visible": "swallow"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "on_author_page",
+     "check": {
+      "url_contains": "Author:Oscar_Wilde"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "wordcounter-net__frontier-count-words",
+   "site": "wordcounter-net",
+   "start_url": "https://wordcounter.net/",
+   "instruction": "Find out how many words are in the sentence: the quick brown fox jumps over the lazy dog",
+   "difficulty": "easy",
+   "expected_actions": 4,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "wordcounter.net"
+   ],
+   "success_check": {
+    "text_visible": "9 words"
+   },
+   "milestones": [
+    {
+     "name": "text_entered",
+     "check": {
+      "text_visible": "quick brown fox"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "wordcounter-net__t2-character-count",
+   "site": "wordcounter-net",
+   "start_url": "https://wordcounter.net/",
+   "instruction": "Enter the sentence 'the quick brown fox jumps over the lazy dog' and find its character count including spaces.",
+   "difficulty": "medium",
+   "expected_actions": 10,
+   "action_kinds": [
+    "click",
+    "type",
+    "scroll"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "wordcounter.net"
+   ],
+   "success_check": {
+    "all_of": [
+     {
+      "text_visible": "quick brown fox"
+     },
+     {
+      "text_visible": "43"
+     }
+    ]
+   },
+   "milestones": [
+    {
+     "name": "text_entered",
+     "check": {
+      "text_visible": "quick brown fox"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  },
+  {
+   "task_id": "xe-currency__frontier-usd-eur",
+   "site": "xe-currency",
+   "start_url": "https://www.xe.com/currencyconverter/",
+   "instruction": "Convert 100 US dollars to euros, ending with the conversion result on screen.",
+   "difficulty": "easy",
+   "expected_actions": 7,
+   "action_kinds": [
+    "click",
+    "type"
+   ],
+   "backend": "public_site",
+   "env": "live",
+   "lane": "autonomous",
+   "auth_mode": "none",
+   "idempotent": true,
+   "split": "train",
+   "preconditions": {},
+   "allowed_hosts": [
+    "www.xe.com"
+   ],
+   "success_check": {
+    "text_visible": "100.00 US Dollars"
+   },
+   "milestones": [
+    {
+     "name": "amount_entered",
+     "check": {
+      "text_visible": "100"
+     },
+     "weight": 1.0
+    },
+    {
+     "name": "on_result",
+     "check": {
+      "url_contains": "convert"
+     },
+     "weight": 1.0
+    }
+   ],
+   "throttle": {
+    "min_interval_s": 30
+   },
+   "source": "public_sites_actions_frontier.json"
+  }
+ ]
+}
