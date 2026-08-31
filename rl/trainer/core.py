@@ -94,6 +94,8 @@ class MockEnvClient:
 
     def __init__(self, steps=3, image_size=(1280, 720), **_):
         self.steps, self.png = steps, blank_png_b64(image_size)
+        # RL_MOCK_NO_REWARD simulates a verdictless service so the smoke can prove the run refuses to train on it.
+        self.no_reward = os.environ.get("RL_MOCK_NO_REWARD") == "1"
         self.episodes = {}
 
     def reset(self, task_id, sample_idx, run_id, iteration, policy_tag):
@@ -108,13 +110,13 @@ class MockEnvClient:
         state["history"].append("mock_action")
         done = state["n"] >= self.steps or any(a["type"] == "done" for a in decoded.actions)
         if done:
-            return {"observation": None, "reward": 1.0 if decoded.ok else 0.0, "done": True,
+            return {"observation": None, "reward": None if self.no_reward else (1.0 if decoded.ok else 0.0), "done": True,
                     "info": {"terminal_reason": "done" if decoded.ok else "parse_abort"}}
         observation = build_observation(f"mock task {state['task_id']}", state["history"], self.png, state["n"])
         return {"observation": observation, "reward": None, "done": False, "info": {"parse": "ok" if decoded.ok else "failure"}}
 
     def close(self, episode_id, reason="external"):
-        return {"reward": 0.0, "info": {"terminal_reason": reason}}
+        return {"reward": None if self.no_reward else 0.0, "info": {"terminal_reason": reason}}
 
     def tasks(self, split="train"):
         return [{"task_id": "mock__task", "split": split}]
@@ -134,7 +136,18 @@ def observation_to_user_message(observation):
     return {"role": "user", "content": "<image>" + observation["text"]}
 
 
-def episode_records(system, turns, total_reward, trajectory_uuid):
+class MissingRewardError(RuntimeError):
+    pass
+
+
+def require_reward(reward, trajectory_uuid):
+    # None means a verdictless episode was about to train as a fabricated 0.0 (the grpo-v2 failure); refuse loudly.
+    if reward is None:
+        raise MissingRewardError(f"episode {trajectory_uuid} finished without a reward")
+    return float(reward)
+
+
+def episode_records(system, turns, total_reward, trajectory_uuid, env_error=None):
     records = []
     for index, turn in enumerate(turns):
         records.append({
@@ -142,7 +155,7 @@ def episode_records(system, turns, total_reward, trajectory_uuid):
             "images": [turn["image"]],
             "response_token_ids": turn.get("token_ids"),
             "rollout_infos": {"total_reward": total_reward, "num_turns": len(turns), "turn": index,
-                              "trajectory_uuid": trajectory_uuid, "images": [turn["image"]]},
+                              "trajectory_uuid": trajectory_uuid, "images": [turn["image"]], "env_error": env_error},
         })
     return records
 

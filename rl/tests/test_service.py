@@ -5,6 +5,7 @@ import threading
 import urllib.error
 import urllib.request
 
+from rl.runner import require_oracles
 from rl.service import EnvService, serve
 
 
@@ -104,3 +105,15 @@ def test_http_round_trip_and_slot_exhaustion():
             assert e.code == 401
     finally:
         server.shutdown()
+
+
+def test_require_oracles_gates_verifier_mode_never():
+    with_check = {"task_id": "a", "success_check": {"url_contains": "x"}}
+    without = {"task_id": "b", "success_check": None}
+    require_oracles([with_check, without], "fallback")
+    require_oracles({"a": with_check}, "never")
+    try:
+        require_oracles([with_check, without], "never")
+        raise AssertionError("a task without an oracle must be refused under never")
+    except SystemExit as e:
+        assert "b" in str(e)

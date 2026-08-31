@@ -1,13 +1,15 @@
 import base64
 import io
 import json
+import os
 import tempfile
 import urllib.error
 from pathlib import Path
 
 from rl.actions import encode_step
-from rl.trainer.core import (ENV_CLIENTS, EpisodeRecorder, HttpEnvClient, MockEnvClient, action_format_score,
-                             env_client_for, episode_records, observation_to_user_message)
+from rl.trainer.core import (ENV_CLIENTS, EpisodeRecorder, HttpEnvClient, MissingRewardError, MockEnvClient,
+                             action_format_score, env_client_for, episode_records, observation_to_user_message,
+                             require_reward)
 
 
 class FakeResponse:
@@ -88,7 +90,8 @@ def test_episode_records_one_per_turn_with_broadcast_reward():
     assert len(records) == 2
     assert records[1]["messages"] == [{"role": "system", "content": "SYS"}, turns[1]["user"], {"role": "assistant", "content": "a1"}]
     assert records[1]["images"] == ["/tmp/1.png"] and records[1]["response_token_ids"] == [3]
-    assert records[0]["rollout_infos"] == {"total_reward": 0.8, "num_turns": 2, "turn": 0, "trajectory_uuid": "uuid-1", "images": ["/tmp/0.png"]}
+    assert records[0]["rollout_infos"] == {"total_reward": 0.8, "num_turns": 2, "turn": 0, "trajectory_uuid": "uuid-1",
+                                           "images": ["/tmp/0.png"], "env_error": None}
 
 
 def test_recorder_writes_png_and_jsonl():
@@ -105,3 +108,25 @@ def test_action_format_score_levels():
     assert action_format_score("<think>t</think>\naction: done()") == 1.0
     assert action_format_score("<think>t</think>\naction: done()\ntrailing prose") == 0.5
     assert action_format_score("no actions here") == 0.0
+
+
+def test_require_reward_refuses_none_and_keeps_zero():
+    assert require_reward(0.0, "u") == 0.0 and require_reward(1.9, "u") == 1.9
+    try:
+        require_reward(None, "u-missing")
+    except MissingRewardError as e:
+        assert "u-missing" in str(e)
+    else:
+        raise AssertionError("None reward must raise")
+
+
+def test_mock_env_no_reward_knob_simulates_verdictless_service():
+    os.environ["RL_MOCK_NO_REWARD"] = "1"
+    try:
+        client = MockEnvClient(steps=1)
+        episode = client.reset("t", 0, "run", 0, "")["episode_id"]
+        result = client.step(episode, "<think>t</think>\naction: done()")
+        assert result["done"] and result["reward"] is None
+        assert client.close(episode)["reward"] is None
+    finally:
+        del os.environ["RL_MOCK_NO_REWARD"]

@@ -2,6 +2,7 @@
 import asyncio
 import copy
 import functools
+import logging
 import os
 import uuid
 
@@ -12,8 +13,10 @@ from swift.rollout.multi_turn import GYMScheduler, multi_turns
 
 from rl.observation import build_observation
 from rl.trainer.core import (EpisodeRecorder, action_format_score, blank_png_b64, env_client_for, episode_records,
-                             observation_to_user_message)
+                             observation_to_user_message, require_reward)
 from train_qwen import SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 RL_ENV_URL = os.environ.get("RL_ENV_URL", "http://127.0.0.1:8900")
 RL_ENV_TOKEN = os.environ.get("RL_ENV_TOKEN", "")
@@ -34,6 +37,7 @@ class BrowserEnv(Env):
         self.close_reason = "external"
         self.close_reward = None
         self.env_error = None
+        self.reward_missing = False
 
     async def _call(self, fn, *args, **kwargs):
         # The env round-trips (slot waits, the verifier on a terminal step) must not block the rollout server's loop, or every concurrent episode stalls with them.
@@ -65,15 +69,18 @@ class BrowserEnv(Env):
         if observation is not None:
             self.observation = observation
             self.last_image_path = self.recorder.save_png(self.trajectory_uuid, self.turn, observation["image_b64"])
-        reward = result.get("reward")
-        return (observation or {}).get("text", ""), float(reward or 0.0), bool(result.get("done")), result.get("info", {})
+        reward, done = result.get("reward"), bool(result.get("done"))
+        # ms-swift sums step rewards into total_reward, so a verdictless terminal must be flagged here and refused by the scheduler.
+        if done and reward is None:
+            self.reward_missing = True
+        return (observation or {}).get("text", ""), float(reward) if reward is not None else 0.0, done, result.get("info", {})
 
     async def close(self):
         if self.episode_id is not None:
             try:
                 self.close_reward = (await self._call(self.client.close, self.episode_id, self.close_reason)).get("reward")
             except Exception:
-                pass
+                logger.exception(f"close failed for episode {self.episode_id}; its reward stays missing")
 
 
 class BrowserScheduler(GYMScheduler):
@@ -106,10 +113,15 @@ class BrowserScheduler(GYMScheduler):
             turn += 1
         await self._close_and_remove(infer_request.uuid)
         # A trainer-side cut (max_turns / length) is scored by the service at close, not by any step, so that reward must be read back here.
-        total_reward = float((turn_result.get("rollout_infos") or {}).get("total_reward", 0.0))
-        if not turn_result.get("done"):
-            total_reward = float(env.close_reward or 0.0)
-        records = episode_records(SYSTEM_PROMPT, turns, total_reward, infer_request.uuid)
+        if turn_result.get("done"):
+            total_reward = None if env.reward_missing else (turn_result.get("rollout_infos") or {}).get("total_reward")
+        else:
+            total_reward = env.close_reward
+        if env.env_error is not None and total_reward is None:
+            # Env unavailability is the environment's fault, not a verdictless episode; it stays 0.0 but is labeled for the analysis.
+            total_reward = 0.0
+        total_reward = require_reward(total_reward, infer_request.uuid)
+        records = episode_records(SYSTEM_PROMPT, turns, total_reward, infer_request.uuid, env_error=env.env_error)
         return [RolloutOutput(response=t["response"], messages=r["messages"], response_token_ids=[t["token_ids"]] if t["token_ids"] else None,
                               rollout_infos=r["rollout_infos"]) for t, r in zip(turns, records)]
 
