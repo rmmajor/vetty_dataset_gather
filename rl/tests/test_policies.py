@@ -2,7 +2,10 @@ import json
 import tempfile
 from pathlib import Path
 
-from rl.policies import MockReplayPolicy, ScriptedPolicy, make_policy
+import ssl
+import urllib.error
+
+from rl.policies import MockReplayPolicy, OpenAICompatiblePolicy, ScriptedPolicy, make_policy
 from rl.runner import summarize
 
 
@@ -32,3 +35,47 @@ def test_summarize_counts():
                {"reward": None, "success": None, "terminal_reason": "step_cap", "turns": [{"clean": False}], "steps": 5, "reward_status": "deferred"}]
     s = summarize(records)
     assert s == {"episodes": 2, "final": 1, "deferred": 1, "success_rate": 0.5, "mean_reward": 1.0, "done_rate": 0.5, "parse_failure_rate": 0.5, "mean_steps_success": 3.0}
+
+
+class FakeChatResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return json.dumps({"choices": [{"message": {"content": "<think>t</think>\naction: done()"}}]}).encode()
+
+
+def _policy(outcomes, slept):
+    def opener(request, timeout=None):
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+    return OpenAICompatiblePolicy("http://x/v1", "m", opener=opener, backoff_s=0, sleep=slept.append)
+
+
+def test_policy_retries_a_dropped_connection_then_succeeds():
+    slept = []
+    policy = _policy([ssl.SSLEOFError("EOF"), FakeChatResponse()], slept)
+    assert policy.act({"system": "s", "text": "t", "image_b64": "", "step_index": 0}).endswith("done()")
+    assert len(slept) == 1
+
+
+def test_policy_gives_up_after_retries_and_does_not_retry_4xx():
+    slept = []
+    policy = _policy([ssl.SSLEOFError("EOF")] * 4, slept)
+    try:
+        policy.act({"system": "s", "text": "t", "image_b64": "", "step_index": 0})
+        raise AssertionError("must raise once retries are exhausted")
+    except ConnectionError as e:
+        assert "after 4 attempts" in str(e)
+    fatal = _policy([urllib.error.HTTPError("http://x", 400, "bad", {}, None)], [])
+    try:
+        fatal.act({"system": "s", "text": "t", "image_b64": "", "step_index": 0})
+        raise AssertionError("4xx must not be retried")
+    except urllib.error.HTTPError:
+        pass
+

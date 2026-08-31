@@ -153,7 +153,11 @@ class WorkerPool:
         worker, slot = self.free.get(timeout=timeout)
         with worker.lock:
             if worker.live == 0 and worker.needs_recycle():
-                worker.recycle()
+                # A sandbox can be gone entirely (OOM-killed, auto-removed); rebuilding it must not raise, or one dead container ends the batch.
+                try:
+                    worker.recycle()
+                except Exception as e:
+                    logger.error(f"worker {worker.worker_id}: recycle failed, its episodes will fail until it recovers: {e}")
             worker.live += 1
         return worker, slot
 

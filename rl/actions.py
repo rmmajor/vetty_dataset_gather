@@ -8,6 +8,8 @@ from train_qwen import format_action_for_training
 
 _REF = r"<ref>\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)</ref>"
 _THINK_RE = re.compile(r"^\s*<think>(.*?)</think>[ \t]*\n?", re.DOTALL)
+# Reasoning templates PREFILL the opening <think>, so a served completion carries only the closing tag and the thought would otherwise be lost as stray text.
+_THINK_PREFILLED_RE = re.compile(r"\A(?!\s*<think>)(.*?)</think>[ \t]*\n?", re.DOTALL)
 _LINE_RE = re.compile(r"^action:\s*([a-z_]+)\((.*)\)\s*$", re.DOTALL)
 
 
@@ -142,7 +144,7 @@ def _split_action_lines(text):
 def decode_step(text):
     raw = text or ""
     errors = []
-    match = _THINK_RE.match(raw)
+    match = _THINK_RE.match(raw) or _THINK_PREFILLED_RE.match(raw)
     thought = match.group(1).strip() if match else ""
     rest = raw[match.end():] if match else raw
     if not match and "<think>" in raw:
