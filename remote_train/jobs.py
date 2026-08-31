@@ -25,7 +25,7 @@ from pathlib import Path
 import yaml
 
 from remote_train.benchmarks import BENCHMARKS, build_benchmark, materialize
-from rl_train import build_deploy_command, make_dataset
+from rl_train import build_deploy_command, build_merge_command, build_vllm_serve_command, make_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +330,9 @@ class ServeJob(RemoteJob):
         _upload_code(provider, instance, cfg, RL_CODE_FILES + (cfg.rl_config,))
         if cfg.serve_adapter:
             provider.upload(instance, cfg.serve_adapter.rstrip("/") + "/", f"{wd}/serve_adapter/")
+        if self.rl.get("serve_merged_base"):
+            provider.exec(instance, f"mkdir -p {wd}/sft_adapter", timeout=60)
+            provider.upload(instance, str(Path(self.rl["sft_adapter"]).expanduser()).rstrip("/") + "/", f"{wd}/sft_adapter/")
 
     def resources(self, provider, instance, cfg):
         return provider.tunnel(instance, cfg, [("L", int((self.rl.get("compute") or {}).get("serve_port", 8001)))])
@@ -338,7 +341,24 @@ class ServeJob(RemoteJob):
         wd = cfg.remote_workdir
         adapters = f"{wd}/serve_adapter" if cfg.serve_adapter else None
         deploy = build_deploy_command(dict(self.rl, merged_model=self.rl["base_model"]), adapters=adapters)
-        return f"pip install -r requirements-rl.txt && \\\n  MAX_PIXELS={self.rl['max_pixels']} {shlex.join(deploy)}"
+        if self.rl.get("serve_backend") == "vllm":
+            serve = shlex.join(build_vllm_serve_command(self.rl, adapters=adapters))
+            if not self.rl.get("serve_merged_base"):
+                return serve
+            # ms-swift is only needed for the merge; keep it out of the image's Python with a throwaway uv env.
+            merge = shlex.join(build_merge_command(self.rl))
+            return (
+                "pip install -q uv && uv venv /workspace/merge-env --python 3.12 -q && "
+                ". /workspace/merge-env/bin/activate && uv pip install -q -r /workspace/requirements-rl.txt torchvision && \\\n"
+                f"  {merge} && deactivate && \\\n"
+                f"  {serve}"
+            )
+        # A venv over the image's site-packages keeps its torch/CUDA but sidesteps Debian's unremovable apt-installed pins.
+        return (
+            "python -m venv --system-site-packages /workspace/venv && . /workspace/venv/bin/activate && \\\n"
+            "  pip install --upgrade pip && pip install -r requirements-rl.txt && \\\n"
+            f"  MAX_PIXELS={self.rl['max_pixels']} {shlex.join(deploy)}"
+        )
 
     def on_poll(self, provider, instance, cfg) -> bool:
         now = self.clock()

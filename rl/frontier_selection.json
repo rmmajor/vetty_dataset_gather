@@ -1,0 +1,700 @@
+{
+  "selected": [
+    "bahn__frontier-berlin-hamburg",
+    "base64encode__frontier-encode-hello",
+    "base64encode__frontier-encode-sentence",
+    "calculator-net-age__frontier-age-between-dates",
+    "calculator-net__frontier-mortgage-payment",
+    "dpaste-com__t2-paste-python-expiry",
+    "lipsum-generator__frontier-three-paragraphs",
+    "openlibrary-org__frontier-hobbit-work",
+    "standard-ebooks__frontier-time-machine",
+    "unitconverters-net__t2-kg-to-pounds",
+    "wikisource-org__frontier-the-raven",
+    "wikisource-org__t2-author-to-work"
+  ],
+  "band": [
+    0.2,
+    0.8
+  ],
+  "generated": "2026-08-31T02:42:05",
+  "policy": null,
+  "suite_sha256": null,
+  "run_id": null,
+  "per_task": {
+    "bahn__frontier-berlin-hamburg": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 0.75,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.8,
+        -0.31,
+        0.6,
+        0.4
+      ]
+    },
+    "base64encode__frontier-encode-hello": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.525,
+        0.2,
+        1.4,
+        -0.6
+      ]
+    },
+    "base64encode__frontier-encode-sentence": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.08,
+        1.4,
+        1.525
+      ]
+    },
+    "calculator-net-age__frontier-age-between-dates": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.4,
+        1.0,
+        1.0,
+        0.0
+      ]
+    },
+    "calculator-net__frontier-bmi": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 4,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "calculator-net__frontier-mortgage-payment": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        0.0,
+        0.0,
+        1.9
+      ]
+    },
+    "calculator-net__frontier-percentage": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 4,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.733,
+        1.9
+      ]
+    },
+    "calculator-net__t2-body-fat": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 4,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "calculator-net__t2-loan-payment": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.0,
+        0.2,
+        0.2
+      ]
+    },
+    "darebee-workout__frontier-open-named-workout": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.4,
+        0.2,
+        0.2,
+        -0.1
+      ]
+    },
+    "dpaste-com__frontier-paste-note": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 4,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "dpaste-com__t2-paste-python-expiry": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 0.6667,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.4,
+        0.294,
+        1.3
+      ]
+    },
+    "duckduckgo-html__frontier-find-openstreetmap": {
+      "k": 3,
+      "harness_failures": 1,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        -0.1,
+        0.0
+      ]
+    },
+    "duckduckgo-html__frontier-find-wiktionary": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        0.2,
+        0.2,
+        0.0
+      ]
+    },
+    "duckduckgo-html__t2-search-then-inner-page": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.6,
+        -0.8,
+        -1.0
+      ]
+    },
+    "gutenberg__frontier-find-frankenstein": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 4,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "gutenberg__frontier-find-pride-prejudice": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 4,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "gutenberg__t2-browse-shelf-to-book": {
+      "k": 4,
+      "harness_failures": 0,
+      "successes": 4,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "gutenberg__t2-sherlock-plain-text": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.208,
+        0.2
+      ]
+    },
+    "librivox-org__t2-find-audiobook": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.4,
+        1.4,
+        1.9
+      ]
+    },
+    "lipsum-generator__frontier-five-lists": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        0.1,
+        -0.2
+      ]
+    },
+    "lipsum-generator__frontier-three-paragraphs": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 0.6667,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        0.2
+      ]
+    },
+    "omnicalculator__frontier-discount-price": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.2,
+        0.9,
+        1.3
+      ]
+    },
+    "omnicalculator__frontier-speed-convert": {
+      "k": 1,
+      "harness_failures": 2,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.4
+      ]
+    },
+    "omnicalculator__t2-bmr-calculator": {
+      "k": 1,
+      "harness_failures": 2,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2
+      ]
+    },
+    "openlibrary-org__frontier-dracula-work": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.2,
+        0.2
+      ]
+    },
+    "openlibrary-org__frontier-hobbit-work": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.3333,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.2,
+        1.9
+      ]
+    },
+    "openlibrary-org__t2-author-page-to-work": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.763
+      ]
+    },
+    "openlibrary-org__t2-subject-browse": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.3,
+        -0.2,
+        -0.2
+      ]
+    },
+    "openverse-org__frontier-open-image-page": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.106,
+        0.0,
+        0.4
+      ]
+    },
+    "openverse-org__t2-filtered-image": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.0,
+        -0.2
+      ]
+    },
+    "rentry__frontier-publish-note": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "standard-ebooks__frontier-austen-page": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "standard-ebooks__frontier-time-machine": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.3333,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.386,
+        0.2,
+        0.4
+      ]
+    },
+    "standard-ebooks__t2-subject-to-book": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.394,
+        0.2,
+        0.0
+      ]
+    },
+    "timeanddate__frontier-date-duration": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.6,
+        0.0,
+        -0.006
+      ]
+    },
+    "timeanddate__frontier-weekday-lookup": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.1,
+        -0.3,
+        -0.3
+      ]
+    },
+    "timeanddate__t2-sunrise-lookup": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.1,
+        -0.1
+      ]
+    },
+    "timeanddate__t2-timezone-converter": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.1,
+        -0.1
+      ]
+    },
+    "unitconverters-net__frontier-celsius-to-f": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.4,
+        1.9,
+        1.867
+      ]
+    },
+    "unitconverters-net__frontier-miles-to-km": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.4,
+        1.65,
+        1.4
+      ]
+    },
+    "unitconverters-net__t2-kg-to-pounds": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.3333,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.2,
+        1.55
+      ]
+    },
+    "unitconverters-net__t2-km-to-miles": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "uuidgenerator__frontier-version4-page": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.2,
+        0.2
+      ]
+    },
+    "vote-gov-state-redirect__frontier-texas-info": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.3,
+        0.0,
+        0.0
+      ]
+    },
+    "when2meet__frontier-create-poll": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "wikisource-org__frontier-the-raven": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.3333,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        1.567,
+        0.2
+      ]
+    },
+    "wikisource-org__t2-author-to-work": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 0.6667,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        -0.2,
+        1.9
+      ]
+    },
+    "wordcounter-net__frontier-count-words": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.525
+      ]
+    },
+    "wordcounter-net__t2-character-count": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 3,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9,
+        1.9
+      ]
+    },
+    "xe-currency__frontier-usd-eur": {
+      "k": 3,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.2,
+        0.2
+      ]
+    }
+  }
+}
