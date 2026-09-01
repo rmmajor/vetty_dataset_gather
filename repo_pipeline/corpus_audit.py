@@ -51,6 +51,55 @@ def _load_json(path: Path) -> dict:
         return {}
 
 
+def max_identical_run(steps) -> int:
+    max_run, run, prev = 0, 0, None
+    for step in steps:
+        sig = _action_signature(step)
+        run = run + 1 if sig == prev and sig else 1
+        prev = sig
+        max_run = max(max_run, run)
+    return max_run
+
+
+def trainability(trajectory, metadata, capture_meta, dir_name, include_replay=False):
+    """Skip reason (excluded|replay_gated|unverified|stuck_loop) or None — the ONE gate convert and this audit share."""
+    if metadata.get("excluded_reason") or capture_meta.get("excluded_reason"):
+        return "excluded"
+    source = metadata.get("capture_source") or ("path_a" if "mind2web" in dir_name else "replay")
+    if source == "replay" and not include_replay:
+        return "replay_gated"
+    if source == "agent" and not trajectory.get("success", True):
+        return "unverified"
+    if max_identical_run(trajectory.get("steps", [])) >= LOOP_RUN_LIMIT:
+        return "stuck_loop"
+    return None
+
+
+def corpus_health_violations(stats: dict, thresholds: dict) -> list[str]:
+    """Threshold breaches over convert's corpus-level stats; empty list means the corpus is releasable."""
+    violations = []
+    minimum = thresholds.get("min_trainable_trajectories")
+    if minimum is not None and stats["trainable"] < minimum:
+        violations.append(f"trainable trajectories {stats['trainable']} < {minimum}")
+    floor = thresholds.get("min_done_coverage")
+    if floor is not None and stats["done_coverage"] < floor:
+        violations.append(f"done() coverage {stats['done_coverage']:.1%} < {floor:.0%} of trainable trajectories")
+    ceiling = thresholds.get("max_teacher_raw_trajectories")
+    if ceiling is not None and stats["teacher_raw"] > ceiling:
+        violations.append(f"{stats['teacher_raw']} trajectories still thought_source=teacher_raw (max {ceiling}) — run the stage-7 polish")
+    share = thresholds.get("max_meandering_example_share")
+    if share is not None and stats["meandering_example_share"] > share:
+        violations.append(f"meandering trajectories supervise {stats['meandering_example_share']:.1%} of examples (max {share:.0%})")
+    share = thresholds.get("max_group_example_share")
+    if share is not None and stats["max_group_example_share"] > share:
+        violations.append(f"group {stats['max_group']!r} holds {stats['max_group_example_share']:.1%} of examples (max {share:.0%})")
+    for action_type, floor in (thresholds.get("min_example_action_share") or {}).items():
+        actual = stats["example_action_share"].get(action_type, 0.0)
+        if actual < floor:
+            violations.append(f"action {action_type!r} is {actual:.1%} of supervision targets (min {floor:.0%})")
+    return violations
+
+
 def audit_trajectory(traj_dir: Path) -> list[str]:
     """Defects for one trajectory; empty list means clean."""
     trajectory = _load_json(traj_dir / "trajectory.json")
@@ -61,12 +110,7 @@ def audit_trajectory(traj_dir: Path) -> list[str]:
     if not steps:
         return ["no steps"]
 
-    max_run, run, prev = 0, 0, None
-    for step in steps:
-        sig = _action_signature(step)
-        run = run + 1 if sig == prev and sig else 1
-        prev = sig
-        max_run = max(max_run, run)
+    max_run = max_identical_run(steps)
     if max_run >= LOOP_RUN_LIMIT:
         defects.append(f"stuck loop: {max_run} consecutive identical actions")
 
@@ -100,29 +144,11 @@ def audit_trajectory(traj_dir: Path) -> list[str]:
 
 
 def is_trainable(traj_dir: Path) -> bool:
-    """Mirrors train_qwen.py convert gating (default, no --include-replay)."""
+    """Same gate as train_qwen.py convert (default, no --include-replay), via the shared `trainability`."""
     trajectory = _load_json(traj_dir / "trajectory.json")
     metadata = _load_json(traj_dir / "metadata.json")
     capture_meta = _load_json(traj_dir / "capture_meta.json")
-    if metadata.get("excluded_reason") or capture_meta.get("excluded_reason"):
-        return False
-    source = metadata.get("capture_source") or ("path_a" if "mind2web" in traj_dir.name else "replay")
-    if source == "replay":
-        return False
-    if source == "agent" and not trajectory.get("success", True):
-        return False
-    # Stuck loops (>= LOOP_RUN_LIMIT identical consecutive actions) are bad supervision; auto-exclude
-    # them here so this audit and train_qwen.py convert agree without manual intervention.
-    max_run = run = 0
-    prev = None
-    for step in trajectory.get("steps", []):
-        sig = _action_signature(step)
-        run = run + 1 if sig == prev and sig else 1
-        prev = sig
-        max_run = max(max_run, run)
-    if max_run >= LOOP_RUN_LIMIT:
-        return False
-    return True
+    return trainability(trajectory, metadata, capture_meta, traj_dir.name) is None
 
 
 def run_audit(corpus_dir: Path) -> int:

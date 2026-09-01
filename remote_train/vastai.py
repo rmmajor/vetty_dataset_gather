@@ -55,7 +55,8 @@ class VastAIProvider(ComputeProvider):
             f"disk_space >= {cfg.disk_gb} rentable=true"
         )
         if cfg.gpu_name:
-            query += f" gpu_name={cfg.gpu_name}"
+            # Vast's query DSL takes underscores for spaces; a raw "H100 SXM" breaks the parser.
+            query += f" gpu_name={cfg.gpu_name.replace(' ', '_')}"
         raw = self._cli_json(["search", "offers", query, "-o", "dph_total", "--limit", "200"])
         records = raw if isinstance(raw, list) else raw.get("offers", [])
         offers = [self._offer_from_raw(r) for r in records]

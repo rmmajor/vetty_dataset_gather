@@ -39,6 +39,9 @@ def _cli_overrides(args) -> dict:
         "disk_gb": getattr(args, "disk", None),
         "max_price_per_hour": getattr(args, "max_price", None),
         "max_runtime_hours": getattr(args, "max_hours", None),
+        "resume_from": getattr(args, "resume_from", None),
+        "trajectories_dir": getattr(args, "trajectories_dir", None),
+        "keep_on_signal": getattr(args, "keep_on_signal", None),
         "benchmark": getattr(args, "benchmark", None),
         "eval_limit": getattr(args, "limit", None),
         "eval_models": tuple(models) if models else None,
@@ -114,6 +117,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     train_p = sub.add_parser("train", help="Fine-tune on a rented GPU, pull the adapter, destroy.")
     _add_common(train_p)
+    train_p.add_argument("--resume-from", dest="resume_from", default=None,
+                         help="Local trainer checkpoint dir to continue from instead of step 0.")
+    train_p.add_argument("--trajectories-dir", dest="trajectories_dir", default=None,
+                         help="Corpus directory to ship (default: ./trajectories).")
+    train_p.add_argument("--keep-on-signal", dest="keep_on_signal", action="store_true", default=None,
+                         help="If this supervisor is killed, leave the box running so the detached "
+                              "job finishes; recover with `remote_train cleanup`.")
     train_p.add_argument("--push-hf", default=None, help="HuggingFace repo to upload the adapter to.")
     train_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     train_p.set_defaults(func=train_cmd)

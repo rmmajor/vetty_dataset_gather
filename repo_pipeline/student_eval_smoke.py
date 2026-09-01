@@ -101,6 +101,10 @@ ROUND_TRIP_ACTIONS = [
     {"type": "wait"},
     {"type": "done"},
     {"type": "screenshot"},
+    {"type": "navigate", "url": "https://example.com/search?q=visa&page=2"},
+    {"type": "handoff", "reason": "login"},
+    {"type": "confirm", "risk_category": "purchase",
+     "proposed_action": {"type": "click", "x": 200, "y": 300, "button": "left"}},
 ]
 
 
@@ -114,7 +118,8 @@ def check_parser_round_trip():
         assert parsed.kind == "prefixed", f"{line!r} classified {parsed.kind}"
         assert parsed.deviations == (), f"canonical line reported deviations {parsed.deviations}"
         seen.add(action["type"])
-    required = {"click", "double_click", "move", "type", "keypress", "scroll", "drag", "wait", "done"}
+    required = {"click", "double_click", "move", "type", "keypress", "scroll", "drag", "wait",
+                "done", "navigate", "handoff", "confirm"}
     assert required <= seen, f"round-trip missed action types: {required - seen}"
     logger.info(f"parser round-trip OK for {len(ROUND_TRIP_ACTIONS)} canonical actions "
                 f"over {len(seen)} types")
@@ -187,6 +192,24 @@ GRAMMAR_MATRIX = [
     ({"type": "wait"}, ["wait()", "wait", "wait( )"]),
     ({"type": "done"}, ["done()", "done"]),
     ({"type": "screenshot"}, ["screenshot()", "screenshot"]),
+    ({"type": "navigate", "url": "https://example.com/a?q=1"}, [
+        'navigate("https://example.com/a?q=1")',
+        "navigate('https://example.com/a?q=1')",
+        "navigate(https://example.com/a?q=1)",
+        'navigate(url="https://example.com/a?q=1")',
+    ]),
+    ({"type": "handoff", "reason": "login"}, [
+        "handoff(reason=login)",
+        "handoff(login)",
+        'handoff("login")',
+        'handoff(reason="login")',
+    ]),
+    ({"type": "confirm", "risk_category": "purchase",
+      "proposed_action": {"type": "click", "x": 200, "y": 300, "button": "left"}}, [
+        "confirm(propose=click(<ref>(200, 300)</ref>), risk=purchase)",
+        "confirm(propose=click(200, 300), risk=purchase)",
+        'confirm(propose=click((200, 300)), risk="purchase")',
+    ]),
 ]
 
 # Shapes rejected because they have more than one reading, not because they are unfamiliar.
@@ -198,6 +221,8 @@ AMBIGUOUS_SHAPES = [
     ("drag((10, 20))", "one endpoint"),
     ("keypress()", "no keys"),
     ("click()", "no coordinates"),
+    ("navigate()", "no destination"),
+    ("navigate(example.com)", "a scheme-less bare token could be a domain or a search phrase"),
 ]
 
 
@@ -374,6 +399,10 @@ def check_driver_mapping():
     assert scroll == {"kind": "scroll_xy", "x": 1, "y": 2, "dx": 3, "dy": 4, "thought": "t"}, scroll
     typed = driver_payload({"type": "type", "text": "x"}, "")
     assert typed["kind"] == "type_text" and typed["thought"], "driver requires a non-empty thought"
+    nav = driver_payload({"type": "navigate", "url": "https://x.test/a"}, "t")
+    assert nav == {"kind": "navigate", "url": "https://x.test/a", "thought": "t"}, nav
+    assert driver_payload({"type": "handoff", "reason": "login"}, "t") is None
+    assert driver_payload({"type": "confirm", "risk_category": "purchase"}, "t") is None
     logger.info("driver mapping OK")
 
 

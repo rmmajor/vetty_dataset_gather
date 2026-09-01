@@ -2,7 +2,9 @@ __pycache__/
 *.pyc
 trajectories/
 training_data/
-tasks*.jsonl
+# Root-only: the Path A task dump. Pinned eval subsets under eval_archive/ MUST be tracked, or a
+# before/after cannot be reproduced against the same tasks.
+/tasks*.jsonl
 .env
 pipeline_data/
 *.db

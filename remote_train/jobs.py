@@ -77,24 +77,49 @@ class TrainJob(RemoteJob):
             raise FileNotFoundError(f"trajectories dir '{traj}' missing or empty — nothing to train on")
         if not Path(cfg.train_config).is_file():
             raise FileNotFoundError(f"train config '{cfg.train_config}' not found")
+        if not Path("repo_pipeline").is_dir():
+            raise FileNotFoundError("repo_pipeline/ not found — train_qwen.py imports it and the box would die at import")
+        # Fail before renting: a resume without optimizer state silently restarts from step 0.
+        if cfg.resume_from:
+            ckpt = Path(cfg.resume_from)
+            missing = [f for f in ("optimizer.pt", "trainer_state.json") if not (ckpt / f).is_file()]
+            if missing:
+                raise FileNotFoundError(f"resume checkpoint '{ckpt}' missing {missing}")
 
     def upload(self, provider, instance, cfg) -> None:
         wd = cfg.remote_workdir
         provider.exec(instance, f"mkdir -p {wd}/trajectories", timeout=60)
         logger.info("Uploading training bundle (trajectories + code)…")
         provider.upload(instance, cfg.trajectories_dir.rstrip("/") + "/", f"{wd}/trajectories/")
-        for f in ("train_qwen.py", cfg.train_config, "requirements.txt"):
+        for f in ("train_qwen.py", cfg.train_config, "requirements.txt", "corpus_health.json"):
             if Path(f).is_file():
                 provider.upload(instance, f, f"{wd}/{Path(f).name}")
+        # train_qwen imports repo_pipeline (operator_pii, corpus_audit); without the package the
+        # box dies at import AFTER the rental starts, which is the expensive place to find out.
+        if Path("repo_pipeline").is_dir():
+            provider.exec(instance, f"mkdir -p {wd}/repo_pipeline", timeout=60)
+            provider.upload(instance, "repo_pipeline/", f"{wd}/repo_pipeline/")
+        if cfg.resume_from:
+            logger.info(f"Uploading resume checkpoint {cfg.resume_from}…")
+            provider.upload(instance, cfg.resume_from.rstrip("/") + "/", f"{wd}/{self._resume_name(cfg)}/")
+
+    @staticmethod
+    def _resume_name(cfg) -> str:
+        return Path(cfg.resume_from.rstrip("/")).name
 
     def remote_command(self, cfg) -> str:
+        resume = f" --resume_from_checkpoint {self._resume_name(cfg)}" if cfg.resume_from else ""
         return (
-            "pip install -r requirements.txt && \\\n"
-            '  pip install "ms-swift[llm]" && \\\n'
+            # NOT requirements.txt: that is the whole pipeline (playwright, pandas, datasets…) and
+            # installing it over the image clobbered torch, leaving transformers half-imported
+            # ("PyTorch was not found" -> NameError: name 'nn'). This is Modal's proven train stack.
+            'pip install --no-cache-dir "ms-swift[llm]>=4.5,<5" "transformers>=4.57" '
+            '"datasets>=3.0" "qwen_vl_utils>=0.0.14" "peft>=0.14" "accelerate>=1.0" '
+            "pyyaml Pillow tqdm && \\\n"
             f"  python train_qwen.py convert --input trajectories/ --output training_data/ "
-            f"--val-split {cfg.val_split} --exclude-waste-steps --exclude-meandering && \\\n"
+            f"--val-split {cfg.val_split} --exclude-waste-steps --meandering-mode subsample && \\\n"
             f"  python train_qwen.py train --config {Path(cfg.train_config).name} "
-            f"--dataset training_data/sft_dataset.jsonl"
+            f"--dataset training_data/sft_dataset.jsonl{resume}"
         )
 
     def collect(self, provider, instance, cfg) -> None:

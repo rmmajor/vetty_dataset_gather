@@ -15,7 +15,8 @@ exclude_countries: [RU, CN]   # never rent here (also via REMOTE_TRAIN_EXCLUDE_C
 
 # ----- Instance -----
 instance_label: roman.maior   # every instance is tagged with this; powers orphan cleanup
-image: "pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel"
+# 2.6.0 matches the torch the Modal lane trains on; 2.4 is too old for current transformers.
+image: "pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel"
 disk_gb: 80
 
 # ----- Lifecycle / safety -----

@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from repo_pipeline import operator_pii
-from repo_pipeline.corpus_audit import LOOP_RUN_LIMIT, _action_signature
+from repo_pipeline.corpus_audit import corpus_health_violations, trainability
 
 
 # Unambiguous secret literals that must NEVER reach the training corpus. Masked credentials are
@@ -163,7 +163,8 @@ def format_action_summary(action):
 
 # Text history shown to the model for each step. Windowed: long trajectories would otherwise
 # bloat the prompt, and at inference the runtime keeps a bounded history too.
-HISTORY_WINDOW = 10
+# 20 covers the corpus's median 24-step auth trajectories; 10 truncated 56.5% of steps.
+HISTORY_WINDOW = 20
 
 
 def build_step_user_text(instruction, action_history):
@@ -209,6 +210,60 @@ WASTE_CLICK_RADIUS_PX = int(os.environ.get("WASTE_CLICK_RADIUS_PX", "10"))
 WASTE_LOOKBACK_STEPS = int(os.environ.get("WASTE_LOOKBACK_STEPS", "4"))
 
 
+# Meandering trajectories train subsampled (--meandering-mode subsample): the head keeps the setup,
+# the tail keeps the goal approach + done(), the wander in between supervises every Nth step only —
+# so their 40%+ step mass stops dominating the loss while the stop signal stays intact.
+MEANDER_KEEP_HEAD = int(os.environ.get("MEANDER_KEEP_HEAD", "5"))
+MEANDER_KEEP_TAIL = int(os.environ.get("MEANDER_KEEP_TAIL", "5"))
+# 6 lands the meandering EXAMPLE share at roughly their TRAJECTORY share (~23%): represented, not dominant.
+MEANDER_MID_KEEP_EVERY = int(os.environ.get("MEANDER_MID_KEEP_EVERY", "6"))
+
+# A keypress action repeating one key beyond this (10-30-key ArrowDown chains) is dropped as a
+# target: the post-chain screenshot no longer matches a sensible per-press supervision signal.
+KEYPRESS_MAX_REPEAT = int(os.environ.get("KEYPRESS_MAX_REPEAT", "6"))
+
+_KEY_CANON = {k.lower(): k for k in (
+    "Enter", "Escape", "Tab", "Backspace", "Delete", "Home", "End", "Space",
+    "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp",
+    "Control", "Shift", "Alt", "Meta",
+)}
+
+
+def normalize_trajectory_actions(trajectory):
+    """Canonical key casing (ENTER -> Enter) in place, so examples and history agree on one spelling."""
+    for step in trajectory.get("steps", []):
+        for action in step.get("actions", []):
+            if action.get("type") == "keypress" and action.get("keys"):
+                action["keys"] = [k if len(k) == 1 else _KEY_CANON.get(k.lower(), k)
+                                  for k in action["keys"]]
+
+
+def _meander_drop_indices(steps, head=None, tail=None, keep_every=None):
+    """Mid-trajectory step indices to drop as targets in a meandering trajectory (kept in history)."""
+    head = MEANDER_KEEP_HEAD if head is None else head
+    tail = MEANDER_KEEP_TAIL if tail is None else tail
+    keep_every = MEANDER_MID_KEEP_EVERY if keep_every is None else keep_every
+    drop = set()
+    for i in range(head, max(head, len(steps) - tail)):
+        if (i - head) % keep_every == 0:
+            continue
+        if any(a.get("type") == "done" for a in steps[i].get("actions", [])):
+            continue
+        drop.add(i)
+    return drop
+
+
+def _absurd_keypress_indices(steps):
+    """Indices of steps whose keypress repeats one key more than KEYPRESS_MAX_REPEAT times."""
+    absurd = set()
+    for i, step in enumerate(steps):
+        for action in step.get("actions", []):
+            keys = action.get("keys") or []
+            if action.get("type") == "keypress" and len(keys) > KEYPRESS_MAX_REPEAT and len(set(keys)) == 1:
+                absurd.add(i)
+    return absurd
+
+
 def _waste_step_indices(steps, radius_px=WASTE_CLICK_RADIUS_PX, lookback=WASTE_LOOKBACK_STEPS):
     """Indices of single-click steps that merely retry a recent click (within radius_px of a click
     in the previous `lookback` steps). Only PURE single-click steps qualify — a step that also
@@ -252,7 +307,8 @@ def _maybe_synthesize_done_step(trajectory, trajectory_dir, capture_meta):
     })
 
 
-def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_steps=False):
+def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_steps=False,
+                                   extra_drop_indices=()):
     """One training example PER STEP: current screenshot + task + windowed text history ->
     <think> + action(s). A whole trajectory as one multi-turn example packs every screenshot
     (~300 visual tokens each) into a single sequence — a 21-step trajectory is ~9k tokens
@@ -260,18 +316,20 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_ste
     this dataset exists for. Per-step examples match inference conditions (one screenshot +
     text history) and supervise every step uniformly.
 
-    Returns (examples, waste_dropped). With exclude_waste_steps, retry/backtrack clicks are
-    omitted as TARGETS but still flow into action_history, so the trajectory keeps all its steps
-    and downstream context stays intact — only the bad supervision target is removed."""
+    Returns (examples, stats). Steps in `extra_drop_indices` (meandering subsample, absurd
+    keypress chains) and — with exclude_waste_steps — retry/backtrack clicks are omitted as
+    TARGETS but still flow into action_history, so the trajectory keeps all its steps and
+    downstream context stays intact — only the bad supervision target is removed."""
     instruction = trajectory["instruction"]
     steps = trajectory["steps"]
+    stats = {"waste_dropped": 0, "subsample_dropped": 0, "target_actions": {}, "done_emitted": False}
     if not steps:
-        return [], 0
+        return [], stats
 
     examples = []
     action_history = []
     waste = _waste_step_indices(steps) if exclude_waste_steps else set()
-    waste_dropped = 0
+    extra_drop = set(extra_drop_indices or ())
 
     for i, step in enumerate(steps):
         screenshot_path = (trajectory_dir / step["screenshot"]).resolve()
@@ -282,7 +340,9 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_ste
 
         emit = screenshot_path.exists() and bool(actions)
         if emit and i in waste:
-            waste_dropped += 1
+            stats["waste_dropped"] += 1
+        elif emit and i in extra_drop:
+            stats["subsample_dropped"] += 1
         elif emit:
             user_text = build_step_user_text(instruction, action_history)
             action_str = "\n".join(format_action_for_training(a) for a in actions)
@@ -291,14 +351,21 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_ste
                 *build_step_messages(SYSTEM_PROMPT, user_text, str(screenshot_path)),
                 {"role": "assistant", "content": assistant_content},
             ]})
+            for a in actions:
+                t = a.get("type", "?")
+                stats["target_actions"][t] = stats["target_actions"].get(t, 0) + 1
+                # Any terminal stop verb is stop-supervision — wall demos legitimately end in handoff.
+                if t in ("done", "handoff", "confirm"):
+                    stats["done_emitted"] = True
 
         action_history.extend(history_entries_for_step(step))
 
-    return examples, waste_dropped
+    return examples, stats
 
 
 def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
-                         exclude_meandering=False, exclude_waste_steps=False):
+                         meandering_mode="keep", exclude_waste_steps=False,
+                         health_config="corpus_health.json", skip_health_gate=False):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -306,11 +373,13 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     all_examples = []
     leak_sources = []
     examples_by_group = {}
-    skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0, "meandering": 0, "stuck_loop": 0}
+    skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0, "meandering": 0,
+               "stuck_loop": 0, "unreadable": 0}
     report = {
-        "trajectories": 0, "by_source": {}, "actions": {}, "lengths": [],
-        "domains": {}, "done_steps": 0, "thought_sources": {}, "meandering": 0,
-        "waste_steps_dropped": 0, "autonomy": {}, "auth_mode": {},
+        "trajectories": 0, "by_source": {}, "actions": {}, "target_actions": {}, "lengths": [],
+        "domains": {}, "done_steps": 0, "done_trajectories": 0, "thought_sources": {},
+        "meandering": 0, "meandering_examples": 0, "teacher_raw": 0,
+        "waste_steps_dropped": 0, "subsample_dropped": 0, "autonomy": {}, "auth_mode": {},
     }
 
     trajectory_dirs = sorted(
@@ -320,8 +389,15 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     print(f"Found {len(trajectory_dirs)} trajectory directories")
 
     for traj_dir in trajectory_dirs:
-        with open(traj_dir / "trajectory.json") as f:
-            trajectory = json.load(f)
+        # A trajectory being written by a concurrent capture parses as truncated JSON; skipping it
+        # keeps one half-written file from killing a multi-hour training run after the GPU is up.
+        try:
+            with open(traj_dir / "trajectory.json") as f:
+                trajectory = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"SKIP unreadable {traj_dir}: {e}")
+            skipped["unreadable"] += 1
+            continue
 
         metadata = {}
         metadata_file = traj_dir / "metadata.json"
@@ -345,52 +421,35 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
             "path_a" if "mind2web" in traj_dir.name else "replay"
         )
 
-        # An explicit exclusion (quality audit, dedup, per-repo cap, contamination) overrides
-        # everything below — these are KNOWN-BAD recordings, regardless of provenance.
-        if metadata.get("excluded_reason") or capture_meta.get("excluded_reason"):
-            skipped["excluded"] += 1
+        # The ONE trainability gate, shared with repo_pipeline.corpus_audit so they cannot drift.
+        skip_reason = trainability(trajectory, metadata, capture_meta, traj_dir.name,
+                                   include_replay=include_replay)
+        if skip_reason:
+            skipped[skip_reason] += 1
             continue
 
-        # Replay trajectories carry QA-style supervision (test-assertion instructions,
-        # retrofitted thoughts) — the exact style the agent pipeline replaced. They train
-        # only on explicit opt-in.
-        if source == "replay" and not include_replay:
-            skipped["replay_gated"] += 1
-            continue
-
-        # Agent captures: `success` is the VERIFIER's verdict — false marks unverified
-        # trajectories that must never train.
-        if not trajectory.get("success", True) and source == "agent":
-            skipped["unverified"] += 1
-            continue
-
-        # Efficiency is a quality tag, not a gate: meandering goal-completions train by default but
-        # can be dropped for a clean run. `success` already means the goal was met.
+        # Efficiency is a quality tag, not a gate: meandering goal-completions train subsampled or
+        # in full, or can be dropped for a clean run. `success` already means the goal was met.
         is_meandering = ((capture_meta.get("verifier") or {}).get("efficiency") == "meandering"
                          or metadata.get("efficiency") == "meandering")
-        if exclude_meandering and is_meandering:
+        if meandering_mode == "exclude" and is_meandering:
             skipped["meandering"] += 1
-            continue
-
-        # Stuck loops (>= LOOP_RUN_LIMIT identical consecutive actions) are bad supervision —
-        # auto-excluded (same detection as corpus_audit) so the corpus self-cleans as capture scales.
-        max_run = run = 0
-        prev = None
-        for step in trajectory.get("steps", []):
-            sig = _action_signature(step)
-            run = run + 1 if sig == prev and sig else 1
-            prev = sig
-            max_run = max(max_run, run)
-        if max_run >= LOOP_RUN_LIMIT:
-            skipped["stuck_loop"] += 1
             continue
 
         if source == "agent":
             _maybe_synthesize_done_step(trajectory, traj_dir, capture_meta)
+        normalize_trajectory_actions(trajectory)
 
-        examples, waste_dropped = convert_trajectory_to_examples(
-            trajectory, traj_dir, exclude_waste_steps=exclude_waste_steps)
-        report["waste_steps_dropped"] += waste_dropped
+        steps = trajectory.get("steps", [])
+        extra_drop = _absurd_keypress_indices(steps)
+        if meandering_mode == "subsample" and is_meandering:
+            extra_drop |= _meander_drop_indices(steps)
+
+        examples, traj_stats = convert_trajectory_to_examples(
+            trajectory, traj_dir, exclude_waste_steps=exclude_waste_steps,
+            extra_drop_indices=extra_drop)
+        report["waste_steps_dropped"] += traj_stats["waste_dropped"]
+        report["subsample_dropped"] += traj_stats["subsample_dropped"]
         if not examples:
             skipped["empty"] += 1
             continue
@@ -408,11 +467,18 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
         report["trajectories"] += 1
         if is_meandering:
             report["meandering"] += 1
+            report["meandering_examples"] += len(examples)
+        if traj_stats["done_emitted"]:
+            report["done_trajectories"] += 1
+        for t, n in traj_stats["target_actions"].items():
+            report["target_actions"][t] = report["target_actions"].get(t, 0) + n
         report["by_source"][source] = report["by_source"].get(source, 0) + 1
         report["lengths"].append(len(trajectory.get("steps", [])))
         domain = metadata.get("website") or metadata.get("domain") or "unknown"
         report["domains"][domain] = report["domains"].get(domain, 0) + 1
         ts = metadata.get("thought_source", "unknown")
+        if ts == "teacher_raw":
+            report["teacher_raw"] += 1
         report["thought_sources"][ts] = report["thought_sources"].get(ts, 0) + 1
         task_meta = capture_meta.get("task_meta") or {}
         au = metadata.get("autonomy") or task_meta.get("autonomy") or "autonomous"
@@ -441,8 +507,14 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     print("Action mix: " + ", ".join(
         f"{t}={n} ({n / total_actions:.0%})" for t, n in sorted(report["actions"].items(), key=lambda kv: -kv[1])
     ))
-    print(f"Terminal done() steps: {report['done_steps']}/{report['trajectories']} trajectories")
-    print(f"Meandering (tagged, included; pass --exclude-meandering to drop): {report['meandering']}")
+    total_targets = sum(report["target_actions"].values()) or 1
+    print("Supervision-target mix: " + ", ".join(
+        f"{t}={n} ({n / total_targets:.0%})" for t, n in sorted(report["target_actions"].items(), key=lambda kv: -kv[1])
+    ))
+    print(f"Terminal done() steps: {report['done_steps']}/{report['trajectories']} trajectories "
+          f"(done in emitted targets: {report['done_trajectories']})")
+    print(f"Meandering (mode={meandering_mode}): {report['meandering']} trajectories, "
+          f"{report['meandering_examples']} examples kept, {report['subsample_dropped']} step targets subsampled away")
     print(f"Waste steps dropped as targets (--exclude-waste-steps): {report['waste_steps_dropped']}")
     print("Domains: " + ", ".join(f"{d}={n}" for d, n in sorted(report["domains"].items(), key=lambda kv: -kv[1])[:10]))
     print(f"Skipped: {skipped}")
@@ -460,6 +532,38 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
         print("Quarantine each one (metadata.json excluded_reason) or re-capture: credentials belong in "
               "<secret:NAME> placeholders, and a real person's identity belongs nowhere in the corpus.")
         sys.exit(1)
+
+    # Corpus health gate (FAIL CLOSED): the regressions that produced sft-v1's gaps refuse to ship
+    # again. Thresholds live in corpus_health.json; --skip-health-gate is for experiments only.
+    health_path = Path(health_config)
+    if health_path.is_file():
+        max_group, max_group_examples = max(examples_by_group.items(), key=lambda kv: len(kv[1]),
+                                            default=("", []))
+        stats = {
+            "trainable": report["trajectories"],
+            "done_coverage": (report["done_trajectories"] / report["trajectories"]
+                              if report["trajectories"] else 0.0),
+            "teacher_raw": report["teacher_raw"],
+            "meandering_example_share": (report["meandering_examples"] / len(all_examples)
+                                         if all_examples else 0.0),
+            "max_group": max_group,
+            "max_group_example_share": (len(max_group_examples) / len(all_examples)
+                                        if all_examples else 0.0),
+            "example_action_share": {t: n / total_targets for t, n in report["target_actions"].items()},
+        }
+        violations = corpus_health_violations(stats, json.loads(health_path.read_text()))
+        if violations:
+            print(f"CORPUS HEALTH GATE {'(bypassed with --skip-health-gate)' if skip_health_gate else 'FAILED'} "
+                  f"— {len(violations)} violation(s) against {health_path}:")
+            for violation in violations:
+                print(f"  - {violation}")
+            if not skip_health_gate:
+                print("Fix the corpus (or consciously bypass with --skip-health-gate) before shipping a dataset.")
+                sys.exit(2)
+        else:
+            print(f"Corpus health gate: PASS ({health_path})")
+    else:
+        print(f"Corpus health gate: SKIPPED — no thresholds file at {health_path}")
 
     # Group-wise split: whole apps go to val, never individual steps.
     groups = list(examples_by_group.items())
@@ -578,10 +682,17 @@ def main():
     convert_parser.add_argument("--exclude-waste-steps", action="store_true",
                                 help="Drop retry/backtrack click steps as training targets (kept in "
                                      "history); non-destructive, trajectory files untouched")
+    convert_parser.add_argument("--meandering-mode", choices=("keep", "subsample", "exclude"), default="keep",
+                                help="Verifier-graded meandering trajectories: keep all steps, subsample "
+                                     "mid-wander targets (head/tail kept, MEANDER_* env knobs), or drop whole")
     convert_parser.add_argument("--exclude-meandering", action="store_true",
-                                help="Drop trajectories the verifier graded 'meandering' (kept by default)")
+                                help="Deprecated alias for --meandering-mode exclude")
     convert_parser.add_argument("--include-replay", action="store_true",
                                 help="Also train on legacy test-replay trajectories (QA-style supervision; off by default)")
+    convert_parser.add_argument("--health-config", type=str, default="corpus_health.json",
+                                help="Corpus health thresholds JSON (missing file skips the gate)")
+    convert_parser.add_argument("--skip-health-gate", action="store_true",
+                                help="Report health violations but write the dataset anyway (experiments only)")
 
     train_parser = subparsers.add_parser("train", help="Launch ms-swift SFT training")
     train_parser.add_argument("--config", type=str, required=True, help="Path to config.yaml")
@@ -593,9 +704,11 @@ def main():
     args, passthrough = parser.parse_known_args()
 
     if args.command == "convert":
+        meandering_mode = "exclude" if args.exclude_meandering else args.meandering_mode
         convert_trajectories(args.input, args.output, args.val_split, include_replay=args.include_replay,
-                             exclude_meandering=args.exclude_meandering,
-                             exclude_waste_steps=args.exclude_waste_steps)
+                             meandering_mode=meandering_mode,
+                             exclude_waste_steps=args.exclude_waste_steps,
+                             health_config=args.health_config, skip_health_gate=args.skip_health_gate)
     elif args.command == "train":
         train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size, passthrough)
 

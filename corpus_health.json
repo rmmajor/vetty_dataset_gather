@@ -1,0 +1,13 @@
+{
+  "_comment": "Hard release gates for `train_qwen.py convert` (checked by repo_pipeline.corpus_audit.corpus_health_violations). A violation refuses to write the dataset; --skip-health-gate bypasses for experiments only. Null disables a check.",
+  "min_trainable_trajectories": 500,
+  "min_done_coverage": 0.95,
+  "max_teacher_raw_trajectories": 0,
+  "max_meandering_example_share": 0.25,
+  "max_group_example_share": 0.15,
+  "min_example_action_share": {
+    "click": 0.2,
+    "type": 0.05,
+    "done": 0.05
+  }
+}

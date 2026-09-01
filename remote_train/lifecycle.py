@@ -59,7 +59,7 @@ def _run_job(provider, cfg, job, *, enable_safety: bool = True) -> int:
             f"({offer.country}). It WILL be destroyed when this run ends."
         )
         if enable_safety:
-            _install_signal_handlers(provider, instance)
+            _install_signal_handlers(provider, instance, getattr(cfg, "keep_on_signal", False))
             _start_watchdog(provider, instance, cfg, stop)
 
         provider.wait_ready(instance, cfg.ready_timeout_s)
@@ -130,8 +130,19 @@ def _guaranteed_destroy(provider, instance) -> bool:
     return ok
 
 
-def _install_signal_handlers(provider, instance) -> None:
+def _install_signal_handlers(provider, instance, keep_on_signal: bool = False) -> None:
     def handler(signum, frame):
+        # The remote job is already detached (setsid nohup), so it outlives this supervisor.
+        # keep_on_signal trades a possible orphan for not throwing away hours of GPU work when
+        # something kills the local process; the box is then recovered with `remote_train cleanup`.
+        if keep_on_signal:
+            logger.warning(
+                f"Signal {signum} received — LEAVING instance {instance.id} running so the detached "
+                f"job finishes. Collect/destroy later with: python -m remote_train cleanup")
+            # os._exit, not sys.exit: SystemExit would unwind through the finally block, which
+            # destroys the instance — the very thing this branch exists to avoid. It also leaves
+            # .remote_train_state.json in place so `cleanup` can still find the box.
+            os._exit(130)
         logger.warning(f"Signal {signum} received — destroying instance {instance.id} before exit")
         _guaranteed_destroy(provider, instance)
         state.clear_instance()

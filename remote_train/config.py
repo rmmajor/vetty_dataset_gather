@@ -41,6 +41,11 @@ class RemoteTrainConfig:
     train_config: str = "config.yaml"
     output_dir: str = "output"
     val_split: float = 0.1
+    # Local trainer checkpoint dir (optimizer+scheduler+RNG) to continue from instead of step 0.
+    resume_from: str = ""
+    # On SIGINT/SIGTERM/SIGHUP leave the box running so the detached job finishes; recover with
+    # `remote_train cleanup`. Off by default: an orphan bills until someone destroys it.
+    keep_on_signal: bool = False
 
     benchmark: str = "screenspot"
     eval_models: tuple = ()
@@ -73,7 +78,8 @@ _YAML_KEYS = {
     "min_reliability",
     "exclude_countries", "instance_label", "image", "disk_gb", "max_runtime_hours",
     "ready_timeout_s", "poll_interval_s", "ssh_key_path", "remote_workdir", "trajectories_dir",
-    "train_config", "output_dir", "val_split", "benchmark", "eval_models", "eval_limit",
+    "train_config", "output_dir", "val_split", "resume_from", "keep_on_signal",
+    "benchmark", "eval_models", "eval_limit",
     "eval_results_dir", "eval_dataset", "eval_split", "eval_extra_args", "eval_coord_space",
     "push_hf_repo", "notify",
     "rl_config", "rl_runs_dir", "collect_every_polls", "serve_adapter", "serve_seconds", "env_url",

@@ -9,6 +9,9 @@ APP_NAME = "cua-train"
 GPU = os.environ.get("CUA_TRAIN_GPU", "A100-80GB")
 RUN_NAME = os.environ.get("CUA_RUN_NAME", "sft-v1")
 TRAIN_TIMEOUT = int(os.environ.get("CUA_TRAIN_TIMEOUT", str(10 * 3600)))
+# Without periodic commits the per-epoch checkpoints only reach the volume when the whole run ends,
+# so a crash costs every epoch and an earlier epoch cannot be served while training continues.
+COMMIT_EVERY_S = int(os.environ.get("CUA_TRAIN_COMMIT_EVERY_S", "600"))
 
 DATA_MOUNT = "/data"
 OUT_MOUNT = "/outputs"
@@ -51,6 +54,7 @@ image = (
     # USE_HF sends ms-swift to HuggingFace instead of its ModelScope default, whose cache is not mounted.
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "USE_HF": "1"})
     .add_local_file("train_qwen.py", f"{CODE_ROOT}/train_qwen.py")
+    .add_local_file("corpus_health.json", f"{CODE_ROOT}/corpus_health.json")
     .add_local_dir("repo_pipeline", f"{CODE_ROOT}/repo_pipeline", ignore=["**/__pycache__", "**/*.pyc"])
 )
 for _name in CONFIGS:
@@ -71,6 +75,7 @@ def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_example
     import shutil
     import subprocess
     import sys
+    import threading
     from pathlib import Path
 
     import yaml
@@ -89,12 +94,16 @@ def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_example
     dataset_dir = run_dir / "training_data"
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    audit = [sys.executable, "-m", "repo_pipeline.corpus_audit", str(traj_dir)]
+    print("+", " ".join(audit), flush=True)
+    subprocess.run(audit, cwd=CODE_ROOT, check=True)
+
     convert = [
         sys.executable, "train_qwen.py", "convert",
         "--input", str(traj_dir),
         "--output", str(dataset_dir),
         "--val-split", str(val_split),
-        "--exclude-waste-steps", "--exclude-meandering",
+        "--exclude-waste-steps", "--meandering-mode", "subsample",
     ] + (extra_convert_args or [])
     print("+", " ".join(convert), flush=True)
     subprocess.run(convert, cwd=CODE_ROOT, check=True)
@@ -121,7 +130,20 @@ def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_example
         "--dataset", str(dataset_file),
     ] + (extra_train_args or [])
     print("+", " ".join(train_cmd), flush=True)
-    subprocess.run(train_cmd, cwd=CODE_ROOT, check=True)
+
+    stop = threading.Event()
+
+    def commit_periodically():
+        while not stop.wait(COMMIT_EVERY_S):
+            outputs.commit()
+
+    committer = threading.Thread(target=commit_periodically, daemon=True)
+    committer.start()
+    try:
+        subprocess.run(train_cmd, cwd=CODE_ROOT, check=True)
+    finally:
+        stop.set()
+        outputs.commit()
 
     # swift nests the adapter under output_dir/<run>/checkpoint-N; the serve app needs one stable path.
     checkpoints = sorted(swift_out.rglob("adapter_config.json"), key=lambda p: p.stat().st_mtime)

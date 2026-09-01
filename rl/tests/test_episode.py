@@ -79,12 +79,12 @@ TASK = {"task_id": "site__t1", "site": "site", "split": "train", "start_url": "h
         "preconditions": {}, "allowed_hosts": [], "success_check": {"text_visible": "all good", "done_emitted": True}}
 
 
-def _episode(tmp, refuse_after=None, **cfg):
+def _episode(tmp, refuse_after=None, task=None, **cfg):
     results = Path(tmp) / "results" / "task_x"
     client = FakeClient(results, refuse_after)
     worker = FakeWorker(client, FakeSandbox(results))
     ctx = RunContext(run_id="r", out_root=Path(tmp) / "rl_runs", iteration=1, reward_config=load_reward_config())
-    return Episode(TASK, worker, 0, 2, ctx, EpisodeConfig(**{"max_steps": 4, "verifier_mode": "never", **cfg})), client
+    return Episode(task or TASK, worker, 0, 2, ctx, EpisodeConfig(**{"max_steps": 4, "verifier_mode": "never", **cfg})), client
 
 
 def test_reset_observation_and_ids():
@@ -154,6 +154,16 @@ def test_navigate_off_host_is_blocked_not_recorded():
         assert not done and info["refusal"] == "navigate_blocked" and client.steps == [] and obs is not None
         _, _, done, _ = ep.step("action: done()")
         assert done and ep.record["navigate_blocked"] == 1
+
+
+def test_navigate_same_registrable_domain_is_allowed():
+    with tempfile.TemporaryDirectory() as tmp:
+        ep, client = _episode(tmp, task={**TASK, "start_url": "https://www.example.com/"})
+        ep.reset()
+        _, _, done, info = ep.step('<think>t</think>\naction: navigate("https://checkout.example.com/cart")')
+        assert not done and "refusal" not in info and info["executed"] == 1 and len(client.steps) == 1
+        _, _, done, info = ep.step('action: navigate("https://example.co.uk/")')
+        assert not done and info["refusal"] == "navigate_blocked" and len(client.steps) == 1
 
 
 def test_close_external_marks_abandoned():

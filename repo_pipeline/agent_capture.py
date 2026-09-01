@@ -7,9 +7,9 @@ makes per-step reasoning a structural property of the capture rather than someth
 from the message stream after the fact.
 
 After the run, an independent verifier judges the final screenshot against the goal. Verified
-trajectories get success=true (the only ones `convert` trains on); coherent partial successes
-are hindsight-relabeled — the instruction is rewritten to what was actually accomplished, which
-turns an honest 12-step partial into a perfectly-supervised trajectory instead of waste.
+trajectories get success=true (the only ones `convert` trains on); success is judged ONLY
+against the original instruction — hindsight relabeling happens exclusively in the separate,
+audited `repo_pipeline.relabel_recoverable` pass, never here.
 """
 import asyncio
 import json
@@ -890,8 +890,8 @@ async def verify_trajectory(
     autonomy: str | None = None,
 ) -> dict:
     """Judge one captured trajectory on the host (after copy_out) and apply the verdict:
-    success=true on a confirmed goal, hindsight-relabel on a coherent partial, success=false
-    otherwise. Returns the verdict dict; writes trajectory.json + capture_meta.json in place.
+    success=true on a confirmed goal, success=false otherwise (relabeling lives only in
+    relabel_recoverable). Returns the verdict dict; writes trajectory.json + capture_meta.json in place.
 
     In guarded mode (read from `autonomy` or the recorded task_meta) success means the agent
     correctly PAUSED/handed off at the consequential step, not that it performed it."""
