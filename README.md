@@ -213,13 +213,14 @@ that must not be quoted.
 | cua-sft-v1 | sft | Qwen/Qwen3.5-9B-Base | v1 | LoRA r64/a128 3ep lr5e-5 | done | 5477 step-level examples from 504 trainable trajectories. Answers in viewport_abs (1280x720). Served as `cua-student-lora`. |
 | cua-sft-v1-ep1 | sft | Qwen/Qwen3.5-9B-Base | v1 | LoRA r64/a128 lr5e-5 | done | Epoch-1 checkpoint of cua-sft-v1; kept to show the epoch trend. |
 | cua-sft-v1-ep2 | sft | Qwen/Qwen3.5-9B-Base | v1 | LoRA r64/a128 lr5e-5 | done | Epoch-2 checkpoint of cua-sft-v1. |
-| cua-sft-v2 | sft | Qwen/Qwen3.5-9B-Base | v2 | LoRA | planned | Retrain on corpus v2 once the login-gated capture lane lands. |
+| cua-sft-v2 | sft | Qwen/Qwen3.5-9B-Base | v2 | LoRA r64/a128 3ep lr5e-5 | done | 8482 train + 976 val examples from 738 trainable trajectories. Trained in two halves: Modal H100 to step 1500, resumed on a Vast A100 via --resume-from. eval_loss 0.4581 (epoch 2) / 0.4621 (epoch 3). Answers viewport_abs. SERVE WITH --response_prefix '' or ms-swift prefills an empty <think> and no action line is ever emitted; pass the base explicitly, adapter_config records a stale Modal volume path. |
 | cua-sft-v1-nologin | sft | Qwen/Qwen3.5-9B-Base | v1-nologin | LoRA r64/a128 3ep lr5e-5 | planned | Ablation: same recipe with post-authentication trajectories removed. Isolates what the auth-gated data buys. |
 | claude-sonnet-5 | frontier |  |  |  | done | Frontier executor inside the full vetty agent (explore/plan/execute/report on the claude-sdk backbone). |
 | claude-opus-5 | frontier |  |  |  | done | Used as verdict and match-judge for every QA-bench column, never as an executor. |
 | scripted-playwright | tool |  |  | 13 hand-written Playwright tests | done | Incumbent-method comparison arm: locator-based (#id) suite in the vetty benchmark. |
 | corpus-v1 | dataset |  | v1 |  | done | Snapshot the SFT v1 model was trained on. Frozen; the deck describes this snapshot. |
-| corpus-current | dataset |  | v2-wip |  | running | Live corpus, still growing. Basis for the planned v2 retrain. |
+| corpus-v2 | dataset |  | v2 |  | done | Frozen snapshot cua-sft-v2 trained on: 738 trainable trajectories -> 9458 examples (8482 train / 976 val), health-gated. Built from corpus-v1 plus 46 audited hindsight relabels, 34 wall demos, 9 recovered orphans, ~74 verified search-lane trajectories, and full thought-polish/instruction-style passes. |
+| corpus-current | dataset |  | v3-wip |  | running | Live corpus, still growing past the v2 freeze. 6 search-lane sites remain uncaptured. |
 | qa-bench-refapp | benchmark |  |  |  | done | Reference app plus one-defect-per-run mutants; defect injected by config, not by patching code. |
 | cua-grpo-v2 | grpo | cua-sft-v1 (merged) | rl-suite f5dda31d | GRPO LoRA r64/a128 15 steps G=4 lr1e-5 beta0.01 | done | First live GRPO run: 240 episodes on 12 train tasks against live sites, reward v2 (docs/decisions/grpo-v2-first-live-run.md). LoRA over the MERGED sft-v1 weights; serve it on those, never on the raw base. Answers in viewport_abs. |
 
@@ -274,21 +275,45 @@ that must not be quoted.
 | cua-sft-v1 | successes | steps_over_reference_on_success | 1.33 | 3 | done | Mean steps / reference_length over verified successes. |
 | cua-sft-v1-ep1 | scored | verified_success_rate | 11.8 % <sub>[5–27]</sub> | 34 | done | 4/34. |
 | cua-sft-v1-ep2 | scored | verified_success_rate | 14.7 % <sub>[6–30]</sub> | 34 | done | 5/34. Epoch trend is monotone: 0.118 -> 0.147 -> 0.294. |
+| cua-sft-v2 | all | parse_failure_rate | 0.0 % <sub>[0–7]</sub> | 50 | done |  |
+| cua-sft-v2 | all-episodes | done_emission_rate | 0.3 | 50 | done |  |
+| cua-sft-v2 | all-episodes | verified_success_rate | 8.0 % <sub>[3–19]</sub> | 50 | done |  |
+| cua-sft-v2 | easy | verified_success_rate | 27.3 % <sub>[10–57]</sub> | 11 | done |  |
+| cua-sft-v2 | hard | verified_success_rate | 0.0 % <sub>[0–23]</sub> | 13 | done |  |
+| cua-sft-v2 | medium | verified_success_rate | 11.1 % <sub>[2–44]</sub> | 9 | done |  |
+| cua-sft-v2 | parsed-actions | canonical_form_rate | 100.0 % <sub>[99–100]</sub> | 644 | done |  |
+| cua-sft-v2 | scored | verified_success_rate | 12.1 % <sub>[5–27]</sub> | 33 | done | sft-v2 on the archived 50-task subset, same night and same judge as om2w-base-v2-50. Success delta is inside noise at n=33; parse-failure and done-rate deltas are not. |
 | qwen35-9b-base | all | parse_failure_rate | 22.3 % |  | done | Denominator is harness-internal; not a per-episode proportion. |
 | qwen35-9b-base | all | parse_failure_rate | 20.6 % |  | done | Denominator is harness-internal; not a per-episode proportion. |
+| qwen35-9b-base | all | parse_failure_rate | 23.6 % <sub>[19–30]</sub> | 230 | done |  |
+| qwen35-9b-base | all | parse_failure_rate | 37.7 % <sub>[26–52]</sub> | 50 | done |  |
+| qwen35-9b-base | all-episodes | done_emission_rate | 0.113 | 230 | done |  |
+| qwen35-9b-base | all-episodes | done_emission_rate | 0.12 | 50 | done |  |
 | qwen35-9b-base | all-episodes | done_rate | 22.0 % <sub>[13–35]</sub> | 50 | done | Episodes the policy ended with done(). |
 | qwen35-9b-base | all-episodes | verified_success_rate | 6.0 % <sub>[2–16]</sub> | 50 | done | Denominator includes blocked and unreachable episodes. |
 | qwen35-9b-base | all-episodes | verified_success_rate | 10.0 % <sub>[4–21]</sub> | 50 | done | Denominator includes blocked and unreachable sites. |
+| qwen35-9b-base | all-episodes | verified_success_rate | 4.8 % <sub>[3–8]</sub> | 230 | done |  |
+| qwen35-9b-base | all-episodes | verified_success_rate | 6.0 % <sub>[2–16]</sub> | 50 | done |  |
 | qwen35-9b-base | easy | verified_success_rate | 18.2 % <sub>[5–48]</sub> | 11 | done |  |
 | qwen35-9b-base | easy | verified_success_rate | 36.4 % <sub>[15–65]</sub> | 11 | done | 4/11. |
+| qwen35-9b-base | easy | verified_success_rate | 25.0 % <sub>[15–39]</sub> | 44 | done |  |
+| qwen35-9b-base | easy | verified_success_rate | 27.3 % <sub>[10–57]</sub> | 11 | done |  |
 | qwen35-9b-base | hard | verified_success_rate | 7.7 % <sub>[1–33]</sub> | 13 | done |  |
 | qwen35-9b-base | hard | verified_success_rate | 7.7 % <sub>[1–33]</sub> | 13 | done | 1/13. |
+| qwen35-9b-base | hard | verified_success_rate | 0.0 % <sub>[0–7]</sub> | 49 | done |  |
+| qwen35-9b-base | hard | verified_success_rate | 0.0 % <sub>[0–23]</sub> | 13 | done |  |
 | qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–28]</sub> | 10 | done |  |
 | qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–28]</sub> | 10 | done | 0/10. |
+| qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–5]</sub> | 71 | done |  |
+| qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–28]</sub> | 10 | done |  |
 | qwen35-9b-base | parsed-actions | canonical_form_rate | 26.8 % <sub>[22–32]</sub> | 276 | done | 74/276 parsed actions in canonical form. |
 | qwen35-9b-base | parsed-actions | canonical_form_rate | 18.8 % <sub>[15–24]</sub> | 282 | done | 53/282 parsed actions in canonical form. |
+| qwen35-9b-base | parsed-actions | canonical_form_rate | 29.7 % <sub>[27–32]</sub> | 1351 | done |  |
+| qwen35-9b-base | parsed-actions | canonical_form_rate | 25.5 % <sub>[19–33]</sub> | 149 | done |  |
 | qwen35-9b-base | scored | verified_success_rate | 8.8 % <sub>[3–23]</sub> | 34 | done | 3/34 scored episodes; 50 sampled, 14 site-blocked, 2 unreachable. |
 | qwen35-9b-base | scored | verified_success_rate | 14.7 % <sub>[6–30]</sub> | 34 | done | 5/34 scored episodes. Criteria-first judge (judge_prompt_sha), all three policies the same night; not comparable to rows without a judge_prompt_sha. |
+| qwen35-9b-base | scored | verified_success_rate | 6.7 % <sub>[4–12]</sub> | 164 | done | Base re-measured on the 230-task pinned set under the navigate/handoff-aware harness. Not comparable to pre-2026-08-31 rows: the action grammar and history_window changed. |
+| qwen35-9b-base | scored | verified_success_rate | 8.8 % <sub>[3–23]</sub> | 34 | done | Same base run, restricted to the archived 50-task subset so sft-v2 has a like-for-like comparator. Base scored 0.1471 on these same 50 on 2026-08-27, so ~6pp is run-to-run noise. |
 | qwen35-9b-base | successes | steps_over_reference_on_success | 1.92 | 5 | done | Mean steps / reference_length over verified successes. |
 | cua-sft-v1-nologin | scored | verified_success_rate | _not measured_ | 34 | planned | Ablation that turns the post-authentication novelty claim into a result. |
 
@@ -377,7 +402,7 @@ that must not be quoted.
 | Share of record/replay web test breakages caused by stale locators | 73.6 % | 1065 | ICST | 2016 | 10.1109/ICST.2016.16 | deck slide 3, thesis ch.1 |
 | Legacy GUI tests on live sites that stopped passing within 18 months | 100.0 % | 120 | ASE | 2025 | 10.1109/ASE63991.2025.00251 | deck slide 3, thesis ch.1 |
 
-_125 registry rows: 112 done, 1 pending, 6 planned, 6 superseded. Percentages carry a 95 % Wilson interval where n is known._
+_149 registry rows: 136 done, 1 pending, 6 planned, 6 superseded. Percentages carry a 95 % Wilson interval where n is known._
 
 <!-- registry:end -->
 
