@@ -26,6 +26,7 @@ from repo_pipeline.eval_task_sources import (
 )
 from repo_pipeline.instrumentation import RESULTS_DIR
 from repo_pipeline.llm_config import MODEL_FOR_REASONING
+from repo_pipeline import remote_sandbox
 from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler, safe_parallel_sandboxes
 from repo_pipeline.sdk_runner import UsageLimitReached
 from train_qwen import (
@@ -702,6 +703,9 @@ class EvalConfig:
     student_retries: int = 2
     mock_trajectory: str = ""
     coord_space: str = "viewport_abs"
+    browser_backend: str = "docker"
+    browser_host: str = ""
+    egress_note: str = ""
     tolerant_grammar: bool = True
     max_unproductive_steps: int = 5
     max_parse_failures: int = 3
@@ -792,6 +796,32 @@ async def _run(fn, *args):
     return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
 
 
+def _docker_browser(cfg):
+    kwargs = {"container_timeout": EVAL_CONTAINER_TIMEOUT}
+    if cfg.sandbox_image:
+        kwargs["image"] = cfg.sandbox_image
+    return DockerSandbox(**kwargs)
+
+
+def _remote_ssh_browser(cfg):
+    host, _, port = cfg.browser_host.partition(":")
+    return remote_sandbox.RemoteSandbox(host=host, port=int(port or 22),
+                                        container_timeout=EVAL_CONTAINER_TIMEOUT)
+
+
+def _vast_residential_browser(cfg):
+    return remote_sandbox.VastResidentialSandbox(container_timeout=EVAL_CONTAINER_TIMEOUT)
+
+
+# Where the browser runs, and therefore what IP live sites see. Adding an egress is a registry
+# entry, the same idiom as TASK_SOURCES / PREDICTOR_BACKENDS.
+BROWSER_BACKENDS = {
+    "docker": _docker_browser,
+    "remote_ssh": _remote_ssh_browser,
+    "vast_residential": _vast_residential_browser,
+}
+
+
 class EvalBrowser:
     """One sandbox holding one browser driver, reused across episodes and recycled before self-expiry."""
 
@@ -805,11 +835,14 @@ class EvalBrowser:
         if self.sandbox is not None and self.sandbox.remaining_seconds() > EPISODE_TIME_RESERVE:
             return
         await self.stop()
-        kwargs = {"container_timeout": EVAL_CONTAINER_TIMEOUT}
-        if self.cfg.sandbox_image:
-            kwargs["image"] = self.cfg.sandbox_image
-        self.sandbox = DockerSandbox(**kwargs)
+        self.sandbox = BROWSER_BACKENDS[self.cfg.browser_backend](self.cfg)
         await _run(self.sandbox.start, f"eval/{self.name}")
+        # Record the egress the sites actually saw, so the fingerprint names the ASN rather than
+        # just the backend — two residential rentals are different IPs.
+        egress = getattr(self.sandbox, "egress", None)
+        if egress and not self.cfg.egress_note:
+            self.cfg.egress_note = (f"{egress.get('country', '?')}/{egress.get('city', '?')}/"
+                                    f"{egress.get('org', '?')}")
         await _run(driver_session.install_driver, self.sandbox)
         await _run(driver_session.start_driver, self.sandbox,
                    {"DRIVER_LOOP_GUARD_REPEATS": str(self.cfg.loop_guard_repeats)})
@@ -1196,6 +1229,11 @@ def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
         "action_verbs": ",".join(ACTION_VERBS),
         # Parity key: the signature set decides which episodes leave the success denominator.
         "block_signatures": f"v{BLOCK_SIGNATURES_VERSION}:{','.join(n for n, _ in BLOCK_SIGNATURES)}",
+        # Parity key: which IP the sites saw. 58% of Online-Mind2Web is reachable from a US
+        # residential exit against ~42% from this machine, so comparing runs on different egress
+        # measures the network rather than the model.
+        "browser_backend": cfg.browser_backend,
+        "egress": cfg.egress_note,
         "step_cap_policy": step_cap_policy(cfg, source),
         "max_unproductive_steps": cfg.max_unproductive_steps,
         "max_parse_failures": cfg.max_parse_failures,
@@ -1709,6 +1747,11 @@ def _add_run_arguments(parser):
     parser.add_argument("--loop-guard-repeats", type=int, default=0,
                         help="driver loop guard for eval; 0 lets a stuck model actually repeat itself")
     parser.add_argument("--sandbox-image", default="")
+    parser.add_argument("--browser-backend", default="docker", choices=sorted(BROWSER_BACKENDS),
+                        help="where the browser runs, i.e. which IP the sites see. "
+                             "`vast_residential` rents a US consumer-ISP box and destroys it after.")
+    parser.add_argument("--browser-host", default="",
+                        help="remote_ssh backend: host or host:port of an already-running box")
 
 
 def _config_from_args(args) -> EvalConfig:
@@ -1729,6 +1772,7 @@ def _config_from_args(args) -> EvalConfig:
         parallel=args.parallel, resume=not args.no_resume,
         dataset_revision=args.dataset_revision, trajectories_dir=args.trajectories_dir,
         loop_guard_repeats=args.loop_guard_repeats, sandbox_image=args.sandbox_image,
+        browser_backend=args.browser_backend, browser_host=args.browser_host,
     )
 
 

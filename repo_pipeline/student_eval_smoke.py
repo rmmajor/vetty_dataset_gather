@@ -12,6 +12,7 @@ from repo_pipeline.student_eval import (
     EXPECTED_TO_DIFFER_KEYS,
     PARITY_EXEMPT_KEYS,
     ACTION_TO_DRIVER,
+    BROWSER_BACKENDS,
     EvalBrowser,
     EvalConfig,
     ReplayStudent,
@@ -34,6 +35,7 @@ from repo_pipeline.student_eval import (
     scale_action,
 )
 from repo_pipeline.eval_task_sources import TASK_SOURCES, EvalTask
+from repo_pipeline.sandbox import ShellSandbox
 from train_qwen import HISTORY_WINDOW, format_action_for_training
 
 logger = logging.getLogger(__name__)
@@ -449,6 +451,28 @@ def check_block_detection():
     logger.info("block detection OK")
 
 
+def check_browser_backends():
+    """Every egress backend must satisfy the surface the driver calls, or it fails mid-run."""
+    surface = ["read_file", "write_file", "start_background", "wait_for_port", "http_json",
+               "exec_command", "copy_out", "put_bytes", "start", "stop", "remaining_seconds"]
+    for name, factory in BROWSER_BACKENDS.items():
+        cfg = EvalConfig(browser_backend=name, browser_host="example.test:2222")
+        built = factory(cfg)
+        missing = [m for m in surface if not hasattr(built, m)]
+        assert not missing, f"{name} backend is missing {missing}"
+        assert isinstance(built, ShellSandbox), f"{name} backend is not a ShellSandbox"
+
+    # Egress is a parity key: a Lviv run and a US-residential run see different sites, so they
+    # must not silently compare as the same harness.
+    source = TASK_SOURCES["online_mind2web"]
+    local = harness_fingerprint(EvalConfig(browser_backend="docker", egress_note="UA/Lviv"), source, {})
+    rented = harness_fingerprint(
+        EvalConfig(browser_backend="vast_residential", egress_note="US/NYC"), source, {})
+    assert local["egress"] != rented["egress"], "egress must differ in the fingerprint"
+    assert local["browser_backend"] != rented["browser_backend"]
+    logger.info(f"browser backends OK ({', '.join(sorted(BROWSER_BACKENDS))}); egress is a parity key")
+
+
 def check_report_rendering():
     """Both renderers must run on a synthetic payload, or a crash surfaces only after a full run."""
     records = [
@@ -692,6 +716,7 @@ PARSER_CHECKS = [
     check_driver_mapping,
     check_prompt_format,
     check_block_detection,
+    check_browser_backends,
     check_coord_space_diagnosis,
     check_report_rendering,
 ]

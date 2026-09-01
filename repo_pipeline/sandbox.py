@@ -80,7 +80,98 @@ def safe_parallel_sandboxes(requested: int, container_mem_limit: str | None = No
     return safe
 
 
-class DockerSandbox:
+class ShellSandbox:
+    """Everything derivable from `exec_command` + `put_bytes`, shared by every sandbox backend.
+
+    A backend supplies the transport (`exec_command`, `put_bytes`, `copy_out`, `start`, `stop`,
+    `remaining_seconds`); the driver-facing surface below is transport-independent, so the browser
+    driver behaves identically in a local container and on a remote host.
+    """
+
+    def read_file(self, path: str) -> str:
+        stdout, stderr, exit_code = self.exec_command(f"cat '{path}'")
+        if exit_code != 0:
+            raise FileNotFoundError(f"Cannot read {path}: {stderr}")
+        return stdout
+
+    def write_file(self, path: str, content: str):
+        escaped_content = content.replace("'", "'\\''")
+        _, stderr, exit_code = self.exec_command(
+            f"mkdir -p $(dirname '{path}') && printf '%s' '{escaped_content}' > '{path}'"
+        )
+        if exit_code != 0:
+            raise IOError(f"Cannot write {path}: {stderr}")
+
+    def start_background(self, command: str, log_path: str) -> tuple[str, str, int]:
+        """Start a long-lived process that survives across exec calls.
+
+        Each exec runs in an independent shell, so a plainly-backgrounded process dies with it.
+        `setsid` + full stdio detachment re-parents it to PID 1, where it keeps running until the
+        sandbox is destroyed. Used for the agent-capture app server and the browser driver.
+        """
+        escaped = command.replace("'", "'\\''")
+        return self.exec_command(
+            f"setsid nohup bash -c '{escaped}' > '{log_path}' 2>&1 < /dev/null & echo $!",
+            timeout=30,
+        )
+
+    def wait_for_port(self, port: int, timeout_seconds: int = 60) -> bool:
+        """Poll a TCP port until it accepts connections (bash /dev/tcp, no curl)."""
+        stdout, _, _ = self.exec_command(
+            f"for i in $(seq 1 {timeout_seconds}); do "
+            f"(exec 3<>/dev/tcp/127.0.0.1/{port}) 2>/dev/null && echo OPEN && break; sleep 1; done",
+            timeout=timeout_seconds + 15,
+        )
+        return "OPEN" in stdout
+
+    def http_json(self, method: str, url: str, payload: dict | None = None, timeout: int = 120) -> dict:
+        """One JSON request to a sandbox-local HTTP server, returning the parsed response.
+
+        The payload travels base64-encoded through the exec shell so arbitrary text (quotes,
+        newlines, unicode in agent thoughts) survives without quoting issues, in a single exec.
+        """
+        tmp_path = None
+        if payload is not None:
+            raw = json.dumps(payload).encode()
+            encoded = base64.b64encode(raw).decode()
+            if len(encoded) > HTTP_INLINE_MAX:
+                # Large payload (e.g. a big pre_session storage_state): stream it in as a file so it
+                # never touches the exec argv, then curl from the file and clean up. The file MUST
+                # live on the overlay fs (/workspace), NOT in /tmp: /tmp is a tmpfs mount and
+                # docker put_archive (put_bytes) extracts into the container's overlay layer, not
+                # into runtime tmpfs mounts — so a /tmp target lands in the overlay's hidden /tmp and
+                # is invisible to the exec'd curl (curl then exits 26, "error reading file").
+                tmp_path = f"/workspace/.httpreq_{base64.urlsafe_b64encode(os.urandom(9)).decode()}.json"
+                self.put_bytes(tmp_path, raw)
+                cmd = (
+                    f"curl -s -m {timeout - 5} -X {method} -H 'Content-Type: application/json' "
+                    f"--data-binary @{tmp_path} '{url}'; rc=$?; rm -f {tmp_path}; exit $rc"
+                )
+            else:
+                cmd = (
+                    f"echo {encoded} | base64 -d | "
+                    f"curl -s -m {timeout - 5} -X {method} -H 'Content-Type: application/json' "
+                    f"--data-binary @- '{url}'"
+                )
+        else:
+            cmd = f"curl -s -m {timeout - 5} -X {method} '{url}'"
+        # Screenshot responses carry ~hundreds of KB of base64 — far past the default cap.
+        stdout, stderr, exit_code = self.exec_command(cmd, timeout=timeout, max_output=4_000_000)
+        if exit_code != 0:
+            raise ConnectionError(f"http_json {method} {url} failed (exit {exit_code}): {stderr[:300]}")
+        try:
+            return json.loads(stdout)
+        except json.JSONDecodeError:
+            raise ConnectionError(f"http_json {method} {url}: non-JSON response: {stdout[:300]}")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
+
+
+class DockerSandbox(ShellSandbox):
     def __init__(self, image=DEFAULT_IMAGE, platform=None, container_timeout=CONTAINER_TIMEOUT_SECONDS):
         self.image = image
         # Set for images that only exist for a non-host architecture (the Selenium image
@@ -180,19 +271,6 @@ class DockerSandbox:
             logger.error(f"exec_command failed: {e}")
             return "", str(e), 1
 
-    def read_file(self, path: str) -> str:
-        stdout, stderr, exit_code = self.exec_command(f"cat '{path}'")
-        if exit_code != 0:
-            raise FileNotFoundError(f"Cannot read {path}: {stderr}")
-        return stdout
-
-    def write_file(self, path: str, content: str):
-        escaped_content = content.replace("'", "'\\''")
-        _, stderr, exit_code = self.exec_command(
-            f"mkdir -p $(dirname '{path}') && printf '%s' '{escaped_content}' > '{path}'"
-        )
-        if exit_code != 0:
-            raise IOError(f"Cannot write {path}: {stderr}")
 
     def put_bytes(self, container_path: str, data: bytes):
         """Stream raw bytes into the container via the Docker archive (tar) API.
@@ -282,75 +360,6 @@ class DockerSandbox:
                 return stdout2, stderr2, exit_code2
         return stdout, stderr, exit_code
 
-    def start_background(self, command: str, log_path: str) -> tuple[str, str, int]:
-        """Start a long-lived process inside the container that survives across exec calls.
-
-        Each exec_command runs in an independent shell, so a plainly-backgrounded process dies
-        with it. `setsid` + full stdio detachment re-parents the process to the container's
-        PID 1, where it keeps running until the container is destroyed (there is deliberately
-        no stop: containers are ephemeral). Used for the agent-capture app server and the
-        browser driver.
-        """
-        escaped = command.replace("'", "'\\''")
-        return self.exec_command(
-            f"setsid nohup bash -c '{escaped}' > '{log_path}' 2>&1 < /dev/null & echo $!",
-            timeout=30,
-        )
-
-    def wait_for_port(self, port: int, timeout_seconds: int = 60) -> bool:
-        """Poll an in-container TCP port until it accepts connections (bash /dev/tcp, no curl)."""
-        stdout, _, _ = self.exec_command(
-            f"for i in $(seq 1 {timeout_seconds}); do "
-            f"(exec 3<>/dev/tcp/127.0.0.1/{port}) 2>/dev/null && echo OPEN && break; sleep 1; done",
-            timeout=timeout_seconds + 15,
-        )
-        return "OPEN" in stdout
-
-    def http_json(self, method: str, url: str, payload: dict | None = None, timeout: int = 120) -> dict:
-        """One JSON request to an in-container HTTP server, returning the parsed response.
-
-        The payload travels base64-encoded through the exec shell so arbitrary text (quotes,
-        newlines, unicode in agent thoughts) survives without quoting issues, in a single exec.
-        """
-        tmp_path = None
-        if payload is not None:
-            raw = json.dumps(payload).encode()
-            encoded = base64.b64encode(raw).decode()
-            if len(encoded) > HTTP_INLINE_MAX:
-                # Large payload (e.g. a big pre_session storage_state): stream it in as a file so it
-                # never touches the exec argv, then curl from the file and clean up. The file MUST
-                # live on the overlay fs (/workspace), NOT in /tmp: /tmp is a tmpfs mount and
-                # docker put_archive (put_bytes) extracts into the container's overlay layer, not
-                # into runtime tmpfs mounts — so a /tmp target lands in the overlay's hidden /tmp and
-                # is invisible to the exec'd curl (curl then exits 26, "error reading file").
-                tmp_path = f"/workspace/.httpreq_{base64.urlsafe_b64encode(os.urandom(9)).decode()}.json"
-                self.put_bytes(tmp_path, raw)
-                cmd = (
-                    f"curl -s -m {timeout - 5} -X {method} -H 'Content-Type: application/json' "
-                    f"--data-binary @{tmp_path} '{url}'; rc=$?; rm -f {tmp_path}; exit $rc"
-                )
-            else:
-                cmd = (
-                    f"echo {encoded} | base64 -d | "
-                    f"curl -s -m {timeout - 5} -X {method} -H 'Content-Type: application/json' "
-                    f"--data-binary @- '{url}'"
-                )
-        else:
-            cmd = f"curl -s -m {timeout - 5} -X {method} '{url}'"
-        # Screenshot responses carry ~hundreds of KB of base64 — far past the default cap.
-        stdout, stderr, exit_code = self.exec_command(cmd, timeout=timeout, max_output=4_000_000)
-        if exit_code != 0:
-            raise ConnectionError(f"http_json {method} {url} failed (exit {exit_code}): {stderr[:300]}")
-        try:
-            return json.loads(stdout)
-        except json.JSONDecodeError:
-            raise ConnectionError(f"http_json {method} {url}: non-JSON response: {stdout[:300]}")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop()
 
     @staticmethod
     def test_sandbox():

@@ -23,10 +23,11 @@ import time
 from pathlib import Path
 
 from remote_train import state
-from remote_train.base import Instance, ProviderError
+from remote_train.base import Instance, Offer, ProviderError
 from remote_train.config import RemoteTrainConfig
 from remote_train.jobs import GrpoJob, build_job
 from remote_train.mock import MockProvider
+from remote_train.vastai import VastAIProvider
 
 try:
     from repo_pipeline import notifier as _notifier
@@ -369,6 +370,21 @@ def run_smoke_test() -> int:
             pass
         check(f"{job_name}: SIGINT path still destroyed the instance", len(interrupted.destroyed) == 1)
     GrpoJob.run_eval = real_run_eval
+
+    # A rejected Vast create can still allocate a contract, which then bills until destroyed by
+    # hand (observed 2026-09-01). Nothing above catches it: the failure happens inside provision,
+    # before the caller has an instance to tear down.
+    destroyed_ids = []
+    provider = VastAIProvider(make_cfg())
+    provider._public_key = lambda: "ssh-ed25519 AAAA test"
+    provider._cli_json = lambda *a, **k: {"success": False, "new_contract": 4242}
+    provider.destroy = lambda instance: destroyed_ids.append(instance.id) or True
+    try:
+        provider.provision(Offer(id="1", price_per_hour=0.1, gpu_name="x", gpu_ram_gb=24,
+                                 num_gpus=1, country="US", reliability=1.0), make_cfg())
+    except ProviderError:
+        pass
+    check("vast: a failed create that allocated a contract destroys it", destroyed_ids == ["4242"])
 
     print(f"\nremote_train self-test: {'ALL PASS' if not failures else f'{len(failures)} FAILURES'}")
     return 0 if not failures else 1
