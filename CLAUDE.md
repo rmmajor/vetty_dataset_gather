@@ -205,9 +205,15 @@ before/after table plus a **harness parity check** that flags any field the two 
   **is** a call: prose wrapped around a valid call is `malformed`, narration with no call is
   ignored.
 - **Outcome categories, not one bucket.** `completed` / `handoff` / `step_cap` / `stuck` /
-  `parse_failure_abort` / `timeout` are scored; `site_blocked` (CAPTCHA/WAF/interstitial, via
-  `BLOCK_SIGNATURES`), `unreachable` and `harness_error` are environment failures, excluded from
+  `parse_failure_abort` / `timeout` are scored; `site_blocked` (via `BLOCK_SIGNATURES`:
+  `captcha` / `human_verification` / `cloudflare` / `waf_block` / `geo_block` / `site_error`),
+  `unreachable` and `harness_error` are environment failures, excluded from
   the success denominator and reported separately. The headline carries all three headline numbers.
+  A signature the set misses is scored as a MODEL failure, so the set is a **parity key**
+  (`block_signatures`, `BLOCK_SIGNATURES_VERSION`) and every episode records the observation it
+  ended on (`final_url` / `final_snapshot`) — screenshots alone cannot be re-scanned when the set
+  grows. Widening it is also how a false positive gets fixed: matching ordinary page copy silently
+  removes a real episode from the denominator.
 - **Two abort rules, kept separate because they diagnose different things.** 3 consecutive steps
   with no parseable action → `parse_failure_abort` (the model is not speaking the action
   language); 5 consecutive steps that execute *zero* actions for any reason → `stuck` (it speaks
