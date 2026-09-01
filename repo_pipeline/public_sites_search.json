@@ -1,0 +1,471 @@
+{
+  "_comment": "Search-goal capture lane (SFT v2, gap 2): goal-phrased multi-constraint INFO-SEEKING tasks on mainstream public sites - the Online-Mind2Web-shaped distribution the action-UI corpus lacks. Difficulty lives in the constraint set (dates, prices, filters, superlatives), never in procedural phrasing; every task ends in a visually checkable state (result/quote/details on screen). No purchases, no checkout past a quote, no account creation. LEAKAGE RULE: no site here may appear in Online-Mind2Web's 300-task set (145 sites) - check any addition against that list. task_style=search opts each site into the proposer's search-goal block for deepening.",
+  "sites": [
+    {
+      "name": "12go-search",
+      "start_url": "https://12go.asia/en",
+      "domain": "travel",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "cheapest-bkk-chiangmai-overnight",
+          "instruction": "Find the cheapest overnight option from Bangkok to Chiang Mai departing next Friday, and have its details on screen.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "hanoi-hue-train-under-40",
+          "instruction": "I need a train from Hanoi to Hue in two weeks for under $40 - show me the best match.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "rome2rio",
+      "start_url": "https://www.rome2rio.com",
+      "domain": "travel",
+      "task_style": "search",
+      "skip_capture": true,
+      "skip_reason": "Cloudflare Turnstile blocks the sandbox browser (0/5 teacher runs reached content, 2026-08-31); host HTTP probe passes, so only capture reveals it",
+      "tasks": [
+        {
+          "id": "lisbon-porto-no-flight",
+          "instruction": "Compare ways to get from Lisbon to Porto without flying and open the cheapest ground option's details.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "athens-santorini-ferry-duration",
+          "instruction": "Find out how long the ferry from Athens to Santorini takes and end with that route's breakdown visible.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "flixbus",
+      "start_url": "https://www.flixbus.com",
+      "domain": "travel",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "berlin-prague-earliest-saturday",
+          "instruction": "Find the earliest bus from Berlin to Prague this Saturday and open its stop details.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "vienna-budapest-cheapest-next-week",
+          "instruction": "Cheapest Vienna to Budapest trip any day next week - end with it selected in the results.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "sbb-rail",
+      "start_url": "https://www.sbb.ch/en",
+      "domain": "travel",
+      "task_style": "search",
+      "skip_capture": true,
+      "skip_reason": "Renders a blank white page in the sandbox browser across 4 teacher runs and 2 probes (2026-08-31), even after reloads and 20s+ waits",
+      "tasks": [
+        {
+          "id": "zurich-geneva-arrive-by-9",
+          "instruction": "Find a train from Zurich to Geneva next Monday that arrives before 9:00 and show its connection details.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "interlaken-zermatt-fewest-changes",
+          "instruction": "I want the connection from Interlaken to Zermatt tomorrow afternoon with the fewest changes on screen.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "openlibrary-search",
+      "start_url": "https://openlibrary.org",
+      "domain": "reference",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "hemingway-1920s-first-editions",
+          "instruction": "Find an Ernest Hemingway novel first published in the 1920s and end on its editions list sorted oldest first.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "sci-fi-ebook-filter",
+          "instruction": "Show me science fiction books from the 1960s that are readable online right now, with the filtered results visible.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "gutenberg-search",
+      "start_url": "https://www.gutenberg.org",
+      "domain": "reference",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "french-dumas-most-downloaded",
+          "instruction": "Find the most-downloaded Alexandre Dumas book available in French and open its download page.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "recent-poetry-additions",
+          "instruction": "Which poetry titles were added to Project Gutenberg in the last week? End with that list on screen.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "musicbrainz",
+      "start_url": "https://musicbrainz.org",
+      "domain": "reference",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "abbey-road-1969-uk-pressing",
+          "instruction": "Locate the original 1969 UK release of The Beatles' Abbey Road and have its track listing visible.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "producer-hop-dark-side",
+          "instruction": "Find who engineered Pink Floyd's The Dark Side of the Moon, then end on that person's page.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "tmdb",
+      "start_url": "https://www.themoviedb.org",
+      "domain": "entertainment",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "highest-rated-2023-under-100min",
+          "instruction": "Find the highest-rated 2023 film shorter than 100 minutes and end on its page.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "kurosawa-fifties-by-rating",
+          "instruction": "Show Akira Kurosawa's films from the 1950s sorted by rating.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "openfoodfacts",
+      "start_url": "https://world.openfoodfacts.org",
+      "domain": "reference",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "nutella-alternative-better-score",
+          "instruction": "Find a hazelnut spread with a better Nutri-Score than Nutella and have both scores visible in your final view.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "gluten-free-breakfast-cereals",
+          "instruction": "I need gluten-free breakfast cereals with a Nutri-Score of A - end with the filtered list on screen.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "numbeo",
+      "start_url": "https://www.numbeo.com",
+      "domain": "reference",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "lisbon-vs-prague-cost",
+          "instruction": "Compare the cost of living between Lisbon and Prague and end with the side-by-side comparison visible.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "cheapest-rent-of-three",
+          "instruction": "Which of Warsaw, Budapest and Bucharest has the lowest average city-centre one-bedroom rent? Leave the deciding data on screen.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "caniuse",
+      "start_url": "https://caniuse.com",
+      "domain": "developer-tools",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "container-queries-safari",
+          "instruction": "Check since which Safari version CSS container queries are fully supported, ending with that support table visible.",
+          "difficulty": "easy",
+          "expected_actions": 5,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "compare-grid-subgrid",
+          "instruction": "Compare browser support for CSS subgrid versus CSS grid and end with both feature tables in view.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "omnicalculator",
+      "start_url": "https://www.omnicalculator.com",
+      "domain": "reference",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "mortgage-monthly-payment",
+          "instruction": "Work out the monthly payment on a 250,000 EUR mortgage over 25 years at 4.1% and leave the result on screen.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "find-bmi-vs-body-fat",
+          "instruction": "Find a calculator that estimates body fat percentage (not BMI) and compute it for a 30-year-old, 178 cm, 75 kg male.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "xe-search",
+      "start_url": "https://www.xe.com",
+      "domain": "finance",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "eur-uah-historic-high",
+          "instruction": "Find what the EUR to UAH rate was six months ago on the historical chart and leave it visible.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "convert-compare-three",
+          "instruction": "Convert 2500 USD into both CHF and SGD and end with the larger converted amount on screen.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type"]
+        }
+      ]
+    },
+    {
+      "name": "autoscout24",
+      "start_url": "https://www.autoscout24.com",
+      "domain": "vehicles",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "estate-hybrid-under-20k",
+          "instruction": "Find a hybrid estate car under 20,000 EUR with less than 100,000 km, sorted by lowest price, and open the top match.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "newest-electric-hatchbacks",
+          "instruction": "Show electric hatchbacks first registered after 2022, newest listings first.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "rightmove",
+      "start_url": "https://www.rightmove.co.uk",
+      "domain": "real-estate",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "manchester-2bed-garden",
+          "instruction": "Find two-bedroom properties for rent in Manchester under 1,200 pounds a month with a garden, and open the cheapest one.",
+          "difficulty": "hard",
+          "expected_actions": 13,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "bristol-flats-newest",
+          "instruction": "Show flats for sale in Bristol between 200k and 300k, newest listed first.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "weworkremotely",
+      "start_url": "https://weworkremotely.com",
+      "domain": "jobs",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "fulltime-python-recent",
+          "instruction": "Find full-time remote programming jobs mentioning Python posted in the last week and open the most recent one.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "design-vs-devops-count",
+          "instruction": "Which category currently lists more openings, design or DevOps? End with the deciding category page on screen.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": ["click", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "bbcgoodfood",
+      "start_url": "https://www.bbcgoodfood.com",
+      "domain": "food",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "vegetarian-30min-highrated",
+          "instruction": "Find a vegetarian dinner recipe ready in under 30 minutes with a 5-star rating and end on the recipe page.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "chocolate-dessert-no-eggs",
+          "instruction": "I want a chocolate dessert recipe that contains no eggs - leave one open with its ingredients visible.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "decathlon",
+      "start_url": "https://www.decathlon.com",
+      "domain": "retail",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "trail-shoes-under-80-toprated",
+          "instruction": "Find men's trail running shoes under $80 sorted by rating and open the best-rated pair.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "2p-tent-lightest",
+          "instruction": "Show me the lightest two-person tent you can find, with its weight visible in the final view.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "pricespy-uk",
+      "start_url": "https://pricespy.co.uk",
+      "domain": "retail",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "wh1000xm5-cheapest-offer",
+          "instruction": "Find the cheapest current offer for the Sony WH-1000XM5 headphones and end with the price comparison list visible.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "washing-machines-a-rated",
+          "instruction": "Show washing machines with energy class A under 400 pounds, cheapest first.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "wikivoyage",
+      "start_url": "https://en.wikivoyage.org",
+      "domain": "travel",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "kyoto-eat-budget",
+          "instruction": "Find budget dining recommendations in the Kyoto guide and end with that section on screen.",
+          "difficulty": "medium",
+          "expected_actions": 8,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "island-hop-from-guide",
+          "instruction": "Starting from the Greece guide, find which island the site recommends for nightlife and end on that island's own page.",
+          "difficulty": "hard",
+          "expected_actions": 11,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    },
+    {
+      "name": "abebooks",
+      "start_url": "https://www.abebooks.com",
+      "domain": "retail",
+      "task_style": "search",
+      "tasks": [
+        {
+          "id": "signed-lecarre-under-100",
+          "instruction": "Find a signed John le Carre book under $100 and open its listing.",
+          "difficulty": "hard",
+          "expected_actions": 12,
+          "action_kinds": ["click", "type", "scroll"]
+        },
+        {
+          "id": "1984-first-edition-price-order",
+          "instruction": "Show first-edition copies of Orwell's 1984 sorted from lowest to highest price.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": ["click", "type", "scroll"]
+        }
+      ]
+    }
+  ]
+}

@@ -179,6 +179,7 @@ async def _propose_for_site(client, sandbox, site: dict, avoid: list[str], regis
         repo, snapshot, screenshot, "", "",
         n_tasks=PUBLIC_TASKS_PER_SITE, registry=registry,
         affordances=affordances, avoid_instructions=avoid,
+        task_style=site.get("task_style", ""),
     )
 
 

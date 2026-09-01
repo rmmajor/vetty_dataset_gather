@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 
 OUTCOME_BY_REASON = {"done": "completed"}
 
+# Second-level public suffixes (example.co.uk) so the registrable domain keeps three labels there.
+_SECOND_LEVEL_SUFFIXES = {"co", "com", "org", "net", "gov", "ac", "edu"}
+
+
+def registrable_domain(netloc: str) -> str:
+    host = netloc.rsplit("@", 1)[-1].split(":")[0].lower()
+    labels = [label for label in host.split(".") if label]
+    if len(labels) >= 3 and labels[-2] in _SECOND_LEVEL_SUFFIXES and len(labels[-1]) == 2:
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:]) if len(labels) >= 2 else host
+
 
 @dataclass
 class EpisodeConfig:
@@ -49,7 +60,9 @@ class Episode:
         self.safe_id = _safe_task_id(self.episode_id)
         self.host_dir = Path(run_ctx.out_root) / f"iter_{run_ctx.iteration:03d}" / task["task_id"] / f"k{sample_k:02d}"
         self.traj_dir = self.host_dir / f"task_{self.safe_id}"
-        self.allowed_hosts = {urlparse(task["start_url"]).netloc, *task.get("allowed_hosts", [])}
+        # Compared by registrable domain, so www./m./checkout. subdomain hops are not refused.
+        self.allowed_domains = {registrable_domain(h)
+                                for h in {urlparse(task["start_url"]).netloc, *task.get("allowed_hosts", [])}}
         self.history, self.turns = [], []
         self.step_index = self.consecutive_parse_failures = self.navigate_blocked = 0
         self.terminal_reason, self.last_thought, self.record, self.closed = None, "", None, False
@@ -100,7 +113,8 @@ class Episode:
             return self._observe(), None, False, info
         self.consecutive_parse_failures = 0
         info["parse"] = "ok"
-        blocked = [a for a in decoded.actions if a["type"] == "navigate" and urlparse(a["url"]).netloc not in self.allowed_hosts]
+        blocked = [a for a in decoded.actions if a["type"] == "navigate"
+                   and registrable_domain(urlparse(a["url"]).netloc) not in self.allowed_domains]
         if blocked:
             self.navigate_blocked += 1
             info["refusal"] = "navigate_blocked"

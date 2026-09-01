@@ -204,8 +204,10 @@ def build_student(cfg: "EvalConfig") -> StudentClient:
 # ---------------------------------------------------------------------------
 
 ACTION_VERBS = ("click", "double_click", "move", "drag", "scroll", "type", "keypress",
-                "wait", "done", "screenshot")
+                "wait", "done", "screenshot", "navigate", "handoff", "confirm")
 NO_ARG_VERBS = ("wait", "done", "screenshot")
+# Yield-control verbs: the episode ends there, but as a scored model outcome, not a parse failure.
+HANDOFF_VERBS = ("handoff", "confirm")
 # The system prompt documents scroll as scrollX=0, scrollY=500, and the driver defaults match.
 DEFAULT_SCROLL = (0, 500)
 
@@ -390,6 +392,42 @@ def _no_args(action_type: str):
     return build
 
 
+def _build_navigate(tokens, kwargs, note):
+    token = kwargs.get("url") if "url" in kwargs else (tokens[0] if len(tokens) == 1 else None)
+    if token is None:
+        return None
+    url = _as_quoted_string(token)
+    if url is None:
+        # An unquoted scheme-less token could be a domain or a search phrase; require the scheme.
+        if not re.match(r"https?://", token):
+            return None
+        url = token
+        note("bare_url")
+    elif not token.startswith('"'):
+        note("alt_quotes")
+    return {"type": "navigate", "url": url}
+
+
+def _build_handoff(tokens, kwargs, note):
+    if len(tokens) > 1 or (tokens and "reason" in kwargs):
+        return None
+    raw = kwargs.get("reason", tokens[0] if tokens else "")
+    reason = _as_quoted_string(raw)
+    return {"type": "handoff", "reason": (raw if reason is None else reason).strip()}
+
+
+def _build_confirm(tokens, kwargs, note):
+    if tokens:
+        return None
+    proposed = _parse_call(kwargs["propose"])[0] if kwargs.get("propose") else None
+    raw_risk = kwargs.get("risk", "")
+    risk = _as_quoted_string(raw_risk)
+    action = {"type": "confirm", "risk_category": (raw_risk if risk is None else risk).strip()}
+    if proposed is not None:
+        action["proposed_action"] = proposed
+    return action
+
+
 ACTION_BUILDERS: dict = {
     "click": _build_click,
     "double_click": _point_only("double_click"),
@@ -401,6 +439,9 @@ ACTION_BUILDERS: dict = {
     "wait": _no_args("wait"),
     "done": _no_args("done"),
     "screenshot": _no_args("screenshot"),
+    "navigate": _build_navigate,
+    "handoff": _build_handoff,
+    "confirm": _build_confirm,
 }
 
 
@@ -438,7 +479,8 @@ def _parse_call(body: str):
         return None, ()
     if not had_ref and any(key in action for key in ("x", "path")):
         note("bare_coords")
-    known = {"click": {"button"}, "scroll": {"scrollx", "scrolly", "scroll_x", "scroll_y", "dx", "dy"}}
+    known = {"click": {"button"}, "scroll": {"scrollx", "scrolly", "scroll_x", "scroll_y", "dx", "dy"},
+             "navigate": {"url"}, "handoff": {"reason"}, "confirm": {"propose", "risk"}}
     if set(kwargs) - known.get(verb, set()):
         note("extra_args")
     return action, tuple(dict.fromkeys(deviations))
@@ -570,6 +612,10 @@ ACTION_TO_DRIVER: dict = {
     "wait": lambda a: {"kind": "wait", "seconds": 1},
     "done": lambda a: {"kind": "done"},
     "screenshot": lambda a: None,
+    "navigate": lambda a: {"kind": "navigate", "url": a["url"]},
+    # Terminal in the episode loop before dispatch; there is no driver action to execute.
+    "handoff": lambda a: None,
+    "confirm": lambda a: None,
 }
 
 
@@ -687,6 +733,9 @@ class EpisodeRecord:
     emitted_out_of_viewport: int = 0
     coord_space_warning: str = ""
     done_emitted: bool = False
+    navigations: int = 0
+    handoff_kind: str = ""
+    handoff_reason: str = ""
     block_reason: str = ""
     block_step: int = 0
     error: str = ""
@@ -860,8 +909,15 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
             _note_emitted_coordinates(record, parsed.actions, cfg, task)
 
             terminated = False
+            handed_off = False
             executed_this_step = 0
             for action in parsed.actions:
+                if action["type"] in HANDOFF_VERBS:
+                    record.handoff_kind = action["type"]
+                    record.handoff_reason = action.get("reason") or action.get("risk_category", "")
+                    terminated = True
+                    handed_off = True
+                    break
                 payload = driver_payload(scale_action(action, cfg.coord_space), parsed.think)
                 if payload is None:
                     continue
@@ -886,13 +942,15 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
                     continue
                 record.actions_executed += 1
                 executed_this_step += 1
+                if action["type"] == "navigate":
+                    record.navigations += 1
                 # History stays in the MODEL's coordinate space so its own frame is self-consistent.
                 action_history.append(format_action_summary(action))
                 last_url = result.get("url", last_url)
                 last_snapshot = result.get("snapshot", last_snapshot)
 
             if terminated:
-                record.outcome = "completed"
+                record.outcome = "handoff" if handed_off else "completed"
                 break
 
             consecutive_unproductive = 0 if executed_this_step else consecutive_unproductive + 1
@@ -1053,6 +1111,8 @@ def compute_metrics(records: list[EpisodeRecord]) -> dict:
         "canonical_form_rate": _rate(actions_canonical, actions_parsed),
         "action_form_deviations": dict(sorted(form_deviations.items(), key=lambda kv: -kv[1])),
         "done_rate": _rate(sum(1 for r in records if r.done_emitted), total),
+        "navigate_actions": sum(r.navigations for r in records),
+        "handoff_episodes": sum(1 for r in records if r.handoff_kind),
         "think_rate": _rate(sum(r.think_steps for r in records), model_steps),
         "driver_error_rate": _rate(sum(r.driver_errors for r in records),
                                    sum(r.actions_executed + r.driver_errors for r in records)),
@@ -1104,6 +1164,8 @@ def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
         # Parity key, deliberately NOT expected-to-differ: grammar tolerance is a property of
         # the harness, so both sides of a delta must have been parsed the same way.
         "action_grammar": "tolerant" if cfg.tolerant_grammar else "canonical",
+        # Also a parity key: adding a verb changes what counts as a parse failure.
+        "action_verbs": ",".join(ACTION_VERBS),
         "step_cap_policy": step_cap_policy(cfg, source),
         "max_unproductive_steps": cfg.max_unproductive_steps,
         "max_parse_failures": cfg.max_parse_failures,
@@ -1223,6 +1285,8 @@ def render_report(results: dict) -> str:
         f"({metrics.get('actions_canonical', 0)}/{metrics.get('actions_parsed', 0)} actions) |",
         f"| form deviations | {_format_deviations(metrics.get('action_form_deviations'))} |",
         f"| done() emission rate | {metrics['done_rate'] * 100:.1f}% |",
+        f"| navigate actions executed | {metrics.get('navigate_actions', 0)} |",
+        f"| episodes ended by handoff/confirm | {metrics.get('handoff_episodes', 0)} |",
         f"| <think> emission rate (steps) | {metrics['think_rate'] * 100:.1f}% |",
         f"| driver-refused action rate | {metrics['driver_error_rate'] * 100:.1f}% |",
         f"| emitted coords outside the viewport | {metrics.get('emitted_out_of_viewport', 0)}"

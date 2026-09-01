@@ -84,7 +84,7 @@ Export". Only propose goals the app genuinely supports (use the README/tests as 
 - Vary instruction PHRASING across tasks like real users would: some imperative and precise, \
 some terse ("dark mode on, then find the oldest entry"), some conversational ("I need a list \
 of everything I finished this week"). Never test/QA voice.
-{avoid_block}{auth_flow_block}
+{avoid_block}{auth_flow_block}{style_block}
 Output ONLY a JSON object (no markdown fence, no prose):
 {{"app_health": {{"usable": <true|false>, "notes": "<one sentence: what works / what is broken>"}},
  "tasks": [{{"id": "<kebab-slug>", "instruction": "<the user goal>", "difficulty": "easy|medium|hard",
@@ -116,6 +116,27 @@ Do NOT invent account flows if the app has no visible sign-up or login.
 """
 
 _AUTH_VALUES = {"none", "account", "login", "register"}
+
+
+# Opt-in block (search-goal capture): steers proposals toward constrained info-seeking journeys —
+# the Online-Mind2Web-shaped distribution the action-UI corpus lacks. Difficulty must live in the
+# CONSTRAINT SET (dates, prices, filters, superlatives), never in procedural phrasing.
+_SEARCH_GOAL_BLOCK = """
+THIS SITE IS FOR INFO-SEEKING / CONSTRAINED-SEARCH TASKS. Override the long-horizon-app guidance
+above where it conflicts: most tasks must be goal-phrased SEARCH JOURNEYS whose difficulty lives in
+the constraint set, not the route:
+- multi-constraint search: concrete dates, price ceilings, ratings, features, and superlatives
+  ("cheapest", "earliest", "highest-rated", "shortest") that force comparing results;
+- filter + sort + compare: apply 2-3 real filters, sort, and end with the single matching result
+  open or visibly selected;
+- multi-hop lookups: find fact X, then use X to locate Y, ending with Y on screen.
+State the GOAL and its constraints only — never the route. Every task still ends in a visually
+checkable state (the matching result/quote/details screen). No purchases, no checkout past the
+quote/summary screen, no account creation.
+"""
+
+# Opt-in per-site task styles (site config key "task_style"); a new style is a new entry here.
+_STYLE_BLOCKS = {"search": _SEARCH_GOAL_BLOCK}
 
 
 # Opt-in block (known-account capture): the app already has a working, pre-verified login and there
@@ -259,6 +280,7 @@ async def propose_tasks(
     avoid_instructions: list[str] | None = None,
     auth_flow: bool = False,
     inbox: bool = True,
+    task_style: str = "",
 ) -> dict | None:
     """Returns {"app_health": {"usable", "notes"}, "tasks": [...]} or None on SDK/parse failure
     (retryable). An unusable app comes back as usable=False with an empty task list — the
@@ -279,6 +301,7 @@ async def propose_tasks(
         affordance_quotas=affordance_quotas,
         avoid_block=render_avoid(avoid_instructions),
         auth_flow_block=("" if not auth_flow else (_AUTH_FLOW_BLOCK if inbox else _KNOWN_ACCOUNT_BLOCK)),
+        style_block=_STYLE_BLOCKS.get(task_style, ""),
     )
 
     try:
@@ -286,7 +309,9 @@ async def propose_tasks(
             _image_prompt_stream(prompt_text, screenshot_b64),
             ClaudeAgentOptions(
                 model=MODEL_FOR_REASONING,
-                max_turns=1,
+                # A long prompt (style/auth blocks) can push the JSON past one turn; the budget cap,
+                # not the turn count, is what bounds cost here.
+                max_turns=6,
                 max_budget_usd=PROPOSE_BUDGET_USD,
                 permission_mode="bypassPermissions",
             ),

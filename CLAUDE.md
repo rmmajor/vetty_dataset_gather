@@ -23,7 +23,9 @@ Every trajectory is a directory `task_*/` (Path A: `task_mind2web_NNNN/`; Path B
 
 Action dicts are normalized across both paths: `{type:"click", x, y, button}`, `{type:"type", text}`, `{type:"keypress", keys:[...]}`, `{type:"scroll", x, y, scroll_x, scroll_y}`, `{type:"drag", path:[{x,y}...]}`, `{type:"move", x, y}` (hover), `{type:"wait"}`, and the terminal `{type:"done"}`. Viewport is fixed at **1280x720, deviceScaleFactor=1** everywhere.
 
-`train_qwen.py convert` emits **one SFT example per step** (current screenshot + instruction + windowed text history → `<think>` + actions; whole-trajectory multi-turn examples blew the 4096 max_length and truncated long-horizon tails). Gating: `metadata.excluded_reason` always skips; agent trajectories require `success: true` (the verifier's verdict); legacy replay trajectories train only with `--include-replay`. Every convert prints a corpus health report — read it.
+`train_qwen.py convert` emits **one SFT example per step** (current screenshot + instruction + windowed text history → `<think>` + actions; whole-trajectory multi-turn examples blew the 4096 max_length and truncated long-horizon tails). Gating: one shared function (`corpus_audit.trainability`) used by both convert and `make audit-corpus` — `metadata.excluded_reason` always skips; agent trajectories require `success: true` (the verifier's verdict); legacy replay trajectories train only with `--include-replay`. Verifier-graded meandering trajectories are handled by `--meandering-mode keep|subsample|exclude` (train lanes use `subsample`: head/tail steps + every Nth mid-wander step train, the rest stay history-only; `MEANDER_*` env knobs). Every convert prints a corpus health report AND enforces `corpus_health.json` thresholds (done coverage, teacher_raw=0, meandering example share, per-group share, action-share floors) — violations refuse the dataset; `--skip-health-gate` bypasses for experiments only.
+
+Corpus data passes (dry-run by default, `APPLY=1` to write, all resumable): `make polish-pass` (stage-7 thought polish for trainable `teacher_raw` dirs outside the registry), `make relabel-recoverable` (audited hindsight relabel: propose goal from what the run accomplished, fresh `verify_trajectory` against the NEW instruction gates every write, provenance in `metadata.relabeled_from`), `make wall-demos` (trim blocked runs + synthesize terminal `handoff`/`done` wall supervision, original kept as `trajectory_prewall.json`), `make instruction-style` (rewrite procedure-flavored instructions into goals). `make capture-search` runs the search-goal capture lane (`public_sites_search.json`, `task_style: search` proposer block; sites must never appear in Online-Mind2Web's 300-task set).
 
 ## Common commands
 
@@ -91,7 +93,7 @@ ScreenSpot grounding eval: predicted click point vs. target bbox. Mirrors `train
 A 7-stage quality funnel, cast wide then reject aggressively. `orchestrator.py` is the entry point; it sets up logging to `pipeline_data/run_logs/`, then dispatches stages. Capture (6) and supervision finalize (7) are split so a slow/flaky LLM pass can never block or fail a capture.
 
 **Capture modes.** `schemas.CAPTURE_MODE` (env `PIPELINE_CAPTURE_MODE` / CLI `--capture-mode`, default **`agent`**) switches how stages 4-6 behave:
-- **agent** (primary): the repo's app is booted inside the sandbox and a Claude teacher (`agent_capture.py`) pursues user tasks proposed by `task_proposer.py`, acting through an in-container Playwright HTTP driver (`instrumentation/browser_driver.js` + host wrapper `driver_session.py`) that records a screenshot + bbox-center coordinates per action. Every action tool requires a `thought` argument — per-step intent-level supervision is structural, not retrofitted. A post-run verifier judges the final screenshot against the goal; only verified trajectories get `success: true` (coherent partials are hindsight-relabeled to what they actually accomplished). Framework-independent: the repo's own tests are only feature hints for the proposer.
+- **agent** (primary): the repo's app is booted inside the sandbox and a Claude teacher (`agent_capture.py`) pursues user tasks proposed by `task_proposer.py`, acting through an in-container Playwright HTTP driver (`instrumentation/browser_driver.js` + host wrapper `driver_session.py`) that records a screenshot + bbox-center coordinates per action. Every action tool requires a `thought` argument — per-step intent-level supervision is structural, not retrofitted. A post-run verifier judges the final screenshot against the goal; only verified trajectories get `success: true`, judged ONLY against the original instruction — salvaging coherent partials is the separate audited `relabel_recoverable` pass (below), never the capture-time verifier. Framework-independent: the repo's own tests are only feature hints for the proposer.
 - **replay** (secondary/legacy): inject instrumentation into the repo's Playwright/Selenium suite and record what the tests do.
 
 **Registry state machine is the spine.** All repo state lives in `pipeline_data/registry.db` (SQLite, WAL). `schemas.py` defines three dicts — `STAGE_TO_INPUT_STATUS`, `STAGE_TO_PASSED_STATUS`, `STAGE_TO_REJECTED_STATUS` — that map each stage to the `RepoStatus` it consumes / promotes to / rejects to:
@@ -192,15 +194,17 @@ before/after table plus a **harness parity check** that flags any field the two 
   | `type` | `type("text")` · `type('text')` |
   | `keypress` | `["Enter"]` · `"Enter"` · `Enter` · `Control, a` · `Control+a` |
   | `wait`, `done`, `screenshot` | `verb()` · `verb` |
+  | `navigate` | `navigate("url")` · `navigate('url')` · `navigate(url="…")` · bare `https?://` token; executes via the driver's `navigate` kind |
+  | `handoff`, `confirm` | `handoff(reason=login)` · bare/quoted reason · `confirm(propose=call(...), risk=x)`; terminal — episode ends with scored outcome `handoff` |
   | everywhere | optional `action:` prefix, bullets/backticks/whitespace stripped, unknown kwargs ignored, floats rounded |
 
   **Rejected as genuinely ambiguous** (not merely unfamiliar): `type(hello world)` and
   `type(a, b)` — an unquoted string cannot be told from an argument list; `scroll(500)` — one
   number reads equally as an x coordinate or a scrollY delta; `click(100)`, `drag((10, 20))`,
-  `keypress()` — incomplete. Loosening the *shape* of a call never loosens the rule that the line
+  `keypress()`, `navigate()`, scheme-less `navigate(example.com)` — incomplete. Loosening the *shape* of a call never loosens the rule that the line
   **is** a call: prose wrapped around a valid call is `malformed`, narration with no call is
   ignored.
-- **Outcome categories, not one bucket.** `completed` / `step_cap` / `stuck` /
+- **Outcome categories, not one bucket.** `completed` / `handoff` / `step_cap` / `stuck` /
   `parse_failure_abort` / `timeout` are scored; `site_blocked` (CAPTCHA/WAF/interstitial, via
   `BLOCK_SIGNATURES`), `unreachable` and `harness_error` are environment failures, excluded from
   the success denominator and reported separately. The headline carries all three headline numbers.
