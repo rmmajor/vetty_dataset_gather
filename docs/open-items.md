@@ -140,3 +140,12 @@ Outside RL but bounding the ceiling: 28% of the eval sample is site-blocked from
 (excluded from the score, a hard cap on the all-episode rate), and the judge is an LLM reading
 three screenshots — the right instrument for a before/after under one rubric, not for absolute
 claims (`docs/decisions/judge-consistency-audit.md`).
+
+## 9. The verification loop is missing from the corpus (do this before RL)
+
+Written 2026-09-01 from the QA-benchmark measurement of `sft-v1` plus a scan of our own corpus:
+only **16.1%** of done() steps follow any verification thought, and only 11.6% of trajectories
+re-open a page to check what they changed (`python -m repo_pipeline.verify_pattern_scan
+trajectories`). The `false_done` penalty in `rl/reward_config.json` cannot teach a behaviour the
+SFT distribution never demonstrates, so item 8 is gated on this. Full reasoning, tranche sizing and
+success bar: `docs/decisions/sft-v3-plan.md`.
