@@ -84,11 +84,18 @@ class VastAIProvider(ComputeProvider):
             "--onstart-cmd", onstart,
             "--ssh", "--direct",
         ])
-        if isinstance(result, dict) and result.get("success") is False:
-            raise ProviderError(f"Vast.ai create failed for offer {offer.id}: {result}")
         instance_id = ""
         if isinstance(result, dict):
             instance_id = str(result.get("new_contract") or result.get("id") or "")
+        if isinstance(result, dict) and result.get("success") is False:
+            # A rejected create can STILL have allocated a contract (observed 2026-09-01:
+            # success=False alongside new_contract=49552760, which was billing until destroyed by
+            # hand). Raising without destroying it leaks a rented box, so tear it down first.
+            if instance_id:
+                logger.warning(f"Vast.ai create reported failure but allocated contract "
+                               f"{instance_id} — destroying it before raising")
+                self.destroy(Instance(id=instance_id, provider=self.name, label=cfg.instance_label))
+            raise ProviderError(f"Vast.ai create failed for offer {offer.id}: {result}")
         if not instance_id:
             raise ProviderError(f"Vast.ai create returned no instance id: {result}")
         logger.info(f"Provisioned Vast.ai instance {instance_id} (label {cfg.instance_label})")
