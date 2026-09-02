@@ -93,3 +93,24 @@ row. Definitive failure: either behavioural row lands in its fail band, in which
 architecture change did not take and no DDR number rescues it. Anything between the bands is
 "moved, not decisive", and the write-up says so. A DDR under 27% with the behavioural rows passing
 means the errors moved to a different bucket, which the per-case table will show.
+
+## Deliberately not in this round (candidate next steps)
+
+Kept out so one round stays interpretable: each would confound the grounding reading if it landed
+alongside the coordinate-space change and the mined slice.
+
+- **Coordinate jitter / rescale augmentation.** Train on the same click at perturbed positions and
+  at a second render scale, so the mapping is robust rather than memorised. Cheap (convert-side),
+  but it changes the same axis the `normalized_1000` switch is testing.
+- **Grounding share above 25%.** The ceiling binds today (2,119 candidates dropped). Raising it is
+  one flag, but it dilutes the agent behaviour that is the round's headline.
+- **Hover-then-click supervision.** The corpus has 74 `move` steps in total; toolbars and kebab
+  menus need hover before the target exists. A capture-side gap, not a convert-side one.
+- **Desktop-domain grounding data.** Our slice is web at 1280x720 while ScreenSpot is desktop, so
+  web grounding can improve while the ScreenSpot number stays flat. Adding desktop grounding data
+  from another source would close that gap. Mixing ScreenSpot itself into training is refused: it
+  contaminates the metric.
+- **Splitting the loop diagnosis.** Nothing currently measures whether a repeated click is a wrong
+  coordinate or a correct coordinate whose action had no effect. A bench-side probe (does the click
+  land inside any interactive element's box?) would separate the two and tell the next round which
+  lever matters.
