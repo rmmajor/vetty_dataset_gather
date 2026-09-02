@@ -120,6 +120,7 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
         "source_repo": f"public:{site['name']}",
         "autonomy": task_meta.get("autonomy", "autonomous"),
         "auth_mode": task_meta.get("auth_mode", "none"),
+        "task_style": task_meta.get("task_style", ""),
         "risk_category": risks[-1] if risks else "",
         # Replay manifest: what an eval/deploy harness must reconstruct for these actions to be valid.
         "preconditions": {
@@ -158,10 +159,12 @@ def _merge_tasks(curated: list[dict], proposed: list[dict], max_tasks: int | Non
     return merged[:max_tasks] if max_tasks else merged
 
 
-async def _propose_for_site(client, sandbox, site: dict, avoid: list[str], registry) -> dict | None:
+async def _propose_for_site(client, sandbox, site: dict, avoid: list[str], registry,
+                            auth_config: dict | None = None) -> dict | None:
     """Ground the proposer in the LIVE public site (homepage snapshot + screenshot + affordances),
     mirroring stage 6's context probe. Returns the proposal dict, or None on SDK/parse failure."""
-    probe = await _run(client.session, "context_probe", site["start_url"])
+    # The probe carries the site's session so a login-gated site is proposed from its signed-in state, not its login wall.
+    probe = await _run(lambda: client.session("context_probe", site["start_url"], auth_config=auth_config))
     snapshot = probe.get("snapshot", "")
     screenshot = await _run(client.screenshot_b64)
     try:
@@ -260,7 +263,8 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry,
 
         proposed = persisted
         if proposed is None and propose:
-            proposal = await _propose_for_site(client, sandbox, site, [t["instruction"] for t in curated], registry)
+            proposal = await _propose_for_site(client, sandbox, site, [t["instruction"] for t in curated], registry,
+                                               auth_config=site_auth_config)
             if proposal is not None:
                 proposed = proposal.get("tasks") or []
                 site_dir.mkdir(parents=True, exist_ok=True)
@@ -284,7 +288,7 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry,
             state = await run_teacher_task(
                 client, task, site["start_url"], registry=registry, full_name=f"site:{site['name']}",
                 autonomy=autonomy, auth_mode=auth_mode, secrets=site_secrets,
-                auth_config=site_auth_config,
+                auth_config=site_auth_config, task_style=site.get("task_style", ""),
             )
             states[task["id"]] = state
             ran.append(task)

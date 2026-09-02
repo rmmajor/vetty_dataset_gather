@@ -90,7 +90,7 @@ Begin now."""
 VERIFY_PROMPT = """You are auditing whether a browser-automation run actually accomplished its goal, \
 and whether it did so EFFICIENTLY. Be skeptical: agents overclaim. Judge ONLY from the evidence below.
 
-Goal given to the agent: {instruction}
+Goal given to the agent: {instruction}{style_rules}
 
 Actions performed ({n_steps} steps; the task designer expected roughly {expected_actions}):
 {step_summary}
@@ -127,6 +127,17 @@ are bad training data even when they succeed; purposeful indirect ones are good 
 - Judge only from the attached screenshots and the step summary; the agent's own outcome claim is \
 a hint, not evidence.
 - Never reward an agent that just clicked around without effect."""
+
+# Opt-in per-task-style verifier rules, keyed by the recorded task_meta.task_style; a new style is a new entry here.
+VERIFY_STYLE_RULES = {
+    "qa_verify": (
+        "\n\nTHE GOAL IS A TEST OBJECTIVE (change something, then confirm it persisted). The criteria MUST "
+        "include: (a) the change was made; (b) the run RE-CHECKED it by reloading or re-opening the page "
+        "AFTER the change — judge this from the step summary and the mid-run screenshots; (c) the FINAL "
+        "screenshot shows the re-checked state. A run that stops on the toast/confirmation without "
+        "re-opening the page is success=false."
+    ),
+}
 
 GUARDED_VERIFY_PROMPT = """You are auditing a GUARDED computer-use run on a live account. In guarded \
 mode the agent must drive the task forward but STOP at the consequential step: instead of an \
@@ -200,9 +211,32 @@ def render_identity_block(persona: dict | None, secret_keys: list[str]) -> str:
     )
 
 
+# Opt-in per-task-style teacher rules (site config key "task_style"); a new style is a new entry here.
+TEACHER_STYLE_BLOCKS = {
+    "qa_verify": (
+        "\nTHIS GOAL IS A TEST OBJECTIVE — you are verifying, not just doing:\n"
+        "- After making the change, RE-OPEN the page (navigate away and back through the UI, or "
+        "browser_navigate to the page's current URL to reload it) and confirm the change is really "
+        "there before you finish. A success toast or inline confirmation alone proves nothing.\n"
+        "- Your final screen must show the evidence of the expected state: the re-checked value, item "
+        "or setting visible after the reload.\n"
+        "- If the expected state is NOT there after re-checking, call task_complete with an honest "
+        "outcome='failed' describing exactly what you saw.\n"
+    ),
+}
+
+
 def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str],
                         webmail_url: str = "", webmail_preauthed: bool = True,
-                        persona: dict | None = None) -> str:
+                        persona: dict | None = None, task_style: str = "") -> str:
+    """The operating-mode block for TEACHER_PROMPT plus the opt-in task-style rules (TEACHER_STYLE_BLOCKS)."""
+    mode_block = _render_mode_block(autonomy, auth_mode, secret_keys, webmail_url, webmail_preauthed, persona)
+    return mode_block + TEACHER_STYLE_BLOCKS.get(task_style, "")
+
+
+def _render_mode_block(autonomy: str, auth_mode: str, secret_keys: list[str],
+                       webmail_url: str = "", webmail_preauthed: bool = True,
+                       persona: dict | None = None) -> str:
     """The operating-mode instructions injected into TEACHER_PROMPT. This describes the agent's
     RESOURCES (it has credentials, it has an email inbox) and its stop condition — NOT a step-by-step
     procedure. The recorded `instruction` stays a terse user goal; the agent figures out the process.
@@ -672,6 +706,7 @@ async def run_teacher_task(
     webmail_preauthed: bool = True,
     capture_session: bool = False,
     persona: dict | None = None,
+    task_style: str = "",
 ) -> dict:
     """Run one task end-to-end: open a driver session, let the teacher act, ensure the
     trajectory is finalized in-container. Returns the per-task state record.
@@ -694,6 +729,7 @@ async def run_teacher_task(
     task_meta = {
         "difficulty": task.get("difficulty", ""), "expected_actions": task.get("expected_actions", 0),
         "autonomy": autonomy, "auth_mode": auth_mode, "env": env, "persona": persona["username"],
+        "task_style": task_style,
     }
     # A lane's provisioned credential always wins over the persona's fallback under the same key.
     session_secrets = {**persona_secrets(persona), **(secrets or {})}
@@ -711,7 +747,8 @@ async def run_teacher_task(
         max_actions=MAX_ACTIONS_PER_TASK,
         policy_block=render_policy_block(autonomy, auth_mode, list((secrets or {}).keys()),
                                          webmail_url=((mail_config or {}).get("url") or webmail_url),
-                                         webmail_preauthed=webmail_preauthed, persona=persona),
+                                         webmail_preauthed=webmail_preauthed, persona=persona,
+                                         task_style=task_style),
     )
 
     final_text = ""
@@ -917,6 +954,7 @@ async def verify_trajectory(
         agent_outcome=agent_outcome,
         agent_summary=agent_summary,
         image_labels=image_labels,
+        style_rules=VERIFY_STYLE_RULES.get((capture_meta.get("task_meta") or {}).get("task_style", ""), ""),
     )
 
     verdict = {"success": False, "claimed_success": False, "contradiction": False, "efficiency": None, "accomplished": None,
