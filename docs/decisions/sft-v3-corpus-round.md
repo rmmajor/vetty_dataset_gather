@@ -70,6 +70,20 @@ Two epochs (SFT-2's eval loss bottomed at epoch 2), LoRA r64/α128, lr 5e-5, `ma
 
 The freeze numbers (2026-09-05 noon) are appended below when the corpus is frozen.
 
+## Capture sequencing (decided 2026-09-02)
+
+The relabel pass owns the Claude usage window until it covers all 738 trajectories, because the audit
+gate refuses the corpus until it does. Capture pass 2 runs only after that, on the sites with headroom
+(any-do, baserow, slab, kitchenowl, firefly-iii, plus grist and ticktick which ran clean), targeting
++25-35 trainable for a tranche of 68-78. New captures land unrelabeled, so a short relabel top-up over
+those ~30 dirs is required before the freeze or they fail the gate. Freeze happens Friday noon
+regardless of where capture stands.
+
+Pass 1 measured: 59 captured, 43 trainable, 73% yield. The 16 rejections are runs the verifier refused
+for never re-checking after the change, which is the style rule working. Against the corpus's ~119
+organically re-checking trajectories (16.1%), the tranche moves the share demonstrating the behaviour
+from 16% to about 21%, and pass 2 would take it to roughly 24%.
+
 ## Pre-registered decision criteria (written 2026-09-02, before any SFT-3 number exists)
 
 Every row is measured against SFT-2 re-recorded under the matched protocol (window 20, 25-step
