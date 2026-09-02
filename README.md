@@ -223,6 +223,7 @@ that must not be quoted.
 | corpus-current | dataset |  | v3-wip |  | running | Live corpus, still growing past the v2 freeze. 6 search-lane sites remain uncaptured. |
 | qa-bench-refapp | benchmark |  |  |  | done | Reference app plus one-defect-per-run mutants; defect injected by config, not by patching code. |
 | cua-grpo-v2 | grpo | cua-sft-v1 (merged) | rl-suite f5dda31d | GRPO LoRA r64/a128 15 steps G=4 lr1e-5 beta0.01 | done | First live GRPO run: 240 episodes on 12 train tasks against live sites, reward v2 (docs/decisions/grpo-v2-first-live-run.md). LoRA over the MERGED sft-v1 weights; serve it on those, never on the raw base. Answers in viewport_abs. |
+| cua-grpo-v3 | grpo | cua-sft-v2 (merged) | rl-suite 3705ec31 | GRPO LoRA r64/a128 50 steps G=8 lr5e-6 oracle rewards | done | No measurable gain; see docs/decisions/grpo-v3-results.md. 752 oracle-scored episodes on 25 frontier tasks (k=2 band 0.2-0.8) against live sites, temperature 1.0, beta 0.01, max_turns 36. LoRA over the MERGED sft-v2 weights. LoRA-B Frobenius norm 0.5557 (3.1% of sft-v2's 17.78). Never served or benchmarked: RL dropped for the paper. |
 
 ### Results
 
@@ -350,7 +351,6 @@ that must not be quoted.
 | qwen35-9b-base | 6-defect-subset | done_rate | 0.0 % <sub>[0–39]</sub> | 6 | done | All 6 hit the 15-step cap; 1 crashed on a malformed keypress. |
 | claude-sonnet-5 | 6-defect-subset | ddr | _not measured_ | 6 | pending | All 6 defect runs plus clean completed; the judge pass has not been run so no DDR exists yet. |
 | claude-sonnet-5 | skin-v2 | pass_rate_retained | _not measured_ |  | planned | Agent arm of the same comparison. |
-| cua-grpo-v2 | 6-defect-subset | ddr | _not measured_ | 6 | planned | Experimental. |
 | cua-sft-v1 | skin-v2 | pass_rate_retained | _not measured_ |  | planned | Needs an ids-only skin to separate DOM change from label change. |
 | cua-sft-v1-nologin | 6-defect-subset | ddr | _not measured_ | 6 | planned | Same ablation measured in the QA harness. |
 | scripted-playwright | skin-v2 | pass_rate_retained | _not measured_ | 13 | planned | Central thesis claim. Skin v2 renames all 32 ids, so an #id suite should collapse. |
@@ -360,6 +360,19 @@ that must not be quoted.
 | claude-sonnet-5 | full-48-case-suite | post_login_share | 85.4 % <sub>[73–93]</sub> | 48 | superseded | Regex heuristic over test-case text rather than an observed auth transition. |
 | claude-sonnet-5 | full-48-case-suite | ui_coverage_elements | 92.1 % | 1 | superseded | Same crashed run. |
 | claude-sonnet-5 | full-48-case-suite | ui_coverage_views | 88.9 % | 1 | superseded | Single run that crashed in the reporter phase; judge pass never ran. |
+| cua-grpo-v2 | 6-defect-subset | ddr | _not measured_ | 6 | superseded | RL dropped for the paper after grpo-v3 showed no measurable gain (docs/decisions/grpo-v3-results.md); no GRPO checkpoint will be evaluated. |
+
+#### `rl-train-pool` — frontier-25@3705ec31
+
+| model_id | subset | metric | value | n | status | notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| cua-grpo-v3 | adapter | lora_b_frobenius | 0.5557 |  | done | Frobenius norm of all lora_B tensors after 50 steps: 0.19 at step 5 and saturating with the cosine schedule; 3.1% of the sft-v2 adapter's 17.7846. grpo-v2 measured 0.279 (1.9% of sft-v1) and flat. |
+| cua-grpo-v3 | all-episodes | false_done_rate | 31.6 % <sub>[28–35]</sub> | 752 | done | Within-run number: 238/752 rollouts ended with done() and failed the oracle; 27.5% in the first 160, 38.8% in the last 160. done() rate 84.2% against 53.7% success. |
+| cua-grpo-v3 | all-episodes | oracle_success_rate | 53.7 % <sub>[50–57]</sub> | 752 | done | Within-run oracle number, not a benchmark: 404/752 rollouts; the 30 blocked episodes stay in the denominator because they trained. |
+| cua-grpo-v3 | first-160-episodes | mean_reward | 1.064 | 160 | done | Within-run number: mean composed reward (rl/reward_config.json, autonomous lane) over the first 160 rollouts, sd 0.894. |
+| cua-grpo-v3 | first-160-episodes | oracle_success_rate | 59.4 % <sub>[52–67]</sub> | 160 | done | Within-run oracle number, not a benchmark: the first 160 training rollouts (10 steps x 16) ordered by episode mtime, success_check verdicts only, live sites at temperature 1.0. |
+| cua-grpo-v3 | last-160-episodes | mean_reward | 0.84 | 160 | done | Within-run number: last 160 rollouts, sd 0.930; 1.064 -> 0.840 is z=2.2. |
+| cua-grpo-v3 | last-160-episodes | oracle_success_rate | 50.0 % <sub>[42–58]</sub> | 160 | done | Within-run oracle number, not a benchmark: the last 160 training rollouts. 59.4% -> 50.0% is z=1.7 against the first window. |
 
 #### `screenspot` — rootsautomation/ScreenSpot@test
 
@@ -402,7 +415,7 @@ that must not be quoted.
 | Share of record/replay web test breakages caused by stale locators | 73.6 % | 1065 | ICST | 2016 | 10.1109/ICST.2016.16 | deck slide 3, thesis ch.1 |
 | Legacy GUI tests on live sites that stopped passing within 18 months | 100.0 % | 120 | ASE | 2025 | 10.1109/ASE63991.2025.00251 | deck slide 3, thesis ch.1 |
 
-_149 registry rows: 136 done, 1 pending, 6 planned, 6 superseded. Percentages carry a 95 % Wilson interval where n is known._
+_156 registry rows: 143 done, 1 pending, 5 planned, 7 superseded. Percentages carry a 95 % Wilson interval where n is known._
 
 <!-- registry:end -->
 

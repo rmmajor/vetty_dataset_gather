@@ -108,7 +108,9 @@ silpo (8), novaposhta (8), dom.ria (7). Cleared only by a person in a real brows
 the one experiment that could shrink this list. A further 11 UA sites are phone-gated and are
 permanently out of scope under the burner-only invariant.
 
-## 8. RL / GRPO — what would move the score
+## 8. RL / GRPO — what would move the score (closed 2026-09-02 by §10)
+
+Items 1, 3, 4 and 5 below were done for `grpo-v3` and the score did not move; see §10.
 
 Written 2026-08-28 after the first live GRPO run (`docs/decisions/grpo-v2-first-live-run.md`:
 sft-v1 9.4% → grpo-v2 11.8% verified on the archived 50-task Online-Mind2Web sample, inside
@@ -141,7 +143,10 @@ Outside RL but bounding the ceiling: 28% of the eval sample is site-blocked from
 three screenshots — the right instrument for a before/after under one rubric, not for absolute
 claims (`docs/decisions/judge-consistency-audit.md`).
 
-## 9. The verification loop is missing from the corpus (do this before RL)
+## 9. The verification loop is missing from the corpus (closed as an RL gate 2026-09-02 by §10)
+
+The corpus gap itself stands and is the subject of `docs/decisions/sft-v3-plan.md`; what is
+closed is "do this before RL", since there is no RL run to gate.
 
 Written 2026-09-01 from the QA-benchmark measurement of `sft-v1` plus a scan of our own corpus:
 only **16.1%** of done() steps follow any verification thought, and only 11.6% of trajectories
@@ -149,3 +154,20 @@ re-open a page to check what they changed (`python -m repo_pipeline.verify_patte
 trajectories`). The `false_done` penalty in `rl/reward_config.json` cannot teach a behaviour the
 SFT distribution never demonstrates, so item 8 is gated on this. Full reasoning, tranche sizing and
 success bar: `docs/decisions/sft-v3-plan.md`.
+
+## 10. RL dropped (2026-09-02)
+
+`grpo-v3` (`docs/decisions/grpo-v3-results.md`) ran with every §8 fix that was config or data:
+oracle-only rewards, a measured frontier band, G=8 at temperature 1.0, 50 steps, 752 episodes.
+The trainer had reward contrast at every step and the adapter moved (‖B‖ 0.5557, 3.1% of sft-v2),
+and train-pool success went 59.4% → 50.0% between the first and last 160 episodes while the
+false-done share rose 27.5% → 38.8%. The within-group spread on live sites is mostly rate limits,
+CAPTCHAs, timing and sampling luck, and 800 episodes cannot average it out; a run that could
+resolve a real gain needs ≥3k episodes, per-turn credit, the parity prompt, `false_done ≥
+step_cap` and a pool at the benchmark's distribution, which is outside the remaining budget.
+
+Decision: RL is out of the paper; v1/v2/v3 are reported as a diagnosed negative result; no
+rollout enters SFT (`excluded_reason: rl_rollout`, under `rl_runs/`). §8 and §9's RL gate are
+closed by this; the §9 corpus gap continues in `docs/decisions/sft-v3-plan.md`. Registry:
+`cua-grpo-v3` in `experiments/models.csv`, `grpo-v3-*` rows in `experiments/results.csv`,
+`qa-ddr-grpo` superseded.

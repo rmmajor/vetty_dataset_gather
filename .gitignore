@@ -24,3 +24,7 @@ credentials/
 repo_pipeline/public_sites_human.json
 # Downloaded adapters / checkpoints (GBs; the canonical copy lives on the training volume)
 models/
+# Symlinks to the canonical corpus / credentials in a worktree (the dir patterns above do not match symlinks)
+/trajectories
+/credentials
+/repo_pipeline/public_sites_human.json
