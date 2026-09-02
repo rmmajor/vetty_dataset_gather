@@ -63,7 +63,10 @@ class BrowserEnv(Env):
         try:
             result = await self._call(self.client.step, self.episode_id, response_text, seq=self.turn)
         except Exception as e:
-            return "", 0.0, True, {"env_error": str(e)[:300]}
+            # Record it on the env too: an unlabelled transport blip becomes a 0.0 that outranks a
+            # genuine failure inside an all-fail group, training toward whatever preceded the blip.
+            self.env_error = str(e)[:300]
+            return "", 0.0, True, {"env_error": self.env_error}
         self.turn += 1
         observation = result.get("observation")
         if observation is not None:

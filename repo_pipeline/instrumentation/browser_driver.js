@@ -1071,6 +1071,9 @@ const routes = {
   'GET /status': async () => ({
     ok: true,
     ready: true,
+    // ensureBrowser() returns early on a truthy state.browser, so a crashed Chromium stays
+    // 'ready' forever; the pool needs the real connection state to recycle the slot.
+    browser: !!(state.browser && state.browser.isConnected()),
     task_id: state.task ? state.task.id : null,
     steps: state.task ? state.task.steps.length : 0,
   }),

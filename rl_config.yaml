@@ -42,10 +42,14 @@ top_p: 0.95
 max_steps: 50
 save_steps: 5
 save_total_limit: 3
-async_generate: true
+# MUST stay false with the per-turn scheduler: ms-swift's async path nulls the whole batch when one
+# episode raises, then blocks forever on an empty queue — a silent multi-hour hang at full GPU cost.
+async_generate: false
 # Groups whose samples all score alike carry no advantage; resample them instead of training on them.
-dynamic_sample: true
-max_resample_times: 3
+# Off deliberately: it drops/resamples zero-variance groups, so the sample count stops being a
+# multiple of num_generations and ms-swift's per-turn scheduler crashes in log_rewards_metrics.
+# The measured band already supplies the contrast dynamic sampling exists to rescue.
+dynamic_sample: false
 log_completions: true
 report_to: tensorboard
 output_dir: /workspace/rl_output

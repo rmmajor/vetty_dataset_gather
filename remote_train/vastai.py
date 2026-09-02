@@ -39,6 +39,19 @@ _CLI_TIMEOUT = 120
 _SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=15"]
 
 
+def offer_query(cfg) -> str:
+    """Vast's search grammar. gpu_ram is GIGABYTES in a QUERY but megabytes in the response JSON — verified by probe: `gpu_ram >= 70` returns only 81920MB cards."""
+    query = (
+        f"reliability > {cfg.min_reliability} num_gpus={cfg.num_gpus} "
+        f"gpu_ram >= {cfg.min_vram_gb} compute_cap >= {cfg.min_compute_cap} "
+        f"dph_total <= {cfg.max_price_per_hour} "
+        f"inet_down >= {cfg.min_inet_down_mbps} "
+        f"disk_space >= {cfg.disk_gb} rentable=true"
+    )
+    query += f" cuda_vers >= {cfg.min_cuda_vers}" if cfg.min_cuda_vers else ""
+    return query + (f" gpu_name={cfg.gpu_name}" if cfg.gpu_name else "")
+
+
 class VastAIProvider(ComputeProvider):
     name = "vastai"
 
@@ -48,15 +61,7 @@ class VastAIProvider(ComputeProvider):
     # ----- offer selection / provisioning -----
 
     def search_offer(self, cfg) -> Offer:
-        query = (
-            f"reliability > {cfg.min_reliability} num_gpus={cfg.num_gpus} "
-            f"gpu_ram >= {cfg.min_vram_gb} compute_cap >= {cfg.min_compute_cap} "
-            f"dph_total <= {cfg.max_price_per_hour} "
-            f"disk_space >= {cfg.disk_gb} rentable=true"
-        )
-        if cfg.gpu_name:
-            query += f" gpu_name={cfg.gpu_name}"
-        raw = self._cli_json(["search", "offers", query, "-o", "dph_total", "--limit", "200"])
+        raw = self._cli_json(["search", "offers", offer_query(cfg), "-o", "dph_total", "--limit", "200"])
         records = raw if isinstance(raw, list) else raw.get("offers", [])
         offers = [self._offer_from_raw(r) for r in records]
         offer = select_cheapest_allowed(offers, cfg)
@@ -185,7 +190,14 @@ class VastAIProvider(ComputeProvider):
     def tunnel(self, instance, cfg, forwards):
         return SshTunnel(self._ssh_base(instance), forwards)
 
+    def live_label(self, instance) -> str | None:
+        record = self._live_record(instance.id)
+        return None if record is None else str(record.get("label") or "")
+
     def list_owned(self, label) -> list:
+        # A blank label matches every UNLABELED instance, which on a shared account is other people's work.
+        if not str(label or "").strip():
+            raise ProviderError("list_owned requires a non-empty label; refusing to treat unlabeled instances as ours")
         raw = self._cli_json(["show", "instances"])
         records = raw if isinstance(raw, list) else raw.get("instances", [])
         owned = []
@@ -236,13 +248,21 @@ class VastAIProvider(ComputeProvider):
             return raw[0] if raw else {}
         return raw if isinstance(raw, dict) else {}
 
-    def _instance_alive(self, instance_id) -> bool:
+    def _live_record(self, instance_id) -> dict | None:
+        """The provider's own record for this id: {} when listed but absent, None when unreadable."""
         try:
             raw = self._cli_json(["show", "instances"])
         except ProviderError:
-            return True  # can't confirm absence → assume alive so destroy keeps retrying
+            return None
         records = raw if isinstance(raw, list) else raw.get("instances", [])
-        return any(str(r.get("id")) == str(instance_id) for r in records)
+        for r in records:
+            if str(r.get("id")) == str(instance_id):
+                return r
+        return {}
+
+    def _instance_alive(self, instance_id) -> bool:
+        record = self._live_record(instance_id)
+        return record != {}  # None (unreadable) counts as alive so destroy keeps retrying
 
     def _offer_from_raw(self, r: dict) -> Offer:
         gpu_ram = float(r.get("gpu_ram", 0) or 0)

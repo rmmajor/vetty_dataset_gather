@@ -14,6 +14,12 @@ BLOCK_SIGNATURES: list = [
         r"access denied|403 forbidden|you (have been|are) blocked|request unsuccessful|"
         r"pardon our interruption|unusual traffic from your computer|"
         r"your request has been blocked|bot detection", re.IGNORECASE)),
+    # Sustained RL traffic earns rate limits long before it earns a CAPTCHA, and an
+    # undetected limit turns a whole task all-fail while looking like a policy failure.
+    ("rate_limited", re.compile(
+        r"\b429\b|too many requests|rate limit(ed|s)?|slow down|"
+        r"try again (later|in a few)|temporarily unavailable|"
+        r"you (have )?(exceeded|reached) .{0,20}limit", re.IGNORECASE)),
 ]
 
 

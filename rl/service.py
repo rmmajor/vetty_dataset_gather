@@ -128,9 +128,11 @@ class EnvService:
         if finished is not None:
             return {"reward": finished.get("reward"), "info": finished.get("info", {})}
         entry = self._entry(episode_id)
-        with entry["lock"]:
-            record = entry["episode"].close(body.get("reason", "external"))
-        self._finish(episode_id, entry)
+        try:
+            with entry["lock"]:
+                record = entry["episode"].close(body.get("reason", "external"))
+        finally:
+            self._finish(episode_id, entry)
         return {"reward": record.get("reward"), "info": record.get("info", {})}
 
     def episode(self, episode_id):
@@ -212,7 +214,10 @@ def serve(service, host, port, token):
 def _reap_forever(service, interval_s=60):
     while True:
         time.sleep(interval_s)
-        service.reap()
+        try:
+            service.reap()
+        except Exception:
+            logger.exception("reaper pass failed; continuing so idle slots keep being reclaimed")
 
 
 def main():

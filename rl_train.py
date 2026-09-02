@@ -36,7 +36,7 @@ DEPLOY_FLAG_MAP = {"merged_model": "--model", "template": "--template", "respons
 ROLLOUT_FIXED = ["--vllm_use_async_engine", "true", "--vllm_enable_lora", "true", "--use_gym_env", "true", "--host", "127.0.0.1"]
 RLHF_FIXED = ["--rlhf_type", "grpo", "--use_vllm", "true", "--vllm_mode", "server", "--vllm_server_host", "127.0.0.1",
               "--vllm_server_pass_dataset", "true", "--vllm_enable_lora", "true", "--use_gym_env", "true"]
-DEPLOY_FIXED = ["--infer_backend", "vllm", "--vllm_enable_lora", "true", "--host", "127.0.0.1"]
+DEPLOY_FIXED = ["--infer_backend", "vllm", "--host", "127.0.0.1"]
 PHASE_FILE, ACK_FILE = "PHASE", "PHASE_ACK"
 
 
@@ -57,8 +57,10 @@ def _flags(cfg, flag_map):
 
 
 def build_merge_command(cfg):
+    # --exist_ok: a merge killed mid-write leaves a dir without config.json, which our own guard lets
+    # through and swift export then refuses — a failed attempt would poison every retry.
     return ["swift", "export", "--model", cfg["base_model"], "--adapters", cfg["sft_adapter_remote"], "--merge_lora", "true",
-            "--output_dir", cfg["merged_model"]]
+            "--exist_ok", "true", "--output_dir", cfg["merged_model"]]
 
 
 def build_rollout_command(cfg):

@@ -115,7 +115,9 @@ class RolloutWorker:
         if self.sandbox is None or self.sandbox.container is None or self.sandbox.remaining_seconds() < RL_RECYCLE_RESERVE_S:
             return True
         try:
-            return not all(c.status().get("ok") for c in self.clients)
+            # `browser` is absent on older drivers, so default it True rather than recycling forever.
+            states = [c.status() for c in self.clients]
+            return not all(st.get("ok") and st.get("browser", True) for st in states)
         except Exception:
             return True
 

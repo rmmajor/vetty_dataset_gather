@@ -1,15 +1,49 @@
 {
   "lanes": {
     "autonomous": {
-      "weights": {"terminal_success": 1.0, "format_validity": 0.2, "efficiency": 0.5, "terminated_with_done": 0.2, "progress": 0.4},
-      "penalties": {"parse_abort": 0.5, "loop_guard": 0.3, "step_cap": 0.2, "false_done": 0.4, "control_unexpected": 0.3, "navigate_blocked": 0.1},
-      "success_by_efficiency_grade": {"efficient": 1.0, "acceptable": 1.0, "meandering": 0.6},
+      "weights": {
+        "terminal_success": 1.0,
+        "format_validity": 0.2,
+        "efficiency": 0.5,
+        "terminated_with_done": 0.2,
+        "progress": 0.4
+      },
+      "penalties": {
+        "parse_abort": 0.5,
+        "loop_guard": 0.3,
+        "step_cap": 0.45,
+        "false_done": 0.35,
+        "control_unexpected": 0.3,
+        "navigate_blocked": 0.1
+      },
+      "success_by_efficiency_grade": {
+        "efficient": 1.0,
+        "acceptable": 1.0,
+        "meandering": 0.6
+      },
       "efficiency_zero_at_ratio": 2.0
     },
     "guarded": {
-      "weights": {"terminal_success": 1.0, "format_validity": 0.2, "efficiency": 0.3, "terminated_with_done": 0.0, "progress": 0.3},
-      "penalties": {"parse_abort": 0.5, "loop_guard": 0.3, "step_cap": 0.2, "false_done": 0.2, "control_unexpected": 0.0, "navigate_blocked": 0.1},
-      "success_by_efficiency_grade": {"efficient": 1.0, "acceptable": 1.0, "meandering": 0.6},
+      "weights": {
+        "terminal_success": 1.0,
+        "format_validity": 0.2,
+        "efficiency": 0.3,
+        "terminated_with_done": 0.0,
+        "progress": 0.3
+      },
+      "penalties": {
+        "parse_abort": 0.5,
+        "loop_guard": 0.3,
+        "step_cap": 0.45,
+        "false_done": 0.35,
+        "control_unexpected": 0.0,
+        "navigate_blocked": 0.1
+      },
+      "success_by_efficiency_grade": {
+        "efficient": 1.0,
+        "acceptable": 1.0,
+        "meandering": 0.6
+      },
       "efficiency_zero_at_ratio": 2.0
     }
   }

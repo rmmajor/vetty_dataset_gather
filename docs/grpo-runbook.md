@@ -5,6 +5,24 @@ training rewards, so a run does not consume the Claude usage window.
 
 ## 0. Prerequisites
 
+**The Vast.ai account is SHARED with other university researchers.** Never destroy or stop an
+instance whose label is not `roman.maior`; use the lane's own `list_owned("roman.maior")` filter, and
+treat `vastai show instances` as read-only. Destroying a colleague's running instance has already
+happened once and cost them their work.
+
+**A box being ours is not permission to destroy it either.** Ownership is per RUN: a labelled
+instance may belong to a concurrent session, another worktree or a background job, and from the
+outside that is indistinguishable from an orphan. Teardown goes through `remote_train` — never
+`vastai destroy` by hand — where `_owned_by_us` refuses foreign labels and the state records carry
+the owning pid so live siblings are skipped. `make remote-train-cleanup` reclaims only boxes whose
+owning run is dead; `cleanup --all` takes every labelled box and is correct only when you have
+confirmed no sibling run is live.
+
+**Every `modal` command in this runbook runs with `MODAL_PROFILE=majorchannelboost`** — the free-credit
+workspace. Never `bombaleylo2`, `roman-maior-mknssh-2025` or `roman-yu-major`; those hold the owner's own
+work or are past their free credit. Pin it explicitly per command: the active profile changes underneath a
+session. If a volume, secret or cached weight is missing there, create it there rather than switching.
+
 - The new SFT LoRA adapter on the `cua-outputs` volume, e.g. `sft-v2/adapter`.
 - `EVAL_API_KEY` in `.env` (the served endpoint's key), `MODAL_PROFILE` pinned per command.
 - The task pool: `rl/rl_tasks_candidates.json` (179 oracle-checked candidates, 35 hosts).

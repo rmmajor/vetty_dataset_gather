@@ -280,7 +280,7 @@ remote-train-dry: ## Dry run: print the cheapest geo-allowed offer, provision no
 	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
 	python -m remote_train search
 
-remote-train-cleanup: ## Destroy any leftover instance (state file + label 'roman.maior' orphans)
+remote-train-cleanup: ## Destroy instances abandoned by dead runs (live sibling runs are spared; --all forces)
 	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
 	python -m remote_train cleanup
 

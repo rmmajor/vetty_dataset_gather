@@ -11,6 +11,7 @@ the teardown guarantees never change.
   serve — serve the student on serve_port through a tunnel (for rl.eval / live harness smokes).
 """
 import contextlib
+import ast
 import hashlib
 import json
 import logging
@@ -25,7 +26,7 @@ from pathlib import Path
 import yaml
 
 from remote_train.benchmarks import BENCHMARKS, build_benchmark, materialize
-from rl_train import build_deploy_command, build_merge_command, build_vllm_serve_command, make_dataset
+from rl_train import build_deploy_command, build_merge_command, build_vllm_serve_command, load_task_ids, make_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -173,9 +174,48 @@ class EvalJob(RemoteJob):
         return self.benchmark.summarize(Path(cfg.eval_results_dir))
 
 
-RL_CODE_FILES = ("rl_train.py", "train_qwen.py", "requirements-rl.txt", "repo_pipeline/__init__.py", "repo_pipeline/corpus_audit.py",
-                 "rl/__init__.py", "rl/actions.py", "rl/observation.py", "rl/trainer/__init__.py", "rl/trainer/core.py",
-                 "rl/trainer/swift_plugin.py")
+RL_CODE_ROOTS = ("rl_train.py", "train_qwen.py", "rl/trainer/swift_plugin.py")
+RL_DATA_FILES = ("requirements-rl.txt",)
+
+
+def _module_files(dotted):
+    """Local .py files a dotted import resolves to, including the packages on its path."""
+    parts = dotted.split(".")
+    found = []
+    for depth in range(1, len(parts) + 1):
+        prefix = parts[:depth]
+        for candidate in (Path(*prefix).with_suffix(".py"), Path(*prefix, "__init__.py")):
+            if candidate.is_file():
+                found.append(str(candidate))
+    return found
+
+
+def first_party_closure(roots):
+    """Every first-party module the roots transitively import.
+
+    A hand-listed manifest goes stale the moment someone adds an import, and the failure lands
+    ~45 minutes and one GPU rental later as an ImportError on the box. Derive it instead.
+    """
+    pending, seen = list(roots), set()
+    while pending:
+        rel = pending.pop()
+        if rel in seen or not Path(rel).is_file():
+            continue
+        seen.add(rel)
+        try:
+            tree = ast.parse(Path(rel).read_text())
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                names = [node.module] + [f"{node.module}.{a.name}" for a in node.names]
+            else:
+                continue
+            for name in names:
+                pending.extend(_module_files(name))
+    return tuple(sorted(seen))
 
 
 def _sha256(path):
@@ -230,16 +270,25 @@ class GrpoJob(RemoteJob):
         adapter = Path(cfg.output_dir) / "adapter_config.json"
         if not adapter.is_file():
             raise FileNotFoundError(f"SFT adapter '{adapter}' missing — run `make remote-train` first (spec Phase 2)")
-        suite_path = Path("rl/rl_tasks.json")
+        # The suite and the measured frontier band are config-driven: training on every train task
+        # rather than the pass@k-selected ones is what starved grpo-v2 of gradient.
+        suite_path = Path(self.rl.get("tasks_file") or "rl/rl_tasks.json")
         if not suite_path.is_file():
-            raise FileNotFoundError("rl/rl_tasks.json missing — run `make rl-tasks`")
+            raise FileNotFoundError(f"{suite_path} missing — run `make rl-tasks` or `make rl-candidates`")
+        selection = self.rl.get("task_ids_file")
+        task_ids = load_task_ids(selection) if selection else None
+        if selection and not task_ids:
+            raise ValueError(f"{selection} selected no tasks — the frontier band is empty")
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        rows = make_dataset(suite_path, self.dataset_path, "train", 1, self.rl.get("train_max_expected_actions"))
+        rows = make_dataset(suite_path, self.dataset_path, "train", 1, self.rl.get("train_max_expected_actions"), task_ids)
         if rows == 0:
-            raise ValueError("no train tasks in rl/rl_tasks.json")
+            raise ValueError(f"no train tasks in {suite_path} after the band filter")
         env_url = self.rl["env_url"]
-        if not env_url.startswith("mock://") and not self.http_ok(f"{env_url.split(',')[0].strip()}/health"):
-            raise ConnectionError(f"env service not answering at {env_url}/health — start `make rl-serve` first")
+        if not env_url.startswith("mock://"):
+            base = env_url.split(",")[0].strip()
+            if not self.http_ok(f"{base}/health"):
+                raise ConnectionError(f"env service not answering at {base}/health — start `make rl-serve` first")
+            self.assert_tasks_served(base, task_ids or self.dataset_task_ids())
         weights = Path(cfg.output_dir) / "adapter_model.safetensors"
         header = {
             "run_id": self.run_id, "base_model": self.rl["base_model"], "sft_adapter": cfg.output_dir,
@@ -250,11 +299,34 @@ class GrpoJob(RemoteJob):
         (self.run_dir / "run_header.json").write_text(json.dumps(header, indent=2))
         logger.info(f"grpo run {self.run_id}: {rows} train rows, env {env_url}, compute {self.rl.get('compute')}")
 
+    def dataset_task_ids(self) -> list:
+        with open(self.dataset_path) as f:
+            return [json.loads(line).get("task_id") for line in f if line.strip()]
+
+    def assert_tasks_served(self, base_url, task_ids) -> None:
+        """A task the service does not serve 404s on reset, and the plugin turns that into reward 0.0.
+
+        Every episode then trains on a fabricated zero and the run reports success — the exact
+        failure grpo-v2 died of. Catch the mismatch before renting anything.
+        """
+        try:
+            with urllib.request.urlopen(f"{base_url}/tasks", timeout=15) as resp:
+                served = {t.get("task_id") for t in json.loads(resp.read().decode()).get("tasks", [])}
+        except Exception as e:
+            raise ConnectionError(f"could not list served tasks at {base_url}/tasks: {e}") from e
+        missing = sorted({t for t in task_ids if t} - served)
+        if missing:
+            raise ValueError(
+                f"the env service does not serve {len(missing)} of the run's tasks (e.g. {missing[:3]}) — "
+                f"it was started with a different --tasks/--split. Restart it with the run's suite."
+            )
+        logger.info(f"env service serves all {len(set(task_ids))} task ids of this run")
+
     def upload(self, provider, instance, cfg) -> None:
         wd = cfg.remote_workdir
         provider.exec(instance, f"mkdir -p {wd}/sft_adapter {wd}/rl_runs/{self.run_id}", timeout=60)
         logger.info("Uploading GRPO bundle (code + SFT adapter + config)…")
-        _upload_code(provider, instance, cfg, RL_CODE_FILES + (cfg.rl_config,))
+        _upload_code(provider, instance, cfg, first_party_closure(RL_CODE_ROOTS) + RL_DATA_FILES + (cfg.rl_config,))
         provider.upload(instance, str(self.dataset_path), f"{wd}/{Path(self.rl['dataset']).name}")
         provider.upload(instance, cfg.output_dir.rstrip("/") + "/", f"{wd}/sft_adapter/")
 
@@ -264,9 +336,17 @@ class GrpoJob(RemoteJob):
 
     def remote_command(self, cfg) -> str:
         wd = cfg.remote_workdir
+        # Same preamble as ServeJob, proven on the CUDA images: their python is externally managed
+        # (PEP 668) and has no ensurepip, so pip needs --break-system-packages and uv builds the venv.
+        # The plain downloader pulls the 19GB base at ~0.5MB/s on a rented box: hours of paid GPU
+        # before the first step. hf_transfer is deprecated and silently ignored by current
+        # huggingface_hub, so the acceleration knob is now HF_XET_HIGH_PERFORMANCE.
         return (
-            "pip install -r requirements-rl.txt && \\\n"
-            f"  python rl_train.py run --config {Path(cfg.rl_config).name} --run-dir {wd}/rl_runs/{self.run_id} --workdir {wd}"
+            "pip install -q --break-system-packages uv && uv venv --system-site-packages /workspace/venv && "
+            ". /workspace/venv/bin/activate && \\\n"
+            "  uv pip install -q -r requirements-rl.txt 'huggingface_hub[hf_xet]' && \\\n"
+            f"  HF_XET_HIGH_PERFORMANCE=1 python rl_train.py run --config {Path(cfg.rl_config).name} "
+            f"--run-dir {wd}/rl_runs/{self.run_id} --workdir {wd}"
         )
 
     def run_eval(self, phase):
@@ -290,16 +370,28 @@ class GrpoJob(RemoteJob):
             provider.exec(instance, f"echo {phase} > {wd}/PHASE_ACK", timeout=30)
         if self.polls % max(1, cfg.collect_every_polls) == 0:
             try:
-                provider.download(instance, f"{wd}/rl_output/latest/", str(self.run_dir / "adapter_latest") + "/")
+                # rl_output/ (not latest/): `latest` is published only after swift exits, so pulling it
+                # during the run always failed and every mid-run checkpoint died with the box.
+                provider.download(instance, f"{wd}/rl_output/", str(self.run_dir / "rl_output") + "/")
+                logger.info(f"pulled in-progress checkpoints to {self.run_dir / 'rl_output'}")
             except Exception as e:
-                logger.debug(f"latest adapter not available yet: {e}")
+                logger.debug(f"no checkpoint to pull yet: {e}")
         return False
 
     def collect(self, provider, instance, cfg) -> None:
         wd = cfg.remote_workdir
         logger.info("Downloading RL outputs…")
-        provider.download(instance, f"{wd}/rl_output/", str(self.run_dir / "rl_output") + "/")
-        provider.download(instance, f"{wd}/rl_runs/{self.run_id}/", str(self.run_dir / "box") + "/")
+        for remote, local in ((f"{wd}/rl_output/", self.run_dir / "rl_output"),
+                              (f"{wd}/rl_runs/{self.run_id}/", self.run_dir / "box")):
+            for attempt in range(1, 4):
+                try:
+                    provider.download(instance, remote, str(local) + "/")
+                    break
+                except Exception as e:
+                    logger.warning(f"pull of {remote} failed (attempt {attempt}/3): {e}")
+                    if attempt == 3:
+                        raise
+                    time.sleep(10 * attempt)
 
     def results_dest(self, cfg) -> str:
         return str(self.run_dir)
@@ -327,7 +419,7 @@ class ServeJob(RemoteJob):
     def upload(self, provider, instance, cfg) -> None:
         wd = cfg.remote_workdir
         provider.exec(instance, f"mkdir -p {wd}/serve_adapter", timeout=60)
-        _upload_code(provider, instance, cfg, RL_CODE_FILES + (cfg.rl_config,))
+        _upload_code(provider, instance, cfg, first_party_closure(RL_CODE_ROOTS) + RL_DATA_FILES + (cfg.rl_config,))
         if cfg.serve_adapter:
             provider.upload(instance, cfg.serve_adapter.rstrip("/") + "/", f"{wd}/serve_adapter/")
         if self.rl.get("serve_merged_base"):
@@ -348,15 +440,16 @@ class ServeJob(RemoteJob):
             # ms-swift is only needed for the merge; keep it out of the image's Python with a throwaway uv env.
             merge = shlex.join(build_merge_command(self.rl))
             return (
-                "pip install -q uv && uv venv /workspace/merge-env --python 3.12 -q && "
+                "pip install -q --break-system-packages uv && uv venv /workspace/merge-env --python 3.12 -q && "
                 ". /workspace/merge-env/bin/activate && uv pip install -q -r /workspace/requirements-rl.txt torchvision && \\\n"
                 f"  {merge} && deactivate && \\\n"
                 f"  {serve}"
             )
         # A venv over the image's site-packages keeps its torch/CUDA but sidesteps Debian's unremovable apt-installed pins.
+        # uv builds it: the CUDA images ship a Debian python without ensurepip, so `python -m venv` cannot create one.
         return (
-            "python -m venv --system-site-packages /workspace/venv && . /workspace/venv/bin/activate && \\\n"
-            "  pip install --upgrade pip && pip install -r requirements-rl.txt && \\\n"
+            "pip install -q --break-system-packages uv && uv venv --system-site-packages /workspace/venv && . /workspace/venv/bin/activate && \\\n"
+            "  uv pip install -q -r requirements-rl.txt && \\\n"
             f"  MAX_PIXELS={self.rl['max_pixels']} {shlex.join(deploy)}"
         )
 

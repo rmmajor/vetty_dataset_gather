@@ -54,7 +54,7 @@ def test_under_stopping_and_false_done_are_both_penalised():
     assert capped_success < _reward(efficiency_grade="meandering", ui_steps=22)
     assert "max_turns" in CAP_REASONS and PENALTIES["step_cap"](_record(terminal_reason="max_turns"), TASK, LANE) == 1.0
     assert PENALTIES["false_done"](_record(success=False), TASK, LANE) == 1.0 and PENALTIES["false_done"](_record(), TASK, LANE) == 0.0
-    assert _reward(success=False) <= _reward(success=False, terminal_reason="step_cap")
+    assert _reward(success=False) >= _reward(success=False, terminal_reason="step_cap")
     assert REWARD_COMPONENTS["terminated_with_done"](_record(success=False), TASK, LANE) == 0.0
 
 
@@ -80,8 +80,9 @@ def test_milestones_never_pay_on_success():
     assert plain == with_hits
 
 
-def test_failure_ordering_capped_over_loop_over_false_done():
+def test_running_to_the_cap_is_the_worst_failure_so_stopping_is_never_discouraged():
+    """Cheapest-failure-is-the-cap taught the policy never to terminate; the validation run showed it."""
     capped = _reward(success=False, terminal_reason="step_cap")
     looped = _reward(success=False, terminal_reason="loop_guard")
     falsely_done = _reward(success=False, terminal_reason="done")
-    assert capped > looped > falsely_done
+    assert looped > falsely_done > capped

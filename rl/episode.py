@@ -53,7 +53,7 @@ class Episode:
         self.allowed_hosts = {urlparse(task["start_url"]).netloc, *task.get("allowed_hosts", [])}
         self.history, self.turns = [], []
         self.step_index = self.consecutive_parse_failures = self.navigate_blocked = 0
-        self.blocked = None
+        self.blocked = self.oracle_error = None
         self.terminal_reason, self.last_thought, self.record, self.closed = None, "", None, False
         self.started = time.time()
 
@@ -164,11 +164,16 @@ class Episode:
         return self.record
 
     def _page_text(self):
-        try:
-            return self.client.page_text()
-        except Exception as e:
-            logger.warning(f"{self.episode_id}: page_text unavailable, oracles see the snapshot only: {e}")
-            return ""
+        for attempt in (1, 2):
+            try:
+                return self.client.page_text()
+            except Exception as e:
+                if attempt == 2:
+                    # 14 of the selected oracles read page_text; a blank one silently fails them all.
+                    self.oracle_error = f"page_text: {str(e)[:120]}"
+                    logger.error(f"{self.episode_id}: page_text unavailable after retry — ORACLES ARE BLIND: {e}")
+                    return ""
+                time.sleep(1)
 
     def _run_oracles(self):
         spec = self.task.get("success_check")
@@ -183,7 +188,8 @@ class Episode:
                 logger.warning(f"{self.episode_id}: site blocked ({self.blocked}) — episode is not a measurement of the policy")
             ctx = checks.build_context(snapshot, self.client.storage_state, {"terminal_reason": self.terminal_reason}, page_text)
         except Exception as e:
-            logger.warning(f"{self.episode_id}: oracle snapshot failed: {e}")
+            self.oracle_error = f"snapshot: {str(e)[:120]}"
+            logger.error(f"{self.episode_id}: oracle snapshot failed — scoring this episode as a failure is NOT a measurement: {e}")
             return ({"passed": False, "results": {"error": str(e)[:200]}} if spec else None,
                     {m.get("name", ""): False for m in milestone_specs} or None)
         check_result = checks.evaluate(spec, ctx) if spec else None
@@ -224,10 +230,8 @@ class Episode:
         return sum(1 for s in steps if s.get("actions") and s["actions"][0].get("type") != "done")
 
     def _build_record(self, check_result, milestones=None):
-        success, source, status, verdict = None, "none", "final", {}
-        if self.traj_dir.exists():
-            success, source, status = judge_success(self.traj_dir, self.task, check_result, self.cfg.verifier_mode, self.ctx.bridge)
-            verdict = cached_verdict(self.traj_dir) or {}
+        success, source, status = judge_success(self.traj_dir, self.task, check_result, self.cfg.verifier_mode, self.ctx.bridge)
+        verdict = (cached_verdict(self.traj_dir) or {}) if self.traj_dir.exists() else {}
         record = {
             "episode_id": self.episode_id, "task_id": self.task["task_id"], "site": self.task.get("site"), "split": self.task.get("split"),
             "k": self.k, "iter": self.ctx.iteration, "traj_dir": str(self.traj_dir), "terminal_reason": self.terminal_reason,
@@ -235,9 +239,10 @@ class Episode:
             "efficiency_grade": verdict.get("efficiency"), "verdict_contradiction": bool(verdict.get("contradiction")),
             "success_source": source, "reward_status": status, "navigate_blocked": self.navigate_blocked,
             "duration_s": round(time.time() - self.started, 1), "check": check_result, "milestones": milestones,
-            "blocked": self.blocked,
+            "blocked": self.blocked, "oracle_error": self.oracle_error,
         }
         reward, breakdown = (compute_reward(record, self.task, self.ctx.reward_config) if status == "final" else (None, {}))
         record.update({"reward": reward, "breakdown": breakdown,
-                       "info": {"reward_status": status, "success": success, "success_source": source, "episode_dir": str(self.traj_dir)}})
+                       "info": {"reward_status": status, "success": success, "success_source": source, "episode_dir": str(self.traj_dir),
+                                "blocked": self.blocked, "oracle_error": self.oracle_error}})
         return record

@@ -94,7 +94,7 @@ def search_cmd(args) -> int:
 def cleanup_cmd(args) -> int:
     cfg = load_config(args.config, _cli_overrides(args))
     provider = build_provider(cfg.provider, cfg)
-    return lifecycle.cleanup(provider, cfg)
+    return lifecycle.cleanup(provider, cfg, sweep_all=args.sweep_all)
 
 
 def _add_common(p) -> None:
@@ -159,8 +159,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(search_p)
     search_p.set_defaults(func=search_cmd)
 
-    cleanup_p = sub.add_parser("cleanup", help="Destroy any leftover instance (state file + labeled orphans).")
+    cleanup_p = sub.add_parser("cleanup", help="Destroy instances abandoned by dead runs (see --all).")
     _add_common(cleanup_p)
+    cleanup_p.add_argument("--all", action="store_true", dest="sweep_all",
+                           help="Also destroy every instance carrying the run label, INCLUDING boxes a "
+                                "concurrent run is using. Only when you know no sibling run is live.")
     cleanup_p.set_defaults(func=cleanup_cmd)
 
     return parser
