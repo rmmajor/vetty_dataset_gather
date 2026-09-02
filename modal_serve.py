@@ -14,6 +14,8 @@ GPU = os.environ.get("CUA_SERVE_GPU", "L40S")
 MAX_MODEL_LEN = int(os.environ.get("CUA_MAX_MODEL_LEN", "8192"))
 GPU_MEM_UTIL = os.environ.get("CUA_GPU_MEM_UTIL", "0.90")
 MAX_LORA_RANK = int(os.environ.get("CUA_MAX_LORA_RANK", "64"))
+# vLLM 0.28 defaults to one image per prompt and answers the sft3 two-image (prev + current) request with HTTP 400.
+LIMIT_MM = os.environ.get("CUA_LIMIT_MM", '{"image": 2}')
 
 ADAPTERS_MOUNT = "/adapters"
 HF_CACHE_MOUNT = "/root/.cache/huggingface"
@@ -34,7 +36,7 @@ image = (
     # are baked too — otherwise a renamed lane would resolve differently there than at deploy.
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "VLLM_LOG_STATS_INTERVAL": "10",
           "CUA_ADAPTER_NAME": ADAPTER_NAME, "CUA_SERVED_NAME": SERVED_NAME, "CUA_SERVE_MODEL": MODEL,
-          "CUA_SERVE_APP": APP_NAME, "CUA_EVAL_SECRET": EVAL_SECRET})
+          "CUA_SERVE_APP": APP_NAME, "CUA_EVAL_SECRET": EVAL_SECRET, "CUA_LIMIT_MM": LIMIT_MM})
 )
 
 
@@ -95,6 +97,7 @@ class Server:
             "--port", "8000",
             "--max-model-len", str(MAX_MODEL_LEN),
             "--gpu-memory-utilization", GPU_MEM_UTIL,
+            "--limit-mm-per-prompt", LIMIT_MM,
         ]
         if ADAPTER_NAME:
             adapter_path = f"{ADAPTERS_MOUNT}/{ADAPTER_NAME}"

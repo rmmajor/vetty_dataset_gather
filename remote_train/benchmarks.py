@@ -81,12 +81,14 @@ BENCHMARKS: dict = {
         # train_qwen has a TOP-LEVEL `from repo_pipeline.corpus_audit import ...`, so that package
         # must ship too or the eval dies on import. corpus_audit is stdlib-only and __init__ is
         # empty, so this is two small files, not the whole pipeline.
+        # operator_pii is train_qwen's other top-level repo_pipeline import (stdlib-only as well).
         files=(
             "eval_screenspot.py",
             "train_qwen.py",
             "requirements-eval.txt",
             "repo_pipeline/__init__.py",
             "repo_pipeline/corpus_audit.py",
+            "repo_pipeline/operator_pii.py",
         ),
         requirements="requirements-eval.txt",
         results_dir="eval_results",

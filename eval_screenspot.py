@@ -6,10 +6,10 @@ bounding box. Built to compare a model before and after SFT, and reusable for
 arbitrary models via a coordinate-space registry, a configurable output parser,
 a pluggable inference backend, and a configurable dataset/bbox adapter.
 
-The model trained in this repo emits absolute pixel coordinates in a fixed
-1280x720 viewport (see train_qwen.py); the `viewport_abs` coordinate space
-reproduces that exactly. Other conventions (normalized 0-1000, native-resolution
-absolute) are selectable for other models.
+An sft3 checkpoint answers in normalized 0-1000 coordinates (train_qwen.COORD_SPACE),
+as a stock Qwen does; the sft-v1/v2 checkpoints answered in absolute pixels of the
+fixed 1280x720 training viewport, which the `viewport_abs` coordinate space reproduces.
+Native-resolution absolute is selectable for other models.
 
 End-to-end evaluation needs a GPU and a real checkpoint. The `--smoke-test` mode
 exercises every non-model component (prompt parity, parsing, coordinate mapping,
@@ -35,10 +35,17 @@ from typing import Callable, Optional
 
 import yaml
 
-from train_qwen import SYSTEM_PROMPT
+from train_qwen import (
+    GROUNDING_SYSTEM_PROMPT,
+    PROMPT_FORMAT_VERSION,
+    build_grounding_observation,
+    build_step_messages,
+    to_openai_content,
+)
 
 
-GROUNDING_USER_TEMPLATE = "Task: {instruction}\nWhat action should you take?"
+# The element description handed to the grounding observation; a ScreenSpot instruction names the target.
+GROUNDING_DESCRIPTION_TEMPLATE = 'the element described as "{instruction}"'
 
 DEFAULT_MAX_PIXELS = 1003520
 DEFAULT_VIEWPORT_W = 1280
@@ -77,8 +84,8 @@ class ModelSpec:
     adapters: Optional[str] = None
     backend: Optional[str] = None     # overrides EvalConfig.backend when set
     # Overrides EvalConfig.coord_space for THIS model. Different checkpoints answer in different
-    # coordinate conventions: a stock Qwen emits `normalized_1000`, while a model fine-tuned on
-    # this project's corpus emits `viewport_abs` (1280x720). A before/after comparison is
+    # coordinate conventions: a stock Qwen and an sft3 checkpoint emit `normalized_1000`, while
+    # an sft-v1/v2 checkpoint emits `viewport_abs` (1280x720). A before/after comparison is
     # therefore only meaningful if each spec is scored in its own space — a single global
     # --coord-space silently mis-scores one side of the comparison.
     coord_space: Optional[str] = None
@@ -95,7 +102,7 @@ class EvalConfig:
     bbox_normalized: bool = True
     viewport_w: int = DEFAULT_VIEWPORT_W
     viewport_h: int = DEFAULT_VIEWPORT_H
-    coord_space: str = "viewport_abs"
+    coord_space: str = "normalized_1000"
     parse_patterns: list = field(default_factory=lambda: list(DEFAULT_PARSE_PATTERNS))
     backend: str = "swift"
     limit: Optional[int] = None
@@ -221,17 +228,16 @@ def point_in_bbox(point, bbox_xyxy):
 
 
 def build_messages(instruction, image_ref):
-    user_text = GROUNDING_USER_TEMPLATE.format(instruction=instruction)
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": image_ref},
-                {"type": "text", "text": user_text},
-            ],
-        },
-    ]
+    """Training's grounding slice verbatim, in the content-list form `swift infer` consumes."""
+    observation = build_grounding_observation(GROUNDING_DESCRIPTION_TEMPLATE.format(instruction=instruction), image_ref)
+    return build_step_messages(GROUNDING_SYSTEM_PROMPT, observation)
+
+
+def build_openai_messages(instruction, image_b64):
+    """The same messages with the one image inlined as a PNG data URL for /chat/completions."""
+    messages = build_messages(instruction, "cur")
+    messages[1]["content"] = to_openai_content(messages[1]["content"], lambda ref: image_b64)
+    return messages
 
 
 def normalize_bbox(raw_bbox, bbox_format, normalized, width, height):
@@ -403,12 +409,7 @@ class OpenAIPredictor(Predictor):
 
     def _one(self, sample, coord_space):
         image = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
-        messages = build_messages(sample.instruction, "")
-        messages[1]["content"] = [
-            {"type": "image_url",
-             "image_url": {"url": f"data:image/png;base64,{self._encode(image)}"}},
-            {"type": "text", "text": messages[1]["content"][1]["text"]},
-        ]
+        messages = build_openai_messages(sample.instruction, self._encode(image))
         body = json.dumps({"model": self.model, "messages": messages,
                            "temperature": 0.0, "max_tokens": 512}).encode()
         req = urllib.request.Request(
@@ -537,6 +538,7 @@ def write_results(path, spec, cfg, summary, records):
         "backend": spec.backend or cfg.backend,
         "dataset": cfg.dataset,
         "split": cfg.split,
+        "prompt_format": PROMPT_FORMAT_VERSION,
         "coord_space": resolve_coord_space(cfg, spec),
         "bbox_format": cfg.bbox_format,
         "bbox_normalized": cfg.bbox_normalized,
@@ -564,6 +566,7 @@ def write_comparison(path, cfg, summaries):
     payload = {
         "dataset": cfg.dataset,
         "split": cfg.split,
+        "prompt_format": PROMPT_FORMAT_VERSION,
         "coord_space": cfg.coord_space,
         "summaries": summaries,
     }
@@ -664,15 +667,26 @@ def smoke_response_fn(sample, cfg, coord_space):
 
 
 def run_smoke_test(cfg):
+    assert EvalConfig().coord_space == "normalized_1000", "stock Qwen and an sft3 checkpoint both answer normalized"
+    normalized = build_coord_space(EvalConfig())
+    assert normalized.to_model(960.0, 540.0, 1920, 1080) == (500.0, 500.0)
+    assert normalized.to_original(500.0, 500.0, 1920, 1080) == (960.0, 540.0)
     cfg.coord_space = "viewport_abs"
     coord_space = build_coord_space(cfg)
 
-    messages = build_messages("Click the login button", "/tmp/x.png")
-    assert messages[0]["role"] == "system"
-    assert messages[0]["content"] == SYSTEM_PROMPT
-    user = messages[1]
-    assert user["content"][0] == {"type": "image", "image": "/tmp/x.png"}
-    assert user["content"][1]["text"] == "Task: Click the login button\nWhat action should you take?"
+    # The grounding prompt IS training's grounding slice: GROUNDING_SYSTEM_PROMPT + the one-image sft3 layout.
+    messages = build_messages("the login button", "/tmp/x.png")
+    assert messages[0] == {"role": "system", "content": GROUNDING_SYSTEM_PROMPT}
+    observation = build_grounding_observation('the element described as "the login button"', "/tmp/x.png")
+    assert messages[1] == {"role": "user", "content": observation["content"]}, messages[1]
+    assert observation["images"] == ["/tmp/x.png"]
+    assert observation["text"] == ('Current screenshot:\n<image>\nTask: Click the element described as "the login button".\n'
+                                   "What action should you take?"), observation["text"]
+    rendered = build_openai_messages("the login button", "QUJD")
+    assert rendered[0] == messages[0]
+    assert [item["type"] for item in rendered[1]["content"]] == ["text", "image_url", "text"], rendered[1]
+    assert rendered[1]["content"][1]["image_url"]["url"] == "data:image/png;base64,QUJD"
+    assert "".join(i.get("text", "<image>") for i in rendered[1]["content"]) == observation["text"]
 
     assert parse_point("foo <ref>(151, 509)</ref> bar", cfg.parse_patterns) == (151.0, 509.0)
     assert parse_point("action: click(640, 360)", DEFAULT_PARSE_PATTERNS) == (640.0, 360.0)
@@ -714,6 +728,8 @@ def run_smoke_test(cfg):
         out_dir.mkdir(parents=True, exist_ok=True)
         write_results(out_dir / "smoke.json", spec, cfg, summary, records)
         write_comparison(out_dir / "smoke_comparison.json", cfg, {"smoke": summary})
+        assert json.loads((out_dir / "smoke.json").read_text())["prompt_format"] == PROMPT_FORMAT_VERSION
+        assert json.loads((out_dir / "smoke_comparison.json").read_text())["prompt_format"] == PROMPT_FORMAT_VERSION
 
     print()
     print_comparison({"smoke": summary})
@@ -802,11 +818,11 @@ def build_parser():
                                  "for a mirror that stores absolute pixels.")
     run_parser.add_argument("--limit", type=int)
     run_parser.add_argument("--viewport", default=f"{DEFAULT_VIEWPORT_W}x{DEFAULT_VIEWPORT_H}")
-    run_parser.add_argument("--coord-space", default="viewport_abs", choices=sorted(COORD_SPACES),
+    run_parser.add_argument("--coord-space", default="normalized_1000", choices=sorted(COORD_SPACES),
                             help="Global default. A spec in --models-config may override it with "
-                                 "`coord_space:` — a stock Qwen answers in normalized_1000, a model "
-                                 "fine-tuned on this corpus answers in viewport_abs, so a before/after "
-                                 "comparison MUST score each side in its own space.")
+                                 "`coord_space:` — a stock Qwen and an sft3 checkpoint answer in "
+                                 "normalized_1000, an sft-v1/v2 checkpoint answers in viewport_abs, so a "
+                                 "before/after comparison MUST score each side in its own space.")
     run_parser.add_argument("--parse-pattern", action="append", help="Override default regex(es); repeatable.")
     run_parser.add_argument("--output-dir", default="eval_results")
     run_parser.add_argument("--max-pixels", type=int, default=DEFAULT_MAX_PIXELS)

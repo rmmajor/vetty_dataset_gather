@@ -1,6 +1,7 @@
 """Episode runner that measures a served computer-use model on real browser tasks, before vs after fine-tuning."""
 import argparse
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -29,11 +30,22 @@ from repo_pipeline.llm_config import MODEL_FOR_REASONING
 from repo_pipeline import remote_sandbox
 from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler, safe_parallel_sandboxes
 from repo_pipeline.sdk_runner import UsageLimitReached
+from repo_pipeline.site_blocks import BLOCK_SIGNATURES, BLOCK_SIGNATURES_VERSION, detect_block  # noqa: F401  re-exported
 from train_qwen import (
     HISTORY_WINDOW,
+    MODEL_COORD_MAX,
+    PREV_IMAGE_SIZE,
+    PROMPT_FORMAT_VERSION,
     SYSTEM_PROMPT,
+    build_step_messages,
+    build_step_observation,
+    downscale_prev,
     format_action_for_training,
-    format_action_summary,
+    history_entries_for_step,
+    screenshot_changed_fraction,
+    to_openai_content,
+    to_viewport_coords,
+    url_path_change,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,31 +67,24 @@ class StudentError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Prompt construction — byte-identical to the per-step training example.
+# Prompt construction — train_qwen's own observation builders, with PNG bytes inlined as data URLs.
 # ---------------------------------------------------------------------------
 
 
-def build_user_text(instruction: str, action_history: list[str]) -> str:
-    """The exact user text `train_qwen.convert_trajectory_to_examples` emits per step."""
-    user_text = f"Task: {instruction}"
-    if action_history:
-        window = action_history[-HISTORY_WINDOW:]
-        omitted = len(action_history) - len(window)
-        prefix = f"... {omitted} earlier actions, " if omitted > 0 else ""
-        user_text += f"\nPrevious actions: [{prefix}{', '.join(window)}]"
-    user_text += "\nWhat action should you take?"
-    return user_text
+def observed_effect(prev_png: bytes, cur_png: bytes, prev_url: str, cur_url: str) -> dict:
+    """What the next screenshot/url showed the last step's actions did, in the shape train_qwen annotates with."""
+    return {"changed": screenshot_changed_fraction(prev_png, cur_png), "path": url_path_change(prev_url, cur_url)}
 
 
-def build_messages(instruction: str, action_history: list[str], image_b64: str, mime: str) -> list:
-    """OpenAI chat messages whose text is identical to training; only the image transport differs."""
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}},
-            {"type": "text", "text": build_user_text(instruction, action_history)},
-        ]},
-    ]
+def build_student_messages(instruction: str, action_history: list, cur_png: bytes,
+                           prev_png: bytes | None = None) -> list:
+    """OpenAI chat messages for one step: the sft3 observation (prev + current screenshot from step 2 on)."""
+    images = {"cur": cur_png}
+    if prev_png is not None:
+        images["prev"] = downscale_prev(prev_png)
+    observation = build_step_observation(instruction, action_history, "cur", "prev" if prev_png is not None else None)
+    content = to_openai_content(observation["content"], lambda ref: base64.b64encode(images[ref]).decode())
+    return build_step_messages(SYSTEM_PROMPT, {**observation, "content": content})
 
 
 # ---------------------------------------------------------------------------
@@ -554,9 +559,7 @@ def parse_student_output(text: str, tolerant_grammar: bool = True) -> ParsedStep
 
 # ---------------------------------------------------------------------------
 # Coordinate-space registry: how the model's numbers relate to viewport pixels.
-# PER-MODEL and never auto-detected, mirroring eval_screenspot's ModelSpec.coord_space —
-# a stock Qwen answers in normalized_1000, a model fine-tuned here answers in viewport_abs,
-# and scoring one in the other's space yields a confident wrong number instead of an error.
+# PER-MODEL and never auto-detected (stock Qwen and sft3 answer in normalized_1000, sft-v1/v2 in viewport_abs); scoring one in the other's space yields a confident wrong number, not an error.
 # ---------------------------------------------------------------------------
 
 VIEWPORT_W = 1280
@@ -564,7 +567,17 @@ VIEWPORT_H = 720
 
 COORD_SPACES: dict = {
     "viewport_abs": lambda x, y: (round(x), round(y)),
-    "normalized_1000": lambda x, y: (round(x / 1000 * VIEWPORT_W), round(y / 1000 * VIEWPORT_H)),
+    "normalized_1000": to_viewport_coords,
+}
+
+# Per space: the inclusive range an emitted coordinate must respect, and the diagnosis when it does not.
+COORD_SPACE_RANGE: dict = {
+    "viewport_abs": (VIEWPORT_W - 1, VIEWPORT_H - 1),
+    "normalized_1000": (MODEL_COORD_MAX, MODEL_COORD_MAX),
+}
+COORD_SPACE_SUSPECT: dict = {
+    "viewport_abs": ("the model is likely answering in normalized 0-1000 coordinates", "normalized_1000"),
+    "normalized_1000": ("the model answers in pixels: an sft-v1/v2 checkpoint?", "viewport_abs"),
 }
 
 # Action keys holding a SCREEN POSITION. scroll_x/scroll_y are relative wheel deltas, not
@@ -593,8 +606,13 @@ def action_coordinates(action: dict) -> list:
     return []
 
 
+def outside_coord_space(x, y, coord_space: str) -> bool:
+    max_x, max_y = COORD_SPACE_RANGE[coord_space]
+    return not (0 <= x <= max_x and 0 <= y <= max_y)
+
+
 def outside_viewport(x, y) -> bool:
-    return not (0 <= x < VIEWPORT_W and 0 <= y < VIEWPORT_H)
+    return outside_coord_space(x, y, "viewport_abs")
 
 
 # ---------------------------------------------------------------------------
@@ -631,53 +649,7 @@ def driver_payload(action: dict, thought: str) -> dict | None:
     return payload
 
 
-# ---------------------------------------------------------------------------
-# Site blocking: scoring a CAPTCHA wall as a model failure measures the wrong thing.
-# ---------------------------------------------------------------------------
-
-# Bumped whenever a signature is added or widened: the set decides which episodes leave the
-# success denominator, so two runs scored by different sets are not comparable.
-BLOCK_SIGNATURES_VERSION = 2
 SNAPSHOT_RECORD_CHARS = 4000
-
-BLOCK_SIGNATURES: list = [
-    ("captcha", re.compile(r"\b(re)?captcha\b|\bhcaptcha\b|press *(&|and) *hold", re.IGNORECASE)),
-    ("human_verification", re.compile(
-        r"verify (that )?you('re| are)( a)? human|are you a robot|i'm not a robot|"
-        r"confirm you are (a )?human|prove you('re| are) (not a robot|human)|"
-        r"verifying you are human", re.IGNORECASE)),
-    ("cloudflare", re.compile(
-        r"checking your browser before accessing|cloudflare ray id|"
-        r"enable javascript and cookies to continue|attention required! \| cloudflare|"
-        r"performing security verification|just a moment\s*\.\.\.|"
-        r"needs to review the security of your connection", re.IGNORECASE)),
-    ("waf_block", re.compile(
-        r"access denied|403 forbidden|you (have been|are) blocked|request unsuccessful|"
-        r"pardon our interruption|unusual traffic from your computer|"
-        r"your request has been blocked|detected as (a )?bot|bot detection (triggered|system)|"
-        r"access (temporarily|has been) restricted|"
-        r"the request could not be satisfied|generated by cloudfront|request blocked",
-        re.IGNORECASE)),
-    ("geo_block", re.compile(
-        r"not available in your (area|country|region|location)|"
-        r"request is coming from a country|country which we do not|"
-        r"not available in your|unavailable in your country", re.IGNORECASE)),
-    # Scoped to whole-site failures on purpose: a bare "temporarily unavailable" is ordinary
-    # product copy, and matching it would drop real episodes out of the denominator.
-    ("site_error", re.compile(
-        r"(site|service) is temporarily unavailable|service temporarily unavailable|"
-        r"there seems to be a problem with our website|"
-        r"this site can't be reached|503 service unavailable", re.IGNORECASE)),
-]
-
-
-def detect_block(url: str, snapshot: str) -> str | None:
-    """Name of the first blocking signature visible in the current observation, else None."""
-    haystack = f"{url or ''}\n{snapshot or ''}"
-    for name, pattern in BLOCK_SIGNATURES:
-        if pattern.search(haystack):
-            return name
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -702,7 +674,8 @@ class EvalConfig:
     student_timeout_s: int = 180
     student_retries: int = 2
     mock_trajectory: str = ""
-    coord_space: str = "viewport_abs"
+    coord_space: str = "normalized_1000"
+    type_mode: str = "replace"
     browser_backend: str = "docker"
     browser_host: str = ""
     egress_note: str = ""
@@ -724,6 +697,12 @@ class EvalConfig:
     trajectories_dir: str = "trajectories"
     loop_guard_repeats: int = 0
     sandbox_image: str = ""
+
+    def __post_init__(self):
+        if self.screenshot_format != "png":
+            raise ValueError(
+                f"screenshot_format={self.screenshot_format!r}: {PROMPT_FORMAT_VERSION} effect annotations compare "
+                f"consecutive screenshots pixel-wise and a lossy frame never compares identical — use png")
 
 
 @dataclass
@@ -861,19 +840,20 @@ class EvalBrowser:
 
 
 def _note_emitted_coordinates(record: EpisodeRecord, actions: list, cfg: EvalConfig, task):
-    """Count emitted coordinates outside 1280x720 and name the likely coordinate-space fix once per episode."""
+    """Count emitted coordinates outside the declared space's range and name the likely coordinate-space fix once per episode."""
+    hint, other_space = COORD_SPACE_SUSPECT[cfg.coord_space]
+    max_x, max_y = COORD_SPACE_RANGE[cfg.coord_space]
     for action in actions:
         for x, y in action_coordinates(action):
             record.emitted_coords += 1
-            if not outside_viewport(x, y):
+            if not outside_coord_space(x, y, cfg.coord_space):
                 continue
             record.emitted_out_of_viewport += 1
-            if cfg.coord_space != "viewport_abs" or record.coord_space_warning:
+            if record.coord_space_warning:
                 continue
             record.coord_space_warning = (
-                f"emitted ({x}, {y}) is outside the {VIEWPORT_W}x{VIEWPORT_H} viewport under "
-                f"coord_space=viewport_abs; the model is likely answering in normalized 0-1000 "
-                f"coordinates — re-run with --coord-space normalized_1000"
+                f"emitted ({x}, {y}) is outside 0-{max_x} x 0-{max_y} under coord_space={cfg.coord_space}; "
+                f"{hint} — re-run with --coord-space {other_space}"
             )
             logger.warning(f"[{task.task_id}] COORDINATE SPACE: {record.coord_space_warning}")
 
@@ -888,6 +868,9 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
     )
     started = time.time()
     action_history: list[str] = []
+    prev_png: bytes | None = None
+    prev_url = ""
+    executed_actions: list = []
     consecutive_parse_failures = 0
     consecutive_unproductive = 0
     container_dir = f"{RESULTS_DIR}/{episode_dir_name(task)}"
@@ -899,9 +882,10 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
 
     try:
         try:
-            session = await _run(client.session, task.task_id, task.start_url, task.instruction,
-                                 {"expected_actions": task.reference_length,
-                                  "eval_label": cfg.label, "eval_source": task.source})
+            session = await _run(lambda: client.session(
+                task.task_id, task.start_url, task.instruction,
+                {"expected_actions": task.reference_length, "eval_label": cfg.label, "eval_source": task.source},
+                type_mode=cfg.type_mode))
             session_open = True
         except (DriverError, ConnectionError) as e:
             record.outcome = "unreachable"
@@ -924,14 +908,19 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
                 break
 
             try:
-                image_b64 = await _run(client.screenshot_b64, cfg.screenshot_format)
+                cur_png = base64.b64decode(await _run(client.screenshot_b64, cfg.screenshot_format))
             except (DriverError, ConnectionError) as e:
                 record.outcome = "harness_error"
                 record.error = f"screenshot failed: {str(e)[:250]}"
                 break
 
-            mime = "image/png" if cfg.screenshot_format == "png" else "image/jpeg"
-            messages = build_messages(task.instruction, action_history, image_b64, mime)
+            cur_url = last_url
+            if prev_png is not None:
+                # The last step enters the history only now: its effect is what THIS screenshot/url show.
+                action_history.extend(history_entries_for_step(
+                    {"actions": executed_actions}, observed_effect(prev_png, cur_png, prev_url, cur_url)))
+            messages = build_student_messages(task.instruction, action_history, cur_png, prev_png)
+            prev_png, prev_url, executed_actions = cur_png, cur_url, []
             try:
                 raw = await _run(student.complete, messages)
             except StudentError as e:
@@ -977,7 +966,8 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
                     terminated = True
                     handed_off = True
                     break
-                payload = driver_payload(scale_action(action, cfg.coord_space), parsed.think)
+                executed = scale_action(action, cfg.coord_space)
+                payload = driver_payload(executed, parsed.think)
                 if payload is None:
                     continue
                 if action["type"] == "done":
@@ -1003,8 +993,8 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
                 executed_this_step += 1
                 if action["type"] == "navigate":
                     record.navigations += 1
-                # History stays in the MODEL's coordinate space so its own frame is self-consistent.
-                action_history.append(format_action_summary(action))
+                # History is derived from the EXECUTED pixel action, so its coordinates round-trip as in training.
+                executed_actions.append(executed)
                 last_url = result.get("url", last_url)
                 last_snapshot = result.get("snapshot", last_snapshot)
 
@@ -1222,6 +1212,11 @@ def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
         "dataset_revision": provenance.get("revision", ""),
         "dataset_split": provenance.get("split", ""),
         "coord_space": cfg.coord_space,
+        # Parity keys: the observation layout. A run prompted in an older format measures the prompt, not the model.
+        "prompt_format": PROMPT_FORMAT_VERSION,
+        "prev_image_size": f"{PREV_IMAGE_SIZE[0]}x{PREV_IMAGE_SIZE[1]}",
+        "effect_annotations": True,
+        "type_mode": cfg.type_mode,
         # Parity key, deliberately NOT expected-to-differ: grammar tolerance is a property of
         # the harness, so both sides of a delta must have been parsed the same way.
         "action_grammar": "tolerant" if cfg.tolerant_grammar else "canonical",
@@ -1260,16 +1255,18 @@ COORD_SPACE_SUSPECT_RATE = float(os.environ.get("EVAL_COORD_SPACE_SUSPECT_RATE",
 
 def coord_space_diagnosis(fingerprint: dict, metrics: dict) -> str:
     """The run-level version of the per-episode warning: is this number even measuring the model?"""
-    if fingerprint.get("coord_space") != "viewport_abs":
+    space = fingerprint.get("coord_space")
+    if space not in COORD_SPACE_SUSPECT:
         return ""
     rate = metrics.get("emitted_out_of_viewport_rate", 0)
     if rate < COORD_SPACE_SUSPECT_RATE or not metrics.get("emitted_coords"):
         return ""
+    hint, other_space = COORD_SPACE_SUSPECT[space]
+    max_x, max_y = COORD_SPACE_RANGE[space]
     return (
         f"COORDINATE SPACE SUSPECT: {rate * 100:.0f}% of emitted coordinates "
         f"({metrics['emitted_out_of_viewport']}/{metrics['emitted_coords']}) fall outside "
-        f"{VIEWPORT_W}x{VIEWPORT_H} under coord_space=viewport_abs. This model is probably "
-        f"answering in normalized 0-1000 coordinates; re-run with --coord-space normalized_1000 "
+        f"0-{max_x} x 0-{max_y} under coord_space={space}. {hint}; re-run with --coord-space {other_space} "
         f"before reading any success rate below."
     )
 
@@ -1316,6 +1313,10 @@ def render_report(results: dict) -> str:
         f"| task subset | {fingerprint['subset_strategy']} |",
         f"| temperature / max tokens | {fingerprint['temperature']} / {fingerprint['max_tokens']} |",
         f"| observation format | {fingerprint['screenshot_format']} @ 1280x720 |",
+        f"| prompt format | `{fingerprint['prompt_format']}` |",
+        f"| previous-screenshot size | {fingerprint['prev_image_size']} (from step 2 on) |",
+        f"| effect annotations | {'on' if fingerprint['effect_annotations'] else 'off'} |",
+        f"| type mode | {fingerprint['type_mode']} |",
         f"| judge | {fingerprint['judge_model'] or 'disabled'} "
         f"(final + {fingerprint['judge_mid_screenshots']} mid screenshots) |",
         f"| history window | {fingerprint['history_window']} |",
@@ -1357,7 +1358,7 @@ def render_report(results: dict) -> str:
         f"| episodes ended by handoff/confirm | {metrics.get('handoff_episodes', 0)} |",
         f"| <think> emission rate (steps) | {metrics['think_rate'] * 100:.1f}% |",
         f"| driver-refused action rate | {metrics['driver_error_rate'] * 100:.1f}% |",
-        f"| emitted coords outside the viewport | {metrics.get('emitted_out_of_viewport', 0)}"
+        f"| emitted coords outside the declared coordinate space | {metrics.get('emitted_out_of_viewport', 0)}"
         f"/{metrics.get('emitted_coords', 0)} "
         f"({metrics.get('emitted_out_of_viewport_rate', 0) * 100:.1f}%) |",
         f"| out-of-viewport actions refused | {metrics['out_of_bounds_actions']} |",
@@ -1430,8 +1431,7 @@ def render_report(results: dict) -> str:
     return "\n".join(lines)
 
 
-# A before/after pair is EXPECTED to differ here: a stock model answers in normalized_1000 and a
-# fine-tuned one in viewport_abs, so each side must be measured in its own convention.
+# A before/after pair MAY differ here: an sft-v1/v2 checkpoint answers in viewport_abs, so each side is measured in its own convention.
 EXPECTED_TO_DIFFER_KEYS = ("coord_space",)
 # Provenance, not harness settings — these can never make a delta unattributable.
 PARITY_EXEMPT_KEYS = ("git_commit", "task_source_description", "level_distribution") + EXPECTED_TO_DIFFER_KEYS
@@ -1707,11 +1707,15 @@ def _add_run_arguments(parser):
                         help="retries for transport errors only; HTTP errors are surfaced")
     parser.add_argument("--mock-trajectory", default="",
                         help="trajectory.json replayed by the 'mock' student backend")
-    parser.add_argument("--coord-space", default=os.environ.get("EVAL_COORD_SPACE", "viewport_abs"),
+    parser.add_argument("--coord-space", default=os.environ.get("EVAL_COORD_SPACE", "normalized_1000"),
                         choices=sorted(COORD_SPACES),
-                        help="the convention THIS model answers in: a model fine-tuned here emits "
-                             "viewport_abs (1280x720 pixels), a stock Qwen emits normalized_1000. "
-                             "Set it explicitly per model — it is never auto-detected")
+                        help="the convention THIS model answers in: a stock Qwen and an sft3 checkpoint emit "
+                             "normalized_1000 (the prompt's 0-1000 grid); an sft-v1/v2 checkpoint emits "
+                             "viewport_abs (1280x720 pixels). Set it explicitly per model — it is never "
+                             "auto-detected")
+    parser.add_argument("--type-mode", default="replace", choices=("replace", "append"),
+                        help="driver typing mode; replace selects the focused field's text before typing, "
+                             "as capture and RL do")
     parser.add_argument("--strict-action-grammar", action="store_true",
                         help="accept ONLY the canonical form format_action_for_training emits. Off "
                              "by default: any unambiguous spelling of a call is accepted, and how "
@@ -1732,7 +1736,8 @@ def _add_run_arguments(parser):
                         help="with --limit, keep the task set's easy/medium/hard mix instead of "
                              "taking the first N rows")
     parser.add_argument("--episode-timeout", type=int, default=900)
-    parser.add_argument("--screenshot-format", default="png", choices=("png", "jpeg"))
+    parser.add_argument("--screenshot-format", default="png", choices=("png", "jpeg"),
+                        help="png only under sft3: effect annotations compare consecutive frames pixel-wise")
     parser.add_argument("--no-judge", action="store_true",
                         help="skip verification (harness-only run; no Claude calls, no success rate)")
     parser.add_argument("--judge-mid-screenshots", type=int, default=2,
@@ -1761,7 +1766,7 @@ def _config_from_args(args) -> EvalConfig:
         model=args.model, adapter=args.adapter, api_key=args.api_key,
         temperature=args.temperature, max_tokens=args.max_tokens,
         student_timeout_s=args.student_timeout, student_retries=args.student_retries,
-        mock_trajectory=args.mock_trajectory, coord_space=args.coord_space,
+        mock_trajectory=args.mock_trajectory, coord_space=args.coord_space, type_mode=args.type_mode,
         tolerant_grammar=not args.strict_action_grammar,
         max_unproductive_steps=args.max_unproductive_steps,
         max_parse_failures=args.max_parse_failures, max_steps=args.max_steps,
@@ -1814,7 +1819,10 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     install_sigterm_handler()
-    cfg = _config_from_args(args)
+    try:
+        cfg = _config_from_args(args)
+    except ValueError as e:
+        parser.error(str(e))
     try:
         results = asyncio.run(run_eval(cfg))
     except TaskSourceUnavailable as e:

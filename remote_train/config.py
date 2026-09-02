@@ -54,8 +54,7 @@ class RemoteTrainConfig:
     eval_dataset: str = ""     # override the benchmark's default HF dataset
     eval_split: str = ""
     eval_extra_args: str = ""  # extra flags passed straight to the harness
-    # Coordinate convention THE MODEL answers in. normalized_1000 for a stock Qwen;
-    # viewport_abs for a checkpoint fine-tuned on this project's corpus.
+    # Coordinate convention THE MODEL answers in: normalized_1000 (stock Qwen, sft3), viewport_abs (sft-v1/v2).
     eval_coord_space: str = "normalized_1000"
 
     push_hf_repo: str = ""
