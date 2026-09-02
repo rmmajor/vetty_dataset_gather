@@ -89,7 +89,9 @@ def build_vllm_serve_command(cfg, adapters=None):
             "--gpu-memory-utilization", str(cfg.get("vllm_gpu_memory_utilization", 0.9)),
             "--limit-mm-per-prompt", str(cfg.get("vllm_limit_mm_per_prompt", '{"image": 1}'))]
     if adapters:
-        argv += ["--enable-lora", "--lora-modules", f"cua-student-lora={adapters}",
+        # A dict serves several checkpoints from one rental, each under its own name; a string keeps the canonical single-adapter name.
+        named = adapters if isinstance(adapters, dict) else {"cua-student-lora": adapters}
+        argv += ["--enable-lora", "--lora-modules", *[f"{name}={path}" for name, path in named.items()],
                  "--max-lora-rank", str(cfg.get("vllm_max_lora_rank", 64))]
     return argv
 
