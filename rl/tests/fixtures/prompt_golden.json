@@ -1,0 +1,154 @@
+{
+ "constants": {
+  "PROMPT_FORMAT_VERSION": "sft3",
+  "COORD_SPACE": "normalized_1000",
+  "HISTORY_WINDOW": 20,
+  "SYSTEM_PROMPT": "You are a GUI agent that operates a web browser at a 1280x720 resolution. Given a task, the current screenshot (and, after the first step, a downscaled screenshot of the screen before your last action), and your previous actions annotated with their observed effect ([no change] when the screen did not change, -> /path when the URL path changed), reason about the state in <think>...</think>, then output one or more actions, one per line.\n\nAvailable actions (x, y are normalized to 0-1000 across the screenshot width and height; scrollX/scrollY are pixel deltas):\naction: click(<ref>(x, y)</ref>, button=left|right)\naction: double_click(<ref>(x, y)</ref>)\naction: move(<ref>(x, y)</ref>)\naction: type(\"text\")\naction: keypress([\"Enter\"])\naction: scroll(<ref>(x, y)</ref>, scrollX=0, scrollY=500)\naction: drag(<ref>(x1, y1)</ref> -> <ref>(x2, y2)</ref>)\naction: wait()\naction: navigate(\"https://...\")\naction: handoff(reason=login)\naction: confirm(propose=click(<ref>(x, y)</ref>), risk=purchase)\naction: done()\n\nUse done() only when the task is fully accomplished and the screen confirms it.\nUse handoff(reason=...) to yield control for a login, payment entry, CAPTCHA, or 2FA — never type those yourself. Use confirm(propose=..., risk=...) to PAUSE before a consequential, hard-to-undo action (purchase, payment, send, publish, delete, consent) and wait for approval instead of doing it.",
+  "GROUNDING_SYSTEM_PROMPT": "You are a GUI agent that operates a web browser at a 1280x720 resolution. Given a screenshot and the description of one UI element, output exactly one action that clicks it: action: click(<ref>(x, y)</ref>, button=left) with x, y normalized to 0-1000 across the screenshot width and height. No reasoning, no other text."
+ },
+ "coords": {
+  "click": {
+   "type": "click",
+   "x": 500,
+   "y": 500,
+   "button": "left"
+  },
+  "drag": {
+   "type": "drag",
+   "path": [
+    {
+     "x": 0,
+     "y": 0
+    },
+    {
+     "x": 1000,
+     "y": 1000
+    }
+   ]
+  },
+  "scroll": {
+   "type": "scroll",
+   "x": 250,
+   "y": 250,
+   "scroll_x": 0,
+   "scroll_y": 500
+  },
+  "confirm": {
+   "type": "confirm",
+   "proposed_action": {
+    "type": "click",
+    "x": 999,
+    "y": 999
+   },
+   "risk_category": "purchase"
+  },
+  "type": {
+   "type": "type",
+   "text": "hello"
+  },
+  "keypress": {
+   "type": "keypress",
+   "keys": [
+    "Enter"
+   ]
+  },
+  "done": {
+   "type": "done"
+  }
+ },
+ "history": {
+  "no_change": [
+   "click(500, 500) [no change]"
+  ],
+  "path": [
+   "click(500, 500) -> /projects/new"
+  ],
+  "both": [
+   "click(500, 500) [no change] -> /projects/new"
+  ],
+  "group_last_entry": [
+   "click(500, 500)",
+   "type(\"hello\") [no change] -> /projects/new"
+  ]
+ },
+ "observations": {
+  "no_history_step1": {
+   "text": "Current screenshot:\n<image>\nTask: Move the apartment board to the kanban view\nWhat action should you take?",
+   "content": [
+    {
+     "type": "text",
+     "text": "Current screenshot:\n"
+    },
+    {
+     "type": "image",
+     "image": "<CUR>"
+    },
+    {
+     "type": "text",
+     "text": "\nTask: Move the apartment board to the kanban view\nWhat action should you take?"
+    }
+   ],
+   "images": [
+    "<CUR>"
+   ]
+  },
+  "windowed_23_stepn": {
+   "text": "Previous screenshot (before your last action, downscaled):\n<image>\nCurrent screenshot:\n<image>\nTask: Move the apartment board to the kanban view\nPrevious actions: [... 3 earlier actions, click(3, 3), click(4, 4), click(5, 5), click(6, 6), click(7, 7), click(8, 8), click(9, 9), click(10, 10), click(11, 11), click(12, 12), click(13, 13), click(14, 14), click(15, 15), click(16, 16), click(17, 17), click(18, 18), click(19, 19), click(20, 20), click(21, 21), click(22, 22)]\nWhat action should you take?",
+   "content": [
+    {
+     "type": "text",
+     "text": "Previous screenshot (before your last action, downscaled):\n"
+    },
+    {
+     "type": "image",
+     "image": "<PREV>"
+    },
+    {
+     "type": "text",
+     "text": "\nCurrent screenshot:\n"
+    },
+    {
+     "type": "image",
+     "image": "<CUR>"
+    },
+    {
+     "type": "text",
+     "text": "\nTask: Move the apartment board to the kanban view\nPrevious actions: [... 3 earlier actions, click(3, 3), click(4, 4), click(5, 5), click(6, 6), click(7, 7), click(8, 8), click(9, 9), click(10, 10), click(11, 11), click(12, 12), click(13, 13), click(14, 14), click(15, 15), click(16, 16), click(17, 17), click(18, 18), click(19, 19), click(20, 20), click(21, 21), click(22, 22)]\nWhat action should you take?"
+    }
+   ],
+   "images": [
+    "<PREV>",
+    "<CUR>"
+   ]
+  },
+  "annotated_stepn": {
+   "text": "Previous screenshot (before your last action, downscaled):\n<image>\nCurrent screenshot:\n<image>\nTask: Move the apartment board to the kanban view\nPrevious actions: [click(500, 500) [no change], click(500, 500), type(\"hello\") -> /projects/new, click(500, 500) [no change] -> /projects/new]\nWhat action should you take?",
+   "content": [
+    {
+     "type": "text",
+     "text": "Previous screenshot (before your last action, downscaled):\n"
+    },
+    {
+     "type": "image",
+     "image": "<PREV>"
+    },
+    {
+     "type": "text",
+     "text": "\nCurrent screenshot:\n"
+    },
+    {
+     "type": "image",
+     "image": "<CUR>"
+    },
+    {
+     "type": "text",
+     "text": "\nTask: Move the apartment board to the kanban view\nPrevious actions: [click(500, 500) [no change], click(500, 500), type(\"hello\") -> /projects/new, click(500, 500) [no change] -> /projects/new]\nWhat action should you take?"
+    }
+   ],
+   "images": [
+    "<PREV>",
+    "<CUR>"
+   ]
+  }
+ }
+}

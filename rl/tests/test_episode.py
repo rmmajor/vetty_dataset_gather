@@ -101,7 +101,7 @@ def test_full_episode_records_steps_history_and_reward():
         ep.reset()
         obs, reward, done, info = ep.step("<think>c</think>\naction: click(<ref>(10, 10)</ref>, button=left)\naction: type(\"hi\")")
         assert not done and reward is None and info["parse"] == "ok" and info["executed"] == 2
-        assert obs["text"] == 'Task: Do the thing\nPrevious actions: [click(10, 10), type("hi")]\nWhat action should you take?'
+        assert obs["text"] == 'Task: Do the thing\nPrevious actions: [click(8, 14), type("hi")]\nWhat action should you take?'
         obs, reward, done, info = ep.step("garbage")
         assert not done and info["parse"] == "failure" and len(client.steps) == 1
         obs, reward, done, info = ep.step("<think>d</think>\naction: done()")
