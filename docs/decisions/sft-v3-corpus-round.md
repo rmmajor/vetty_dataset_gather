@@ -114,3 +114,33 @@ alongside the coordinate-space change and the mined slice.
   coordinate or a correct coordinate whose action had no effect. A bench-side probe (does the click
   land inside any interactive element's box?) would separate the two and tell the next round which
   lever matters.
+
+## Pre-registered expectation on Online-Mind2Web (written 2026-09-02)
+
+Mind2Web's role in this round is the **no-regression check**, not the headline. It measures general
+browsing on diverse live sites, while every sft-v3 intervention is QA-flavoured. Three effects pull in
+different directions, which is why the success band is wide:
+
+- `normalized_1000` restores the base model's native coordinate convention, and click accuracy
+  dominates on unfamiliar sites — the only plausible source of a real gain;
+- 144 QA-voice instructions (18% of the corpus) and 43 verify-style trajectories (5%) move the
+  instruction distribution away from Mind2Web's info-seeking phrasing;
+- two epochs instead of three should help, since Mind2Web is out of domain for this corpus.
+
+| metric | sft-v2 (n=50) | sft-v3 expected | regression threshold |
+| --- | --- | --- | --- |
+| parse-failure rate | 0.0% | 0.0% | any parse failure is a regression |
+| canonical action form | 100% | 100% | below 100% is a regression |
+| done() emission | 30% | 35-45%, better calibrated | — |
+| steps / reference on success | 2.46x | 1.8-2.2x | above 2.6x is a regression |
+| scored success | 12.1% | 14-18% central (band 10-22%) | below 8% is a regression |
+
+**The comparison must be run, not inherited.** sft-v2's Mind2Web number exists only on the archived
+50-task set; sft-v3 runs on `tasks_reachable_us_174.jsonl`. Comparing across those sets is invalid, so
+sft-v2 is re-run on the 174 set in the same serve (~1 extra GPU hour). At n=50 nothing was ever
+resolvable — base, sft-v1, grpo-v2 and sft-v2 all sit inside each other's confidence intervals — which
+is the reason the 174 set exists.
+
+**What a null result means here.** Mind2Web success landing inside the band with format metrics intact
+is a PASS for this round: it shows the QA-directed corpus changes did not cost general browsing. Only a
+drop below the regression thresholds contradicts the round's claim.
