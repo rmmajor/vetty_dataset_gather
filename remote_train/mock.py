@@ -24,6 +24,7 @@ class MockProvider(ComputeProvider):
         self.destroyed: list = []
         self.exec_log: list = []
         self.tunnels: list = []
+        self.reported_label = cfg.instance_label  # tests set this to a foreign label to exercise the ownership gate
         self.phases = list(getattr(cfg, "mock_phases", ()))
         self.phase_calls = 0
         self._fake_offers = [
@@ -31,6 +32,7 @@ class MockProvider(ComputeProvider):
             Offer("ru-1", 0.35, "RTX 4090", 48, 1, "RU", 0.99),
             Offer("se-1", 0.45, "A100 SXM4", 80, 1, "SE", 0.99),
             Offer("us-1", 0.55, "A100 SXM4", 80, 1, "US", 0.99),
+            Offer("us-2", 0.60, "A100 SXM4", 80, 2, "US", 0.99),  # server-mode GRPO needs two GPUs
         ]
 
     def search_offer(self, cfg) -> Offer:
@@ -84,6 +86,9 @@ class MockProvider(ComputeProvider):
 
     def list_owned(self, label) -> list:
         return []
+
+    def live_label(self, instance) -> str | None:
+        return self.reported_label
 
 
 def build_mock_provider(cfg) -> ComputeProvider:

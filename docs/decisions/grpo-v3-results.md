@@ -1,5 +1,7 @@
 # GRPO v3 — alive, and flat (2026-09-02)
 
+Operator's run log, written as the run finished: `docs/decisions/grpo-v3-run-results.md`.
+
 The third GRPO run and the last one for the paper. It fixed everything `grpo-v2` died of
 (`docs/decisions/grpo-v3-pipeline-fixes.md`): rewards can no longer be fabricated, every train task
 carries an oracle, the pool was selected by measurement, G=8 at temperature 1.0, 50 steps. The

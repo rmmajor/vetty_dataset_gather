@@ -11,7 +11,7 @@ from rl.backends import BACKENDS, RL_LOOP_GUARD_REPEATS, WorkerPool
 from rl.episode import EpisodeConfig
 from rl.judge import AsyncBridge
 from rl.policies import make_policy
-from rl.runner import make_run_context, run_batch, summarize, write_rollouts
+from rl.runner import make_run_context, require_oracles, run_batch, summarize, write_rollouts
 from rl.tasks import SUITE_PATH, load_suite, select_tasks
 
 logger = logging.getLogger(__name__)
@@ -68,12 +68,14 @@ def main():
     install_sigterm_handler()
     run_id = args.run_id or time.strftime("rollout-%Y%m%d-%H%M%S")
     suite, tasks = selected_tasks(args)
+    require_oracles(tasks, args.verifier_mode)
     spec = policy_spec(args)
     bridge = AsyncBridge()
     pool = build_pool(args)
     cfg = EpisodeConfig(max_steps=args.max_steps, verifier_mode=args.verifier_mode)
-    run_ctx = make_run_context(run_id, args.out, args.iter, policy_tag=args.model, bridge=bridge)
     out_dir = Path(args.out) / run_id / f"iter_{args.iter:03d}"
+    # Episode dirs must carry the run id too, or a second run overwrites the first run's kNN dirs.
+    run_ctx = make_run_context(run_id, Path(args.out) / run_id, args.iter, policy_tag=args.model, bridge=bridge)
     try:
         pool.start()
         records = run_batch(lambda: make_policy(spec), tasks, args.k, pool, run_ctx, cfg,

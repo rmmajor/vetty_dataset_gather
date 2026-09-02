@@ -110,33 +110,46 @@ permanently out of scope under the burner-only invariant.
 
 ## 8. RL / GRPO — what would move the score (closed 2026-09-02 by §10)
 
-Items 1, 3, 4 and 5 below were done for `grpo-v3` and the score did not move; see §10.
+Item 1 below was done for `grpo-v3` and the full 50-step run it was meant to de-risk (item 3) went ahead; the score did not move, see §10.
 
-Written 2026-08-28 after the first live GRPO run (`docs/decisions/grpo-v2-first-live-run.md`:
-sft-v1 9.4% → grpo-v2 11.8% verified on the archived 50-task Online-Mind2Web sample, inside
-noise). The harness is done; the ceiling is what it is fed. Ranked by expected effect per dollar.
+Rewritten 2026-08-31. The `grpo-v2` run is now understood as a **dead run**, not a weak one: its
+LoRA-B norm is 1.9% of sft-v1's, because 10 of its 12 task groups had no reward contrast and 20% of
+its episodes trained on a fabricated `0.0`. Everything in the "pipeline" block below is fixed and
+proven (`docs/decisions/grpo-v3-pipeline-fixes.md`); what remains is data and spend.
 
-1. **Train on the student's frontier.** 8 of the 12 train tasks were all-fail groups and gave no
-   advantage; the run learned from 3–4 tasks. Before the next run, roll the SFT policy k=8 over a
-   pool of ~60 short, idempotent tasks on sites outside the eval splits (the proposer can author
-   them) and keep tasks with 20–70% success. ~$3 of serve and judge calls.
-2. **Parse-failure aborts are the largest recoverable loss** on Online-Mind2Web — 13/50 tasks for
-   SFT and GRPO alike: on 403/blocked/error pages the student narrates and never emits an
-   `action:` line. Cheapest fix is SFT data (a few dozen error-page examples answered with
-   `done()` / `navigate`; the teacher never met the walls the student hits). Second: put
-   blocked-page tasks in the RL pool so the −0.5 parse penalty is exercised; the loop guard ended
-   every such episode first this time.
-3. **Group size 8, rollout temperature 1.0.** At 10–30% success a group of 4 is often
-   zero-variance; 8 samples roughly doubles the share of groups with gradient at the same
-   16-episode step cost. Config only (`num_generations`, `temperature`).
-4. **`success_check`s for the frontier tasks** (`rl/checks.py` registry) so rewards stop
-   depending on the judge's throughput, which is what caps steps per hour; the loop guard is
-   already a service knob defaulting to 5.
-5. **40–60 steps** (~$15–25 at the observed ~$0.9/step) once 1–4 are in place; leave β 0.01 and
-   lr 1e-5 alone until a curve exists.
-6. **Measure with enough episodes.** n≈34 scored at ~10% success is ±8 pp; a real delta needs
-   ~150 scored tasks per side (~1.5 h, ~$5 per side). Serve the after-adapter on the merged SFT
-   base (`CUA_SERVE_MODEL`), never on raw `Qwen/Qwen3.5-9B`.
+**Done (2026-08-31, branch `feat/grpo-v3`).** Verdictless episodes can no longer train
+(`require_reward`); a judge-free run refuses to start unless every task has a `success_check`;
+milestone partial credit orders failed groups; the false-done inversion is fixed; oracles can see
+the page's rendered text (`/page_text`, since `/snapshot` shows only headings and control names);
+`navigate` is legal in the eval harness again (it is in the trained grammar and was scored a parse
+failure); the RL decoder tolerates a prefilled `<think>`, which had been discarding every thought and
+marking every turn unclean; G=8, temperature 1.0, `dynamic_sample` + `max_resample_times`,
+`epsilon_high`, `max_turns 32`, 50 steps; `rl/analysis.py` gives per-task pass@k, reward histograms,
+zero-variance-group share and the LoRA-B dead-run detector.
+
+**Ranked, still open:**
+
+1. **Finish frontier selection and keep it fresh.** `repo_pipeline/public_sites_actions_frontier.json`
+   holds 51 oracle-checked tasks in two tiers (4–12 and 10–16 expected actions). A k=1 pilot on
+   merged sft-v1 scored 51.5% pool-wide with zero deferred rewards, so the pool straddles the
+   frontier; the k=8 sweep picks the 20–80% band. Task difficulty moves with the policy, so re-sweep
+   the selection (k=4, ~$2) against any new checkpoint before training on it.
+2. **Parse-failure aborts remain the largest recoverable benchmark loss** — 13/50 Online-Mind2Web
+   tasks for SFT and GRPO alike. Two independent fixes now exist: the harness one (navigate, above,
+   free) and the data one (error/blocked-page examples in the SFT corpus — see
+   `docs/sft-corpus-gaps.md` gap #1). RL cannot fix it: on a wall every action scores alike, so there
+   is no gradient toward "say `done()` properly".
+3. **Prove learning before paying for it.** The remaining unproven link is that real grouped rewards
+   move the weights — the Modal smoke proved mechanics against a mock env only. A ~10-step run on
+   selected tasks, watching ms-swift's `frac_reward_zero_std` and the LoRA-B ratio, costs ~$5 and
+   de-risks the full run. Kill any run whose B-norm is under 10% of the SFT adapter's after ~10 steps.
+4. **Budget is now the binding constraint, not the harness.** Remaining free credits are roughly
+   $15 (bombaleylo2) + $4 (mknssh) after the sweep; a 50-step run plus a 150-task before/after eval
+   does not fit. Either shorten the run, or accept that the next honest before/after needs funding
+   beyond the free tier. Never bill beyond the free credits.
+5. **Measure with enough episodes.** n≈34 scored at ~10% success is ±8 pp; a real delta needs ~150
+   scored tasks per side (~1.5 h, ~$5 per side). Serve any GRPO adapter on the **merged SFT** weights
+   (`CUA_SERVE_MODEL`), never on raw `Qwen/Qwen3.5-9B` — its `base_model_name_or_path` is the merge.
 
 Outside RL but bounding the ceiling: 28% of the eval sample is site-blocked from the sandbox IP
 (excluded from the score, a hard cap on the all-episode rate), and the judge is an LLM reading

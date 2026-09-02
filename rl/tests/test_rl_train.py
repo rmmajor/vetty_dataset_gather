@@ -4,9 +4,14 @@ from pathlib import Path
 
 from remote_train.config import RemoteTrainConfig
 from remote_train.jobs import JOBS, GrpoJob, ServeJob
+import time
+
+from remote_train.base import Instance, ProviderError
+from remote_train.lifecycle import _wait_for_completion
 from remote_train.mock import MockProvider
+from remote_train.vastai import offer_query
 from rl_train import (PhaseDriver, build_deploy_command, build_env, build_merge_command, build_rlhf_command,
-                      build_rollout_command, derive_run_config, load_rl_config, make_dataset)
+                      build_rollout_command, derive_run_config, load_rl_config, load_task_ids, make_dataset)
 
 CFG = load_rl_config("rl_config.yaml")
 
@@ -27,7 +32,10 @@ def test_commands_are_argv_lists_with_expected_flags():
     assert "--reward_weights" not in rlhf and "--reward_funcs" not in rlhf
     weighted = build_rlhf_command(dict(CFG, reward_funcs="action_format", reward_weights="0.2 1.0"))
     assert weighted[weighted.index("--reward_weights"):weighted.index("--reward_weights") + 3] == ["--reward_weights", "0.2", "1.0"]
-    assert rlhf[rlhf.index("--num_generations") + 1] == "4" and rlhf[rlhf.index("--freeze_vit") + 1] == "true"
+    assert rlhf[rlhf.index("--num_generations") + 1] == "8" and rlhf[rlhf.index("--freeze_vit") + 1] == "true"
+    # Off by design: resampling zero-variance groups breaks the per-turn scheduler's reward reshape.
+    assert rlhf[rlhf.index("--dynamic_sample") + 1] == "false" and "--max_resample_times" not in rlhf
+    assert rlhf[rlhf.index("--epsilon_high") + 1] == "0.28" and rlhf[rlhf.index("--temperature") + 1] == "1.0"
     deploy = build_deploy_command(CFG, adapters="/workspace/rl_output/latest")
     assert deploy[:2] == ["swift", "deploy"] and deploy[deploy.index("--adapters") + 1] == "/workspace/rl_output/latest" and "--port" in deploy
     assert "--adapters" not in build_deploy_command(CFG)
@@ -48,7 +56,7 @@ def test_derive_run_config_merges_compute_and_ignores_none():
                                       "compute": {"serve_port": 9001}})
     assert derived["env_url"] == "https://x.ngrok.app" and derived["max_steps"] == 1 and derived["eval_before"] is False
     assert derived["template"] == CFG["template"] and derived["compute"]["serve_port"] == 9001 and derived["compute"]["min_vram_gb"] == 80
-    assert CFG["max_steps"] == 30 and CFG["compute"]["serve_port"] == 8001
+    assert CFG["max_steps"] == 50 and CFG["compute"]["serve_port"] == 8001
 
 
 def test_make_dataset_rows():
@@ -64,6 +72,12 @@ def test_make_dataset_rows():
         assert rows[0]["env_config"] == {"name": "browser_env", "task_id": "a", "sample_idx": 0} and rows[2]["env_config"]["sample_idx"] == 1
         assert make_dataset(suite, out, split="train", repeats=1, max_expected_actions=18) == 1
         assert json.loads(out.read_text())["env_config"]["task_id"] == "a"
+        assert make_dataset(suite, out, split="train", repeats=1, task_ids=["c"]) == 1
+        assert json.loads(out.read_text())["env_config"]["task_id"] == "c"
+        selection = Path(tmp) / "frontier_selection.json"
+        selection.write_text(json.dumps({"selected": ["a", "c"], "band": [0.2, 0.8]}))
+        assert load_task_ids(selection) == ["a", "c"]
+        assert make_dataset(suite, out, split="train", repeats=1, task_ids=load_task_ids(selection)) == 2
 
 
 class FakeProc:
@@ -174,7 +188,9 @@ def test_grpo_job_on_poll_handles_handshake_and_collects_adapter():
         assert stop == [False, False, False, False]
         assert job.evals_done == ["EVAL_BEFORE_READY", "EVAL_AFTER_READY"]
         assert any("PHASE_ACK" in c for c in provider.exec_log)
-        assert any("DOWNLOAD /workspace/rl_output/latest/" in c for c in provider.exec_log)
+        # rl_output/ not latest/: `latest` exists only after training ends, so pulling it mid-run
+    # always failed and every checkpoint died with the box.
+    assert any("DOWNLOAD /workspace/rl_output/" in c for c in provider.exec_log)
 
 
 def test_serve_job_stops_after_serve_seconds():
@@ -191,3 +207,33 @@ def test_serve_job_stops_after_serve_seconds():
         assert job.on_poll(provider, instance, cfg) is False
         assert job.on_poll(provider, instance, cfg) is True
         assert "swift deploy" in job.remote_command(cfg) and "--adapters" in job.remote_command(cfg)
+
+def test_offer_query_asks_for_vram_in_megabytes():
+    cfg = RemoteTrainConfig(min_vram_gb=48, num_gpus=1, min_inet_down_mbps=300)
+    query = offer_query(cfg)
+    # A Vast QUERY takes gigabytes even though the response reports megabytes; converting here matches nothing.
+    assert "gpu_ram >= 48" in query
+    assert "inet_down >= 300" in query and "num_gpus=1" in query
+
+class FlakyPollProvider(MockProvider):
+    """Times out on the first status poll, then reports the job finished."""
+
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.status_polls = 0
+
+    def exec(self, instance, command, *, stream=False, timeout=0):
+        if "STATUS" in command:
+            self.status_polls += 1
+            if self.status_polls == 1:
+                raise ProviderError("ssh exec timed out after 45s")
+            return "DONE", "", 0
+        return super().exec(instance, command, stream=stream, timeout=timeout)
+
+
+def test_one_slow_status_poll_does_not_kill_a_healthy_run():
+    cfg = RemoteTrainConfig(poll_interval_s=0)
+    provider = FlakyPollProvider(cfg)
+    instance = Instance(id="i-1", provider="mock", label="roman.maior", ssh_host="h", ssh_port=22)
+    assert _wait_for_completion(provider, instance, cfg, deadline=time.time() + 60) is True
+    assert provider.status_polls == 2

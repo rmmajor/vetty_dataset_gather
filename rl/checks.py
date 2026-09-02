@@ -4,11 +4,15 @@ import re
 _ELEMENT_RE = re.compile(r'^\[(\d+)\] (\S+) "([^"]*)"[ \t]*(.*)$', re.MULTILINE)
 
 
-def build_context(snapshot, storage_state_loader, record):
-    text = snapshot.get("snapshot", "")
+def build_context(snapshot, storage_state_loader, record, page_text=""):
+    snapshot_text = snapshot.get("snapshot", "")
     elements = [{"ref": int(m.group(1)), "role": m.group(2), "name": m.group(3), "extra": m.group(4).strip()}
-                for m in _ELEMENT_RE.finditer(text)]
-    return {"url": snapshot.get("url", ""), "title": snapshot.get("title", ""), "text": text, "elements": elements,
+                for m in _ELEMENT_RE.finditer(snapshot_text)]
+    # text_visible must see a computed answer wherever it rendered, so it searches the page's own text too.
+    return {"url": snapshot.get("url", ""), "title": snapshot.get("title", ""),
+            "text": f"{snapshot_text}\n{page_text}" if page_text else snapshot_text, "elements": elements,
+            # Rendered text only: ctx["text"] also carries element values, which an agent can satisfy by TYPING the answer.
+            "page_text": page_text,
             "storage_state": storage_state_loader, "terminal_reason": record.get("terminal_reason", "")}
 
 
@@ -28,6 +32,7 @@ CHECKS = {
     "url_contains": lambda spec, ctx: spec in ctx["url"],
     "title_contains": lambda spec, ctx: spec.lower() in ctx["title"].lower(),
     "text_visible": lambda spec, ctx: spec.lower() in ctx["text"].lower(),
+    "page_text_visible": lambda spec, ctx: spec.lower() in ctx.get("page_text", "").lower(),
     "text_absent": lambda spec, ctx: spec.lower() not in ctx["text"].lower(),
     "element_present": lambda spec, ctx: any(_element_matches(e, spec) for e in ctx["elements"]),
     "element_absent": lambda spec, ctx: not any(_element_matches(e, spec) for e in ctx["elements"]),

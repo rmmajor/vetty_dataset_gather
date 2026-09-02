@@ -2,7 +2,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from rl.tasks import build_suite, check_suite, is_idempotent, select_tasks, split_for
+from rl.tasks import build_candidates, build_suite, check_suite, is_idempotent, select_tasks, split_for
 
 SRC = {"path": None, "backend": "public_site", "env": "live", "lane": "autonomous", "auth_mode": "none"}
 
@@ -56,3 +56,48 @@ def test_build_excludes_trained_tasks_and_checks_disjointness():
         train = select_tasks(suite, split="train")
         assert train and all(t["split"] == "train" and t["idempotent"] for t in train)
         assert select_tasks(suite, task_ids=["site0__t1"])[0]["allowed_hosts"] == ["site0.example"]
+
+
+def test_build_candidates_merges_forces_train_and_excludes():
+    with tempfile.TemporaryDirectory() as tmp:
+        frontier = {
+            "_config": {"exclude_sites": ["banned"], "exclude_domains": ["evil.example"]},
+            "sites": [
+                {"name": "toolsite", "start_url": "https://toolsite.example/", "domain": "d", "tasks": [
+                    {"id": "f1", "instruction": "Convert 5 miles to km ending with the value shown", "expected_actions": 5,
+                     "idempotent": True, "success_check": {"text_visible": "8.04"},
+                     "milestones": [{"name": "entered", "check": {"text_visible": "5"}, "weight": 1.0}]},
+                    {"id": "f2", "instruction": "Look up the weekday of 2000-01-01 ending with it shown", "expected_actions": 6,
+                     "idempotent": True, "success_check": {"text_visible": "Saturday"}}]},
+                {"name": "banned", "start_url": "https://banned.example/", "domain": "d", "tasks": [
+                    {"id": "x", "instruction": "Open the page ending shown", "expected_actions": 4, "idempotent": True,
+                     "success_check": {"url_contains": "p"}}]},
+                {"name": "evilfront", "start_url": "https://www.evil.example/app", "domain": "d", "tasks": [
+                    {"id": "y", "instruction": "Open the app page ending shown", "expected_actions": 4, "idempotent": True,
+                     "success_check": {"url_contains": "app"}}]},
+            ],
+        }
+        frontier_path = _write(tmp, "frontier.json", frontier)
+        base = {"suite_sha256": "s", "tasks": [
+            {"task_id": "old__short", "site": "old", "start_url": "https://old.example/", "instruction": "Do the short one until done",
+             "difficulty": "medium", "expected_actions": 10, "action_kinds": [], "backend": "public_site", "env": "live",
+             "lane": "autonomous", "auth_mode": "none", "idempotent": True, "split": "train", "preconditions": {},
+             "allowed_hosts": ["old.example"], "success_check": {"url_contains": "done"}, "milestones": None, "throttle": {"min_interval_s": 30}, "source": "b"},
+            {"task_id": "old__unoracled", "site": "old", "start_url": "https://old.example/", "instruction": "Do the unoracled one until done",
+             "difficulty": "medium", "expected_actions": 8, "action_kinds": [], "backend": "public_site", "env": "live",
+             "lane": "autonomous", "auth_mode": "none", "idempotent": True, "split": "train", "preconditions": {},
+             "allowed_hosts": ["old.example"], "success_check": None, "milestones": None, "throttle": {"min_interval_s": 30}, "source": "b"},
+            {"task_id": "old__long", "site": "old", "start_url": "https://old.example/", "instruction": "Do the long one until done",
+             "difficulty": "hard", "expected_actions": 30, "action_kinds": [], "backend": "public_site", "env": "live",
+             "lane": "autonomous", "auth_mode": "none", "idempotent": True, "split": "train", "preconditions": {},
+             "allowed_hosts": ["old.example"], "success_check": None, "milestones": None, "throttle": {"min_interval_s": 30}, "source": "b"},
+        ]}
+        base_path = _write(tmp, "base.json", base)
+        suite = build_candidates(frontier_path, base_path, Path(tmp) / "none", None, max_expected=12)
+        ids = [t["task_id"] for t in suite["tasks"]]
+        assert ids == ["old__short", "toolsite__f1", "toolsite__f2"]
+        assert suite["dropped_unoracled"] == ["old__unoracled"]
+        assert all(t["split"] == "train" for t in suite["tasks"])
+        by_id = {t["task_id"]: t for t in suite["tasks"]}
+        assert by_id["toolsite__f1"]["milestones"][0]["name"] == "entered"
+        assert not check_suite(suite, Path(tmp) / "none", None)

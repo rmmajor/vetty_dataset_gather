@@ -14,6 +14,7 @@ exercise them without renting anything.
 """
 from dataclasses import dataclass, field
 
+from remote_train import state
 from remote_train.tunnel import NullTunnel
 
 
@@ -87,6 +88,10 @@ class ComputeProvider:
         """All live instances carrying `label` — powers the orphan sweep in cleanup."""
         raise NotImplementedError
 
+    def live_label(self, instance: Instance) -> str | None:
+        """Label the PROVIDER currently reports for this instance; None when unknown or unreadable."""
+        return None
+
     def tunnel(self, instance: Instance, cfg, forwards: list):
         """Optional: a context manager forwarding loopback ports (("R"|"L", port) pairs). Default: no tunnel."""
         return NullTunnel(forwards)
@@ -137,11 +142,14 @@ def select_cheapest_allowed(offers: list, cfg) -> Offer:
     Used by every provider so the geo/price/vram policy is defined once. Raises
     `ProviderError` (with a diagnostic) if nothing qualifies.
     """
+    blocked = state.bad_offer_ids()
     allowed = [
         o for o in offers
-        if not is_excluded_country(o.country, cfg.exclude_countries)
+        if str(o.id) not in blocked
+        and not is_excluded_country(o.country, cfg.exclude_countries)
         and o.price_per_hour <= cfg.max_price_per_hour
         and o.gpu_ram_gb >= cfg.min_vram_gb
+        and o.num_gpus >= cfg.num_gpus
     ]
     if not allowed:
         raise ProviderError(

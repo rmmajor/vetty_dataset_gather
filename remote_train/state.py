@@ -1,4 +1,14 @@
-"""Crash-safe records of the instances this machine owns, stamped with the owning pid so `cleanup` can tell an orphan from a concurrent run's box."""
+"""Crash-safe record of the instances this machine owns, so teardown survives a hard process death.
+
+An instance is recorded the moment it is created, stamped with the pid of the run that owns it.
+If that orchestrator is killed (-9, power loss, closed laptop) before `destroy`, the record stays
+behind and `cleanup` tears the box down. The pid is what separates an ORPHAN (owner process gone)
+from a box a CONCURRENT run is actively using — several runs share one state file whenever they
+share a working directory, and destroying a live sibling's GPU is as bad as destroying a
+stranger's. Records are therefore a list, never a single slot that later runs overwrite.
+
+Path is overridable via `REMOTE_TRAIN_STATE_FILE`.
+"""
 import json
 import logging
 import os
@@ -88,3 +98,32 @@ def _write(records) -> None:
         STATE_FILE.write_text(json.dumps(records))
     except OSError as e:
         logger.error(f"Could not write state file {STATE_FILE}: {e}")
+
+
+BAD_OFFER_FILE = Path(os.environ.get("REMOTE_TRAIN_BAD_OFFERS", ".remote_train_bad_offers.json"))
+BAD_OFFER_TTL_S = 6 * 3600
+
+
+def record_bad_offer(offer_id, reason) -> None:
+    """Remember an offer that took our money and never booted, so a retry picks a different host."""
+    entries = {k: v for k, v in _read_bad_offers().items()}
+    entries[str(offer_id)] = {"at": time.time(), "reason": str(reason)[:200]}
+    try:
+        BAD_OFFER_FILE.write_text(json.dumps(entries))
+        logger.warning(f"offer {offer_id} blocklisted for {BAD_OFFER_TTL_S // 3600}h: {reason}")
+    except OSError as e:
+        logger.warning(f"could not record bad offer {offer_id}: {e}")
+
+
+def bad_offer_ids() -> set:
+    return {k for k, v in _read_bad_offers().items() if time.time() - v.get("at", 0) < BAD_OFFER_TTL_S}
+
+
+def _read_bad_offers() -> dict:
+    if not BAD_OFFER_FILE.exists():
+        return {}
+    try:
+        data = json.loads(BAD_OFFER_FILE.read_text())
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}

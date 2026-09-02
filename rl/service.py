@@ -17,7 +17,7 @@ from rl.backends import RL_LOOP_GUARD_REPEATS
 from rl.episode import Episode, EpisodeConfig
 from rl.judge import AsyncBridge
 from rl.rollout import build_pool
-from rl.runner import make_run_context
+from rl.runner import make_run_context, require_oracles
 from rl.tasks import SUITE_PATH, load_suite, select_tasks
 
 logger = logging.getLogger(__name__)
@@ -128,9 +128,11 @@ class EnvService:
         if finished is not None:
             return {"reward": finished.get("reward"), "info": finished.get("info", {})}
         entry = self._entry(episode_id)
-        with entry["lock"]:
-            record = entry["episode"].close(body.get("reason", "external"))
-        self._finish(episode_id, entry)
+        try:
+            with entry["lock"]:
+                record = entry["episode"].close(body.get("reason", "external"))
+        finally:
+            self._finish(episode_id, entry)
         return {"reward": record.get("reward"), "info": record.get("info", {})}
 
     def episode(self, episode_id):
@@ -212,7 +214,10 @@ def serve(service, host, port, token):
 def _reap_forever(service, interval_s=60):
     while True:
         time.sleep(interval_s)
-        service.reap()
+        try:
+            service.reap()
+        except Exception:
+            logger.exception("reaper pass failed; continuing so idle slots keep being reclaimed")
 
 
 def main():
@@ -234,6 +239,7 @@ def main():
     install_sigterm_handler()
     suite = load_suite(args.tasks)
     tasks = {t["task_id"]: t for t in select_tasks(suite, split=args.split)}
+    require_oracles(tasks, args.verifier_mode)
     bridge = AsyncBridge()
     pool = build_pool(args)
     cfg = EpisodeConfig(max_steps=args.max_steps, verifier_mode=args.verifier_mode)

@@ -442,6 +442,7 @@ ACTION_BUILDERS: dict = {
     "scroll": _build_scroll,
     "type": _build_type,
     "keypress": _build_keypress,
+    "navigate": _build_navigate,
     "wait": _no_args("wait"),
     "done": _no_args("done"),
     "screenshot": _no_args("screenshot"),

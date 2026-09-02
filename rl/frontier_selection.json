@@ -1,0 +1,1648 @@
+{
+  "selected": [
+    "12go-asia__make-12go-bangkok-chiangmai-saturday",
+    "archive-org__cat-archive-software-collection",
+    "arxiv__cat-arxiv-bert-paper",
+    "bahn__frontier-berlin-hamburg",
+    "calculatornet-bmr__calc-bmr-female-29-165cm-62kg",
+    "calculatornet-hub__calc-final-exam-score-needed",
+    "calculatornet-loan__calc-loan-12500-3yr-monthly",
+    "dpaste-com__t2-paste-python-expiry",
+    "flixbus__make-flixbus-berlin-prague-saturday",
+    "gutenberg__cat-gutenberg-two-cities-opening",
+    "gutenberg__frontier-find-pride-prejudice",
+    "justpaste-it__make-justpaste-pending-list",
+    "justpaste-it__make-justpaste-run-summary",
+    "justpaste-it__make-justpaste-smoke-note",
+    "openlibrary-org__frontier-dracula-work",
+    "privatebin-net__make-privatebin-discussion-year",
+    "privatebin-net__make-privatebin-markdown-month",
+    "rentry__frontier-publish-note",
+    "rentry__make-rentry-followups",
+    "standard-ebooks__frontier-austen-page",
+    "standardebooks__cat-standardebooks-adventure-treasure-island",
+    "standardebooks__cat-standardebooks-frankenstein",
+    "standardebooks__cat-standardebooks-time-machine",
+    "telegra-ph__make-telegraph-failed-checks",
+    "uuidgenerator__frontier-version4-page"
+  ],
+  "band": [
+    0.2,
+    0.8
+  ],
+  "generated": "2026-09-01T18:44:54",
+  "policy": null,
+  "suite_sha256": null,
+  "run_id": null,
+  "per_task": {
+    "0bin-net__make-0bin-curl-never": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.9,
+        -0.4
+      ]
+    },
+    "0bin-net__make-0bin-note-day": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.6
+      ]
+    },
+    "0bin-net__make-0bin-release-note": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.7,
+        -0.3
+      ]
+    },
+    "12go-asia__make-12go-bangkok-chiangmai-saturday": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        0.2
+      ]
+    },
+    "12go-asia__make-12go-hanoi-danang-overnight": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "archive-org__cat-archive-software-collection": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        0.0
+      ]
+    },
+    "archive-org__cat-archive-texts-moby-dick": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.692,
+        1.9
+      ]
+    },
+    "arxiv__cat-arxiv-attention-is-all-you-need": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.208,
+        0.2
+      ]
+    },
+    "arxiv__cat-arxiv-bert-paper": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        0.1
+      ]
+    },
+    "arxiv__cat-arxiv-hinton-author-search": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "arxiv__cat-arxiv-resnet-paper": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.2
+      ]
+    },
+    "bahn__frontier-berlin-hamburg": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        -0.3
+      ]
+    },
+    "bahn__make-bahn-cologne-frankfurt-airport": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.6,
+        -0.2
+      ]
+    },
+    "bahn__make-bahn-hamburg-copenhagen-arrival": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.2
+      ]
+    },
+    "bahn__make-bahn-munich-vienna-morning": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        -1.0
+      ]
+    },
+    "bahn__make-bahn-stuttgart-zurich-first-class": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        -0.5
+      ]
+    },
+    "base64encode__frontier-encode-hello": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.2
+      ]
+    },
+    "base64encode__frontier-encode-sentence": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.2
+      ]
+    },
+    "calculator-net__frontier-mortgage-payment": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        -0.25
+      ]
+    },
+    "calculator-net__frontier-percentage": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.483
+      ]
+    },
+    "calculator-net__t2-body-fat": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "calculatornet-bmr__calc-bmr-female-29-165cm-62kg": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        0.2
+      ]
+    },
+    "calculatornet-hub__calc-final-exam-score-needed": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.3,
+        1.4
+      ]
+    },
+    "calculatornet-hub__calc-presentvalue-100k-18yr": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        -0.005
+      ]
+    },
+    "calculatornet-hub__calc-right-triangle-84-187-area": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        -0.1
+      ]
+    },
+    "calculatornet-hub__calc-salary-2875-hourly-to-annual": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.8,
+        1.9
+      ]
+    },
+    "calculatornet-hub__calc-time-add-two-durations": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.1,
+        0.2
+      ]
+    },
+    "calculatornet-loan__calc-loan-12500-3yr-monthly": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        1.9
+      ]
+    },
+    "calculatornet-salestax__calc-salestax-24999-at-8375": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "calculatornet-subnet__calc-subnet-10-24-183-200-slash21": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.0
+      ]
+    },
+    "darebee-workout__frontier-open-named-workout": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.9,
+        1.0
+      ]
+    },
+    "diffchecker__make-diffchecker-config-drift": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.629,
+        1.9
+      ]
+    },
+    "diffchecker__make-diffchecker-host-lists": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "dpaste-com__frontier-paste-note": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.3
+      ]
+    },
+    "dpaste-com__make-dpaste-bash-day": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "dpaste-com__make-dpaste-json-week": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "dpaste-com__make-dpaste-markdown-checklist": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.882,
+        1.9
+      ]
+    },
+    "dpaste-com__make-dpaste-sql-month": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.3
+      ]
+    },
+    "dpaste-com__make-dpaste-yaml-never": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "dpaste-com__t2-paste-python-expiry": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.1,
+        1.4
+      ]
+    },
+    "flixbus__make-flixbus-berlin-prague-saturday": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        1.4
+      ]
+    },
+    "flixbus__make-flixbus-munich-vienna-return": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.0
+      ]
+    },
+    "flixbus__make-flixbus-paris-amsterdam-two-adults": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.3
+      ]
+    },
+    "gutenberg__cat-gutenberg-alice-chapter-one": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.66
+      ]
+    },
+    "gutenberg__cat-gutenberg-dracula-record": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "gutenberg__cat-gutenberg-frankenstein-by-author": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.567,
+        1.858
+      ]
+    },
+    "gutenberg__cat-gutenberg-mobydick-record": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "gutenberg__cat-gutenberg-pride-opening-line": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.2
+      ]
+    },
+    "gutenberg__cat-gutenberg-sherlock-first-story": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.721,
+        1.875
+      ]
+    },
+    "gutenberg__cat-gutenberg-two-cities-opening": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        -0.2
+      ]
+    },
+    "gutenberg__frontier-find-frankenstein": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "gutenberg__frontier-find-pride-prejudice": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        0.2
+      ]
+    },
+    "gutenberg__t2-browse-shelf-to-book": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "gutenberg__t2-sherlock-plain-text": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        -0.2
+      ]
+    },
+    "jsfiddle__make-jsfiddle-heading-demo": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.2
+      ]
+    },
+    "jsfiddle__make-jsfiddle-list-demo": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.2
+      ]
+    },
+    "justpaste-it__make-justpaste-pending-list": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        1.887
+      ]
+    },
+    "justpaste-it__make-justpaste-run-summary": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.665,
+        0.0
+      ]
+    },
+    "justpaste-it__make-justpaste-smoke-note": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.88,
+        0.0
+      ]
+    },
+    "lipsum-generator__frontier-five-lists": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.3
+      ]
+    },
+    "lipsum-generator__frontier-three-paragraphs": {
+      "k": 0,
+      "harness_failures": 2,
+      "successes": 0,
+      "pass_rate": null,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": []
+    },
+    "omnicalculator__frontier-discount-price": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.9
+      ]
+    },
+    "omnicalculator__frontier-speed-convert": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        0.1
+      ]
+    },
+    "omnicalculator__t2-bmr-calculator": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.2
+      ]
+    },
+    "openlibrary-org__frontier-dracula-work": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        1.9
+      ]
+    },
+    "openlibrary-org__frontier-hobbit-work": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2
+      ]
+    },
+    "openlibrary-org__t2-author-page-to-work": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.858,
+        1.9
+      ]
+    },
+    "openlibrary-org__t2-subject-browse": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2
+      ]
+    },
+    "openlibrary__cat-openlibrary-dracula-readable-edition": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2
+      ]
+    },
+    "openlibrary__cat-openlibrary-hobbit-work": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        -0.046
+      ]
+    },
+    "openlibrary__cat-openlibrary-left-hand-of-darkness": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "openlibrary__cat-openlibrary-orwell-author-page": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "openlibrary__cat-openlibrary-scifi-subject-dune": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2
+      ]
+    },
+    "openlibrary__cat-openlibrary-verne-published-before-1900": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        0.0
+      ]
+    },
+    "openlibrary__cat-openlibrary-whitman-leaves-of-grass": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        0.0
+      ]
+    },
+    "openverse-org__frontier-open-image-page": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.1,
+        -0.1
+      ]
+    },
+    "openverse-org__t2-filtered-image": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.1,
+        -0.2
+      ]
+    },
+    "paste-ee__make-pasteee-note-day": {
+      "k": 0,
+      "harness_failures": 2,
+      "successes": 0,
+      "pass_rate": null,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": []
+    },
+    "paste-ee__make-pasteee-python-snippet": {
+      "k": 0,
+      "harness_failures": 2,
+      "successes": 0,
+      "pass_rate": null,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": []
+    },
+    "privatebin-net__make-privatebin-discussion-year": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        1.389
+      ]
+    },
+    "privatebin-net__make-privatebin-markdown-month": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.4,
+        0.2
+      ]
+    },
+    "privatebin-net__make-privatebin-quick-day": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "privatebin-net__make-privatebin-sourcecode-day": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        0.1,
+        0.1
+      ]
+    },
+    "rentry__frontier-publish-note": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        1.9
+      ]
+    },
+    "rentry__make-rentry-batch-checklist": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.4
+      ]
+    },
+    "rentry__make-rentry-code-block": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        0.3
+      ]
+    },
+    "rentry__make-rentry-env-table": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.9
+      ]
+    },
+    "rentry__make-rentry-followups": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        -0.2
+      ]
+    },
+    "rentry__make-rentry-two-links": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.027,
+        -0.1
+      ]
+    },
+    "rome2rio__make-rome2rio-berlin-milan-train": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.1,
+        -0.1
+      ]
+    },
+    "rome2rio__make-rome2rio-lisbon-porto-bus": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.1,
+        -0.1
+      ]
+    },
+    "rome2rio__make-rome2rio-vienna-budapest-friday": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.2
+      ]
+    },
+    "standard-ebooks__frontier-austen-page": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.1,
+        1.4
+      ]
+    },
+    "standard-ebooks__frontier-time-machine": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        1.817
+      ]
+    },
+    "standard-ebooks__t2-subject-to-book": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        0.2
+      ]
+    },
+    "standardebooks__cat-standardebooks-adventure-treasure-island": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.744,
+        0.0
+      ]
+    },
+    "standardebooks__cat-standardebooks-austen-pride": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.858,
+        1.442
+      ]
+    },
+    "standardebooks__cat-standardebooks-dracula-read-online": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.1,
+        0.2
+      ]
+    },
+    "standardebooks__cat-standardebooks-frankenstein": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.393,
+        -0.208
+      ]
+    },
+    "standardebooks__cat-standardebooks-time-machine": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.3,
+        0.1
+      ]
+    },
+    "strawpoll__make-strawpoll-release-slot": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.619
+      ]
+    },
+    "strawpoll__make-strawpoll-smoke-order": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "telegra-ph__make-telegraph-failed-checks": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2,
+        1.9
+      ]
+    },
+    "telegra-ph__make-telegraph-linked-paragraph": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        -0.2
+      ]
+    },
+    "telegra-ph__make-telegraph-one-liner": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": true,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        0.0
+      ]
+    },
+    "telegra-ph__make-telegraph-quoted-log": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0,
+        0.2
+      ]
+    },
+    "telegra-ph__make-telegraph-run-summary": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.005,
+        -0.1
+      ]
+    },
+    "unitconverters-net__frontier-celsius-to-f": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 2,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        0.9
+      ]
+    },
+    "unitconverters-net__frontier-miles-to-km": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.483
+      ]
+    },
+    "unitconverters-net__t2-kg-to-pounds": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2,
+        -0.1
+      ]
+    },
+    "unitconverters-net__t2-km-to-miles": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.45
+      ]
+    },
+    "uuidgenerator__frontier-version4-page": {
+      "k": 2,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 0.5,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9,
+        0.2
+      ]
+    },
+    "vote-gov-state-redirect__frontier-texas-info": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.1
+      ]
+    },
+    "when2meet__frontier-create-poll": {
+      "k": 1,
+      "harness_failures": 1,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "when2meet__make-when2meet-batch-window": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2
+      ]
+    },
+    "when2meet__make-when2meet-handover-utc": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.3
+      ]
+    },
+    "when2meet__make-when2meet-retro": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.85
+      ]
+    },
+    "when2meet__make-when2meet-smoke-slot": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.4
+      ]
+    },
+    "when2meet__make-when2meet-weekday-evenings": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.459
+      ]
+    },
+    "wikipedia__cat-wikipedia-astronomy-portal-hubble": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.88
+      ]
+    },
+    "wikipedia__cat-wikipedia-babbage-to-lovelace": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2
+      ]
+    },
+    "wikipedia__cat-wikipedia-category-to-turing": {
+      "k": 0,
+      "harness_failures": 1,
+      "successes": 0,
+      "pass_rate": null,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": []
+    },
+    "wikipedia__cat-wikipedia-rosetta-stone-history": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "wikipedia__cat-wikipedia-voyager-golden-record": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2
+      ]
+    },
+    "wikipedia__cat-wikipedia-wikiproject-mathematics": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0
+      ]
+    },
+    "wikisource-org__frontier-the-raven": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.4
+      ]
+    },
+    "wikisource-org__t2-author-to-work": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        -0.2
+      ]
+    },
+    "wikisource__cat-wikisource-declaration-of-independence": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0
+      ]
+    },
+    "wikisource__cat-wikisource-gettysburg-address": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "wikisource__cat-wikisource-scandal-in-bohemia": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2
+      ]
+    },
+    "wikisource__cat-wikisource-the-raven": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.0
+      ]
+    },
+    "wikivoyage__cat-wikivoyage-france-to-paris": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "wikivoyage__cat-wikivoyage-japan-to-kyoto": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.817
+      ]
+    },
+    "wikivoyage__cat-wikivoyage-japanese-phrasebook": {
+      "k": 0,
+      "harness_failures": 1,
+      "successes": 0,
+      "pass_rate": null,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": []
+    },
+    "wikivoyage__cat-wikivoyage-trans-siberian-itinerary": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "wordcounter-net__frontier-count-words": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "wordcounter-net__t2-character-count": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 1,
+      "pass_rate": 1.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        1.9
+      ]
+    },
+    "xe-currency__frontier-usd-eur": {
+      "k": 1,
+      "harness_failures": 0,
+      "successes": 0,
+      "pass_rate": 0.0,
+      "zero_variance": false,
+      "missing_rewards": 0,
+      "rewards": [
+        0.2
+      ]
+    }
+  },
+  "dropped": [
+    {
+      "task_id": "omnicalculator__frontier-speed-convert",
+      "reason": "oracle `text_visible 160.9` passes by TYPING the answer (the snapshot renders input values), and page_text_visible cannot fix it: Omni renders results inside inputs"
+    }
+  ]
+}

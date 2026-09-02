@@ -34,3 +34,19 @@ def test_composition_and_unknown_check():
     assert evaluate(spec, ctx) == {"passed": True, "results": {"all_of": True}}
     assert evaluate({"bogus": 1}, ctx) == {"passed": False, "results": {"bogus": False}}
     assert set(CHECKS) >= {"url_matches", "text_visible", "element_present", "all_of", "any_of"}
+
+
+def test_page_text_is_searchable_by_text_visible():
+    ctx = build_context(SNAPSHOT, lambda: {}, {"terminal_reason": "done"}, "BMI = 22.9 kg/m2")
+    assert CHECKS["text_visible"]("22.9", ctx) and not CHECKS["text_visible"]("31.4", ctx)
+    snapshot_only = build_context(SNAPSHOT, lambda: {}, {"terminal_reason": "done"})
+    assert not CHECKS["text_visible"]("22.9", snapshot_only)
+
+def test_page_text_visible_cannot_be_satisfied_by_typing_the_answer():
+    typed = build_context({"snapshot": '[1] textbox "Search" value="Quoth the Raven"', "url": "https://x/search", "title": "Search"},
+                          lambda: {}, {"terminal_reason": "done"}, "Search results for your query")
+    assert CHECKS["text_visible"]("Quoth the Raven", typed)
+    assert not CHECKS["page_text_visible"]("Quoth the Raven", typed)
+    rendered = build_context({"snapshot": '[1] link "Home"', "url": "https://x/poem", "title": "The Raven"},
+                             lambda: {}, {"terminal_reason": "done"}, "Quoth the Raven, Nevermore")
+    assert CHECKS["page_text_visible"]("Quoth the Raven", rendered)
