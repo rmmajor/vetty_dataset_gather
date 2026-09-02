@@ -85,35 +85,44 @@ def _run_job(provider, cfg, job, *, enable_safety: bool = True) -> int:
         stop.set()
         if instance is not None:
             _guaranteed_destroy(provider, instance)
-        state.clear_instance()
+            state.clear_instance(instance.id)
 
 
-def cleanup(provider, cfg: RemoteTrainConfig) -> int:
-    """Destroy the state-file instance AND every instance carrying the run label. Idempotent."""
+def cleanup(provider, cfg: RemoteTrainConfig, *, sweep_all: bool = False) -> int:
+    """Destroy recorded instances whose owning run is dead; `sweep_all` also takes every labeled box, live siblings included. Idempotent."""
     targets: dict = {}
-    record = state.read_instance()
-    if record and record.get("id"):
-        targets[str(record["id"])] = Instance(
+    skipped_live: list = []
+    for record in state.read_instances():
+        inst = Instance(
             id=str(record["id"]), provider=record.get("provider", cfg.provider),
             label=record.get("label", cfg.instance_label),
         )
-    try:
-        for inst in provider.list_owned(cfg.instance_label):
-            targets[inst.id] = inst
-    except ProviderError as e:
-        logger.error(f"Could not list instances for orphan sweep: {e}")
+        if state.owner_alive(record) and not sweep_all:
+            skipped_live.append(inst.id)
+            continue
+        targets[inst.id] = inst
+
+    if sweep_all:
+        try:
+            for inst in provider.list_owned(cfg.instance_label):
+                targets[inst.id] = inst
+        except ProviderError as e:
+            logger.error(f"Could not list instances for the --all sweep: {e}")
+
+    for inst_id in skipped_live:
+        logger.warning(f"Instance {inst_id} is owned by a RUNNING process — skipping (use --all to force)")
 
     if not targets:
-        logger.info(f"Nothing to clean up (no state file, no instance labeled '{cfg.instance_label}')")
-        state.clear_instance()
+        logger.info(f"Nothing to clean up (no abandoned record, no instance labeled '{cfg.instance_label}')")
         return 0
 
     all_ok = True
     for inst in targets.values():
         logger.info(f"Cleanup: destroying {inst.id}")
-        if not _guaranteed_destroy(provider, inst):
+        if _guaranteed_destroy(provider, inst):
+            state.clear_instance(inst.id)
+        else:
             all_ok = False
-    state.clear_instance()
     return 0 if all_ok else 1
 
 
@@ -141,12 +150,12 @@ def _install_signal_handlers(provider, instance, keep_on_signal: bool = False) -
                 f"Signal {signum} received — LEAVING instance {instance.id} running so the detached "
                 f"job finishes. Collect/destroy later with: python -m remote_train cleanup")
             # os._exit, not sys.exit: SystemExit would unwind through the finally block, which
-            # destroys the instance — the very thing this branch exists to avoid. It also leaves
-            # .remote_train_state.json in place so `cleanup` can still find the box.
+            # destroys the instance — the very thing this branch exists to avoid.
+            state.mark_abandoned(instance.id)
             os._exit(130)
         logger.warning(f"Signal {signum} received — destroying instance {instance.id} before exit")
         _guaranteed_destroy(provider, instance)
-        state.clear_instance()
+        state.clear_instance(instance.id)
         sys.exit(130)
 
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
@@ -164,7 +173,7 @@ def _start_watchdog(provider, instance, cfg, stop: threading.Event) -> threading
             return  # run finished and signalled us
         logger.error(f"⏰ max_runtime_hours ({cfg.max_runtime_hours}h) exceeded — force-destroying {instance.id}")
         _guaranteed_destroy(provider, instance)
-        state.clear_instance()
+        state.clear_instance(instance.id)
         os._exit(124)
 
     t = threading.Thread(target=run, daemon=True, name="remote-train-watchdog")
@@ -173,16 +182,9 @@ def _start_watchdog(provider, instance, cfg, stop: threading.Event) -> threading
 
 
 def _sweep_orphans(provider, cfg) -> None:
-    """Pre-run safety sweep — designed for a SHARED/team account.
-
-    We only auto-destroy the instance THIS tool recorded in the state file (provably ours and
-    provably orphaned). Anything else carrying our label is reported, never killed: it could be
-    a concurrent run of yours. Teammates' boxes are invisible to us anyway — `list_owned` is an
-    exact label match. Destroying every labeled box is an explicit, user-initiated act:
-    `make remote-train-cleanup`.
-    """
-    record = state.read_instance()
-    recorded_id = str(record.get("id")) if record and record.get("id") else ""
+    """Pre-run sweep on a SHARED account: destroy only recorded instances whose owning run is dead; a live sibling's or an unrecorded labeled box is reported, never killed."""
+    orphans = {str(r["id"]) for r in state.read_instances() if not state.owner_alive(r)}
+    live_siblings = {str(r["id"]) for r in state.read_instances() if state.owner_alive(r)}
 
     try:
         labeled = provider.list_owned(cfg.instance_label)
@@ -191,9 +193,12 @@ def _sweep_orphans(provider, cfg) -> None:
         return
 
     for inst in labeled:
-        if inst.id == recorded_id:
-            logger.warning(f"Orphan {inst.id} left by a previous run (state file) — destroying before start")
-            _guaranteed_destroy(provider, inst)
+        if inst.id in orphans:
+            logger.warning(f"Orphan {inst.id} left by a dead run (state file) — destroying before start")
+            if _guaranteed_destroy(provider, inst):
+                state.clear_instance(inst.id)
+        elif inst.id in live_siblings:
+            logger.info(f"Instance {inst.id} belongs to a RUNNING sibling run — leaving it alone")
         else:
             logger.warning(
                 f"Instance {inst.id} also carries label '{cfg.instance_label}' but was not recorded by this "
@@ -201,8 +206,9 @@ def _sweep_orphans(provider, cfg) -> None:
                 f"`make remote-train-cleanup`."
             )
 
-    if recorded_id and not any(i.id == recorded_id for i in labeled):
-        state.clear_instance()  # recorded instance is already gone
+    live_ids = {i.id for i in labeled}
+    for gone in orphans - live_ids:
+        state.clear_instance(gone)  # recorded instance is already gone
 
 
 # ----- run steps -----
@@ -334,6 +340,48 @@ def run_smoke_test() -> int:
     check("geo-exclusion drops RU/CN; cheapest allowed is SE", offer.id == "se-1" and offer.country == "SE")
     check("excluded offers were actually present", any(o.country in ("RU", "CN") for o in provider._fake_offers))
     check("instance is labeled roman.maior", provider.provision(offer, cfg).label == "roman.maior")
+
+    sibling = MockProvider(make_cfg())
+    state.STATE_FILE = Path(tempfile.mkdtemp()) / "state.json"
+    state.record_instance(Instance(id="sibling-live", provider="mock", label=cfg.instance_label))
+    cleanup(sibling, make_cfg())
+    check("cleanup spares an instance whose owner run is alive", sibling.destroyed == [])
+    _sweep_orphans(sibling, make_cfg())
+    check("a pre-run sweep never touches a live sibling's box", sibling.destroyed == [])
+
+    dead = MockProvider(make_cfg())
+    state.STATE_FILE = Path(tempfile.mkdtemp()) / "state.json"
+    state.record_instance(Instance(id="orphan-1", provider="mock", label=cfg.instance_label))
+    records = state.read_instances()
+    records[0]["pid"] = 2 ** 22  # a pid that cannot be running
+    state._write(records)
+    cleanup(dead, make_cfg())
+    check("cleanup still reclaims a box whose owner run died", dead.destroyed == ["orphan-1"])
+    check("a reclaimed instance leaves the state file", state.read_instances() == [])
+
+    check("owner_alive: pid null is the abandoned sentinel", state.owner_alive({"id": "x", "pid": None}) is False)
+    check("owner_alive: this process is alive", state.owner_alive({"id": "x", "pid": os.getpid()}) is True)
+    check("owner_alive: a record without a pid is unknown, so alive", state.owner_alive({"id": "x"}) is True)
+    released = MockProvider(make_cfg())
+    state.STATE_FILE = Path(tempfile.mkdtemp()) / "state.json"
+    state.record_instance(Instance(id="released-1", provider="mock", label=cfg.instance_label))
+    records = state.read_instances()
+    records[0]["pid"] = None  # what a supervisor writes when it hands the box over to cleanup
+    state._write(records)
+    cleanup(released, make_cfg())
+    check("cleanup reclaims a box whose record was released with pid null", released.destroyed == ["released-1"])
+
+    handed_over = MockProvider(make_cfg())
+    state.STATE_FILE = Path(tempfile.mkdtemp()) / "state.json"
+    state.record_instance(Instance(id="kept-1", provider="mock", label=cfg.instance_label))
+    state.record_instance(Instance(id="released-2", provider="mock", label=cfg.instance_label))
+    state.mark_abandoned("released-2")
+    by_id = {r["id"]: r for r in state.read_instances()}
+    check("mark_abandoned writes the pid null sentinel", by_id["released-2"]["pid"] is None and not state.owner_alive(by_id["released-2"]))
+    check("mark_abandoned leaves the other record owned", by_id["kept-1"]["pid"] == os.getpid())
+    cleanup(handed_over, make_cfg())
+    check("cleanup reclaims only the released box", handed_over.destroyed == ["released-2"])
+    state.STATE_FILE = tmp / ".remote_train_state.json"
 
     real_run_eval = GrpoJob.run_eval
     GrpoJob.run_eval = lambda self, phase: {"phase": phase}
