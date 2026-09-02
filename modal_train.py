@@ -70,7 +70,7 @@ for _name in CONFIGS:
 )
 def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_examples: int = 0,
           run_name: str = "", config: str = DEFAULT_CONFIG,
-          extra_convert_args: list = None, extra_train_args: list = None):
+          extra_convert_args: list = None, extra_train_args: list = None, skip_audit: bool = False):
     import json
     import shutil
     import subprocess
@@ -95,8 +95,11 @@ def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_example
     run_dir.mkdir(parents=True, exist_ok=True)
 
     audit = [sys.executable, "-m", "repo_pipeline.corpus_audit", str(traj_dir)]
-    print("+", " ".join(audit), flush=True)
-    subprocess.run(audit, cwd=CODE_ROOT, check=True)
+    if skip_audit:
+        print("skip_audit: corpus gates NOT enforced (timing smoke only)", flush=True)
+    else:
+        print("+", " ".join(audit), flush=True)
+        subprocess.run(audit, cwd=CODE_ROOT, check=True)
 
     convert = [
         sys.executable, "train_qwen.py", "convert",
@@ -207,11 +210,13 @@ def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
 
 @app.local_entrypoint()
 def main(val_split: float = 0.1, data_subdir: str = "trajectories", max_examples: int = 0,
-         epochs: int = 0, run_name: str = "", config: str = DEFAULT_CONFIG, train_args: str = ""):
+         epochs: int = 0, run_name: str = "", config: str = DEFAULT_CONFIG, train_args: str = "",
+         convert_args: str = "", skip_audit: bool = False):
     extra_train_args = ["--epochs", str(epochs)] if epochs else []
     extra_train_args += train_args.split()
     extra_train_args = extra_train_args or None
     result = train.remote(val_split=val_split, data_subdir=data_subdir, max_examples=max_examples,
-                          run_name=run_name, config=config, extra_train_args=extra_train_args)
+                          run_name=run_name, config=config, extra_train_args=extra_train_args,
+                          extra_convert_args=convert_args.split() or None, skip_audit=skip_audit)
     print(f"\nadapter ready on volume cua-outputs at {result['adapter']}")
     print(f"serve it with:  CUA_ADAPTER_NAME={result['run']}/adapter modal serve modal_serve.py")

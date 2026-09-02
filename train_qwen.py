@@ -981,6 +981,50 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     return stats
 
 
+SFT_FLAG_MAP = {
+    "model": "--model",
+    "train_type": "--tuner_type",
+    "dataset": "--dataset",
+    "val_dataset": "--val_dataset",
+    "eval_strategy": "--eval_strategy",
+    "packing": "--packing",
+    "attn_impl": "--attn_impl",
+    "torch_dtype": "--torch_dtype",
+    "num_train_epochs": "--num_train_epochs",
+    "per_device_train_batch_size": "--per_device_train_batch_size",
+    "learning_rate": "--learning_rate",
+    "lora_rank": "--lora_rank",
+    "lora_alpha": "--lora_alpha",
+    "target_modules": "--target_modules",
+    "gradient_accumulation_steps": "--gradient_accumulation_steps",
+    "max_length": "--max_length",
+    "warmup_ratio": "--warmup_ratio",
+    "freeze_vit": "--freeze_vit",
+    "output_dir": "--output_dir",
+}
+# Config keys that are environment, not flags (train_model exports them); everything else unmapped is forwarded as --key value.
+SFT_ENV_KEYS = ("max_pixels",)
+
+
+def build_sft_command(config, dataset=None, val_dataset=None, passthrough_args=None):
+    """The swift sft argv for a config: mapped keys via SFT_FLAG_MAP, unmapped keys forwarded verbatim, then passthrough."""
+    merged = dict(config)
+    if dataset:
+        merged["dataset"] = dataset
+    if val_dataset:
+        merged["val_dataset"] = val_dataset
+    cmd = ["swift", "sft"]
+    for key, value in merged.items():
+        if key in SFT_ENV_KEYS:
+            continue
+        flag = SFT_FLAG_MAP.get(key, f"--{key}")
+        if isinstance(value, bool):
+            value = str(value).lower()
+        cmd.extend([flag, str(value)])
+    cmd.extend(passthrough_args or [])
+    return cmd
+
+
 def train_model(config_path, dataset_override=None, epochs_override=None, lr_override=None,
                 batch_size_override=None, passthrough_args=None):
     with open(config_path) as f:
@@ -1009,39 +1053,7 @@ def train_model(config_path, dataset_override=None, epochs_override=None, lr_ove
             print(f"No validation split at {sibling} — training will report no eval_loss"
                   + (f" (eval_strategy={dropped} dropped)" if dropped else ""))
 
-    cmd = ["swift", "sft"]
-
-    flag_map = {
-        "model": "--model",
-        "train_type": "--tuner_type",
-        "dataset": "--dataset",
-        "val_dataset": "--val_dataset",
-        "eval_strategy": "--eval_strategy",
-        "packing": "--packing",
-        "attn_impl": "--attn_impl",
-        "torch_dtype": "--torch_dtype",
-        "num_train_epochs": "--num_train_epochs",
-        "per_device_train_batch_size": "--per_device_train_batch_size",
-        "learning_rate": "--learning_rate",
-        "lora_rank": "--lora_rank",
-        "lora_alpha": "--lora_alpha",
-        "target_modules": "--target_modules",
-        "gradient_accumulation_steps": "--gradient_accumulation_steps",
-        "max_length": "--max_length",
-        "warmup_ratio": "--warmup_ratio",
-        "freeze_vit": "--freeze_vit",
-        "output_dir": "--output_dir",
-    }
-
-    for key, flag in flag_map.items():
-        if key in config:
-            value = config[key]
-            if isinstance(value, bool):
-                value = str(value).lower()
-            cmd.extend([flag, str(value)])
-
-    # Anything argparse did not recognise is a swift flag; forwarding beats growing flag_map per knob.
-    cmd.extend(passthrough_args or [])
+    cmd = build_sft_command(config, passthrough_args=passthrough_args)
 
     env = os.environ.copy()
     max_pixels = config.get("max_pixels")
