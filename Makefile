@@ -1,10 +1,10 @@
 .PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
        setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
-       capture-public provision-human capture-human capture-search \
+       capture-public provision-human capture-human capture-search capture-qa-verify \
        polish-pass relabel-recoverable wall-demos instruction-style audit-corpus \
        install-eval eval-screenspot test-eval \
        install-remote remote-train remote-eval remote-train-dry remote-train-cleanup test-remote \
-       eval-online-mind2web eval-held-out eval-compare eval-sources test-student-eval test-verify-gate \
+       eval-online-mind2web eval-held-out eval-compare eval-sources test-student-eval test-verify-gate test-qa-verify \
        test-rl-unit test-rl rl-tasks rl-serve rl-rollout rl-eval remote-grpo remote-serve test-grpo grpo-dataset \
        rl-expose modal-grpo-smoke modal-grpo
 
@@ -125,6 +125,9 @@ test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
 test-verify-gate: ## Scripted (no-LLM/Docker/network) check that the capture success gate never rejects a verified trajectory
 	python -m repo_pipeline.verify_gate_smoke
 
+test-qa-verify: ## Scripted (no-LLM/Docker/network) check that the qa_verify style reaches proposer, teacher, verifier, metadata and config
+	python -m repo_pipeline.qa_verify_smoke
+
 test-rl-unit: ## Unit tests for the RL rollout harness (no Docker, no LLM)
 	python -m rl.tests
 
@@ -160,8 +163,14 @@ capture-human: ## Capture tasks on human-provisioned sites (reuses saved session
 capture-search: ## Search-goal capture lane (SFT v2 gap 2: constrained info-seeking on mainstream sites)
 	python -m repo_pipeline.public_capture --config repo_pipeline/public_sites_search.json $(if $(SITES),--sites $(SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
 
+capture-qa-verify: ## QA-verification capture lane (SFT v3: test-objective tasks that change, re-open/reload, then confirm on signed-in sites)
+	python -m repo_pipeline.public_capture --config repo_pipeline/public_sites_qa_verify.json $(if $(SITES),--sites $(SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
+
 polish-pass: ## Stage-7 thought polish for trainable teacher_raw dirs outside the registry flow
 	python -m repo_pipeline.polish_pass trajectories/
+
+outcome-relabel: ## Outcome-checked thought relabel over trainable dirs (dry-run by default; APPLY=1 to write; ESTIMATE=1 to price)
+	python -m repo_pipeline.outcome_relabel trajectories/ $(if $(APPLY),--apply,--dry-run) $(if $(ESTIMATE),--estimate,)
 
 relabel-recoverable: ## Audited hindsight-relabel pass (dry-run by default; APPLY=1 to write)
 	python -m repo_pipeline.relabel_recoverable trajectories/ $(if $(APPLY),--apply,--dry-run)
@@ -171,6 +180,9 @@ wall-demos: ## Synthesize terminal wall supervision from blocked runs (dry-run b
 
 instruction-style: ## Rewrite procedure-flavored instructions into goals (dry-run by default; APPLY=1)
 	python -m repo_pipeline.instruction_style_pass trajectories/ $(if $(APPLY),--apply,--dry-run)
+
+instruction-qa-voice: ## Restate re-checking trajectories' instructions as QA test objectives (dry-run previews old -> new; APPLY=1 writes)
+	python -m repo_pipeline.instruction_style_pass trajectories/ --mode qa_verify $(if $(APPLY),--apply,--dry-run)
 
 pipeline-discover: ## Stage 1: Discover QA repos on GitHub
 	@test -n "$$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN not set" && exit 1)

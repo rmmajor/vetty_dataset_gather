@@ -1,5 +1,5 @@
 {
-  "_comment": "Hard release gates for `train_qwen.py convert` (checked by repo_pipeline.corpus_audit.corpus_health_violations). A violation refuses to write the dataset; --skip-health-gate bypasses for experiments only. Null disables a check.",
+  "_comment": "Hard release gates checked by repo_pipeline.corpus_audit.corpus_health_violations. `train_qwen.py convert` refuses to write the dataset on a violation (--skip-health-gate bypasses for experiments only); `python -m repo_pipeline.corpus_audit` exits 1 on the per-trajectory subset it computes (min_done_evidence_share, min_outcome_relabeled_share; the Modal lane's pre-train check). Each check runs only when its caller computed the stat. Null disables a check.",
   "min_trainable_trajectories": 500,
   "min_done_coverage": 0.95,
   "max_teacher_raw_trajectories": 0,
@@ -9,5 +9,8 @@
     "click": 0.2,
     "type": 0.05,
     "done": 0.05
-  }
+  },
+  "min_done_evidence_share": 0.8,
+  "max_grounding_example_share": 0.25,
+  "min_outcome_relabeled_share": 0.9
 }
