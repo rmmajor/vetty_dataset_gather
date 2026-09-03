@@ -29,9 +29,27 @@ that offload is exactly these numbers.
 | sft-v2 | 12,315 | 538 | 9.2 | $10.68 |
 | sft-v3 | 18,797 | 746 | 11.3 | $0.73 |
 
-**The verdict-tier dollar column is not comparable across arms.** sft-v3 ran on vetty `428c062`
-while the others ran on `409810f`, and cost-reduction work landed in the bench between them. It is a
-harness difference, not a model property, and must not be reported as an efficiency win.
+**The verdict-tier dollar column is not comparable across arms, and its cause is UNEXPLAINED.**
+sft-v3 ran on vetty `428c062` and the others on `409810f`, but the commits between them (`ea8dd67`)
+touch judge retry/backoff, matching and reporting — NOT the verdict-cost path, so "cost work landed
+between them" is not a supported explanation. Verdict-phase token counts are not recorded (only
+dollars), and $10.68 vs $0.73 per run is far larger than prompt-size differences explain. Retries are
+a candidate and unverified. Do not report this column as an efficiency result until the cause is known.
+
+**Harness settings that DID differ, and that do affect the comparison:**
+
+| setting | sft-v2 run | sft-v3 run |
+| --- | --- | --- |
+| observation | v2, one screenshot | v3, prev thumbnail + current |
+| coordinate space | `viewport_abs` | `normalized_1000` |
+| history window | 10 | 20 |
+| step cap | 15 | 25 |
+| max tokens | 384 | 512 |
+| type / keypress / scroll / settle | legacy | driver-matched |
+
+The step cap is the confound that matters most: sft-v3 had 10 more steps per case to finish a task,
+so part of the 62.9% -> 54.3% error drop is room, not behaviour. The history window is a FIX, not a
+change: sft-v2 trained on 20 and was benched at 10, off its own distribution.
 
 **The token columns are comparable and they cut against a naive reading.** sft-v3 consumes ~53% more
 input tokens per case than sft-v2 (18,797 vs 12,315) — the second screenshot is doing exactly what it
