@@ -318,7 +318,7 @@ that must not be quoted.
 | qwen35-9b-base | successes | steps_over_reference_on_success | 1.92 | 5 | done | Mean steps / reference_length over verified successes. |
 | cua-sft-v1-nologin | scored | verified_success_rate | _not measured_ | 34 | planned | Ablation that turns the post-authentication novelty claim into a result. |
 
-#### `qa-bench-refapp` — catalog-v1@0f3d7f88e85a
+#### `qa-bench-refapp` — catalog-v1@0f3d7f88e85a, catalog-v2@cb427058ac9e
 
 | model_id | subset | metric | value | n | status | notes |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -342,6 +342,24 @@ that must not be quoted.
 | cua-sft-v1 | 6-defect-subset | ddr | 83.3 % <sub>[44–97]</sub> | 6 | done | 5/6. Misses delete_button_no_action (confabulates that the delete succeeded). |
 | cua-sft-v1 | 6-defect-subset | done_rate | 100.0 % <sub>[61–100]</sub> | 6 | done | 2-12 steps per case. |
 | cua-sft-v1 | 6-defect-subset | execution_cost_per_case_usd | $0.01 | 6 | done | Execution phase only: $1.17 -> ~$0.01, about 100x. Metered natively as of vetty#22. |
+| cua-sft-v1 | economy-7run-105case | ddr | 27.3 % <sub>[20–36]</sub> | 105 | done | DDR strict over 33 catalogue defects, economy sweep. |
+| cua-sft-v1 | economy-7run-105case | error_verdict_rate | 0.6 | 105 | done | Share of the 105 case-runs the verdict tier could not judge - the execution-competence number. |
+| cua-sft-v1 | economy-7run-105case | executor_input_tokens_per_case | 11920 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| cua-sft-v1 | economy-7run-105case | executor_output_tokens_per_case | 517 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| cua-sft-v1 | economy-7run-105case | executor_turns_per_case | 9 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| cua-sft-v1 | economy-7run-105case | verdict_cost_per_run_usd | $10.49 | 105 | done | Verdict-tier cost, NOT model cost: executor runs on our own GPU at $0. sft-v3 ran on vetty 428c062 and the others on 409810f, so the per-run cost is confounded by harness changes and is not comparable across arms. |
+| cua-sft-v2 | economy-7run-105case | ddr | 21.2 % <sub>[14–30]</sub> | 105 | done | DDR strict over 33 catalogue defects, economy sweep. |
+| cua-sft-v2 | economy-7run-105case | error_verdict_rate | 0.6286 | 105 | done | Share of the 105 case-runs the verdict tier could not judge - the execution-competence number. |
+| cua-sft-v2 | economy-7run-105case | executor_input_tokens_per_case | 12315 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| cua-sft-v2 | economy-7run-105case | executor_output_tokens_per_case | 538 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| cua-sft-v2 | economy-7run-105case | executor_turns_per_case | 9.2 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| cua-sft-v2 | economy-7run-105case | verdict_cost_per_run_usd | $10.68 | 105 | done | Verdict-tier cost, NOT model cost: executor runs on our own GPU at $0. sft-v3 ran on vetty 428c062 and the others on 409810f, so the per-run cost is confounded by harness changes and is not comparable across arms. |
+| cua-sft-v3 | economy-7run-105case | ddr | 21.2 % <sub>[14–30]</sub> | 105 | done | DDR strict over 33 catalogue defects, economy sweep. |
+| cua-sft-v3 | economy-7run-105case | error_verdict_rate | 0.5429 | 105 | done | Share of the 105 case-runs the verdict tier could not judge - the execution-competence number. |
+| cua-sft-v3 | economy-7run-105case | executor_input_tokens_per_case | 18797 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| cua-sft-v3 | economy-7run-105case | executor_output_tokens_per_case | 746 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| cua-sft-v3 | economy-7run-105case | executor_turns_per_case | 11.3 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| cua-sft-v3 | economy-7run-105case | verdict_cost_per_run_usd | $0.73 | 105 | done | Verdict-tier cost, NOT model cost: executor runs on our own GPU at $0. sft-v3 ran on vetty 428c062 and the others on 409810f, so the per-run cost is confounded by harness changes and is not comparable across arms. |
 | qa-bench-refapp | full-48-case-suite | defect_catalog_size | 12 |  | done |  |
 | qa-bench-refapp | full-48-case-suite | defect_classes | 6 |  | done | validation, action, navigation, labeling, data, silent_failure. |
 | qa-bench-refapp | full-48-case-suite | planned_test_cases | 48 |  | done | Test cases in the cached plan for the full suite. |
@@ -349,6 +367,12 @@ that must not be quoted.
 | qwen35-9b-base | 6-defect-subset | completion_tokens_per_case | 4600 | 6 | done | Rambles without stopping; ~15 model calls per case. |
 | qwen35-9b-base | 6-defect-subset | ddr | 50.0 % <sub>[19–81]</sub> | 6 | done | 3/6. The 3 caught are all statically visible in page text; the model never completes a task. |
 | qwen35-9b-base | 6-defect-subset | done_rate | 0.0 % <sub>[0–39]</sub> | 6 | done | All 6 hit the 15-step cap; 1 crashed on a malformed keypress. |
+| qwen35-9b-base | economy-7run-105case | ddr | 0.0 % <sub>[0–4]</sub> | 105 | done | DDR strict over 33 catalogue defects, economy sweep. |
+| qwen35-9b-base | economy-7run-105case | error_verdict_rate | 0.7333 | 105 | done | Share of the 105 case-runs the verdict tier could not judge - the execution-competence number. |
+| qwen35-9b-base | economy-7run-105case | executor_input_tokens_per_case | 19386 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| qwen35-9b-base | economy-7run-105case | executor_output_tokens_per_case | 3617 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| qwen35-9b-base | economy-7run-105case | executor_turns_per_case | 15 | 105 | done | Executor tokens per case, economy sweep (7 runs x 15 cases = 105). Local model, so tokens are compute not spend. |
+| qwen35-9b-base | economy-7run-105case | verdict_cost_per_run_usd | $1.32 | 105 | done | Verdict-tier cost, NOT model cost: executor runs on our own GPU at $0. sft-v3 ran on vetty 428c062 and the others on 409810f, so the per-run cost is confounded by harness changes and is not comparable across arms. |
 | claude-sonnet-5 | 6-defect-subset | ddr | _not measured_ | 6 | pending | All 6 defect runs plus clean completed; the judge pass has not been run so no DDR exists yet. |
 | claude-sonnet-5 | skin-v2 | pass_rate_retained | _not measured_ |  | planned | Agent arm of the same comparison. |
 | cua-sft-v1 | skin-v2 | pass_rate_retained | _not measured_ |  | planned | Needs an ids-only skin to separate DOM change from label change. |
@@ -415,7 +439,7 @@ that must not be quoted.
 | Share of record/replay web test breakages caused by stale locators | 73.6 % | 1065 | ICST | 2016 | 10.1109/ICST.2016.16 | deck slide 3, thesis ch.1 |
 | Legacy GUI tests on live sites that stopped passing within 18 months | 100.0 % | 120 | ASE | 2025 | 10.1109/ASE63991.2025.00251 | deck slide 3, thesis ch.1 |
 
-_156 registry rows: 143 done, 1 pending, 5 planned, 7 superseded. Percentages carry a 95 % Wilson interval where n is known._
+_180 registry rows: 167 done, 1 pending, 5 planned, 7 superseded. Percentages carry a 95 % Wilson interval where n is known._
 
 <!-- registry:end -->
 
