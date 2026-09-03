@@ -425,6 +425,16 @@ class GrpoJob(RemoteJob):
         return f"run {self.run_id}: evals {self.evals_done}; outputs in {self.run_dir}"
 
 
+def parse_serve_adapters(spec):
+    """"name=path,name=path" -> {name: path}; a bare path keeps the canonical single-adapter name."""
+    if not spec:
+        return {}
+    entries = [part.strip() for part in str(spec).split(",") if part.strip()]
+    if len(entries) == 1 and "=" not in entries[0]:
+        return {"cua-student-lora": entries[0]}
+    return dict(entry.split("=", 1) for entry in entries)
+
+
 class ServeJob(RemoteJob):
     """Rent a box, serve the base (+ adapter) student on serve_port through the tunnel until serve_seconds or Ctrl-C."""
     name = "serve"
@@ -438,15 +448,16 @@ class ServeJob(RemoteJob):
 
     def preflight(self, cfg) -> None:
         _apply_compute(self.rl, cfg)
-        if cfg.serve_adapter and not (Path(cfg.serve_adapter) / "adapter_config.json").is_file():
-            raise FileNotFoundError(f"adapter '{cfg.serve_adapter}' has no adapter_config.json")
+        for name, local in parse_serve_adapters(cfg.serve_adapter).items():
+            if not (Path(local) / "adapter_config.json").is_file():
+                raise FileNotFoundError(f"adapter '{name}' at '{local}' has no adapter_config.json")
 
     def upload(self, provider, instance, cfg) -> None:
         wd = cfg.remote_workdir
-        provider.exec(instance, f"mkdir -p {wd}/serve_adapter", timeout=60)
         _upload_code(provider, instance, cfg, first_party_closure(RL_CODE_ROOTS) + RL_DATA_FILES + (cfg.rl_config,))
-        if cfg.serve_adapter:
-            provider.upload(instance, cfg.serve_adapter.rstrip("/") + "/", f"{wd}/serve_adapter/")
+        for name, local in parse_serve_adapters(cfg.serve_adapter).items():
+            provider.exec(instance, f"mkdir -p {wd}/serve_adapter/{name}", timeout=60)
+            provider.upload(instance, local.rstrip("/") + "/", f"{wd}/serve_adapter/{name}/")
         if self.rl.get("serve_merged_base"):
             provider.exec(instance, f"mkdir -p {wd}/sft_adapter", timeout=60)
             provider.upload(instance, str(Path(self.rl["sft_adapter"]).expanduser()).rstrip("/") + "/", f"{wd}/sft_adapter/")
@@ -456,7 +467,7 @@ class ServeJob(RemoteJob):
 
     def remote_command(self, cfg) -> str:
         wd = cfg.remote_workdir
-        adapters = f"{wd}/serve_adapter" if cfg.serve_adapter else None
+        adapters = {name: f"{wd}/serve_adapter/{name}" for name in parse_serve_adapters(cfg.serve_adapter)} or None
         deploy = build_deploy_command(dict(self.rl, merged_model=self.rl["base_model"]), adapters=adapters)
         if self.rl.get("serve_backend") == "vllm":
             serve = shlex.join(build_vllm_serve_command(self.rl, adapters=adapters))

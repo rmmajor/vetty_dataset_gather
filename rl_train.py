@@ -77,7 +77,8 @@ def build_rlhf_command(cfg):
 def build_deploy_command(cfg, adapters=None):
     argv = ["swift", "deploy", *_flags(cfg, DEPLOY_FLAG_MAP), *DEPLOY_FIXED, "--port", str(cfg["compute"]["serve_port"])]
     if adapters:
-        argv += ["--adapters", adapters]
+        # A dict names each arm for a multi-adapter endpoint; a string stays the bare path the RL lane passes.
+        argv += ["--adapters", *([f"{n}={p}" for n, p in adapters.items()] if isinstance(adapters, dict) else [adapters])]
     return argv
 
 
