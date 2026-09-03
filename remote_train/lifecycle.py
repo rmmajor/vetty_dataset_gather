@@ -87,6 +87,8 @@ def _run_job(provider, cfg, job, *, enable_safety: bool = True) -> int:
             _pull_logs(provider, instance, cfg, job.results_dest(cfg))
             if not ok:
                 logger.error(f"Remote {job.name} reported FAILED — see ./{job.results_dest(cfg)}/{_LOG_FILE}")
+                # Selection is deterministic, so without this a retry re-rents the same host that just failed the workload.
+                state.record_bad_offer(offer.id, f"{job.name} reported FAILED on this host")
                 _rescue(provider, instance, cfg, job)
                 return 1
 

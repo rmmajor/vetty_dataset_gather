@@ -1,0 +1,21 @@
+# Serve-only config for the QA-bench and eval lanes: one GPU holding the base plus every arm's LoRA.
+base_model: Qwen/Qwen3.5-9B
+template: qwen3_5
+response_prefix: ''
+max_pixels: 1003520
+serve_backend: vllm
+serve_merged_base: false
+vllm_max_model_len: 8192
+vllm_max_lora_rank: 64
+vllm_gpu_memory_utilization: 0.9
+# sft3 sends the previous screenshot alongside the current one; vLLM's default of 1 rejects those requests with HTTP 400.
+vllm_limit_mm_per_prompt: '{"image": 2}'
+max_completion_length: 512
+compute:
+  num_gpus: 1
+  # A 9B in bf16 plus a couple of rank-64 LoRAs fits well inside 48GB; the training run's 80GB floor would only cost more.
+  min_vram_gb: 44
+  disk_gb: 80
+  image: vllm/vllm-openai:v0.28.0
+  max_runtime_hours: 6
+  serve_port: 8001
