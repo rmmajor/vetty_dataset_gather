@@ -64,6 +64,9 @@ DEFAULT_PARSE_PATTERNS = [
     # Trailing `[,)]` so `click(x, y, button=left)` parses: the point is unambiguous, and charging
     # a model for spelling deviation measures imitation rather than grounding.
     r"click\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*[,)]",
+    # `<x, y>`: the base model's own spelling. A digit must follow `<`, so `<ref>(x, y)</ref>`
+    # cannot match here and the canonical pattern above still wins.
+    r"<\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*>",
     r"\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)",
     r"\[\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\]",
     r'"x"\s*:\s*(-?\d+\.?\d*).*?"y"\s*:\s*(-?\d+\.?\d*)',
