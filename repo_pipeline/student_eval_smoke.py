@@ -491,6 +491,27 @@ def check_prompt_format():
     logger.info("prompt format OK (sft3 golden: one image on step 1, prev+cur after, annotated history)")
 
 
+def check_v2_observation():
+    """An sft-v1/v2 checkpoint (and any GRPO LoRA over one) trained on ONE screenshot.
+
+    Sending it the sft3 two-image observation measures the prompt rather than the model, so the
+    format is selectable per arm exactly as the QA bench's `cua_observation` is.
+    """
+    cur, prev = _png(), _png(block=(0, 0, 2, 2))
+    history = ["click(500, 500) [no change]"]
+
+    v2 = build_student_messages(GOLDEN_INSTRUCTION, history, cur, prev, observation="v2")
+    assert [im.size for im in _decode_images(v2[1]["content"])] == [(4, 4)], "v2 must send exactly one image"
+    assert "Previous screenshot" not in _flatten_openai(v2[1]["content"])
+
+    v3 = build_student_messages(GOLDEN_INSTRUCTION, history, cur, prev, observation="v3")
+    assert [im.size for im in _decode_images(v3[1]["content"])] == [PREV_IMAGE_SIZE, (4, 4)]
+
+    # The history line, and therefore its effect annotations, is identical in both formats.
+    assert history[0] in _flatten_openai(v2[1]["content"])
+    logger.info("v2/v3 observation switch OK (one image vs prev+cur, same history)")
+
+
 def check_png_forced():
     """Effect annotations compare screenshots pixel-wise, so a lossy format is a config error, not a silent mis-annotation."""
     assert EvalConfig().screenshot_format == "png"
@@ -887,6 +908,7 @@ PARSER_CHECKS = [
     check_coordinate_scaling,
     check_driver_mapping,
     check_prompt_format,
+    check_v2_observation,
     check_png_forced,
     check_block_detection,
     check_browser_backends,

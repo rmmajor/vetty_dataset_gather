@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from repo_pipeline import driver_session
-from repo_pipeline.agent_capture import verify_trajectory
+from repo_pipeline.agent_capture import VERIFIER_UNAVAILABLE_REASON, verify_trajectory
 from repo_pipeline.driver_session import DriverClient, DriverError
 from repo_pipeline.eval_task_sources import (
     EvalTask,
@@ -76,15 +76,25 @@ def observed_effect(prev_png: bytes, cur_png: bytes, prev_url: str, cur_url: str
     return {"changed": screenshot_changed_fraction(prev_png, cur_png), "path": url_path_change(prev_url, cur_url)}
 
 
+# The observation layout is per-ARM, not global: an sft-v1/v2 checkpoint (and any GRPO LoRA over one)
+# trained on ONE screenshot, so sending it the sft3 two-image turn measures the prompt, not the model.
+OBSERVATION_FORMATS = ("v2", "v3")
+DEFAULT_OBSERVATION = "v3"
+
+
 def build_student_messages(instruction: str, action_history: list, cur_png: bytes,
-                           prev_png: bytes | None = None) -> list:
-    """OpenAI chat messages for one step: the sft3 observation (prev + current screenshot from step 2 on)."""
+                           prev_png: bytes | None = None, observation: str = DEFAULT_OBSERVATION) -> list:
+    """OpenAI chat messages for one step; v3 adds the previous screenshot from step 2 on, v2 never does."""
+    if observation not in OBSERVATION_FORMATS:
+        raise ValueError(f"unknown observation format {observation!r}; expected one of {OBSERVATION_FORMATS}")
+    if observation == "v2":
+        prev_png = None
     images = {"cur": cur_png}
     if prev_png is not None:
         images["prev"] = downscale_prev(prev_png)
-    observation = build_step_observation(instruction, action_history, "cur", "prev" if prev_png is not None else None)
-    content = to_openai_content(observation["content"], lambda ref: base64.b64encode(images[ref]).decode())
-    return build_step_messages(SYSTEM_PROMPT, {**observation, "content": content})
+    turn = build_step_observation(instruction, action_history, "cur", "prev" if prev_png is not None else None)
+    content = to_openai_content(turn["content"], lambda ref: base64.b64encode(images[ref]).decode())
+    return build_step_messages(SYSTEM_PROMPT, {**turn, "content": content})
 
 
 # ---------------------------------------------------------------------------
@@ -693,6 +703,7 @@ class EvalConfig:
     judge: bool = True
     judge_mid_screenshots: int = 2
     parallel: int = 1
+    observation: str = DEFAULT_OBSERVATION
     resume: bool = True
     dataset_revision: str = "main"
     trajectories_dir: str = "trajectories"
@@ -920,7 +931,8 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
                 # The last step enters the history only now: its effect is what THIS screenshot/url show.
                 action_history.extend(history_entries_for_step(
                     {"actions": executed_actions}, observed_effect(prev_png, cur_png, prev_url, cur_url)))
-            messages = build_student_messages(task.instruction, action_history, cur_png, prev_png)
+            messages = build_student_messages(task.instruction, action_history, cur_png, prev_png,
+                                              observation=cfg.observation)
             prev_png, prev_url, executed_actions = cur_png, cur_url, []
             try:
                 raw = await _run(student.complete, messages)
@@ -1068,8 +1080,17 @@ async def judge_episode(record: EpisodeRecord, cfg: EvalConfig):
         episode_dir, full_name=f"eval:{cfg.label}:{record.task_id}",
         mid_screenshots=cfg.judge_mid_screenshots,
     )
+    # verify_trajectory returns its `success: False` fallback for a wedged CLI, a budget cap or an
+    # unparseable reply. Scoring that as a model failure charges the model for an unmeasured episode,
+    # so an unavailable verifier defers exactly as a usage limit does.
+    if verdict.get("reasoning") == VERIFIER_UNAVAILABLE_REASON:
+        record.judge_deferred = True
+        record.judge_reasoning = VERIFIER_UNAVAILABLE_REASON
+        return
+    # `final_success` carries the degenerate-loop override the capture gate applies; `success` is the
+    # judge's raw verdict. Reading the raw key would score a loop the corpus refuses as a win.
     record.judged_success = bool(verdict.get("claimed_success", verdict.get("success")))
-    record.verified_success = bool(verdict.get("success"))
+    record.verified_success = bool(verdict.get("final_success", verdict.get("success")))
     record.efficiency = verdict.get("efficiency") or ""
     record.judge_reasoning = (verdict.get("reasoning") or "")[:400]
 
@@ -1215,6 +1236,7 @@ def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
         "coord_space": cfg.coord_space,
         # Parity keys: the observation layout. A run prompted in an older format measures the prompt, not the model.
         "prompt_format": PROMPT_FORMAT_VERSION,
+        "observation": cfg.observation,
         "prev_image_size": f"{PREV_IMAGE_SIZE[0]}x{PREV_IMAGE_SIZE[1]}",
         "effect_annotations": True,
         "type_mode": cfg.type_mode,
@@ -1743,6 +1765,9 @@ def _add_run_arguments(parser):
                         help="skip verification (harness-only run; no Claude calls, no success rate)")
     parser.add_argument("--judge-mid-screenshots", type=int, default=2,
                         help="mid-run frames per verdict on top of the final one; the main cost dial")
+    parser.add_argument("--observation", default=DEFAULT_OBSERVATION, choices=OBSERVATION_FORMATS,
+                        help="observation layout: v3 sends prev+current screenshots, v2 sends current "
+                             "only (required for sft-v1/v2 and any GRPO LoRA over them)")
     parser.add_argument("--parallel", type=int, default=1,
                         help="concurrent sandboxes (clamped to what the Docker VM can hold)")
     parser.add_argument("--no-resume", action="store_true",
@@ -1775,7 +1800,7 @@ def _config_from_args(args) -> EvalConfig:
         step_cap_ceiling=args.step_cap_ceiling, stratify=args.stratify,
         episode_timeout_s=args.episode_timeout, screenshot_format=args.screenshot_format,
         judge=not args.no_judge, judge_mid_screenshots=args.judge_mid_screenshots,
-        parallel=args.parallel, resume=not args.no_resume,
+        parallel=args.parallel, observation=args.observation, resume=not args.no_resume,
         dataset_revision=args.dataset_revision, trajectories_dir=args.trajectories_dir,
         loop_guard_repeats=args.loop_guard_repeats, sandbox_image=args.sandbox_image,
         browser_backend=args.browser_backend, browser_host=args.browser_host,

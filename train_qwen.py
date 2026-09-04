@@ -357,6 +357,13 @@ def to_openai_content(content, image_b64_for):
             if item["type"] == "image" else _text_item(item["text"]) for item in content]
 
 
+def to_claude_content(content, image_b64_for):
+    """The same observation in Anthropic's block form, so a frontier arm is prompted identically."""
+    return [{"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                         "data": image_b64_for(item["image"])}}
+            if item["type"] == "image" else _text_item(item["text"]) for item in content]
+
+
 GROUNDING_INSTRUCTION_TEMPLATE = "Click {description}."
 
 

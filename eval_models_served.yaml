@@ -32,3 +32,18 @@
   model: sft-v3
   backend: openai
   coord_space: normalized_1000
+
+# GRPO-3 is a LoRA over the MERGED sft-v2 weights, so it needs its own serve
+# (rl_config `serve_merged_base: true`) and cannot share the endpoint with the three specs above.
+- label: grpo-v3
+  model: grpo-v3
+  backend: openai
+  coord_space: viewport_abs
+
+# The frontier arm needs no endpoint: it goes through the logged-in `claude` CLI, so it can be
+# scored while no GPU is rented. Grounding is single-turn, which is why a frontier row is fair here
+# and not on the browsing lane.
+- label: sonnet
+  model: claude-sonnet-5
+  backend: claude
+  coord_space: normalized_1000

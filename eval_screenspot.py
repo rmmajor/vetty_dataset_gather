@@ -18,6 +18,7 @@ samples, requiring no model, GPU, or network.
 """
 
 import argparse
+import asyncio
 import base64
 import concurrent.futures
 import io
@@ -40,6 +41,7 @@ from train_qwen import (
     PROMPT_FORMAT_VERSION,
     build_grounding_observation,
     build_step_messages,
+    to_claude_content,
     to_openai_content,
 )
 
@@ -59,7 +61,9 @@ DEFAULT_SPLIT = "test"
 
 DEFAULT_PARSE_PATTERNS = [
     r"<ref>\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)</ref>",
-    r"click\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)",
+    # Trailing `[,)]` so `click(x, y, button=left)` parses: the point is unambiguous, and charging
+    # a model for spelling deviation measures imitation rather than grounding.
+    r"click\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*[,)]",
     r"\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)",
     r"\[\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\]",
     r'"x"\s*:\s*(-?\d+\.?\d*).*?"y"\s*:\s*(-?\d+\.?\d*)',
@@ -238,6 +242,12 @@ def build_openai_messages(instruction, image_b64):
     messages = build_messages(instruction, "cur")
     messages[1]["content"] = to_openai_content(messages[1]["content"], lambda ref: image_b64)
     return messages
+
+
+def build_claude_content(instruction, image_b64):
+    """The same user turn as Anthropic content blocks; the system prompt rides on ClaudeAgentOptions."""
+    messages = build_messages(instruction, "cur")
+    return to_claude_content(messages[1]["content"], lambda ref: image_b64)
 
 
 def normalize_bbox(raw_bbox, bbox_format, normalized, width, height):
@@ -430,8 +440,61 @@ class OpenAIPredictor(Predictor):
             return list(pool.map(lambda s: self._one(s, coord_space), samples))
 
 
+class ClaudePredictor(Predictor):
+    """The frontier arm, reached through the logged-in `claude` CLI — never an API key.
+
+    Grounding is the one lane where a frontier comparison is apples-to-apples: single turn, one
+    screenshot, one click point, no scaffold or tool-use advantage to confound it.
+    """
+
+    def __init__(self, model, cfg):
+        self.model = model
+        self.workers = int(os.environ.get("SCREENSPOT_CLAUDE_WORKERS", "4"))
+        # A runaway guard, not a throttle: every SDK call carries a full-agent floor, so a cap near
+        # the true per-call cost returns "" instead of an answer. Matches the pipeline's 0.30.
+        self.budget_usd = float(os.environ.get("SCREENSPOT_CLAUDE_BUDGET_USD", "0.30"))
+        self.cfg = cfg
+
+    def _encode(self, image):
+        buf = io.BytesIO()
+        image.convert("RGB").save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+
+    def _one(self, sample, coord_space):
+        from claude_agent_sdk import ClaudeAgentOptions
+
+        from repo_pipeline.agent_runner import run_agent
+        from repo_pipeline.llm_config import MODEL_FOR_REASONING
+
+        image = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
+        content = build_claude_content(sample.instruction, self._encode(image))
+
+        async def stream():
+            yield {"type": "user", "message": {"role": "user", "content": content},
+                   "parent_tool_use_id": None, "session_id": ""}
+
+        options = ClaudeAgentOptions(
+            model=self.model or MODEL_FOR_REASONING,
+            system_prompt=GROUNDING_SYSTEM_PROMPT,
+            max_turns=1,
+            max_budget_usd=self.budget_usd,
+            permission_mode="bypassPermissions",
+        )
+        return asyncio.run(run_agent(stream(), options, purpose="screenspot", raise_on_error=False))
+
+    def predict_batch(self, samples, cfg, coord_space):
+        # Threads, not asyncio.gather: each call owns a CLI subprocess, and run_agent installs its
+        # own timeout inside a fresh loop per sample.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
+            return list(pool.map(lambda s: self._one(s, coord_space), samples))
+
+
 def build_openai_predictor(spec, cfg):
     return OpenAIPredictor(model=spec.model, cfg=cfg)
+
+
+def build_claude_predictor(spec, cfg):
+    return ClaudePredictor(model=spec.model, cfg=cfg)
 
 
 def build_swift_predictor(spec, cfg):
@@ -445,6 +508,7 @@ def build_mock_predictor(spec, cfg):
 PREDICTOR_BACKENDS: dict = {
     "swift": build_swift_predictor,
     "openai": build_openai_predictor,
+    "claude": build_claude_predictor,
     "mock": build_mock_predictor,
 }
 
