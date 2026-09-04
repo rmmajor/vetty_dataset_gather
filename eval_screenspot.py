@@ -112,7 +112,7 @@ class EvalConfig:
     limit: Optional[int] = None
     output_dir: str = "eval_results"
     max_pixels: int = DEFAULT_MAX_PIXELS
-    max_tokens: int = 512
+    max_tokens: int = 2048
     temperature: float = 0.0
 
 
@@ -421,7 +421,7 @@ class OpenAIPredictor(Predictor):
         image = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
         messages = build_openai_messages(sample.instruction, self._encode(image))
         body = json.dumps({"model": self.model, "messages": messages,
-                           "temperature": 0.0, "max_tokens": 512}).encode()
+                           "temperature": self.cfg.temperature, "max_tokens": self.cfg.max_tokens}).encode()
         req = urllib.request.Request(
             f"{self.endpoint}/chat/completions", data=body,
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
@@ -890,7 +890,7 @@ def build_parser():
     run_parser.add_argument("--parse-pattern", action="append", help="Override default regex(es); repeatable.")
     run_parser.add_argument("--output-dir", default="eval_results")
     run_parser.add_argument("--max-pixels", type=int, default=DEFAULT_MAX_PIXELS)
-    run_parser.add_argument("--max-tokens", type=int, default=512)
+    run_parser.add_argument("--max-tokens", type=int, default=2048)
     run_parser.add_argument("--temperature", type=float, default=0.0)
     run_parser.add_argument("--smoke-test", action="store_true",
                             help="Run the no-model pipeline self-test and exit.")
