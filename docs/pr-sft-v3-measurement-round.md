@@ -14,21 +14,42 @@ cost.
 
 ## The headline measurement
 
-ScreenSpot, full 1272-sample test split, three arms scored from **one endpoint under one harness
-commit**, each in its own coordinate space, with an identical token budget:
+ScreenSpot, full 1272-sample test split, **all four arms** scored from one endpoint under one
+harness commit, each in its own coordinate space, with an identical 2048-token budget:
 
-| arm | accuracy | 95% CI | parse rate |
-| --- | --- | --- | --- |
-| base Qwen3.5-9B | 60.9% * | [58.2, 63.6] | 73.0% * |
-| cua-sft-v2 | 76.3% | [73.8, 78.5] | 91.8% |
-| **cua-sft-v3** | **91.6%** | **[89.9, 93.0]** | 100.0% |
+| arm | overall | 95% CI | icon (575) | text (697) | parse |
+| --- | --- | --- | --- | --- | --- |
+| base Qwen3.5-9B | 72.2% | [69.7, 74.6] | **73.2%** | 71.4% | 86.2% |
+| cua-sft-v2 | 76.3% | [73.9, 78.6] | **67.5%** | 83.5% | 91.8% |
+| cua-grpo-v3 | 82.7% | [80.5, 84.7] | 75.0% | 89.1% | 98.7% |
+| **cua-sft-v3** | **91.6%** | **[89.9, 93.0]** | **88.0%** | **94.5%** | 100.0% |
 
-The intervals separate cleanly. Earlier ScreenSpot rows used `--limit 300`, which head-samples in
-dataset order, and were spread across three harness commits with no judge hash recorded — at n=300
-none of the arms was separable from any other.
+Earlier ScreenSpot rows used `--limit 300`, which head-samples in dataset order, and were spread
+across three harness commits with no judge hash recorded — at n=300 no arm was separable from any
+other.
 
-\* The base row is registered as a **floor**: the run predates the parser accepting the base's own
-`click(<x, y>)` spelling, which recovers 163 of its 343 unparsed answers.
+### SFT-2 did not improve grounding, it traded it
+
+Split by target type, sft-v2 is **worse than the untuned base at icon grounding** — 67.5%
+[63.6, 71.2] against 73.2% [69.4, 76.7], barely-overlapping intervals at n=575 — while gaining
+12 points on text. Its overall lead over base is correspondingly marginal.
+
+This is the regression the sft-v3 round set out to fix by moving from `viewport_abs` to
+`normalized_1000` coordinates. It was previously an inference from a 300-sample run against a
+different harness (ScreenSpot 89.0 -> 85.3, icons 80.3 -> 75.4); it is now measured directly.
+sft-v3 fixes it decisively: icons 88.0%, text 94.5%.
+
+### GRPO-3 improved grounding, which its task metrics did not predict
+
+`cua-grpo-v3` is recorded in the registry as yielding no measurable gain, on the basis of reward
+and task-success curves — its LoRA-B Frobenius norm is 3.1% of sft-v2's, and 752 episodes moved
+reward 1.08 -> 0.89. That reading is incomplete. On grounding it gained **76.3% -> 82.7%** over
+its own parent, recovering most of sft-v2's icon regression (67.5% -> 75.0%) while keeping the
+text gain (83.5% -> 89.1%), at a parse rate of 98.7%.
+
+A run that produced no task-level improvement still measurably sharpened where the model points.
+That is a more useful result for the dropped-RL chapter than "nothing happened", and it is only
+visible because all four arms were finally scored on one instrument.
 
 ## What was wrong, and what it cost
 
