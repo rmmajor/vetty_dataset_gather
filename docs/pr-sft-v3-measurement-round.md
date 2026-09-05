@@ -51,6 +51,45 @@ A run that produced no task-level improvement still measurably sharpened where t
 That is a more useful result for the dropped-RL chapter than "nothing happened", and it is only
 visible because all four arms were finally scored on one instrument.
 
+## The QA bench, every arm on one harness
+
+Economy sweep, 7 runs x 15 cases, 33 catalogue defects, harness 428c062:
+
+| arm | DDR | 95% CI | error verdicts | precision |
+| --- | --- | --- | --- | --- |
+| base (matched) | 0.0% | [0.0, 10.4] | 66.7% | — |
+| cua-sft-v2 (matched) | 9.1% | [3.1, 23.6] | 61.9% | 100% (3) |
+| cua-sft-v3 | 21.2% | [10.7, 37.7] | 54.3% | 100% (7) |
+| **cua-grpo-v3** | **24.2%** | [12.8, 41.0] | 57.1% | 100% (11) |
+| claude-sonnet-5 (frontier) | 66.7% | [49.6, 80.3] | 2.9% | 77.1% (48) |
+
+GRPO-3 detects 8 of 33 defects against its sft-v2 parent's 3. That is the second lane where the
+run recorded as yielding no measurable gain measurably gained. At n=33 the intervals overlap, so
+this does not separate grpo-v3 from sft-v3 — but it puts both clearly above the parent, and it is
+not what the reward curves said.
+
+## Online-Mind2Web, the base arm at n=157
+
+The full 300-task set under one harness, with a token budget that does not truncate the model and
+a judge that ran:
+
+| | value |
+| --- | --- |
+| verified success (scored) | **3.18%** [1.4, 7.2], n=157 |
+| verified success (all episodes) | 1.67%, n=300 |
+| parse failure | 12.8% |
+
+| level | scored | success | blocked |
+| --- | --- | --- | --- |
+| easy | 40 | **12.5%** | 41.3% |
+| medium | 69 | **0.0%** | 46.8% |
+| hard | 48 | **0.0%** | 34.2% |
+
+Every base success is an easy task; across 117 scored medium and hard episodes it solves nothing.
+143 of 300 tasks were blocked or unreachable from this egress, which is why both denominators are
+registered rather than only the flattering one. This supersedes the n=34 and n=164 base rows, whose
+intervals spanned roughly 3-23% and which came from different harness commits.
+
 ## What was wrong, and what it cost
 
 **A token cap that scored the cap.** `eval_screenspot.OpenAIPredictor` hard-coded `max_tokens: 512`
