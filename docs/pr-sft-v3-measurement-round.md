@@ -63,10 +63,22 @@ Economy sweep, 7 runs x 15 cases, 33 catalogue defects, harness 428c062:
 | **cua-grpo-v3** | **24.2%** | [12.8, 41.0] | 57.1% | 100% (11) |
 | claude-sonnet-5 (frontier) | 66.7% | [49.6, 80.3] | 2.9% | 77.1% (48) |
 
-GRPO-3 detects 8 of 33 defects against its sft-v2 parent's 3. That is the second lane where the
-run recorded as yielding no measurable gain measurably gained. At n=33 the intervals overlap, so
-this does not separate grpo-v3 from sft-v3 — but it puts both clearly above the parent, and it is
-not what the reward curves said.
+**sft-v2 has two legitimate DDR numbers and the choice between them changes the story.** Its
+original run (harness 409810f, 15-step cap, history window 10) detected 7 of 33 defects — 21.2%.
+Its matched re-record (428c062, 25-step cap, window 20) detected 3 — 9.1%. Both are real and
+independently counted from the bug reports and judgements; the table above uses the matched run
+because it is the only sft-v2 recording that shares a harness, step cap, history window and
+observation format with the arms it is compared against.
+
+That makes the defensible claim narrower than "sft-v3 doubled detection". Under matched conditions
+sft-v3 detects 7 defects to sft-v2's 3; under sft-v2's own original protocol sft-v2 also detected 7.
+At n=33 with intervals near +/-15 points, neither pairing separates the two checkpoints. What the
+lane does establish is that every fine-tuned arm detects defects the base never does: base 0 of 33,
+on both harnesses.
+
+grpo-v3's 8 of 33 is the highest of any local arm, and it is the second lane where the run recorded
+as yielding no measurable gain measurably gained — the first being grounding. That is a claim about
+grpo-v3 versus its own parent under one harness, not a ranking against sft-v3.
 
 ## Online-Mind2Web, all four arms on the full 300
 
