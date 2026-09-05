@@ -290,6 +290,7 @@ that must not be quoted.
 | qwen35-9b-base | all | parse_failure_rate | 20.6 % |  | done | Denominator is harness-internal; not a per-episode proportion. |
 | qwen35-9b-base | all | parse_failure_rate | 23.6 % <sub>[19–30]</sub> | 230 | done |  |
 | qwen35-9b-base | all | parse_failure_rate | 37.7 % <sub>[26–52]</sub> | 50 | done |  |
+| qwen35-9b-base | all | parse_failure_rate | 12.8 % <sub>[9–17]</sub> | 300 | done | 2026-09-05: the FULL 300-task set, not a 34/50-task sample, with max_tokens 2048 (at the old 512 the base was truncated before it emitted an action) and a working post-hoc judge. Scored denominator excludes site_blocked/unreachable/harness_error, which is 143 of 300 from this egress; the all-episode rate is registered alongside for exactly that reason. Supersedes the n=34 and n=164 base rows, which came from different harness commits. Artifacts eval_runs/om2w300_base/. Denominator is model steps, not episodes, so no interval is filled. |
 | qwen35-9b-base | all-episodes | done_emission_rate | 0.113 | 230 | done |  |
 | qwen35-9b-base | all-episodes | done_emission_rate | 0.12 | 50 | done |  |
 | qwen35-9b-base | all-episodes | done_rate | 22.0 % <sub>[13–35]</sub> | 50 | done | Episodes the policy ended with done(). |
@@ -297,18 +298,22 @@ that must not be quoted.
 | qwen35-9b-base | all-episodes | verified_success_rate | 10.0 % <sub>[4–21]</sub> | 50 | done | Denominator includes blocked and unreachable sites. |
 | qwen35-9b-base | all-episodes | verified_success_rate | 4.8 % <sub>[3–8]</sub> | 230 | done |  |
 | qwen35-9b-base | all-episodes | verified_success_rate | 6.0 % <sub>[2–16]</sub> | 50 | done |  |
+| qwen35-9b-base | all-episodes | verified_success_rate | 1.7 % <sub>[1–4]</sub> | 300 | done | 2026-09-05: the FULL 300-task set, not a 34/50-task sample, with max_tokens 2048 (at the old 512 the base was truncated before it emitted an action) and a working post-hoc judge. Scored denominator excludes site_blocked/unreachable/harness_error, which is 143 of 300 from this egress; the all-episode rate is registered alongside for exactly that reason. Supersedes the n=34 and n=164 base rows, which came from different harness commits. Artifacts eval_runs/om2w300_base/. |
 | qwen35-9b-base | easy | verified_success_rate | 18.2 % <sub>[5–48]</sub> | 11 | done |  |
 | qwen35-9b-base | easy | verified_success_rate | 36.4 % <sub>[15–65]</sub> | 11 | done | 4/11. |
 | qwen35-9b-base | easy | verified_success_rate | 25.0 % <sub>[15–39]</sub> | 44 | done |  |
 | qwen35-9b-base | easy | verified_success_rate | 27.3 % <sub>[10–57]</sub> | 11 | done |  |
+| qwen35-9b-base | easy | verified_success_rate | 12.5 % <sub>[5–26]</sub> | 40 | done | 2026-09-05: the FULL 300-task set, not a 34/50-task sample, with max_tokens 2048 (at the old 512 the base was truncated before it emitted an action) and a working post-hoc judge. Scored denominator excludes site_blocked/unreachable/harness_error, which is 143 of 300 from this egress; the all-episode rate is registered alongside for exactly that reason. Supersedes the n=34 and n=164 base rows, which came from different harness commits. Artifacts eval_runs/om2w300_base/. 33 of 80 tasks at this level were blocked. |
 | qwen35-9b-base | hard | verified_success_rate | 7.7 % <sub>[1–33]</sub> | 13 | done |  |
 | qwen35-9b-base | hard | verified_success_rate | 7.7 % <sub>[1–33]</sub> | 13 | done | 1/13. |
 | qwen35-9b-base | hard | verified_success_rate | 0.0 % <sub>[0–7]</sub> | 49 | done |  |
 | qwen35-9b-base | hard | verified_success_rate | 0.0 % <sub>[0–23]</sub> | 13 | done |  |
+| qwen35-9b-base | hard | verified_success_rate | 0.0 % <sub>[0–7]</sub> | 48 | done | 2026-09-05: the FULL 300-task set, not a 34/50-task sample, with max_tokens 2048 (at the old 512 the base was truncated before it emitted an action) and a working post-hoc judge. Scored denominator excludes site_blocked/unreachable/harness_error, which is 143 of 300 from this egress; the all-episode rate is registered alongside for exactly that reason. Supersedes the n=34 and n=164 base rows, which came from different harness commits. Artifacts eval_runs/om2w300_base/. 27 of 79 tasks at this level were blocked. |
 | qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–28]</sub> | 10 | done |  |
 | qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–28]</sub> | 10 | done | 0/10. |
 | qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–5]</sub> | 71 | done |  |
 | qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–28]</sub> | 10 | done |  |
+| qwen35-9b-base | medium | verified_success_rate | 0.0 % <sub>[0–5]</sub> | 69 | done | 2026-09-05: the FULL 300-task set, not a 34/50-task sample, with max_tokens 2048 (at the old 512 the base was truncated before it emitted an action) and a working post-hoc judge. Scored denominator excludes site_blocked/unreachable/harness_error, which is 143 of 300 from this egress; the all-episode rate is registered alongside for exactly that reason. Supersedes the n=34 and n=164 base rows, which came from different harness commits. Artifacts eval_runs/om2w300_base/. 66 of 141 tasks at this level were blocked. |
 | qwen35-9b-base | parsed-actions | canonical_form_rate | 26.8 % <sub>[22–32]</sub> | 276 | done | 74/276 parsed actions in canonical form. |
 | qwen35-9b-base | parsed-actions | canonical_form_rate | 18.8 % <sub>[15–24]</sub> | 282 | done | 53/282 parsed actions in canonical form. |
 | qwen35-9b-base | parsed-actions | canonical_form_rate | 29.7 % <sub>[27–32]</sub> | 1351 | done |  |
@@ -317,6 +322,7 @@ that must not be quoted.
 | qwen35-9b-base | scored | verified_success_rate | 14.7 % <sub>[6–30]</sub> | 34 | done | 5/34 scored episodes. Criteria-first judge (judge_prompt_sha), all three policies the same night; not comparable to rows without a judge_prompt_sha. |
 | qwen35-9b-base | scored | verified_success_rate | 6.7 % <sub>[4–12]</sub> | 164 | done | Base re-measured on the 230-task pinned set under the navigate/handoff-aware harness. Not comparable to pre-2026-08-31 rows: the action grammar and history_window changed. |
 | qwen35-9b-base | scored | verified_success_rate | 8.8 % <sub>[3–23]</sub> | 34 | done | Same base run, restricted to the archived 50-task subset so sft-v2 has a like-for-like comparator. Base scored 0.1471 on these same 50 on 2026-08-27, so ~6pp is run-to-run noise. |
+| qwen35-9b-base | scored | verified_success_rate | 3.2 % <sub>[1–7]</sub> | 157 | done | 2026-09-05: the FULL 300-task set, not a 34/50-task sample, with max_tokens 2048 (at the old 512 the base was truncated before it emitted an action) and a working post-hoc judge. Scored denominator excludes site_blocked/unreachable/harness_error, which is 143 of 300 from this egress; the all-episode rate is registered alongside for exactly that reason. Supersedes the n=34 and n=164 base rows, which came from different harness commits. Artifacts eval_runs/om2w300_base/. |
 | qwen35-9b-base | successes | steps_over_reference_on_success | 1.92 | 5 | done | Mean steps / reference_length over verified successes. |
 | cua-sft-v1-nologin | scored | verified_success_rate | _not measured_ | 34 | planned | Ablation that turns the post-authentication novelty claim into a result. |
 
@@ -486,7 +492,7 @@ that must not be quoted.
 | Share of record/replay web test breakages caused by stale locators | 73.6 % | 1065 | ICST | 2016 | 10.1109/ICST.2016.16 | deck slide 3, thesis ch.1 |
 | Legacy GUI tests on live sites that stopped passing within 18 months | 100.0 % | 120 | ASE | 2025 | 10.1109/ASE63991.2025.00251 | deck slide 3, thesis ch.1 |
 
-_225 registry rows: 212 done, 1 pending, 5 planned, 7 superseded. Percentages carry a 95 % Wilson interval where n is known._
+_231 registry rows: 218 done, 1 pending, 5 planned, 7 superseded. Percentages carry a 95 % Wilson interval where n is known._
 
 <!-- registry:end -->
 

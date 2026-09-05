@@ -1699,6 +1699,46 @@ async def run_eval(cfg: EvalConfig) -> dict:
     return results
 
 
+async def judge_run(run_dir: Path, cfg: EvalConfig) -> dict:
+    """Score the episodes a --no-judge run deferred, without re-driving the browser."""
+    results = load_run(run_dir)
+    # episode.json is the record; results.json is a snapshot taken when the run ended and can be
+    # stale about what a verdict is still owed on.
+    on_disk = {}
+    for episode_file in sorted((run_dir / "episodes").glob("*/episode.json")):
+        existing = _load_existing_episode(episode_file.parent)
+        if existing is not None:
+            on_disk[existing.task_id] = existing
+    records = [on_disk.get(episode["task_id"], EpisodeRecord(**episode)) for episode in results["episodes"]]
+    owed = [record for record in records if record.judge_deferred]
+    logger.info(f"{run_dir.name}: {len(owed)} episode(s) owe a verdict of {len(records)} recorded")
+
+    judged = 0
+    for record in owed:
+        episode_dir = Path(record.episode_dir) if record.episode_dir else run_dir / "episodes" / record.task_id
+        try:
+            record.judge_deferred = False
+            await judge_episode(record, cfg)
+        except UsageLimitReached:
+            # The verdict is still owed; leave the flag set so a later pass picks it up.
+            record.judge_deferred = True
+            _persist_episode(episode_dir, record, cfg)
+            logger.warning(f"usage limit reached after {judged} verdict(s) — rerun to continue")
+            break
+        _persist_episode(episode_dir, record, cfg)
+        judged += 1
+        logger.info(f"[{record.task_id}] verified={record.verified_success} "
+                    f"deferred={record.judge_deferred} ({judged}/{len(owed)})")
+
+    results["episodes"] = [asdict(record) for record in records]
+    results["metrics"] = compute_metrics(records)
+    results["finished_at"] = datetime.now(timezone.utc).isoformat()
+    (run_dir / "results.json").write_text(json.dumps(results, indent=2))
+    (run_dir / "report.md").write_text(render_report(results))
+    logger.info(f"judged {judged}; rewrote {run_dir / 'report.md'}")
+    return results
+
+
 def load_run(run_dir: str | Path) -> dict:
     path = Path(run_dir)
     results_file = path if path.suffix == ".json" else path / "results.json"
@@ -1820,6 +1860,11 @@ def main():
     run_parser = subparsers.add_parser("run", help="run a task set against a served model")
     _add_run_arguments(run_parser)
 
+    judge_parser = subparsers.add_parser("judge", help="score the episodes a --no-judge run deferred")
+    judge_parser.add_argument("run_dir")
+    judge_parser.add_argument("--judge-mid-screenshots", type=int, default=2,
+                              help="mid-run frames per verdict on top of the final one; the main cost dial")
+
     compare_parser = subparsers.add_parser("compare", help="render a before/after table")
     compare_parser.add_argument("runs", nargs="+", help="two or more eval_runs/<id> directories")
     compare_parser.add_argument("--output", default="",
@@ -1851,6 +1896,12 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     install_sigterm_handler()
+
+    if args.command == "judge":
+        run_dir = Path(args.run_dir)
+        asyncio.run(judge_run(run_dir, EvalConfig(judge_mid_screenshots=args.judge_mid_screenshots)))
+        return
+
     try:
         cfg = _config_from_args(args)
     except ValueError as e:
