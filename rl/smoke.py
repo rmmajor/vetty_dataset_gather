@@ -76,8 +76,9 @@ def check_record(record, policy, traj_dir):
     for step, obs in zip(traj["steps"], emitted):
         assert (traj_dir / step["screenshot"]).read_bytes() == base64.b64decode(obs["image_b64"]), f"PNG parity broken at step {step['step']}"
     examples, _ = convert_trajectory_to_examples(traj, traj_dir)
+    # The RL lane stays on the one-image v2 layout by decision, so parity is asserted on the task/history text only.
     for example, obs in zip(examples, emitted):
-        assert example["messages"][1]["content"][1]["text"] == obs["text"], "SFT input != RL observation"
+        assert example["messages"][1]["content"][-1]["text"].removeprefix("\n") == obs["text"], "SFT input != RL observation"
     defects = audit_trajectory(traj_dir)
     assert defects == [], defects
     assert json.loads((traj_dir / "metadata.json").read_text())["excluded_reason"] == "rl_rollout"

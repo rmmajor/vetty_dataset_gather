@@ -25,6 +25,8 @@ PROPORTION_METRICS = {
     "parse_failure_rate",
     "ddr",
     "done_rate",
+    "oracle_success_rate",
+    "false_done_rate",
     "ui_coverage_views",
     "ui_coverage_elements",
     "flakiness",

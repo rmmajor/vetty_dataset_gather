@@ -6,10 +6,10 @@ bounding box. Built to compare a model before and after SFT, and reusable for
 arbitrary models via a coordinate-space registry, a configurable output parser,
 a pluggable inference backend, and a configurable dataset/bbox adapter.
 
-The model trained in this repo emits absolute pixel coordinates in a fixed
-1280x720 viewport (see train_qwen.py); the `viewport_abs` coordinate space
-reproduces that exactly. Other conventions (normalized 0-1000, native-resolution
-absolute) are selectable for other models.
+An sft3 checkpoint answers in normalized 0-1000 coordinates (train_qwen.COORD_SPACE),
+as a stock Qwen does; the sft-v1/v2 checkpoints answered in absolute pixels of the
+fixed 1280x720 training viewport, which the `viewport_abs` coordinate space reproduces.
+Native-resolution absolute is selectable for other models.
 
 End-to-end evaluation needs a GPU and a real checkpoint. The `--smoke-test` mode
 exercises every non-model component (prompt parity, parsing, coordinate mapping,
@@ -18,6 +18,7 @@ samples, requiring no model, GPU, or network.
 """
 
 import argparse
+import asyncio
 import base64
 import concurrent.futures
 import io
@@ -35,10 +36,18 @@ from typing import Callable, Optional
 
 import yaml
 
-from train_qwen import SYSTEM_PROMPT
+from train_qwen import (
+    GROUNDING_SYSTEM_PROMPT,
+    PROMPT_FORMAT_VERSION,
+    build_grounding_observation,
+    build_step_messages,
+    to_claude_content,
+    to_openai_content,
+)
 
 
-GROUNDING_USER_TEMPLATE = "Task: {instruction}\nWhat action should you take?"
+# The element description handed to the grounding observation; a ScreenSpot instruction names the target.
+GROUNDING_DESCRIPTION_TEMPLATE = 'the element described as "{instruction}"'
 
 DEFAULT_MAX_PIXELS = 1003520
 DEFAULT_VIEWPORT_W = 1280
@@ -52,11 +61,28 @@ DEFAULT_SPLIT = "test"
 
 DEFAULT_PARSE_PATTERNS = [
     r"<ref>\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)</ref>",
-    r"click\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)",
+    # Trailing `[,)]` so `click(x, y, button=left)` parses: the point is unambiguous, and charging
+    # a model for spelling deviation measures imitation rather than grounding.
+    r"click\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*[,)]",
+    # `<x, y>`: the base model's own spelling. A digit must follow `<`, so `<ref>(x, y)</ref>`
+    # cannot match here and the canonical pattern above still wins.
+    r"<\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*>",
     r"\(\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\)",
     r"\[\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*\]",
     r'"x"\s*:\s*(-?\d+\.?\d*).*?"y"\s*:\s*(-?\d+\.?\d*)',
 ]
+
+
+# What every arm is shown, independent of how its answer is read back. Set to a "WxH" to resize
+# (matching the 1280x720 the QA bench and episode eval drive), or "native" to send the source image.
+PREPARED_IMAGE_SIZE = os.environ.get("SCREENSPOT_IMAGE_SIZE", "native")
+
+
+def prepare_sample_image(image):
+    if image is None or PREPARED_IMAGE_SIZE == "native":
+        return image
+    width, height = (int(v) for v in PREPARED_IMAGE_SIZE.lower().split("x"))
+    return image.resize((width, height))
 
 
 @dataclass
@@ -77,8 +103,8 @@ class ModelSpec:
     adapters: Optional[str] = None
     backend: Optional[str] = None     # overrides EvalConfig.backend when set
     # Overrides EvalConfig.coord_space for THIS model. Different checkpoints answer in different
-    # coordinate conventions: a stock Qwen emits `normalized_1000`, while a model fine-tuned on
-    # this project's corpus emits `viewport_abs` (1280x720). A before/after comparison is
+    # coordinate conventions: a stock Qwen and an sft3 checkpoint emit `normalized_1000`, while
+    # an sft-v1/v2 checkpoint emits `viewport_abs` (1280x720). A before/after comparison is
     # therefore only meaningful if each spec is scored in its own space — a single global
     # --coord-space silently mis-scores one side of the comparison.
     coord_space: Optional[str] = None
@@ -95,13 +121,13 @@ class EvalConfig:
     bbox_normalized: bool = True
     viewport_w: int = DEFAULT_VIEWPORT_W
     viewport_h: int = DEFAULT_VIEWPORT_H
-    coord_space: str = "viewport_abs"
+    coord_space: str = "normalized_1000"
     parse_patterns: list = field(default_factory=lambda: list(DEFAULT_PARSE_PATTERNS))
     backend: str = "swift"
     limit: Optional[int] = None
     output_dir: str = "eval_results"
     max_pixels: int = DEFAULT_MAX_PIXELS
-    max_tokens: int = 512
+    max_tokens: int = 2048
     temperature: float = 0.0
 
 
@@ -115,19 +141,21 @@ class Record:
     mapped_point: Optional[tuple]     # mapped into original-image pixels
     bbox_xyxy: tuple
     hit: bool
+    # Without the source dimensions a saved run cannot be re-scored in another coordinate space,
+    # which is the only way to tell a grounding failure from a convention mismatch.
+    orig_w: int = 0
+    orig_h: int = 0
 
 
 # ----------------------------------------------------------------------------
 # Coordinate-space registry: how model output relates to original-image pixels.
-# Each strategy resizes the image for inference and maps points both directions.
+# A space maps points both directions and NEVER touches the image: when it resized, declaring
+# viewport_abs silently squashed the input, so arms were scored on different pictures.
 # Add a new convention by registering another factory, not by editing callers.
 # ----------------------------------------------------------------------------
 
 
 class CoordSpace:
-    def prepare_image(self, image, orig_w, orig_h):
-        raise NotImplementedError
-
     def to_original(self, x, y, orig_w, orig_h):
         raise NotImplementedError
 
@@ -140,11 +168,6 @@ class ViewportAbsCoordSpace(CoordSpace):
         self.viewport_w = viewport_w
         self.viewport_h = viewport_h
 
-    def prepare_image(self, image, orig_w, orig_h):
-        if image is None:
-            return None
-        return image.resize((self.viewport_w, self.viewport_h))
-
     def to_original(self, x, y, orig_w, orig_h):
         return (x * orig_w / self.viewport_w, y * orig_h / self.viewport_h)
 
@@ -153,9 +176,6 @@ class ViewportAbsCoordSpace(CoordSpace):
 
 
 class Normalized1000CoordSpace(CoordSpace):
-    def prepare_image(self, image, orig_w, orig_h):
-        return image
-
     def to_original(self, x, y, orig_w, orig_h):
         return (x / 1000.0 * orig_w, y / 1000.0 * orig_h)
 
@@ -164,9 +184,6 @@ class Normalized1000CoordSpace(CoordSpace):
 
 
 class NativeAbsCoordSpace(CoordSpace):
-    def prepare_image(self, image, orig_w, orig_h):
-        return image
-
     def to_original(self, x, y, orig_w, orig_h):
         return (x, y)
 
@@ -221,17 +238,22 @@ def point_in_bbox(point, bbox_xyxy):
 
 
 def build_messages(instruction, image_ref):
-    user_text = GROUNDING_USER_TEMPLATE.format(instruction=instruction)
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": image_ref},
-                {"type": "text", "text": user_text},
-            ],
-        },
-    ]
+    """Training's grounding slice verbatim, in the content-list form `swift infer` consumes."""
+    observation = build_grounding_observation(GROUNDING_DESCRIPTION_TEMPLATE.format(instruction=instruction), image_ref)
+    return build_step_messages(GROUNDING_SYSTEM_PROMPT, observation)
+
+
+def build_openai_messages(instruction, image_b64):
+    """The same messages with the one image inlined as a PNG data URL for /chat/completions."""
+    messages = build_messages(instruction, "cur")
+    messages[1]["content"] = to_openai_content(messages[1]["content"], lambda ref: image_b64)
+    return messages
+
+
+def build_claude_content(instruction, image_b64):
+    """The same user turn as Anthropic content blocks; the system prompt rides on ClaudeAgentOptions."""
+    messages = build_messages(instruction, "cur")
+    return to_claude_content(messages[1]["content"], lambda ref: image_b64)
 
 
 def normalize_bbox(raw_bbox, bbox_format, normalized, width, height):
@@ -333,7 +355,7 @@ class SwiftPredictor(Predictor):
 
             with open(infer_path, "w") as handle:
                 for index, sample in enumerate(samples):
-                    prepared = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
+                    prepared = prepare_sample_image(sample.image)
                     image_path = tmp_dir / f"image_{index:06d}.png"
                     prepared.save(image_path)
                     messages = build_messages(sample.instruction, str(image_path))
@@ -402,15 +424,10 @@ class OpenAIPredictor(Predictor):
         return base64.b64encode(buf.getvalue()).decode()
 
     def _one(self, sample, coord_space):
-        image = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
-        messages = build_messages(sample.instruction, "")
-        messages[1]["content"] = [
-            {"type": "image_url",
-             "image_url": {"url": f"data:image/png;base64,{self._encode(image)}"}},
-            {"type": "text", "text": messages[1]["content"][1]["text"]},
-        ]
+        image = prepare_sample_image(sample.image)
+        messages = build_openai_messages(sample.instruction, self._encode(image))
         body = json.dumps({"model": self.model, "messages": messages,
-                           "temperature": 0.0, "max_tokens": 512}).encode()
+                           "temperature": self.cfg.temperature, "max_tokens": self.cfg.max_tokens}).encode()
         req = urllib.request.Request(
             f"{self.endpoint}/chat/completions", data=body,
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
@@ -429,8 +446,69 @@ class OpenAIPredictor(Predictor):
             return list(pool.map(lambda s: self._one(s, coord_space), samples))
 
 
+CLAUDE_GROUNDING_SYSTEM_PROMPT = (
+    "You are a GUI grounding model. Given a screenshot and a described element, reply with the "
+    "pixel coordinates of that element's centre in the image exactly as shown, as a single line "
+    "`click(x, y)`. x and y are absolute pixels of this image, with (0, 0) at the top left. "
+    "Reply with the click line only, no reasoning."
+)
+
+
+class ClaudePredictor(Predictor):
+    """The frontier arm, reached through the logged-in `claude` CLI — never an API key.
+
+    Grounding is the one lane where a frontier comparison is apples-to-apples: single turn, one
+    screenshot, one click point, no scaffold or tool-use advantage to confound it.
+    """
+
+    def __init__(self, model, cfg):
+        self.model = model
+        self.workers = int(os.environ.get("SCREENSPOT_CLAUDE_WORKERS", "4"))
+        # A runaway guard, not a throttle: every SDK call carries a full-agent floor, so a cap near
+        # the true per-call cost returns "" instead of an answer. Matches the pipeline's 0.30.
+        self.budget_usd = float(os.environ.get("SCREENSPOT_CLAUDE_BUDGET_USD", "0.30"))
+        self.cfg = cfg
+
+    def _encode(self, image):
+        buf = io.BytesIO()
+        image.convert("RGB").save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode()
+
+    def _one(self, sample, coord_space):
+        from claude_agent_sdk import ClaudeAgentOptions
+
+        from repo_pipeline.agent_runner import run_agent
+        from repo_pipeline.llm_config import MODEL_FOR_REASONING
+
+        image = prepare_sample_image(sample.image)
+        content = build_claude_content(sample.instruction, self._encode(image))
+
+        async def stream():
+            yield {"type": "user", "message": {"role": "user", "content": content},
+                   "parent_tool_use_id": None, "session_id": ""}
+
+        options = ClaudeAgentOptions(
+            model=self.model or MODEL_FOR_REASONING,
+            system_prompt=CLAUDE_GROUNDING_SYSTEM_PROMPT,
+            max_turns=1,
+            max_budget_usd=self.budget_usd,
+            permission_mode="bypassPermissions",
+        )
+        return asyncio.run(run_agent(stream(), options, purpose="screenspot", raise_on_error=False))
+
+    def predict_batch(self, samples, cfg, coord_space):
+        # Threads, not asyncio.gather: each call owns a CLI subprocess, and run_agent installs its
+        # own timeout inside a fresh loop per sample.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
+            return list(pool.map(lambda s: self._one(s, coord_space), samples))
+
+
 def build_openai_predictor(spec, cfg):
     return OpenAIPredictor(model=spec.model, cfg=cfg)
+
+
+def build_claude_predictor(spec, cfg):
+    return ClaudePredictor(model=spec.model, cfg=cfg)
 
 
 def build_swift_predictor(spec, cfg):
@@ -444,6 +522,7 @@ def build_mock_predictor(spec, cfg):
 PREDICTOR_BACKENDS: dict = {
     "swift": build_swift_predictor,
     "openai": build_openai_predictor,
+    "claude": build_claude_predictor,
     "mock": build_mock_predictor,
 }
 
@@ -483,6 +562,8 @@ def evaluate(samples, predictor, cfg, coord_space):
                 mapped_point=mapped,
                 bbox_xyxy=sample.bbox_xyxy,
                 hit=hit,
+                orig_w=sample.orig_w,
+                orig_h=sample.orig_h,
             )
         )
     return records
@@ -537,10 +618,12 @@ def write_results(path, spec, cfg, summary, records):
         "backend": spec.backend or cfg.backend,
         "dataset": cfg.dataset,
         "split": cfg.split,
+        "prompt_format": PROMPT_FORMAT_VERSION,
         "coord_space": resolve_coord_space(cfg, spec),
         "bbox_format": cfg.bbox_format,
         "bbox_normalized": cfg.bbox_normalized,
         "viewport": [cfg.viewport_w, cfg.viewport_h],
+        "prepared_image_size": PREPARED_IMAGE_SIZE,
         "summary": summary,
         "records": [
             {
@@ -551,6 +634,8 @@ def write_results(path, spec, cfg, summary, records):
                 "mapped_point": r.mapped_point,
                 "bbox_xyxy": r.bbox_xyxy,
                 "hit": r.hit,
+                "orig_w": r.orig_w,
+                "orig_h": r.orig_h,
                 "raw": r.raw,
             }
             for r in records
@@ -564,6 +649,7 @@ def write_comparison(path, cfg, summaries):
     payload = {
         "dataset": cfg.dataset,
         "split": cfg.split,
+        "prompt_format": PROMPT_FORMAT_VERSION,
         "coord_space": cfg.coord_space,
         "summaries": summaries,
     }
@@ -664,15 +750,26 @@ def smoke_response_fn(sample, cfg, coord_space):
 
 
 def run_smoke_test(cfg):
+    assert EvalConfig().coord_space == "normalized_1000", "stock Qwen and an sft3 checkpoint both answer normalized"
+    normalized = build_coord_space(EvalConfig())
+    assert normalized.to_model(960.0, 540.0, 1920, 1080) == (500.0, 500.0)
+    assert normalized.to_original(500.0, 500.0, 1920, 1080) == (960.0, 540.0)
     cfg.coord_space = "viewport_abs"
     coord_space = build_coord_space(cfg)
 
-    messages = build_messages("Click the login button", "/tmp/x.png")
-    assert messages[0]["role"] == "system"
-    assert messages[0]["content"] == SYSTEM_PROMPT
-    user = messages[1]
-    assert user["content"][0] == {"type": "image", "image": "/tmp/x.png"}
-    assert user["content"][1]["text"] == "Task: Click the login button\nWhat action should you take?"
+    # The grounding prompt IS training's grounding slice: GROUNDING_SYSTEM_PROMPT + the one-image sft3 layout.
+    messages = build_messages("the login button", "/tmp/x.png")
+    assert messages[0] == {"role": "system", "content": GROUNDING_SYSTEM_PROMPT}
+    observation = build_grounding_observation('the element described as "the login button"', "/tmp/x.png")
+    assert messages[1] == {"role": "user", "content": observation["content"]}, messages[1]
+    assert observation["images"] == ["/tmp/x.png"]
+    assert observation["text"] == ('Current screenshot:\n<image>\nTask: Click the element described as "the login button".\n'
+                                   "What action should you take?"), observation["text"]
+    rendered = build_openai_messages("the login button", "QUJD")
+    assert rendered[0] == messages[0]
+    assert [item["type"] for item in rendered[1]["content"]] == ["text", "image_url", "text"], rendered[1]
+    assert rendered[1]["content"][1]["image_url"]["url"] == "data:image/png;base64,QUJD"
+    assert "".join(i.get("text", "<image>") for i in rendered[1]["content"]) == observation["text"]
 
     assert parse_point("foo <ref>(151, 509)</ref> bar", cfg.parse_patterns) == (151.0, 509.0)
     assert parse_point("action: click(640, 360)", DEFAULT_PARSE_PATTERNS) == (640.0, 360.0)
@@ -714,6 +811,8 @@ def run_smoke_test(cfg):
         out_dir.mkdir(parents=True, exist_ok=True)
         write_results(out_dir / "smoke.json", spec, cfg, summary, records)
         write_comparison(out_dir / "smoke_comparison.json", cfg, {"smoke": summary})
+        assert json.loads((out_dir / "smoke.json").read_text())["prompt_format"] == PROMPT_FORMAT_VERSION
+        assert json.loads((out_dir / "smoke_comparison.json").read_text())["prompt_format"] == PROMPT_FORMAT_VERSION
 
     print()
     print_comparison({"smoke": summary})
@@ -802,15 +901,15 @@ def build_parser():
                                  "for a mirror that stores absolute pixels.")
     run_parser.add_argument("--limit", type=int)
     run_parser.add_argument("--viewport", default=f"{DEFAULT_VIEWPORT_W}x{DEFAULT_VIEWPORT_H}")
-    run_parser.add_argument("--coord-space", default="viewport_abs", choices=sorted(COORD_SPACES),
+    run_parser.add_argument("--coord-space", default="normalized_1000", choices=sorted(COORD_SPACES),
                             help="Global default. A spec in --models-config may override it with "
-                                 "`coord_space:` — a stock Qwen answers in normalized_1000, a model "
-                                 "fine-tuned on this corpus answers in viewport_abs, so a before/after "
-                                 "comparison MUST score each side in its own space.")
+                                 "`coord_space:` — a stock Qwen and an sft3 checkpoint answer in "
+                                 "normalized_1000, an sft-v1/v2 checkpoint answers in viewport_abs, so a "
+                                 "before/after comparison MUST score each side in its own space.")
     run_parser.add_argument("--parse-pattern", action="append", help="Override default regex(es); repeatable.")
     run_parser.add_argument("--output-dir", default="eval_results")
     run_parser.add_argument("--max-pixels", type=int, default=DEFAULT_MAX_PIXELS)
-    run_parser.add_argument("--max-tokens", type=int, default=512)
+    run_parser.add_argument("--max-tokens", type=int, default=2048)
     run_parser.add_argument("--temperature", type=float, default=0.0)
     run_parser.add_argument("--smoke-test", action="store_true",
                             help="Run the no-model pipeline self-test and exit.")

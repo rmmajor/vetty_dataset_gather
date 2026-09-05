@@ -1,7 +1,8 @@
 model: Qwen/Qwen3.5-9B
 train_type: lora
 torch_dtype: bfloat16
-num_train_epochs: 3
+# sft-v2's eval_loss bottomed at epoch 2 (0.4581) and rose at 3 (0.4621); its bench regressions were over-training symptoms.
+num_train_epochs: 2
 # batch 1 x accum 8 starved the GPU (2.55 s/sample); sft-v1's proven 2 x 4 keeps the same effective batch.
 per_device_train_batch_size: 2
 learning_rate: 5e-5
@@ -13,6 +14,10 @@ max_length: 4096
 # ms-swift refuses packing without a flash-attention impl, which this image does not ship; sft-v1 trained unpacked too.
 packing: false
 eval_strategy: epoch
+# Step saves, not epoch: the remote lane only downloads output at the end, so a crash must cost at most one save interval.
+save_strategy: steps
+save_steps: 700
+save_total_limit: 4
 warmup_ratio: 0.05
 freeze_vit: true
 max_pixels: 1003520

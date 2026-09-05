@@ -102,7 +102,8 @@ def build_suite(sources, trajectories_dir, seen_config, unseen_site_pct=15):
                     "backend": src["backend"], "env": src["env"], "lane": site.get("autonomy", src["lane"]), "auth_mode": auth_mode,
                     "idempotent": idempotent, "split": split_for(site["name"], index, idempotent, unseen_site_pct),
                     "preconditions": preconditions, "allowed_hosts": [urlparse(site["start_url"]).netloc],
-                    "success_check": t.get("success_check"), "throttle": {"min_interval_s": site.get("min_interval_s", 30)},
+                    "success_check": t.get("success_check"), "milestones": t.get("milestones"),
+                    "throttle": {"min_interval_s": site.get("min_interval_s", 30)},
                     "source": path.name,
                 })
     tasks.sort(key=lambda t: t["task_id"])
@@ -129,6 +130,39 @@ def check_suite(suite, trajectories_dir, seen_config):
     return problems
 
 
+FRONTIER_PATH = REPO / "repo_pipeline" / "public_sites_actions_frontier.json"
+CANDIDATES_PATH = Path(__file__).parent / "rl_tasks_candidates.json"
+
+
+def build_candidates(frontier_path, base_suite_path, trajectories_dir, seen_config, max_expected=12):
+    """Sweep pool for frontier selection: the frontier registry plus the base suite's short train tasks, all forced into train."""
+    registry = json.loads(Path(frontier_path).read_text())
+    config = registry.get("_config", {})
+    exclude_sites = set(config.get("exclude_sites", []))
+    exclude_domains = tuple(config.get("exclude_domains", []))
+    source = {"path": frontier_path, "backend": "public_site", "env": "live", "lane": "autonomous", "auth_mode": "none"}
+    built = build_suite([source], trajectories_dir, seen_config, unseen_site_pct=0)
+    tasks = {t["task_id"]: t for t in built["tasks"]}
+    dropped_unoracled = []
+    for t in load_suite(base_suite_path)["tasks"]:
+        if t["split"] == "train" and (t.get("expected_actions") or 99) <= max_expected:
+            # The sweep scores oracle-only, so a base task without a success_check cannot be a candidate.
+            if not t.get("success_check"):
+                dropped_unoracled.append(t["task_id"])
+                continue
+            tasks.setdefault(t["task_id"], dict(t))
+
+    def blocked(t):
+        host = urlparse(t["start_url"]).netloc
+        return t["site"] in exclude_sites or any(host == d or host.endswith("." + d) for d in exclude_domains)
+
+    picked = sorted((dict(t, split="train") for t in tasks.values() if t["idempotent"] and not blocked(t)), key=lambda t: t["task_id"])
+    digest = hashlib.sha256(json.dumps(picked, sort_keys=True).encode()).hexdigest()
+    built_from = [{"path": str(frontier_path), "sites": len(registry.get("sites", []))}, {"path": str(base_suite_path), "sites": None}]
+    return {"suite_sha256": digest, "built_from": built_from, "excluded_trained": built["excluded_trained"],
+            "dropped_unoracled": dropped_unoracled, "tasks": picked}
+
+
 def load_suite(path=SUITE_PATH):
     return json.loads(Path(path).read_text())
 
@@ -144,14 +178,30 @@ def select_tasks(suite, split=None, task_ids=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="RL task suite: build | check | list")
-    parser.add_argument("command", choices=["build", "check", "list"])
-    parser.add_argument("--out", default=str(SUITE_PATH))
+    parser = argparse.ArgumentParser(description="RL task suite: build | build-candidates | check | list")
+    parser.add_argument("command", choices=["build", "build-candidates", "check", "list"])
+    parser.add_argument("--out", default=None)
     parser.add_argument("--trajectories", default=str(REPO / "trajectories"))
     parser.add_argument("--seen-config", default=str(SEEN_CONFIG))
     parser.add_argument("--unseen-site-pct", type=int, default=15)
     parser.add_argument("--split", default=None)
+    parser.add_argument("--frontier", default=str(FRONTIER_PATH))
+    parser.add_argument("--base-suite", default=str(SUITE_PATH))
+    parser.add_argument("--max-expected", type=int, default=12)
     args = parser.parse_args()
+    args.out = args.out or (str(CANDIDATES_PATH) if args.command == "build-candidates" else str(SUITE_PATH))
+    if args.command == "build-candidates":
+        suite = build_candidates(args.frontier, args.base_suite, args.trajectories, args.seen_config, args.max_expected)
+        missing = [t["task_id"] for t in suite["tasks"] if not t.get("success_check")]
+        problems = check_suite(suite, args.trajectories, args.seen_config)
+        Path(args.out).write_text(json.dumps(suite, indent=1))
+        print(f"built {len(suite['tasks'])} candidates ({suite['excluded_trained']} excluded as trained-on, "
+              f"{len(suite['dropped_unoracled'])} base tasks dropped without an oracle); sha {suite['suite_sha256'][:12]} -> {args.out}")
+        for p in problems:
+            print(f"  - {p}")
+        if missing:
+            print(f"  - {len(missing)} candidates lack a success_check: {', '.join(missing)}")
+        return 1 if problems or missing else 0
     if args.command == "build":
         suite = build_suite(TASK_SOURCES, args.trajectories, args.seen_config, args.unseen_site_pct)
         Path(args.out).write_text(json.dumps(suite, indent=1))

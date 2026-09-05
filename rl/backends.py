@@ -115,7 +115,9 @@ class RolloutWorker:
         if self.sandbox is None or self.sandbox.container is None or self.sandbox.remaining_seconds() < RL_RECYCLE_RESERVE_S:
             return True
         try:
-            return not all(c.status().get("ok") for c in self.clients)
+            # `browser` is absent on older drivers, so default it True rather than recycling forever.
+            states = [c.status() for c in self.clients]
+            return not all(st.get("ok") and st.get("browser", True) for st in states)
         except Exception:
             return True
 
@@ -153,7 +155,11 @@ class WorkerPool:
         worker, slot = self.free.get(timeout=timeout)
         with worker.lock:
             if worker.live == 0 and worker.needs_recycle():
-                worker.recycle()
+                # A sandbox can be gone entirely (OOM-killed, auto-removed); rebuilding it must not raise, or one dead container ends the batch.
+                try:
+                    worker.recycle()
+                except Exception as e:
+                    logger.error(f"worker {worker.worker_id}: recycle failed, its episodes will fail until it recovers: {e}")
             worker.live += 1
         return worker, slot
 

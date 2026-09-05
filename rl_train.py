@@ -28,6 +28,7 @@ RLHF_FLAG_MAP = {
     "steps_per_generation": "--steps_per_generation", "learning_rate": "--learning_rate", "beta": "--beta", "epsilon": "--epsilon",
     "temperature": "--temperature", "top_p": "--top_p", "max_steps": "--max_steps", "save_steps": "--save_steps",
     "save_total_limit": "--save_total_limit", "async_generate": "--async_generate", "dynamic_sample": "--dynamic_sample",
+    "max_resample_times": "--max_resample_times", "epsilon_high": "--epsilon_high",
     "log_completions": "--log_completions", "report_to": "--report_to", "output_dir": "--output_dir",
 }
 DEPLOY_FLAG_MAP = {"merged_model": "--model", "template": "--template", "response_prefix": "--response_prefix", "vllm_max_lora_rank": "--vllm_max_lora_rank",
@@ -35,7 +36,7 @@ DEPLOY_FLAG_MAP = {"merged_model": "--model", "template": "--template", "respons
 ROLLOUT_FIXED = ["--vllm_use_async_engine", "true", "--vllm_enable_lora", "true", "--use_gym_env", "true", "--host", "127.0.0.1"]
 RLHF_FIXED = ["--rlhf_type", "grpo", "--use_vllm", "true", "--vllm_mode", "server", "--vllm_server_host", "127.0.0.1",
               "--vllm_server_pass_dataset", "true", "--vllm_enable_lora", "true", "--use_gym_env", "true"]
-DEPLOY_FIXED = ["--infer_backend", "vllm", "--vllm_enable_lora", "true", "--host", "127.0.0.1"]
+DEPLOY_FIXED = ["--infer_backend", "vllm", "--host", "127.0.0.1"]
 PHASE_FILE, ACK_FILE = "PHASE", "PHASE_ACK"
 
 
@@ -56,8 +57,10 @@ def _flags(cfg, flag_map):
 
 
 def build_merge_command(cfg):
+    # --exist_ok: a merge killed mid-write leaves a dir without config.json, which our own guard lets
+    # through and swift export then refuses — a failed attempt would poison every retry.
     return ["swift", "export", "--model", cfg["base_model"], "--adapters", cfg["sft_adapter_remote"], "--merge_lora", "true",
-            "--output_dir", cfg["merged_model"]]
+            "--exist_ok", "true", "--output_dir", cfg["merged_model"]]
 
 
 def build_rollout_command(cfg):
@@ -74,7 +77,23 @@ def build_rlhf_command(cfg):
 def build_deploy_command(cfg, adapters=None):
     argv = ["swift", "deploy", *_flags(cfg, DEPLOY_FLAG_MAP), *DEPLOY_FIXED, "--port", str(cfg["compute"]["serve_port"])]
     if adapters:
-        argv += ["--adapters", adapters]
+        # A dict names each arm for a multi-adapter endpoint; a string stays the bare path the RL lane passes.
+        argv += ["--adapters", *([f"{n}={p}" for n, p in adapters.items()] if isinstance(adapters, dict) else [adapters])]
+    return argv
+
+
+def build_vllm_serve_command(cfg, adapters=None):
+    """Plain vLLM OpenAI server for the vllm/vllm-openai image: base model as `cua-student`, the adapter as `cua-student-lora`."""
+    model = cfg["merged_model"] if cfg.get("serve_merged_base") else cfg["base_model"]
+    argv = ["vllm", "serve", model, "--served-model-name", "cua-student", "--host", "127.0.0.1",
+            "--port", str(cfg["compute"]["serve_port"]), "--max-model-len", str(cfg.get("vllm_max_model_len", 8192)),
+            "--gpu-memory-utilization", str(cfg.get("vllm_gpu_memory_utilization", 0.9)),
+            "--limit-mm-per-prompt", str(cfg.get("vllm_limit_mm_per_prompt", '{"image": 1}'))]
+    if adapters:
+        # A dict serves several checkpoints from one rental, each under its own name; a string keeps the canonical single-adapter name.
+        named = adapters if isinstance(adapters, dict) else {"cua-student-lora": adapters}
+        argv += ["--enable-lora", "--lora-modules", *[f"{name}={path}" for name, path in named.items()],
+                 "--max-lora-rank", str(cfg.get("vllm_max_lora_rank", 64))]
     return argv
 
 
@@ -101,10 +120,17 @@ def derive_run_config(cfg, overrides):
     return derived
 
 
-def make_dataset(suite_path, out_path, split="train", repeats=1, max_expected_actions=None):
+def load_task_ids(path):
+    """A frontier_selection.json ({"selected": [...]}) or a plain JSON list of task ids."""
+    data = json.loads(Path(path).read_text())
+    return list(data["selected"] if isinstance(data, dict) else data)
+
+
+def make_dataset(suite_path, out_path, split="train", repeats=1, max_expected_actions=None, task_ids=None):
     suite = json.loads(Path(suite_path).read_text())
     tasks = [t for t in suite["tasks"] if (t.get("split") == split or split == "all")
-             and (max_expected_actions is None or (t.get("expected_actions") or 0) <= max_expected_actions)]
+             and (max_expected_actions is None or (t.get("expected_actions") or 0) <= max_expected_actions)
+             and (task_ids is None or t["task_id"] in set(task_ids))]
     # The trainer groups GRPO advantages by the row's messages, so the placeholder must be unique per task.
     rows = [{"messages": [{"role": "user", "content": f"<placeholder:{t['task_id']}>"}],
              "env_config": {"name": "browser_env", "task_id": t["task_id"], "sample_idx": r}}
@@ -248,6 +274,7 @@ def main():
     d.add_argument("--split", default="train")
     d.add_argument("--repeats", type=int, default=1)
     d.add_argument("--max-expected-actions", type=int)
+    d.add_argument("--task-ids-file", help="frontier_selection.json or a JSON list; only these tasks enter the dataset")
     r = sub.add_parser("run")
     r.add_argument("--config", default="rl_config.yaml")
     r.add_argument("--run-dir", required=True)
@@ -261,7 +288,8 @@ def main():
             print(f"# {name}\n{' '.join(argv)}\n")
         return 0
     if args.command == "make-dataset":
-        print(f"wrote {make_dataset(args.tasks, args.out, args.split, args.repeats, args.max_expected_actions)} rows -> {args.out}")
+        task_ids = load_task_ids(args.task_ids_file) if args.task_ids_file else None
+        print(f"wrote {make_dataset(args.tasks, args.out, args.split, args.repeats, args.max_expected_actions, task_ids)} rows -> {args.out}")
         return 0
     return PhaseDriver(load_rl_config(args.config), args.run_dir, args.workdir).run(mode=args.mode)
 

@@ -91,3 +91,10 @@ def test_unclosed_think_is_malformed():
 def test_trailing_prose_after_actions_is_stray():
     decoded = decode_step("<think>t</think>\naction: done()\nThat completes the task.")
     assert decoded.actions == [{"type": "done"}] and any(e.startswith("stray_text") for e in decoded.errors)
+
+
+def test_prefilled_think_keeps_the_thought():
+    decoded = decode_step('I will click the field.\n</think>\n\naction: click(<ref>(10, 20)</ref>, button=left)')
+    assert decoded.thought == "I will click the field."
+    assert decoded.actions == [{"type": "click", "x": 10, "y": 20, "button": "left"}]
+    assert not decoded.errors and decoded.ok

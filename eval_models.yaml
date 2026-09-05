@@ -9,8 +9,8 @@
 # different coordinate conventions, and scoring one in the other's space silently yields a
 # wrong number instead of an error.
 #   - a stock Qwen answers in `normalized_1000` (0-1000)
-#   - a model fine-tuned on this project's corpus answers in `viewport_abs` (1280x720, the
-#     training viewport)
+#   - an sft3 checkpoint (train_qwen.COORD_SPACE) also answers in `normalized_1000`
+#   - an sft-v1/v2 checkpoint answers in `viewport_abs` (1280x720, the training viewport)
 # Measured: the SAME base-model predictions score 85.0% as normalized_1000 and 25.0% as
 # viewport_abs. Set coord_space explicitly on every spec — a before/after comparison is
 # only meaningful if each side is scored in its own space.
@@ -22,4 +22,4 @@
 - label: after
   model: Qwen/Qwen3.5-9B
   adapters: ./output
-  coord_space: viewport_abs
+  coord_space: normalized_1000

@@ -5,16 +5,45 @@
 # harness selects it by asking for that model. See eval_models.yaml for the local `swift infer`
 # lane, which does take a repo id plus a local adapters directory.
 #
-# coord_space is per-model and load-bearing: the base model answers in normalized_1000, a model
-# fine-tuned on this corpus answers in viewport_abs. Scoring one in the other's convention silently
-# produces a wrong number rather than an error.
+# coord_space is per-model and load-bearing: the base model and an sft3 checkpoint answer in
+# normalized_1000, an sft-v1/v2 checkpoint answers in viewport_abs. Scoring one in the other's
+# convention silently produces a wrong number rather than an error.
+#
+# One rental serves every arm at once (rl_train.build_vllm_serve_command takes a name -> path dict),
+# so the four specs below are scored under one harness commit and one endpoint — the matched
+# comparison the paper reports. Comment out the arms you are not serving.
 
-- label: before
+- label: base
   model: cua-student
   backend: openai
   coord_space: normalized_1000
 
-- label: after
-  model: cua-student-lora
+- label: sft-v1
+  model: sft-v1
   backend: openai
   coord_space: viewport_abs
+
+- label: sft-v2
+  model: sft-v2
+  backend: openai
+  coord_space: viewport_abs
+
+- label: sft-v3
+  model: sft-v3
+  backend: openai
+  coord_space: normalized_1000
+
+# GRPO-3 is a LoRA over the MERGED sft-v2 weights, so it needs its own serve
+# (rl_config `serve_merged_base: true`) and cannot share the endpoint with the three specs above.
+- label: grpo-v3
+  model: grpo-v3
+  backend: openai
+  coord_space: viewport_abs
+
+# The frontier arm needs no endpoint: it goes through the logged-in `claude` CLI, so it can be
+# scored while no GPU is rented. Grounding is single-turn, which is why a frontier row is fair here
+# and not on the browsing lane.
+- label: sonnet
+  model: claude-sonnet-5
+  backend: claude
+  coord_space: normalized_1000

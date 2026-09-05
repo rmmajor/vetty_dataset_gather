@@ -6,7 +6,8 @@
     python -m remote_train grpo                        # rent -> GRPO against the local env service -> pull adapters -> destroy
     python -m remote_train serve --adapter output      # rent -> serve the student on 127.0.0.1:8001 via tunnel -> destroy
     python -m remote_train search                      # dry run: cheapest allowed offer, rents nothing
-    python -m remote_train cleanup                     # destroy any leftover instance
+    python -m remote_train cleanup                     # destroy instances whose owning run is dead or released (--all: every labeled box)
+    python -m remote_train release --instance ID       # a supervisor hands its box to cleanup instead of editing the state file
 
 `--provider` / `--benchmark` choices come straight from the registries, so a new provider or a
 new eval shows up in the CLI with no changes here.
@@ -15,7 +16,7 @@ import argparse
 import logging
 import sys
 
-from remote_train import lifecycle
+from remote_train import lifecycle, state
 from remote_train.base import PROVIDERS, ProviderError, build_provider
 from remote_train.benchmarks import BENCHMARKS
 from remote_train.config import load_config
@@ -97,7 +98,15 @@ def search_cmd(args) -> int:
 def cleanup_cmd(args) -> int:
     cfg = load_config(args.config, _cli_overrides(args))
     provider = build_provider(cfg.provider, cfg)
-    return lifecycle.cleanup(provider, cfg)
+    return lifecycle.cleanup(provider, cfg, sweep_all=args.sweep_all)
+
+
+def release_cmd(args) -> int:
+    known = {str(r.get("id")) for r in state.read_instances()}
+    if args.instance not in known:
+        raise ValueError(f"instance {args.instance} is not in {state.STATE_FILE} (recorded: {sorted(known) or 'none'})")
+    state.mark_abandoned(args.instance)
+    return 0
 
 
 def _add_common(p) -> None:
@@ -169,9 +178,17 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(search_p)
     search_p.set_defaults(func=search_cmd)
 
-    cleanup_p = sub.add_parser("cleanup", help="Destroy any leftover instance (state file + labeled orphans).")
+    cleanup_p = sub.add_parser("cleanup", help="Destroy instances abandoned by dead runs (see --all).")
     _add_common(cleanup_p)
+    cleanup_p.add_argument("--all", action="store_true", dest="sweep_all",
+                           help="Also destroy every instance carrying the run label, INCLUDING boxes a "
+                                "concurrent run is using. Only when you know no sibling run is live.")
     cleanup_p.set_defaults(func=cleanup_cmd)
+
+    release_p = sub.add_parser("release", help="Hand a recorded instance over to `cleanup` (writes the pid null sentinel; destroys nothing).")
+    release_p.add_argument("--instance", required=True, help="Instance id as recorded in the state file.")
+    release_p.add_argument("--verbose", action="store_true", help="Debug logging")
+    release_p.set_defaults(func=release_cmd)
 
     return parser
 

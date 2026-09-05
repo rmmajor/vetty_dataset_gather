@@ -38,13 +38,17 @@ class SshTunnel:
     def _supervise(self):
         attempt = 0
         while self.alive:
-            self.proc = self.popen(self.argv(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            while self.alive and self.proc.poll() is None:
-                self.sleep(1)
+            try:
+                self.proc = self.popen(self.argv(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                while self.alive and self.proc.poll() is None:
+                    self.sleep(1)
+            except Exception as e:
+                # A dead supervisor leaves alive=True, so every env call silently becomes reward 0.0.
+                logger.warning(f"ssh tunnel supervisor could not spawn ssh: {e!r}")
             if not self.alive:
                 break
             attempt += 1
-            logger.warning(f"ssh tunnel exited (rc={self.proc.poll()}); restarting in {min(60, 5 * attempt)}s")
+            logger.warning(f"ssh tunnel exited (rc={self.proc.poll() if self.proc else 'spawn-failed'}); restarting in {min(60, 5 * attempt)}s")
             self.sleep(min(60, 5 * attempt))
 
     def start(self):

@@ -1,0 +1,29 @@
+# Serve profile for the GRPO-3 arm. GRPO-3 is a LoRA over the MERGED sft-v2 weights, so it
+# cannot be stacked on the raw base: sft-v2 is merged into Qwen3.5-9B on the box first, and the
+# GRPO adapter is served on top of that. This is why it needs its own rental rather than sharing
+# the endpoint that serves base + sft-v2 + sft-v3.
+base_model: Qwen/Qwen3.5-9B
+sft_adapter: models/cua-sft-v2
+sft_adapter_remote: /workspace/sft_adapter
+merged_model: /workspace/merged
+template: qwen3_5
+response_prefix: ''
+max_pixels: 1003520
+serve_backend: vllm
+serve_merged_base: true
+vllm_max_model_len: 8192
+vllm_max_lora_rank: 64
+vllm_gpu_memory_utilization: 0.9
+# GRPO-3 inherits sft-v2's one-image observation, so image=1 would suffice; 2 keeps one profile
+# usable for either arm without a config swap.
+vllm_limit_mm_per_prompt: '{"image": 2}'
+max_completion_length: 512
+compute:
+  num_gpus: 1
+  # The merge writes a full bf16 9B beside the base download, so this needs more disk than the
+  # LoRA-only profile: ~18GB base + ~18GB merged + adapters.
+  min_vram_gb: 44
+  disk_gb: 120
+  image: vllm/vllm-openai:v0.28.0
+  max_runtime_hours: 8
+  serve_port: 8002

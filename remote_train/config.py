@@ -22,9 +22,13 @@ class RemoteTrainConfig:
     # bfloat16 (config.yaml torch_dtype) needs Ampere sm_80+; Turing cards (compute_cap 750,
     # e.g. Quadro RTX 8000) are cheap but cannot run the workload. 800 = A100/A6000-class floor.
     min_compute_cap: int = 800
+    # Host driver's max supported CUDA; 0 disables the filter. Images built on newer CUDA fail at engine init on older drivers.
+    min_cuda_vers: float = 0.0
     num_gpus: int = 1
     max_price_per_hour: float = 2.0
     min_reliability: float = 0.90
+    # A poorly-connected host spends the whole readiness window pulling the ~10GB CUDA image and is destroyed unused.
+    min_inet_down_mbps: int = 300
     exclude_countries: tuple = DEFAULT_EXCLUDE_COUNTRIES
 
     instance_label: str = "roman.maior"
@@ -54,8 +58,7 @@ class RemoteTrainConfig:
     eval_dataset: str = ""     # override the benchmark's default HF dataset
     eval_split: str = ""
     eval_extra_args: str = ""  # extra flags passed straight to the harness
-    # Coordinate convention THE MODEL answers in. normalized_1000 for a stock Qwen;
-    # viewport_abs for a checkpoint fine-tuned on this project's corpus.
+    # Coordinate convention THE MODEL answers in: normalized_1000 (stock Qwen, sft3), viewport_abs (sft-v1/v2).
     eval_coord_space: str = "normalized_1000"
 
     push_hf_repo: str = ""
@@ -74,8 +77,8 @@ class RemoteTrainConfig:
 
 
 _YAML_KEYS = {
-    "provider", "gpu_name", "min_vram_gb", "min_compute_cap", "num_gpus", "max_price_per_hour",
-    "min_reliability",
+    "provider", "gpu_name", "min_vram_gb", "min_compute_cap", "min_cuda_vers", "num_gpus", "max_price_per_hour",
+    "min_reliability", "min_inet_down_mbps",
     "exclude_countries", "instance_label", "image", "disk_gb", "max_runtime_hours",
     "ready_timeout_s", "poll_interval_s", "ssh_key_path", "remote_workdir", "trajectories_dir",
     "train_config", "output_dir", "val_split", "resume_from", "keep_on_signal",
@@ -110,4 +113,7 @@ def load_config(path: str, cli_overrides: dict | None = None) -> RemoteTrainConf
             setattr(cfg, key, value)
 
     cfg.exclude_countries = tuple(str(c).strip().upper() for c in cfg.exclude_countries)
+    # The label is the ownership key on a shared account; blank would match every unlabeled instance.
+    if not str(cfg.instance_label or "").strip():
+        raise ValueError("instance_label must be a non-empty string — it identifies OUR instances on a shared account")
     return cfg

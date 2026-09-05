@@ -135,8 +135,29 @@ checkable state (the matching result/quote/details screen). No purchases, no che
 quote/summary screen, no account creation.
 """
 
+# Opt-in block (qa_verify capture): test-objective voice, change-then-re-check tasks — the shape the goal-phrased corpus lacks.
+_QA_VERIFY_BLOCK = """
+THIS SITE IS FOR QA-VERIFICATION TASKS. OVERRIDING the "never test/QA voice" rules above for this
+site only: every task is a TEST OBJECTIVE, not a user goal. Phrase each instruction as a short
+assertion-style title sentence followed by ONE "Verify ..." sentence stating what should hold and
+how it shows on screen (two sentences, up to ~40 words in total), e.g. "Toggling Email
+notifications in Settings persists after save and reload. Verify unchecking Email notifications
+and saving retains that state on page reload." Never a numbered step list, never selectors, never
+the DOM.
+Every task is inherently TWO-PHASE: (1) change something that PERSISTS — create, rename, toggle,
+reorder, delete, or change a setting — then (2) confirm it persisted by re-opening the page or
+reloading it, never by trusting a toast or inline confirmation, and end on the screen where the
+expected state is visible.
+Quotas: at least ONE task whose evidence sits on page 2 or later of a paginated list or behind a
+"load more" control; at least ONE task that signs out and signs back in — the account is already
+signed in at the start and the session is restorable, so phrase it as "sign out, sign back in, and
+confirm X is still there". Keep tasks idempotent-ish and reversible where possible (restoring the
+original state at the end is optional, not required). Difficulty mostly medium/hard. Propose 6-10
+tasks (this range replaces the count above).
+"""
+
 # Opt-in per-site task styles (site config key "task_style"); a new style is a new entry here.
-_STYLE_BLOCKS = {"search": _SEARCH_GOAL_BLOCK}
+_STYLE_BLOCKS = {"search": _SEARCH_GOAL_BLOCK, "qa_verify": _QA_VERIFY_BLOCK}
 
 
 # Opt-in block (known-account capture): the app already has a working, pre-verified login and there

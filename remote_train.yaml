@@ -6,8 +6,10 @@ provider: vastai
 
 # ----- GPU offer selection -----
 gpu_name: ""              # substring filter on GPU name (e.g. "A100"); "" = any
-min_vram_gb: 48           # 9B LoRA + vision; raise to 80 for 27B+ (weights must stay resident)
+min_vram_gb: 70           # 9B LoRA + two images per sample; a 48GB card OOMs mid-run and wastes the rental
 min_compute_cap: 800      # bf16 needs Ampere sm_80+. Turing (750, e.g. Q RTX 8000) is cheaper but CANNOT run bf16.
+# A host whose driver predates the image's CUDA fails only AFTER boot with cudaGetDeviceCount error 803, wasting the rental; vllm/vllm-openai:v0.28.0 still hit 803 at 12.4, so the floor is 12.8.
+min_cuda_vers: 12.8
 num_gpus: 1
 max_price_per_hour: 2.0   # hard cap on $/hr; offers above this are skipped
 min_reliability: 0.90     # Vast host uptime score; a dead host mid-run wastes the rental
@@ -20,7 +22,7 @@ image: "pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel"
 disk_gb: 80
 
 # ----- Lifecycle / safety -----
-max_runtime_hours: 48.0   # watchdog force-destroys past this (backstop for a hung run)
+max_runtime_hours: 16.0   # watchdog force-destroys past this; sized to the 12.5h sft-v3 run, NOT a generic default
 ready_timeout_s: 900
 poll_interval_s: 30
 ssh_key_path: "~/.ssh/id_rsa"   # private key whose public half is attached to the Vast.ai account

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from repo_pipeline.driver_session import DriverError
 from rl.backends import EnvBackend
+import rl.runner
 from rl.episode import Episode, EpisodeConfig, RunContext
 from rl.rewards import load_reward_config
 
@@ -53,6 +54,9 @@ class FakeClient:
     def snapshot(self):
         return {"ok": True, "url": "http://x/done", "title": "t", "snapshot": "## Page text\nall good\n"}
 
+    def page_text(self):
+        return "computed answer 36"
+
     def storage_state(self):
         return {"cookies": []}
 
@@ -101,7 +105,7 @@ def test_full_episode_records_steps_history_and_reward():
         ep.reset()
         obs, reward, done, info = ep.step("<think>c</think>\naction: click(<ref>(10, 10)</ref>, button=left)\naction: type(\"hi\")")
         assert not done and reward is None and info["parse"] == "ok" and info["executed"] == 2
-        assert obs["text"] == 'Task: Do the thing\nPrevious actions: [click(10, 10), type("hi")]\nWhat action should you take?'
+        assert obs["text"] == 'Task: Do the thing\nPrevious actions: [click(8, 14), type("hi")]\nWhat action should you take?'
         obs, reward, done, info = ep.step("garbage")
         assert not done and info["parse"] == "failure" and len(client.steps) == 1
         obs, reward, done, info = ep.step("<think>d</think>\naction: done()")
@@ -172,3 +176,50 @@ def test_close_external_marks_abandoned():
         ep.reset()
         rec = ep.close("abandoned")
         assert rec["terminal_reason"] == "abandoned" and ep.close() is rec
+
+
+class OneSlotPool:
+    slot_count = 1
+
+
+def test_run_batch_gives_every_task_sample_n_before_any_task_gets_n_plus_one():
+    tasks = [{"task_id": "a"}, {"task_id": "b"}, {"task_id": "c"}]
+    seen = []
+    original = rl.runner.run_episode
+    rl.runner.run_episode = lambda policy, task, pool, sample, ctx, cfg: seen.append((task["task_id"], sample)) or {}
+    try:
+        rl.runner.run_batch(lambda: None, tasks, 3, OneSlotPool(), None, None)
+    finally:
+        rl.runner.run_episode = original
+    assert seen[:3] == [("a", 0), ("b", 0), ("c", 0)]
+    assert seen[3:6] == [("a", 1), ("b", 1), ("c", 1)]
+    assert len(seen) == 9
+
+
+class DeadPool:
+    """One slot whose sandbox has vanished, as after an OOM kill and auto-remove."""
+
+    slot_count = 1
+
+    def acquire(self, timeout=None):
+        return DeadWorker(), 0
+
+    def release(self, worker, slot):
+        pass
+
+
+class DeadWorker:
+    worker_id = 0
+    sandbox = None
+
+    def client(self, slot):
+        raise ConnectionError("No such container")
+
+
+def test_a_vanished_sandbox_fails_one_episode_not_the_batch():
+    records = rl.runner.run_batch(lambda: None, [TASK], 2, DeadPool(),
+                                  RunContext(run_id="r", out_root=Path("/tmp/unused"), iteration=0, reward_config=load_reward_config()),
+                                  EpisodeConfig(max_steps=2, verifier_mode="never"))
+    assert len(records) == 2
+    assert all(r["terminal_reason"] == "harness_error" and r["reward"] is None for r in records)
+

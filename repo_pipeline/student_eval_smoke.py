@@ -1,12 +1,16 @@
 """Self-test for the student eval harness: pure checks, a mock replay episode, and a real judge verdict."""
 import asyncio
 import argparse
+import base64
+import io
 import json
 import logging
 import sys
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
+
+from PIL import Image
 
 from repo_pipeline.student_eval import (
     EXPECTED_TO_DIFFER_KEYS,
@@ -18,11 +22,13 @@ from repo_pipeline.student_eval import (
     ReplayStudent,
     action_coordinates,
     EpisodeRecord,
-    build_user_text,
+    build_student_messages,
     coord_space_diagnosis,
     detect_block,
     driver_payload,
     judge_episode,
+    observed_effect,
+    outside_coord_space,
     outside_viewport,
     classify_action_line,
     compute_metrics,
@@ -36,9 +42,20 @@ from repo_pipeline.student_eval import (
 )
 from repo_pipeline.eval_task_sources import TASK_SOURCES, EvalTask
 from repo_pipeline.sandbox import ShellSandbox
-from train_qwen import HISTORY_WINDOW, format_action_for_training
+from train_qwen import (
+    HISTORY_WINDOW,
+    PREV_IMAGE_SIZE,
+    PROMPT_FORMAT_VERSION,
+    SYSTEM_PROMPT,
+    format_action_for_training,
+    history_entries_for_step,
+    to_viewport_coords,
+)
 
 logger = logging.getLogger(__name__)
+
+PROMPT_GOLDEN = Path(__file__).resolve().parent.parent / "rl" / "tests" / "fixtures" / "prompt_golden.json"
+GOLDEN_INSTRUCTION = "Move the apartment board to the kanban view"
 
 TEST_PAGE = """<!doctype html>
 <html><head><title>Student eval smoke</title>
@@ -225,6 +242,7 @@ AMBIGUOUS_SHAPES = [
     ("click()", "no coordinates"),
     ("navigate()", "no destination"),
     ("navigate(example.com)", "a scheme-less bare token could be a domain or a search phrase"),
+    ("navigate(back)", "not a URL — back could be a relative path, a keyword, or prose"),
 ]
 
 
@@ -360,6 +378,15 @@ def check_coordinate_scaling():
     """normalized_1000 -> viewport pixels for every coordinate-bearing action, drag endpoints included."""
     assert scale_action({"type": "click", "x": 353, "y": 968, "button": "left"}, "normalized_1000") \
         == {"type": "click", "x": 452, "y": 697, "button": "left"}
+    # The eval scales with train_qwen's own mapping, and the EXECUTED pixel action reads back in model space.
+    assert (452, 697) == to_viewport_coords(353, 968)
+    executed = scale_action({"type": "click", "x": 353, "y": 968, "button": "left"}, "normalized_1000")
+    assert history_entries_for_step({"actions": [executed]}) == ["click(353, 968)"]
+    executed_drag = scale_action({"type": "drag", "path": [{"x": 100, "y": 200}, {"x": 900, "y": 800}]},
+                                 "normalized_1000")
+    assert history_entries_for_step({"actions": [executed_drag]}) == ["drag(100,200 -> 900,800)"]
+    assert outside_coord_space(1100, 500, "normalized_1000") and not outside_coord_space(1000, 1000, "normalized_1000")
+    assert outside_coord_space(1000, 1000, "viewport_abs") and not outside_coord_space(1279, 719, "viewport_abs")
     assert scale_action({"type": "double_click", "x": 500, "y": 500}, "normalized_1000") \
         == {"type": "double_click", "x": 640, "y": 360}
     assert scale_action({"type": "move", "x": 0, "y": 999}, "normalized_1000") \
@@ -408,15 +435,94 @@ def check_driver_mapping():
     logger.info("driver mapping OK")
 
 
+def _png(size=(4, 4), color=(255, 255, 255), block=None) -> bytes:
+    image = Image.new("RGB", size, color)
+    if block:
+        image.paste((0, 0, 0), block)
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()
+
+
+def _flatten_openai(content: list) -> str:
+    """The ms-swift `<image>` flattening of an OpenAI content list, so it can be diffed against the golden text."""
+    return "".join("<image>" if item["type"] == "image_url" else item["text"] for item in content)
+
+
+def _decode_images(content: list) -> list:
+    images = []
+    for item in content:
+        if item["type"] != "image_url":
+            continue
+        url = item["image_url"]["url"]
+        assert url.startswith("data:image/png;base64,"), url[:40]
+        images.append(Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1]))))
+    return images
+
+
 def check_prompt_format():
-    """The user text must match train_qwen's per-step example, history window and omission prefix included."""
-    assert build_user_text("Buy milk", []) == "Task: Buy milk\nWhat action should you take?"
-    history = [f"click({i}, {i})" for i in range(HISTORY_WINDOW + 3)]
-    text = build_user_text("Buy milk", history)
-    assert "... 3 earlier actions, " in text, text
-    assert text.count("click(") == HISTORY_WINDOW, text
-    assert text.endswith("\nWhat action should you take?"), text
-    logger.info("prompt format OK")
+    """What the eval sends must be the sft3 layout the golden fixture pins, images inlined as PNG data URLs."""
+    golden = json.loads(PROMPT_GOLDEN.read_text())
+    assert golden["constants"]["PROMPT_FORMAT_VERSION"] == PROMPT_FORMAT_VERSION == "sft3"
+    assert golden["constants"]["SYSTEM_PROMPT"] == SYSTEM_PROMPT
+    cur, prev = _png(), _png(block=(0, 0, 2, 2))
+
+    first = build_student_messages(GOLDEN_INSTRUCTION, [], cur)
+    assert first[0] == {"role": "system", "content": SYSTEM_PROMPT}, first[0]
+    assert _flatten_openai(first[1]["content"]) == golden["observations"]["no_history_step1"]["text"]
+    assert [im.size for im in _decode_images(first[1]["content"])] == [(4, 4)]
+
+    # Built as the episode loop builds it (executed PIXEL actions + observed effect), so the golden proves the round trip.
+    same_url, new_url = "https://x.test/", "https://x.test/projects/new"
+    click = {"type": "click", "x": 640, "y": 360, "button": "left"}
+    typed = {"type": "type", "text": "hello"}
+    history = (history_entries_for_step({"actions": [click]}, observed_effect(cur, cur, same_url, same_url))
+               + history_entries_for_step({"actions": [click, typed]}, observed_effect(cur, prev, same_url, new_url))
+               + history_entries_for_step({"actions": [click]}, observed_effect(cur, cur, same_url, new_url)))
+    assert history == ["click(500, 500) [no change]", "click(500, 500)", 'type("hello") -> /projects/new',
+                       "click(500, 500) [no change] -> /projects/new"], history
+    later = build_student_messages(GOLDEN_INSTRUCTION, history, cur, prev)
+    assert _flatten_openai(later[1]["content"]) == golden["observations"]["annotated_stepn"]["text"]
+    assert [im.size for im in _decode_images(later[1]["content"])] == [PREV_IMAGE_SIZE, (4, 4)]
+
+    windowed = [f"click({i}, {i})" for i in range(HISTORY_WINDOW + 3)]
+    text = _flatten_openai(build_student_messages(GOLDEN_INSTRUCTION, windowed, cur, prev)[1]["content"])
+    assert text == golden["observations"]["windowed_23_stepn"]["text"]
+    logger.info("prompt format OK (sft3 golden: one image on step 1, prev+cur after, annotated history)")
+
+
+def check_v2_observation():
+    """An sft-v1/v2 checkpoint (and any GRPO LoRA over one) trained on ONE screenshot.
+
+    Sending it the sft3 two-image observation measures the prompt rather than the model, so the
+    format is selectable per arm exactly as the QA bench's `cua_observation` is.
+    """
+    cur, prev = _png(), _png(block=(0, 0, 2, 2))
+    history = ["click(500, 500) [no change]"]
+
+    v2 = build_student_messages(GOLDEN_INSTRUCTION, history, cur, prev, observation="v2")
+    assert [im.size for im in _decode_images(v2[1]["content"])] == [(4, 4)], "v2 must send exactly one image"
+    assert "Previous screenshot" not in _flatten_openai(v2[1]["content"])
+
+    v3 = build_student_messages(GOLDEN_INSTRUCTION, history, cur, prev, observation="v3")
+    assert [im.size for im in _decode_images(v3[1]["content"])] == [PREV_IMAGE_SIZE, (4, 4)]
+
+    # The history line, and therefore its effect annotations, is identical in both formats.
+    assert history[0] in _flatten_openai(v2[1]["content"])
+    logger.info("v2/v3 observation switch OK (one image vs prev+cur, same history)")
+
+
+def check_png_forced():
+    """Effect annotations compare screenshots pixel-wise, so a lossy format is a config error, not a silent mis-annotation."""
+    assert EvalConfig().screenshot_format == "png"
+    assert EvalConfig().coord_space == "normalized_1000", "stock Qwen and an sft3 checkpoint both answer normalized"
+    try:
+        EvalConfig(screenshot_format="jpeg")
+    except ValueError as e:
+        assert "png" in str(e), e
+    else:
+        raise AssertionError("EvalConfig(screenshot_format='jpeg') must be refused")
+    logger.info("png forced OK")
 
 
 def check_block_detection():
@@ -508,6 +614,16 @@ def check_report_rendering():
     assert "action_grammar" not in EXPECTED_TO_DIFFER_KEYS, \
         "grammar tolerance is a harness property — a parity key, not an expected difference"
     assert "action_grammar" not in PARITY_EXEMPT_KEYS, PARITY_EXEMPT_KEYS
+    # The observation layout is a parity key: a run prompted in sft2 is not comparable to an sft3 run.
+    harness = results["harness"]
+    assert harness["prompt_format"] == PROMPT_FORMAT_VERSION, harness
+    assert harness["prev_image_size"] == f"{PREV_IMAGE_SIZE[0]}x{PREV_IMAGE_SIZE[1]}", harness
+    assert harness["effect_annotations"] is True and harness["type_mode"] == "replace", harness
+    for key in ("prompt_format", "prev_image_size", "effect_annotations", "type_mode"):
+        assert key not in PARITY_EXEMPT_KEYS and key not in EXPECTED_TO_DIFFER_KEYS, key
+    assert f"| prompt format | `{PROMPT_FORMAT_VERSION}` |" in report, report
+    assert "| previous-screenshot size |" in report and "| effect annotations |" in report, report
+    assert "| type mode |" in report, report
     after = json.loads(json.dumps(results))
     after["label"] = "after"
     after["metrics"]["verified_success_rate"] = 0.75
@@ -515,9 +631,9 @@ def check_report_rendering():
     assert "+25.0 pp" in comparison, comparison
     assert "All compared runs share" in comparison, comparison
 
-    # A stock-vs-finetuned pair differs in coord_space BY DESIGN; that must read as an annotated
+    # A stock-vs-sft-v1/v2 pair differs in coord_space BY DESIGN; that must read as an annotated
     # expected difference, never as a parity violation that discredits the delta.
-    results["harness"]["coord_space"] = "normalized_1000"
+    results["harness"]["coord_space"] = "viewport_abs"
     comparison = render_comparison([results, after])
     assert "NOT the same harness" not in comparison, comparison
     assert "Expected model-side differences" in comparison, comparison
@@ -527,6 +643,11 @@ def check_report_rendering():
     comparison = render_comparison([results, after])
     assert "NOT the same harness" in comparison, comparison
     assert "temperature" in comparison, comparison
+
+    after["harness"]["temperature"] = results["harness"]["temperature"]
+    after["harness"]["prompt_format"] = "sft2"
+    comparison = render_comparison([results, after])
+    assert "NOT the same harness" in comparison and "prompt_format" in comparison, comparison
     logger.info("report + comparison rendering OK (coord_space annotated, real drift flagged)")
 
 
@@ -536,13 +657,19 @@ def check_coord_space_diagnosis():
         {"coord_space": "viewport_abs"},
         {"emitted_coords": 36, "emitted_out_of_viewport": 36, "emitted_out_of_viewport_rate": 1.0})
     assert "COORDINATE SPACE SUSPECT" in suspect and "--coord-space normalized_1000" in suspect, suspect
-    assert not coord_space_diagnosis(
+    # The inverse: an sft-v1/v2 checkpoint answering in pixels while scored as normalized_1000.
+    inverse = coord_space_diagnosis(
         {"coord_space": "normalized_1000"},
         {"emitted_coords": 36, "emitted_out_of_viewport": 36, "emitted_out_of_viewport_rate": 1.0})
+    assert "COORDINATE SPACE SUSPECT" in inverse and "--coord-space viewport_abs" in inverse, inverse
+    assert "sft-v1/v2" in inverse, inverse
     assert not coord_space_diagnosis(
         {"coord_space": "viewport_abs"},
         {"emitted_coords": 40, "emitted_out_of_viewport": 1, "emitted_out_of_viewport_rate": 0.025})
-    logger.info("coordinate-space diagnosis OK")
+    assert not coord_space_diagnosis(
+        {"coord_space": "normalized_1000"},
+        {"emitted_coords": 40, "emitted_out_of_viewport": 1, "emitted_out_of_viewport_rate": 0.025})
+    logger.info("coordinate-space diagnosis OK (both directions)")
 
 
 def _write_mock_trajectory(path: Path, start_url: str) -> Path:
@@ -578,6 +705,67 @@ def _to_normalized_1000(action: dict) -> dict:
         return action
     x, y = to_norm(action["x"], action["y"])
     return {**action, "x": x, "y": y}
+
+
+class RecordingStudent:
+    """Keeps every outgoing message list so the observation layout the runner built can be asserted on."""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.seen: list = []
+
+    def complete(self, messages: list) -> str:
+        self.seen.append(messages)
+        return self.inner.complete(messages)
+
+
+# Model-space (normalized_1000) actions chosen for their OBSERVABLE effect on the static test page.
+EFFECT_STEPS = [
+    ({"type": "wait"}, "Let the page settle first."),
+    ({"type": "scroll", "x": 500, "y": 500, "scroll_x": 0, "scroll_y": 400}, "Scroll down to see more."),
+    ({"type": "navigate", "url": "http://127.0.0.1:3000/index.html"}, "Open the page by its file name."),
+    ({"type": "wait"}, "Give it a moment."),
+]
+EFFECT_HISTORY = ["wait [no change]", "scroll(500, 500)",
+                  "navigate(http://127.0.0.1:3000/index.html) -> /index.html", "wait [no change]"]
+
+
+async def _run_effect_episode(browser, tmp_dir: Path, start_url: str):
+    """History entries come from EXECUTED actions with the effect the next screenshot showed; two images from step 2."""
+    trajectory = {
+        "task_id": "effect", "instruction": SMOKE_INSTRUCTION, "start_url": start_url,
+        "steps": [{"step": i + 1, "screenshot": "", "thought": thought, "actions": [action]}
+                  for i, (action, thought) in enumerate(EFFECT_STEPS)],
+        "total_steps": len(EFFECT_STEPS), "success": True,
+    }
+    cfg = EvalConfig(task_source="held_out", label="effect", student="mock",
+                     max_steps=len(EFFECT_STEPS) + 3, judge=False, resume=False, coord_space="normalized_1000")
+    task = EvalTask(task_id="effect", instruction=SMOKE_INSTRUCTION, start_url=start_url,
+                    domain="smoke", reference_length=len(EFFECT_STEPS), source="smoke")
+    student = RecordingStudent(ReplayStudent(trajectory))
+    record = await run_episode(browser, student, task, cfg, tmp_dir / "episodes" / "task_effect", cfg.max_steps)
+    logger.info(f"effect episode: outcome={record.outcome} executed={record.actions_executed} "
+                f"driver_errors={record.driver_errors}")
+    assert record.outcome == "completed", f"expected completed, got {record.outcome}: {record.error}"
+    assert record.actions_executed == len(EFFECT_STEPS), record.actions_executed
+    assert len(student.seen) == len(EFFECT_STEPS) + 1, len(student.seen)
+
+    for step_index, messages in enumerate(student.seen):
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}, messages[0]
+        content = messages[1]["content"]
+        sizes = [im.size for im in _decode_images(content)]
+        expected_sizes = [(1280, 720)] if step_index == 0 else [PREV_IMAGE_SIZE, (1280, 720)]
+        assert sizes == expected_sizes, f"step {step_index + 1}: image sizes {sizes}"
+        text = _flatten_openai(content)
+        assert text.count("<image>") == len(expected_sizes), text
+        assert ("Previous screenshot" in text) == (step_index > 0), text
+        expected = EFFECT_HISTORY[:step_index]
+        history_line = f"Previous actions: [{', '.join(expected)}]" if expected else ""
+        assert history_line in text, f"step {step_index + 1}: expected {history_line!r} in {text!r}"
+    for item in student.seen[-1][1]["content"]:
+        shown = item["text"] if item["type"] == "text" else item["image_url"]["url"][:48] + "..."
+        logger.info(f"step {len(student.seen)} outgoing {item['type']}: {shown!r}")
+    logger.info("effect episode OK (no-op step annotated [no change], path change annotated, prev+cur images)")
 
 
 async def _run_stuck_episode(browser, tmp_dir: Path, start_url: str):
@@ -634,8 +822,9 @@ async def run_episode_smoke(judge: bool) -> bool:
         tmp_dir = Path(tmp)
         start_url = "http://127.0.0.1:3000/"
         mock_path = _write_mock_trajectory(tmp_dir / "mock_trajectory.json", start_url)
+        # REPLAY_STEPS are pixel coordinates read off the page layout, so this replay is a viewport_abs student.
         cfg = EvalConfig(
-            task_source="held_out", label="smoke", student="mock",
+            task_source="held_out", label="smoke", student="mock", coord_space="viewport_abs",
             mock_trajectory=str(mock_path), max_steps=len(REPLAY_STEPS) + 3,
             judge=judge, judge_mid_screenshots=2, episode_timeout_s=600, resume=False,
         )
@@ -657,6 +846,7 @@ async def run_episode_smoke(judge: bool) -> bool:
             record = await run_episode(browser, student, task, cfg, episode_dir,
                                        cfg.max_steps)
             normalized_dir = await _run_normalized_episode(browser, tmp_dir, start_url)
+            await _run_effect_episode(browser, tmp_dir, start_url)
             await _run_stuck_episode(browser, tmp_dir, start_url)
         finally:
             await browser.stop()
@@ -677,6 +867,9 @@ async def run_episode_smoke(judge: bool) -> bool:
         assert record.driver_errors == 0, f"driver refused {record.driver_errors} actions: {record.error}"
         assert record.actions_executed == len(REPLAY_STEPS), \
             f"executed {record.actions_executed} of {len(REPLAY_STEPS)} actions"
+        # A replay executed in the wrong coordinate space still "completes"; only the page outcome exposes it.
+        assert "hello Smokey" in record.final_snapshot, \
+            f"the greeting never landed — a mis-scaled replay? final page text: {record.final_snapshot[:300]!r}"
 
         traj = json.loads((episode_dir / "trajectory.json").read_text())
         assert traj["total_steps"] == len(REPLAY_STEPS) + 1, traj["total_steps"]
@@ -715,6 +908,8 @@ PARSER_CHECKS = [
     check_coordinate_scaling,
     check_driver_mapping,
     check_prompt_format,
+    check_v2_observation,
+    check_png_forced,
     check_block_detection,
     check_browser_backends,
     check_coord_space_diagnosis,

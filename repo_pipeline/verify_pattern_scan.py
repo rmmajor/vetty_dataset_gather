@@ -6,10 +6,15 @@ import re
 import statistics
 from pathlib import Path
 
-VERIFY_TEXT = re.compile(
-    r"\b(verif|confirm(ing|ed)?|double.?check|re-?open|reopen|reload|refresh|check(ing)? (that|it|the)|"
-    r"make sure|ensure it|persisted|saved correctly|still there|appears in the list)\b", re.I)
-SAVE_TEXT = re.compile(r"\b(save|saved|saving|submit|apply|confirm)\b", re.I)
+from repo_pipeline.corpus_audit import (
+    SAVE_TEXT,
+    VERIFY_TEXT,
+    done_after_verify,
+    done_step_index,
+    is_trainable,
+    navigate_after_save,
+)
+
 PAGINATION_TEXT = re.compile(r"\b(page \d|next page|pagination|paginat|load more|show more)\b", re.I)
 RELOGIN_MIN_GAP = 5
 LONG_ROUTE_STEPS = 25
@@ -24,15 +29,13 @@ def _load(path: Path) -> dict:
 
 def scan(corpus: Path) -> dict:
     lengths = []
-    counts = dict(total=0, verify_any=0, verify_after_save=0, mid_navigate=0, pagination=0,
+    counts = dict(total=0, verify_any=0, verify_after_save=0, mid_navigate=0, navigate_after_save=0, pagination=0,
                   relogin=0, long_route=0, done_total=0, done_after_verify=0, wall_demos=0)
     for traj_dir in sorted(corpus.glob("**/task_*")):
+        if not (traj_dir / "trajectory.json").exists() or not is_trainable(traj_dir):
+            continue
         traj = _load(traj_dir / "trajectory.json")
-        if not traj.get("success"):
-            continue
         meta = _load(traj_dir / "metadata.json")
-        if meta.get("excluded_reason"):
-            continue
         steps = traj.get("steps", [])
         if not steps:
             continue
@@ -45,6 +48,7 @@ def scan(corpus: Path) -> dict:
         types = [[action.get("type") for action in step.get("actions", [])] for step in steps]
         counts["verify_any"] += any(VERIFY_TEXT.search(t) for t in thoughts)
         counts["mid_navigate"] += any("navigate" in t for t in types[1:])
+        counts["navigate_after_save"] += navigate_after_save(steps)
         counts["pagination"] += bool(PAGINATION_TEXT.search(
             " ".join(thoughts) + " " + (traj.get("instruction") or "")))
 
@@ -58,12 +62,8 @@ def scan(corpus: Path) -> dict:
         if len(password_at) >= 2 and password_at[-1] - password_at[0] >= RELOGIN_MIN_GAP:
             counts["relogin"] += 1
 
-        for i, step_types in enumerate(types):
-            if "done" in step_types:
-                counts["done_total"] += 1
-                if i > 0 and VERIFY_TEXT.search(thoughts[i - 1]):
-                    counts["done_after_verify"] += 1
-                break
+        counts["done_total"] += done_step_index(steps) is not None
+        counts["done_after_verify"] += done_after_verify(steps)
     lengths.sort()
     counts["median_steps"] = statistics.median(lengths) if lengths else 0
     counts["p90_steps"] = lengths[int(0.9 * len(lengths))] if lengths else 0
@@ -90,6 +90,7 @@ def main() -> None:
             ("verify_any", "any verification language", total),
             ("verify_after_save", "verification AFTER a save/submit", total),
             ("mid_navigate", "mid-run navigate (re-open to check)", total),
+            ("navigate_after_save", "navigate AFTER a save/submit", total),
             ("long_route", f">= {LONG_ROUTE_STEPS} steps", total),
             ("pagination", "pagination language", total),
             ("relogin", "two password entries far apart", total),
