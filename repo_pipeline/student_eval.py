@@ -1600,6 +1600,11 @@ async def _process_task(task: EvalTask, cfg: EvalConfig, browser: EvalBrowser, r
         try:
             if cfg.judge and record.outcome not in UNSCORED_OUTCOMES:
                 await judge_episode(record, cfg)
+            elif not cfg.judge and record.outcome not in UNSCORED_OUTCOMES:
+                # --no-judge records the browser work and OWES a verdict. Without this the episode
+                # is indistinguishable from a judged failure, and a later resume skips it forever —
+                # so the record-now/judge-off-GPU split silently produced unjudgeable episodes.
+                record.judge_deferred = True
         except UsageLimitReached:
             # Persist before re-raising: the episode ran, only the verdict is owed, and a resume
             # must re-judge from disk instead of re-driving the browser.
@@ -1762,7 +1767,8 @@ def _add_run_arguments(parser):
     parser.add_argument("--screenshot-format", default="png", choices=("png", "jpeg"),
                         help="png only under sft3: effect annotations compare consecutive frames pixel-wise")
     parser.add_argument("--no-judge", action="store_true",
-                        help="skip verification (harness-only run; no Claude calls, no success rate)")
+                        help="record episodes and DEFER the verdict; a later resume judges them off "
+                             "the GPU, so a usage limit can never burn rental hours")
     parser.add_argument("--judge-mid-screenshots", type=int, default=2,
                         help="mid-run frames per verdict on top of the final one; the main cost dial")
     parser.add_argument("--observation", default=DEFAULT_OBSERVATION, choices=OBSERVATION_FORMATS,
