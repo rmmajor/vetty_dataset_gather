@@ -438,6 +438,10 @@ that must not be quoted.
 | cua-grpo-v2 | full-split | accuracy | 78.6 % <sub>[76–81]</sub> | 1272 | done | Full 1,272-sample test split (desktop + mobile + web); the desktop-300 rows are the comparable ones. |
 | cua-grpo-v2 | icon | accuracy | 75.4 % <sub>[67–82]</sub> | 122 | done |  |
 | cua-grpo-v2 | text | accuracy | 91.6 % <sub>[87–95]</sub> | 178 | done |  |
+| cua-grpo-v3 | all | accuracy | 82.7 % <sub>[81–85]</sub> | 1272 | done | 2026-09-05: same 1272-sample split, harness and 2048-token budget as the base/sft-v2/sft-v3 rows, served from its own rental because grpo-v3 is a LoRA over the MERGED sft-v2 weights and cannot be stacked on the raw base. Scored in viewport_abs, which it inherits from sft-v2. Artifacts eval_results/rentalB/. |
+| cua-grpo-v3 | all | parse_rate | 98.7 % <sub>[98–99]</sub> | 1272 | done | 2026-09-05: same 1272-sample split, harness and 2048-token budget as the base/sft-v2/sft-v3 rows, served from its own rental because grpo-v3 is a LoRA over the MERGED sft-v2 weights and cannot be stacked on the raw base. Scored in viewport_abs, which it inherits from sft-v2. Artifacts eval_results/rentalB/. |
+| cua-grpo-v3 | icon | accuracy | 75.0 % <sub>[71–78]</sub> | 575 | done | 2026-09-05: same 1272-sample split, harness and 2048-token budget as the base/sft-v2/sft-v3 rows, served from its own rental because grpo-v3 is a LoRA over the MERGED sft-v2 weights and cannot be stacked on the raw base. Scored in viewport_abs, which it inherits from sft-v2. Artifacts eval_results/rentalB/. |
+| cua-grpo-v3 | text | accuracy | 89.1 % <sub>[87–91]</sub> | 697 | done | 2026-09-05: same 1272-sample split, harness and 2048-token budget as the base/sft-v2/sft-v3 rows, served from its own rental because grpo-v3 is a LoRA over the MERGED sft-v2 weights and cannot be stacked on the raw base. Scored in viewport_abs, which it inherits from sft-v2. Artifacts eval_results/rentalB/. |
 | cua-sft-v1 | all | accuracy | 85.0 % <sub>[81–89]</sub> | 300 | done | coord_space=viewport_abs. Out-of-domain: ScreenSpot is desktop, the corpus is web-only. |
 | cua-sft-v1 | all | accuracy | 85.3 % <sub>[81–89]</sub> | 300 | done | coord_space=viewport_abs. Base + SFT LoRA served, viewport_abs, same night. |
 | cua-sft-v1 | all | accuracy | 85.3 % <sub>[81–89]</sub> | 300 | done | coord_space=viewport_abs. Merged SFT weights served without a LoRA; equals base + LoRA, so the merge the RL run trained on is faithful. |
@@ -482,7 +486,7 @@ that must not be quoted.
 | Share of record/replay web test breakages caused by stale locators | 73.6 % | 1065 | ICST | 2016 | 10.1109/ICST.2016.16 | deck slide 3, thesis ch.1 |
 | Legacy GUI tests on live sites that stopped passing within 18 months | 100.0 % | 120 | ASE | 2025 | 10.1109/ASE63991.2025.00251 | deck slide 3, thesis ch.1 |
 
-_221 registry rows: 208 done, 1 pending, 5 planned, 7 superseded. Percentages carry a 95 % Wilson interval where n is known._
+_225 registry rows: 212 done, 1 pending, 5 planned, 7 superseded. Percentages carry a 95 % Wilson interval where n is known._
 
 <!-- registry:end -->
 
