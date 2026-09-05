@@ -354,6 +354,9 @@ that must not be quoted.
 | claude-sonnet-5 | phase-planning | phase_cost_share | 2.5 % |  | done |  |
 | claude-sonnet-5 | phase-reporting | phase_call_share | 0.6 % <sub>[0–2]</sub> | 511 | done |  |
 | claude-sonnet-5 | phase-reporting | phase_cost_share | 1.6 % |  | done | Understated: the run crashed in this phase after 3 calls. |
+| cua-grpo-v3 | economy-7run-105case | ddr | 24.2 % <sub>[13–41]</sub> | 33 | done | 2026-09-05, harness 428c062. Config identical to matched-sft-v2 (cua_observation=v2, viewport_abs, history window 20, 25-step cap): grpo-v3 is a LoRA over merged sft-v2 and inherits both, so only an identical config makes the two comparable. Artifacts vetty results/econ-grpo-v3. |
+| cua-grpo-v3 | economy-7run-105case | error_verdict_rate | 0.5714 | 105 | done | 2026-09-05, harness 428c062. Config identical to matched-sft-v2 (cua_observation=v2, viewport_abs, history window 20, 25-step cap): grpo-v3 is a LoRA over merged sft-v2 and inherits both, so only an identical config makes the two comparable. Artifacts vetty results/econ-grpo-v3. |
+| cua-grpo-v3 | economy-7run-105case | precision_strict | 1 | 11 | done | 2026-09-05, harness 428c062. Config identical to matched-sft-v2 (cua_observation=v2, viewport_abs, history window 20, 25-step cap): grpo-v3 is a LoRA over merged sft-v2 and inherits both, so only an identical config makes the two comparable. Artifacts vetty results/econ-grpo-v3. |
 | cua-sft-v1 | 6-defect-subset | completion_tokens_per_case | 385 | 6 | done | ~6.4 model calls per case. |
 | cua-sft-v1 | 6-defect-subset | cost_per_case_usd | $0.88 | 6 | done | Opus-5 verdict $0.87 + Modal L40S ~$0.01. The verdict now dominates; a cheaper verdict tier is the remaining lever. |
 | cua-sft-v1 | 6-defect-subset | ddr | 83.3 % <sub>[44–97]</sub> | 6 | done | 5/6. Misses delete_button_no_action (confabulates that the delete succeeded). |
@@ -492,7 +495,7 @@ that must not be quoted.
 | Share of record/replay web test breakages caused by stale locators | 73.6 % | 1065 | ICST | 2016 | 10.1109/ICST.2016.16 | deck slide 3, thesis ch.1 |
 | Legacy GUI tests on live sites that stopped passing within 18 months | 100.0 % | 120 | ASE | 2025 | 10.1109/ASE63991.2025.00251 | deck slide 3, thesis ch.1 |
 
-_231 registry rows: 218 done, 1 pending, 5 planned, 7 superseded. Percentages carry a 95 % Wilson interval where n is known._
+_234 registry rows: 221 done, 1 pending, 5 planned, 7 superseded. Percentages carry a 95 % Wilson interval where n is known._
 
 <!-- registry:end -->
 
