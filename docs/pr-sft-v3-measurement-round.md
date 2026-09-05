@@ -68,37 +68,72 @@ run recorded as yielding no measurable gain measurably gained. At n=33 the inter
 this does not separate grpo-v3 from sft-v3 — but it puts both clearly above the parent, and it is
 not what the reward curves said.
 
-## Online-Mind2Web: base against SFT-2, both on the full 300
+## Online-Mind2Web, all four arms on the full 300
 
 One harness commit, one token budget, each arm prompted in the observation format it was trained
-for (base = v3 two-image + normalized_1000; sft-v2 = v2 one image + viewport_abs):
+for and scored in its own coordinate space:
 
-| | base | cua-sft-v2 |
-| --- | --- | --- |
-| verified success (scored) | 3.18% [1.4, 7.2] n=157 | **16.44%** [11.3, 23.3] n=146 |
-| verified success (all episodes) | 1.67% [0.7, 3.8] n=300 | **8.00%** [5.4, 11.6] n=300 |
-| parse failure | 12.8% | **0.0%** |
-| canonical form | 20.1% | **100%** |
+| arm | scored | 95% CI | all-episode | n scored |
+| --- | --- | --- | --- | --- |
+| base Qwen3.5-9B | 3.18% | [1.4, 7.2] | 1.67% | 157 |
+| cua-sft-v2 | **16.44%** | [11.3, 23.3] | 8.00% | 146 |
+| cua-sft-v3 | 11.11% | [7.0, 17.3] | 5.33% | 144 |
+| cua-grpo-v3 | 13.38% | [8.7, 20.0] | 6.69% | 142 |
 
-The intervals do not overlap on either denominator. By level, the base solves nothing outside easy
-tasks while sft-v2 solves some of every level:
+**Every fine-tuned arm is clearly above the base, and none is separable from the others.** The three
+checkpoints' intervals overlap almost entirely, so at n≈145 the round-over-round differences on
+browsing are noise. sft-v2 has the highest point estimate; that is not the same as being better.
 
-| level | base | sft-v2 |
-| --- | --- | --- |
-| easy | 12.5% | **47.4%** |
-| medium | **0.0%** | 4.9% |
-| hard | **0.0%** | 6.4% |
+| arm | easy | medium | hard |
+| --- | --- | --- | --- |
+| base | 12.5% | **0.0%** | **0.0%** |
+| cua-sft-v2 | 47.4% | 4.9% | 6.4% |
+| cua-sft-v3 | 23.7% | 10.0% | 2.2% |
+| cua-grpo-v3 | 32.4% | 4.8% | 9.5% |
 
-The two harness-side numbers move as far as the success rate and are reported separately on
-purpose. The base has only ever seen the action grammar *described* in a system prompt, so it
-fails to emit a parseable action on 12.8% of steps and spells actions canonically 20% of the time;
-sft-v2 is at 0.0% and 100%. Folding that into the success rate would have conflated "can it browse"
-with "can it imitate our convention", which is why the parser is tolerant and `canonical_form_rate`
-is its own metric.
+The base solves nothing outside easy tasks across 117 scored medium and hard episodes. Every
+fine-tuned arm solves some of every level.
 
-143 of 300 tasks were blocked or unreachable from this egress, identically for both arms, which is
-why both denominators are registered rather than only the flattering one. These rows supersede the
-n=33 sft-v2 row on the 50-task set and the n=34/n=164 base rows, none of which shared a harness.
+### The outcome breakdown carries as much as the success rate
+
+| outcome | base | sft-v2 | sft-v3 | grpo-v3 |
+| --- | --- | --- | --- | --- |
+| completed | 8 | 56 | 46 | 53 |
+| step_cap | 74 | 84 | 94 | 79 |
+| parse_failure_abort | **46** | 0 | 0 | 2 |
+| handoff | 26 | 5 | 3 | 5 |
+| site_blocked | 126 | 135 | 136 | 136 |
+
+The base fails to emit a parseable action on 46 episodes; every fine-tuned checkpoint is at 0 or 2.
+Its `parse_failure_rate` is 12.8% and its `canonical_form_rate` 20.1%, against 0.0% and 100% for the
+checkpoints — the base has only ever seen the action grammar *described* in a system prompt. Folding
+that into the success rate would conflate "can it browse" with "can it imitate our convention",
+which is why the parser is tolerant and canonical form is its own metric.
+
+Block rates land within one point across all four arms, so every arm hit the same walls. 143 of 300
+tasks were blocked or unreachable from this egress, which is why both denominators are registered
+rather than only the flattering one.
+
+These rows supersede the n=33 sft-v2 row on the 50-task set and the n=34/n=164 base rows, none of
+which shared a harness with anything they were compared against.
+
+## What the three lanes say together
+
+| | ScreenSpot | QA bench DDR | Online-Mind2Web |
+| --- | --- | --- | --- |
+| base | 72.2% | 0.0% | 3.18% |
+| cua-sft-v2 | 76.3% | 9.1% | **16.44%** |
+| cua-sft-v3 | **91.6%** | 21.2% | 11.11% |
+| cua-grpo-v3 | 82.7% | **24.2%** | 13.38% |
+
+Each round bought what it targeted and did not generalise. The sft3 corpus round aimed at grounding
+and self-verification: grounding improved decisively (76.3% -> 91.6%, icons 67.5% -> 88.0%) and
+defect detection more than doubled, while browsing did not improve and its point estimate moved the
+wrong way. The GRPO run, recorded as yielding no measurable gain from its reward curves, gained on
+both grounding and defect detection.
+
+The one difference that is unambiguous everywhere is base versus fine-tuned. Between checkpoints,
+only the grounding lane separates them; on browsing at n≈145 nothing does.
 
 ## What was wrong, and what it cost
 
