@@ -212,6 +212,28 @@ consistent ~2.5× besides. Tokens are now recorded beside the cost, the verdict 
 usage that produced a hit instead of `0.0`, and `benchmark/cost.py` — dead code imported only by
 its own test — is wired into the report so GPU seconds become dollars.
 
+**An image the coordinate space silently resized.** `prepare_image` was a method on
+`CoordSpace`, and the `viewport_abs` implementation resized the input to 1280x720. Declaring a
+coordinate space therefore changed the picture: sft-v2 and grpo-v3 were scored on squashed
+screenshots while base, sft-v3 and the frontier arm saw the source, so the cross-arm table compared
+inputs rather than models. Preparation is now one harness-wide setting recorded in every artifact as
+`prepared_image_size`, and `prepare_image` is deleted from the coordinate spaces so the coupling
+cannot return. Correcting it moved sft-v2 76.3% -> 85.4% and grpo-v3 82.7% -> 85.1%, and retired two
+conclusions this description previously drew.
+
+**A frontier arm asked for the wrong coordinate convention.** The Claude predictor inherited
+`GROUNDING_SYSTEM_PROMPT`, which specifies the 0-1000 space Qwen emits natively. The model
+half-complied and half-reverted to pixels, so no single mapping scored it and the value was bounded
+only to [36.5, 51.7]. Anthropic's own guidance is explicit — *"Claude does not work well when you ask
+for normalized coordinates... Always ask for pixel coordinates"* — and asked in pixels it is
+unambiguous: 100% parse, 1 of 1272 answers outside the image, 68.3%. The withdrawn row stays as
+`superseded` with its reasoning.
+
+**A rate divided by the wrong denominator.** Seven QA-bench DDR rows carried `n=105`, the case-run
+count, but DDR is the share of the 33 catalogue defects detected. The values were right and the
+Wilson intervals were too narrow: sft-v2 read [4.9, 16.1] and is [3.1, 23.6]. Once corrected, no
+local arm separates from another on DDR.
+
 **A judge reading the operator's config.** The verdict call did not set `setting_sources=[]`, so
 every judgement loaded the local CLAUDE.md, skills and plugins. That is contamination of the
 measurement instrument, not merely cost. The dataset_gather side was already clean — every
@@ -231,8 +253,14 @@ denominator, so a judging failure lowered precision while the same failure raise
 
 **A frontier arm on grounding.** `PREDICTOR_BACKENDS["claude"]` routes image+text through the
 logged-in CLI, with `to_claude_content` beside `to_openai_content` so both wire formats render the
-same observation. Grounding is the one lane where a frontier comparison is apples-to-apples: single
-turn, one screenshot, one click point, no scaffold advantage.
+same observation. Each arm is asked for the convention it
+natively emits and scored in that space, because requiring one shared convention measures
+translation rather than grounding. Single turn, one screenshot, one click point, no scaffold on
+either side — which is also the limit of the claim: `docs/decisions/why-a-9b-outgrounds-the-frontier-model.md`
+records why GUI-tuned Qwen checkpoints lead here (grounding is a named Qwen3-VL training objective
+with purpose-built point-annotation data and GUI screenshots spanning ScreenSpot's three domains),
+why the ordering reverses on ScreenSpot-Pro where published Claude figures allow cropping and
+planners, and the contamination limitation that ScreenSpot predates Qwen3-VL.
 
 **A per-arm observation format.** An sft-v1/v2 checkpoint, and any GRPO LoRA over one, trained on a
 single screenshot; sending it the sft3 two-image turn measures the prompt rather than the model.
@@ -266,10 +294,12 @@ frontier verdict cost rather than coming from one instrumented end-to-end run.
 
 ## Registry
 
-`experiments/results.csv` grows from 181 to 241 rows and `models.csv` from 15 to 17. Adds the four-arm
-ScreenSpot run, both Online-Mind2Web arms on the full 300, grpo-v3 on the QA bench, the Sonnet economy
-sweep that was measured on 2026-09-02 and never recorded, both matched-harness arms, the `cua-sft-v3`
-and `corpus-v3` rows, a derived GPU cost per case, and the end-to-end cost model.
+`experiments/results.csv` grows from 181 to 271 rows and `models.csv` from 15 to 17. Adds the
+five-arm ScreenSpot run on native images, all four local Online-Mind2Web arms on the full 300,
+grpo-v3 on the QA bench, the Sonnet economy sweep that was measured on 2026-09-02 and never recorded,
+both matched-harness arms, the `cua-sft-v3` and `corpus-v3` rows, a derived GPU cost per case, and
+the end-to-end cost model. Superseded rows keep their original values and carry the reason they were
+retired, so the corrections are auditable rather than overwritten.
 
 The frontier QA-bench rows carry a verification note: re-judging that arm under 428c062 reproduced its
 numbers exactly (DDR 0.6667, precision 0.7708, FPR 0.0), so it is comparable to the 428c062 local arms
@@ -284,9 +314,13 @@ and the Modal app is stopped with zero containers.
 
 ## Not in this branch
 
-grpo-v3 on Online-Mind2Web. It needs its own rental — grpo-v3 is a LoRA over merged sft-v2 and cannot
-share an endpoint with the arms on the raw base — and the browsing lane is bounded by local browser
-capacity rather than GPU. Its grounding and QA-bench arms are both measured here, and both show the
-run gained where its reward curves said it had not.
+A scaffolded frontier grounding arm. Anthropic's guidance for fine targets is crop-and-refine, and
+the ScreenSpot-Pro leaderboard entries permit exactly that, so a two-call cropped run would give the
+frontier model's upper bound. It is deliberately absent: it is not the protocol the local arms are
+held to, and mixing them would repeat the unequal-conditions error this branch exists to fix. The
+single-turn number answers what offloading costs; the scaffolded one answers a different question and
+can be added as its own row.
+
+Everything measurable on the three lanes is now here, grpo-v3's Online-Mind2Web arm included.
 
 https://claude.ai/code/session_01Dkkp5S3mHoQ3GZcfkNFwkX
