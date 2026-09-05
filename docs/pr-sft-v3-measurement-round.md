@@ -68,27 +68,37 @@ run recorded as yielding no measurable gain measurably gained. At n=33 the inter
 this does not separate grpo-v3 from sft-v3 — but it puts both clearly above the parent, and it is
 not what the reward curves said.
 
-## Online-Mind2Web, the base arm at n=157
+## Online-Mind2Web: base against SFT-2, both on the full 300
 
-The full 300-task set under one harness, with a token budget that does not truncate the model and
-a judge that ran:
+One harness commit, one token budget, each arm prompted in the observation format it was trained
+for (base = v3 two-image + normalized_1000; sft-v2 = v2 one image + viewport_abs):
 
-| | value |
-| --- | --- |
-| verified success (scored) | **3.18%** [1.4, 7.2], n=157 |
-| verified success (all episodes) | 1.67%, n=300 |
-| parse failure | 12.8% |
+| | base | cua-sft-v2 |
+| --- | --- | --- |
+| verified success (scored) | 3.18% [1.4, 7.2] n=157 | **16.44%** [11.3, 23.3] n=146 |
+| verified success (all episodes) | 1.67% [0.7, 3.8] n=300 | **8.00%** [5.4, 11.6] n=300 |
+| parse failure | 12.8% | **0.0%** |
+| canonical form | 20.1% | **100%** |
 
-| level | scored | success | blocked |
-| --- | --- | --- | --- |
-| easy | 40 | **12.5%** | 41.3% |
-| medium | 69 | **0.0%** | 46.8% |
-| hard | 48 | **0.0%** | 34.2% |
+The intervals do not overlap on either denominator. By level, the base solves nothing outside easy
+tasks while sft-v2 solves some of every level:
 
-Every base success is an easy task; across 117 scored medium and hard episodes it solves nothing.
-143 of 300 tasks were blocked or unreachable from this egress, which is why both denominators are
-registered rather than only the flattering one. This supersedes the n=34 and n=164 base rows, whose
-intervals spanned roughly 3-23% and which came from different harness commits.
+| level | base | sft-v2 |
+| --- | --- | --- |
+| easy | 12.5% | **47.4%** |
+| medium | **0.0%** | 4.9% |
+| hard | **0.0%** | 6.4% |
+
+The two harness-side numbers move as far as the success rate and are reported separately on
+purpose. The base has only ever seen the action grammar *described* in a system prompt, so it
+fails to emit a parseable action on 12.8% of steps and spells actions canonically 20% of the time;
+sft-v2 is at 0.0% and 100%. Folding that into the success rate would have conflated "can it browse"
+with "can it imitate our convention", which is why the parser is tolerant and `canonical_form_rate`
+is its own metric.
+
+143 of 300 tasks were blocked or unreachable from this egress, identically for both arms, which is
+why both denominators are registered rather than only the flattering one. These rows supersede the
+n=33 sft-v2 row on the 50-task set and the n=34/n=164 base rows, none of which shared a harness.
 
 ## What was wrong, and what it cost
 
@@ -167,22 +177,27 @@ frontier verdict cost rather than coming from one instrumented end-to-end run.
 
 ## Registry
 
-`experiments/results.csv` grows from 181 to 221 rows and `models.csv` from 15 to 17. Adds the
-Sonnet economy sweep (measured 2026-09-02, never recorded), both matched-harness arms, the
-`cua-sft-v3` and `corpus-v3` rows, a derived GPU cost per case for every local arm, the
-end-to-end cost model, and the ScreenSpot run above.
+`experiments/results.csv` grows from 181 to 241 rows and `models.csv` from 15 to 17. Adds the four-arm
+ScreenSpot run, both Online-Mind2Web arms on the full 300, grpo-v3 on the QA bench, the Sonnet economy
+sweep that was measured on 2026-09-02 and never recorded, both matched-harness arms, the `cua-sft-v3`
+and `corpus-v3` rows, a derived GPU cost per case, and the end-to-end cost model.
+
+The frontier QA-bench rows carry a verification note: re-judging that arm under 428c062 reproduced its
+numbers exactly (DDR 0.6667, precision 0.7708, FPR 0.0), so it is comparable to the 428c062 local arms
+despite being recorded at 409810f — the v3 executor changes touch only the CUA path, which the
+claude-sdk backbone does not import.
 
 ## Verification
 
 `make test-eval`, `make test-student-eval`, `make test-rl-unit` (143/143) and the vetty unit suite
-(1046) all pass. The ScreenSpot numbers come from a live rented GPU; both rentals were destroyed
-and confirmed gone, and the account shows zero instances.
+(1046) all pass. Every GPU rental was destroyed and confirmed gone; the account shows zero instances
+and the Modal app is stopped with zero containers.
 
 ## Not in this branch
 
-Online-Mind2Web at n=300 for base / sft-v2 / grpo-v3, and the GRPO-3 ScreenSpot and QA-bench arms.
-Those runs were in flight when the session was interrupted; the rentals were reclaimed rather than
-left burning. The Online-Mind2Web numbers currently in the registry remain **not comparable across
-arms** — the +14.7pp figure pairs two different harness commits, and the only same-harness pairing
-reverses its sign — which is why re-running all arms on one harness at n=300 is the outstanding
-work rather than an optional extra.
+grpo-v3 on Online-Mind2Web. It needs its own rental — grpo-v3 is a LoRA over merged sft-v2 and cannot
+share an endpoint with the arms on the raw base — and the browsing lane is bounded by local browser
+capacity rather than GPU. Its grounding and QA-bench arms are both measured here, and both show the
+run gained where its reward curves said it had not.
+
+https://claude.ai/code/session_01Dkkp5S3mHoQ3GZcfkNFwkX
