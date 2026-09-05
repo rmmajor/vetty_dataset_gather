@@ -1701,15 +1701,22 @@ async def run_eval(cfg: EvalConfig) -> dict:
 
 async def judge_run(run_dir: Path, cfg: EvalConfig) -> dict:
     """Score the episodes a --no-judge run deferred, without re-driving the browser."""
-    results = load_run(run_dir)
     # episode.json is the record; results.json is a snapshot taken when the run ended and can be
-    # stale about what a verdict is still owed on.
+    # stale about what a verdict is still owed on — or absent entirely if the run was killed, which
+    # is exactly when its episodes most need judging.
     on_disk = {}
     for episode_file in sorted((run_dir / "episodes").glob("*/episode.json")):
         existing = _load_existing_episode(episode_file.parent)
         if existing is not None:
             on_disk[existing.task_id] = existing
-    records = [on_disk.get(episode["task_id"], EpisodeRecord(**episode)) for episode in results["episodes"]]
+    try:
+        results = load_run(run_dir)
+        records = [on_disk.get(episode["task_id"], EpisodeRecord(**episode)) for episode in results["episodes"]]
+    except (FileNotFoundError, TaskSourceUnavailable):
+        logger.warning(f"{run_dir.name}: no results.json — rebuilding from {len(on_disk)} episode(s) on disk")
+        records = list(on_disk.values())
+        results = {"run_id": run_dir.name, "label": run_dir.name, "config": {}, "harness": {},
+                   "task_provenance": {}, "aborted_reason": "run interrupted; summary rebuilt from episodes"}
     owed = [record for record in records if record.judge_deferred]
     logger.info(f"{run_dir.name}: {len(owed)} episode(s) owe a verdict of {len(records)} recorded")
 
