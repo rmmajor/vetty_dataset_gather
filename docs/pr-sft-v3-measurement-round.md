@@ -14,42 +14,78 @@ cost.
 
 ## The headline measurement
 
-ScreenSpot, full 1272-sample test split, **all four arms** scored from one endpoint under one
-harness commit, each in its own coordinate space, with an identical 2048-token budget:
+ScreenSpot, full 1272-sample test split, **all five arms shown the identical native-resolution
+image**, each scored in its own coordinate convention, with an identical 2048-token budget:
 
 | arm | overall | 95% CI | icon (575) | text (697) | parse |
 | --- | --- | --- | --- | --- | --- |
-| base Qwen3.5-9B | 72.2% | [69.7, 74.6] | **73.2%** | 71.4% | 86.2% |
-| cua-sft-v2 | 76.3% | [73.9, 78.6] | **67.5%** | 83.5% | 91.8% |
-| cua-grpo-v3 | 82.7% | [80.5, 84.7] | 75.0% | 89.1% | 98.7% |
+| claude-sonnet-5 | 68.3% | [65.7, 70.8] | 65.9% | 70.3% | 100.0% |
+| base Qwen3.5-9B | 72.2% | [69.7, 74.6] | 73.2% | 71.4% | 86.2% |
+| cua-sft-v2 | 85.4% | [83.3, 87.2] | 77.4% | 92.0% | 98.4% |
+| cua-grpo-v3 | 85.1% | [83.0, 86.9] | 77.2% | 91.5% | 98.3% |
 | **cua-sft-v3** | **91.6%** | **[89.9, 93.0]** | **88.0%** | **94.5%** | 100.0% |
 
 Earlier ScreenSpot rows used `--limit 300`, which head-samples in dataset order, and were spread
 across three harness commits with no judge hash recorded — at n=300 no arm was separable from any
 other.
 
-### SFT-2 did not improve grounding, it traded it
+### The image every arm saw is a harness setting, not a property of its coordinate space
 
-Split by target type, sft-v2 is **worse than the untuned base at icon grounding** — 67.5%
-[63.6, 71.2] against 73.2% [69.4, 76.7], barely-overlapping intervals at n=575 — while gaining
-12 points on text. Its overall lead over base is correspondingly marginal.
+`prepare_image` was a method on `CoordSpace`, and the `viewport_abs` implementation resized the
+input to 1280x720. Declaring a coordinate space therefore silently changed the picture: sft-v2 and
+grpo-v3 were scored on squashed screenshots while base, sft-v3 and the frontier arm saw the source.
+That is not a comparison between models, it is a comparison between inputs.
 
-This is the regression the sft-v3 round set out to fix by moving from `viewport_abs` to
-`normalized_1000` coordinates. It was previously an inference from a 300-sample run against a
-different harness (ScreenSpot 89.0 -> 85.3, icons 80.3 -> 75.4); it is now measured directly.
-sft-v3 fixes it decisively: icons 88.0%, text 94.5%.
+Image preparation is now one harness-wide setting (`SCREENSPOT_IMAGE_SIZE`, default `native`),
+recorded in every result artifact as `prepared_image_size`, and `prepare_image` is deleted from the
+coordinate spaces entirely so the coupling cannot come back. Correcting it moves sft-v2 from 76.3%
+to **85.4%** and grpo-v3 from 82.7% to **85.1%**; the superseded rows carry the reason.
 
-### GRPO-3 improved grounding, which its task metrics did not predict
+### SFT-2 improved grounding on both target types
 
-`cua-grpo-v3` is recorded in the registry as yielding no measurable gain, on the basis of reward
-and task-success curves — its LoRA-B Frobenius norm is 3.1% of sft-v2's, and 752 episodes moved
-reward 1.08 -> 0.89. That reading is incomplete. On grounding it gained **76.3% -> 82.7%** over
-its own parent, recovering most of sft-v2's icon regression (67.5% -> 75.0%) while keeping the
-text gain (83.5% -> 89.1%), at a parse rate of 98.7%.
+The earlier reading — that sft-v2 bought text accuracy by giving up icon accuracy, 67.5% against
+the base's 73.2% — was an artefact of the squashed input. On the source images sft-v2 scores
+**77.4% on icons, above** the base's 73.2%, alongside 92.0% on text: +13 points overall with no
+trade. sft-v3 extends it rather than repairing it (icons 88.0%, text 94.5%).
 
-A run that produced no task-level improvement still measurably sharpened where the model points.
-That is a more useful result for the dropped-RL chapter than "nothing happened", and it is only
-visible because all four arms were finally scored on one instrument.
+### GRPO-3 gained nothing, on grounding as on everything else
+
+A previous revision of this description claimed grounding as the one lane where grpo-v3 measurably
+improved on its parent, 76.3% -> 82.7%. Both arms were squashed at the time. On the source images
+they are **85.1% and 85.4%**, a 0.3-point difference with fully overlapping intervals — what the
+6.4-point lead measured was grpo-v3's greater robustness to the distortion, not its grounding.
+
+`cua-grpo-v3` therefore has no measured advantage on any lane, which is the reading its LoRA-B
+Frobenius norm (3.1% of sft-v2's) and its reward curve (1.08 -> 0.89 over 752 episodes) always
+supported. The dropped-RL chapter keeps its original conclusion.
+
+### The frontier arm is the weakest grounder here, and that is not a bug
+
+`claude-sonnet-5` scores **68.3%**, below the untuned base. Four checks before believing it:
+
+- **Not a coordinate-frame artefact.** Sonnet is on the high-resolution tier (long edge 2576px,
+  4784 visual tokens), which downsizes only 74 of the 1272 images; rescaling answers out of that
+  frame gives 67.8%, marginally worse, and out of the standard 1568px frame 17.1%. One answer in
+  1272 falls outside the image, and the same answers read as `normalized_1000` score 4.4%.
+- **Misses are wrong-element, not imprecise.** The median gap to the target box is 8.7% of the
+  image diagonal; only 13.7% land within 50px.
+- **Paired on the identical split**, sft-v3 hits where sonnet misses 335 times against 39 the other
+  way. Against base it is 260 to 210 (McNemar z=2.31, p≈0.02), and base's 86.2% parse rate flatters
+  sonnet: among samples base actually answered, base scores 83.8% to sonnet's 69.6%.
+- **The weakness is by source, not resolution**: 90.7% windows and 89.5% macos — matching the best
+  local arm — against 59.9% android, 62.4% ios, 42.7% gitlab.
+
+The asymmetry is one of purpose. ScreenSpot measures a model's native output mode for the Qwen-VL
+line, which reports it in its own model cards (Qwen3-VL-8B 94.4%); no Anthropic model appears on a
+ScreenSpot leaderboard, because Claude's computer use is delivered through a dedicated tool
+interface rather than by emitting coordinates as text, and Anthropic's vision documentation states
+plainly that its coordinate outputs are approximate. **This row is evidence that grounding is the
+right thing to offload, not that the frontier model is weak.** The frontier comparison that carries
+the economic claim is the QA bench, where Sonnet runs inside the full agent with native tooling.
+
+Asterisk carried on every row: each arm is measured under its own coordinate convention, because
+requiring one convention scores translation into an unfamiliar output space rather than grounding.
+The 0-1000 prompt cost sonnet 32 points of measured accuracy for exactly that reason.
 
 ## The QA bench, every arm on one harness
 
@@ -76,9 +112,11 @@ At n=33 with intervals near +/-15 points, neither pairing separates the two chec
 lane does establish is that every fine-tuned arm detects defects the base never does: base 0 of 33,
 on both harnesses.
 
-grpo-v3's 8 of 33 is the highest of any local arm, and it is the second lane where the run recorded
-as yielding no measurable gain measurably gained — the first being grounding. That is a claim about
-grpo-v3 versus its own parent under one harness, not a ranking against sft-v3.
+grpo-v3's 8 of 33 is the highest of any local arm, and defect detection is now the ONLY lane where
+the run recorded as yielding no measurable gain shows one. An earlier revision counted grounding as
+a second; that reading did not survive re-measurement on unsquashed images. This is a claim about
+grpo-v3 versus its own parent under one harness, not a ranking against sft-v3, and at n=33 the
+interval spans roughly +/-15 points.
 
 ## Online-Mind2Web, all four arms on the full 300
 
@@ -133,19 +171,23 @@ which shared a harness with anything they were compared against.
 
 | | ScreenSpot | QA bench DDR | Online-Mind2Web |
 | --- | --- | --- | --- |
+| claude-sonnet-5 | 68.3% | **66.7%** | cited, not run |
 | base | 72.2% | 0.0% | 3.18% |
-| cua-sft-v2 | 76.3% | 9.1% | **16.44%** |
+| cua-sft-v2 | 85.4% | 9.1% | **16.44%** |
 | cua-sft-v3 | **91.6%** | 21.2% | 11.11% |
-| cua-grpo-v3 | 82.7% | **24.2%** | 13.38% |
+| cua-grpo-v3 | 85.1% | **24.2%** | 13.38% |
 
-Each round bought what it targeted and did not generalise. The sft3 corpus round aimed at grounding
-and self-verification: grounding improved decisively (76.3% -> 91.6%, icons 67.5% -> 88.0%) and
-defect detection more than doubled, while browsing did not improve and its point estimate moved the
-wrong way. The GRPO run, recorded as yielding no measurable gain from its reward curves, gained on
-both grounding and defect detection.
+Each round bought what it targeted and did not generalise. SFT on the QA corpus is what buys
+grounding: 72.2% -> 85.4% at sft-v2 and -> 91.6% at sft-v3, icons 73.2% -> 77.4% -> 88.0%. The sft3
+round additionally aimed at self-verification and more than doubled defect detection, while browsing
+did not improve and its point estimate moved the wrong way. The GRPO run gained on defect detection
+alone; on grounding it lands within noise of its own parent.
 
 The one difference that is unambiguous everywhere is base versus fine-tuned. Between checkpoints,
-only the grounding lane separates them; on browsing at n≈145 nothing does.
+only the grounding lane separates them, and only sft-v3 from the other two; on browsing at n≈145
+nothing does. Against the frontier arm, every fine-tuned checkpoint grounds better and every one
+detects far fewer defects — which is the shape the offloading argument predicts, and the reason the
+economic claim rests on the QA bench rather than on grounding alone.
 
 ## What was wrong, and what it cost
 

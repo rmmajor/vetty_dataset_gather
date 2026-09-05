@@ -73,6 +73,18 @@ DEFAULT_PARSE_PATTERNS = [
 ]
 
 
+# What every arm is shown, independent of how its answer is read back. Set to a "WxH" to resize
+# (matching the 1280x720 the QA bench and episode eval drive), or "native" to send the source image.
+PREPARED_IMAGE_SIZE = os.environ.get("SCREENSPOT_IMAGE_SIZE", "native")
+
+
+def prepare_sample_image(image):
+    if image is None or PREPARED_IMAGE_SIZE == "native":
+        return image
+    width, height = (int(v) for v in PREPARED_IMAGE_SIZE.lower().split("x"))
+    return image.resize((width, height))
+
+
 @dataclass
 class Sample:
     instruction: str
@@ -137,15 +149,13 @@ class Record:
 
 # ----------------------------------------------------------------------------
 # Coordinate-space registry: how model output relates to original-image pixels.
-# Each strategy resizes the image for inference and maps points both directions.
+# A space maps points both directions and NEVER touches the image: when it resized, declaring
+# viewport_abs silently squashed the input, so arms were scored on different pictures.
 # Add a new convention by registering another factory, not by editing callers.
 # ----------------------------------------------------------------------------
 
 
 class CoordSpace:
-    def prepare_image(self, image, orig_w, orig_h):
-        raise NotImplementedError
-
     def to_original(self, x, y, orig_w, orig_h):
         raise NotImplementedError
 
@@ -158,11 +168,6 @@ class ViewportAbsCoordSpace(CoordSpace):
         self.viewport_w = viewport_w
         self.viewport_h = viewport_h
 
-    def prepare_image(self, image, orig_w, orig_h):
-        if image is None:
-            return None
-        return image.resize((self.viewport_w, self.viewport_h))
-
     def to_original(self, x, y, orig_w, orig_h):
         return (x * orig_w / self.viewport_w, y * orig_h / self.viewport_h)
 
@@ -171,9 +176,6 @@ class ViewportAbsCoordSpace(CoordSpace):
 
 
 class Normalized1000CoordSpace(CoordSpace):
-    def prepare_image(self, image, orig_w, orig_h):
-        return image
-
     def to_original(self, x, y, orig_w, orig_h):
         return (x / 1000.0 * orig_w, y / 1000.0 * orig_h)
 
@@ -182,9 +184,6 @@ class Normalized1000CoordSpace(CoordSpace):
 
 
 class NativeAbsCoordSpace(CoordSpace):
-    def prepare_image(self, image, orig_w, orig_h):
-        return image
-
     def to_original(self, x, y, orig_w, orig_h):
         return (x, y)
 
@@ -356,7 +355,7 @@ class SwiftPredictor(Predictor):
 
             with open(infer_path, "w") as handle:
                 for index, sample in enumerate(samples):
-                    prepared = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
+                    prepared = prepare_sample_image(sample.image)
                     image_path = tmp_dir / f"image_{index:06d}.png"
                     prepared.save(image_path)
                     messages = build_messages(sample.instruction, str(image_path))
@@ -425,7 +424,7 @@ class OpenAIPredictor(Predictor):
         return base64.b64encode(buf.getvalue()).decode()
 
     def _one(self, sample, coord_space):
-        image = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
+        image = prepare_sample_image(sample.image)
         messages = build_openai_messages(sample.instruction, self._encode(image))
         body = json.dumps({"model": self.model, "messages": messages,
                            "temperature": self.cfg.temperature, "max_tokens": self.cfg.max_tokens}).encode()
@@ -445,6 +444,14 @@ class OpenAIPredictor(Predictor):
     def predict_batch(self, samples, cfg, coord_space):
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
             return list(pool.map(lambda s: self._one(s, coord_space), samples))
+
+
+CLAUDE_GROUNDING_SYSTEM_PROMPT = (
+    "You are a GUI grounding model. Given a screenshot and a described element, reply with the "
+    "pixel coordinates of that element's centre in the image exactly as shown, as a single line "
+    "`click(x, y)`. x and y are absolute pixels of this image, with (0, 0) at the top left. "
+    "Reply with the click line only, no reasoning."
+)
 
 
 class ClaudePredictor(Predictor):
@@ -473,7 +480,7 @@ class ClaudePredictor(Predictor):
         from repo_pipeline.agent_runner import run_agent
         from repo_pipeline.llm_config import MODEL_FOR_REASONING
 
-        image = coord_space.prepare_image(sample.image, sample.orig_w, sample.orig_h)
+        image = prepare_sample_image(sample.image)
         content = build_claude_content(sample.instruction, self._encode(image))
 
         async def stream():
@@ -482,7 +489,7 @@ class ClaudePredictor(Predictor):
 
         options = ClaudeAgentOptions(
             model=self.model or MODEL_FOR_REASONING,
-            system_prompt=GROUNDING_SYSTEM_PROMPT,
+            system_prompt=CLAUDE_GROUNDING_SYSTEM_PROMPT,
             max_turns=1,
             max_budget_usd=self.budget_usd,
             permission_mode="bypassPermissions",
@@ -616,6 +623,7 @@ def write_results(path, spec, cfg, summary, records):
         "bbox_format": cfg.bbox_format,
         "bbox_normalized": cfg.bbox_normalized,
         "viewport": [cfg.viewport_w, cfg.viewport_h],
+        "prepared_image_size": PREPARED_IMAGE_SIZE,
         "summary": summary,
         "records": [
             {
