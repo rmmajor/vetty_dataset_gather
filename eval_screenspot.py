@@ -129,6 +129,10 @@ class Record:
     mapped_point: Optional[tuple]     # mapped into original-image pixels
     bbox_xyxy: tuple
     hit: bool
+    # Without the source dimensions a saved run cannot be re-scored in another coordinate space,
+    # which is the only way to tell a grounding failure from a convention mismatch.
+    orig_w: int = 0
+    orig_h: int = 0
 
 
 # ----------------------------------------------------------------------------
@@ -551,6 +555,8 @@ def evaluate(samples, predictor, cfg, coord_space):
                 mapped_point=mapped,
                 bbox_xyxy=sample.bbox_xyxy,
                 hit=hit,
+                orig_w=sample.orig_w,
+                orig_h=sample.orig_h,
             )
         )
     return records
@@ -620,6 +626,8 @@ def write_results(path, spec, cfg, summary, records):
                 "mapped_point": r.mapped_point,
                 "bbox_xyxy": r.bbox_xyxy,
                 "hit": r.hit,
+                "orig_w": r.orig_w,
+                "orig_h": r.orig_h,
                 "raw": r.raw,
             }
             for r in records
