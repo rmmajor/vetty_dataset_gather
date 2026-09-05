@@ -27,5 +27,6 @@ repo_pipeline/public_sites_human.json
 models/
 # Symlinks to the canonical corpus / credentials in a worktree (the dir patterns above do not match symlinks)
 /trajectories
+/models
 /credentials
 /repo_pipeline/public_sites_human.json

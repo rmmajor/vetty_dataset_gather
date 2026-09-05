@@ -14,8 +14,10 @@ max_length: 4096
 # ms-swift refuses packing without a flash-attention impl, which this image does not ship; sft-v1 trained unpacked too.
 packing: false
 eval_strategy: epoch
-save_strategy: epoch
-save_total_limit: 2
+# Step saves, not epoch: the remote lane only downloads output at the end, so a crash must cost at most one save interval.
+save_strategy: steps
+save_steps: 700
+save_total_limit: 4
 warmup_ratio: 0.05
 freeze_vit: true
 max_pixels: 1003520

@@ -100,17 +100,20 @@ class Server:
             "--limit-mm-per-prompt", LIMIT_MM,
         ]
         if ADAPTER_NAME:
-            adapter_path = f"{ADAPTERS_MOUNT}/{ADAPTER_NAME}"
-            if not os.path.isdir(adapter_path):
-                raise RuntimeError(
-                    f"adapter {ADAPTER_NAME!r} not found at {adapter_path} on the cua-outputs volume; "
-                    f"run `modal volume ls cua-outputs` to see what is there"
-                )
-            cmd += [
-                "--enable-lora",
-                "--lora-modules", f"{SERVED_NAME}-lora={adapter_path}",
-                "--max-lora-rank", str(MAX_LORA_RANK),
-            ]
+            # "a=path,b=path" serves several arms from one endpoint; a bare name keeps the canonical served name.
+            entries = [part.strip() for part in ADAPTER_NAME.split(",") if part.strip()]
+            named = (dict(entry.split("=", 1) for entry in entries) if any("=" in e for e in entries)
+                     else {f"{SERVED_NAME}-lora": entries[0]})
+            modules = []
+            for served, volume_path in named.items():
+                adapter_path = f"{ADAPTERS_MOUNT}/{volume_path}"
+                if not os.path.isdir(adapter_path):
+                    raise RuntimeError(
+                        f"adapter {volume_path!r} not found at {adapter_path} on the cua-outputs volume; "
+                        f"run `modal volume ls cua-outputs` to see what is there"
+                    )
+                modules.append(f"{served}={adapter_path}")
+            cmd += ["--enable-lora", "--lora-modules", *modules, "--max-lora-rank", str(MAX_LORA_RANK)]
         print("launching:", " ".join(cmd), flush=True)
         self.process = subprocess.Popen(cmd)
 
