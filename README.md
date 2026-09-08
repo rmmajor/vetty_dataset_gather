@@ -1,38 +1,46 @@
-# GPT-5.4 → Qwen 3.5-9B Computer Use Distillation Pipeline
+# Computer-use distillation pipeline: web-browsing trajectories → Qwen 3.5-9B
 
-Distill GPT-5.4's web browsing capabilities into Qwen 3.5-9B via trajectory-based
-supervised fine-tuning (SFT). Based on the "Distilling GPT-5.4 Computer Use into
-Qwen 3.5-9B" blueprint.
+Gather, train and evaluate a small computer-use (web browsing) model. Frontier teachers act in a
+real browser, every step is recorded as a screenshot plus normalized actions, and the trajectories
+are distilled into Qwen 3.5-9B by step-level supervised fine-tuning (SFT). A GRPO lane exists but
+was dropped after three runs (`docs/decisions/grpo-v3-results.md`).
 
-Two data sources feed the same training pipeline:
+Three trajectory **producers** write one trajectory format, and one converter/trainer
+(`train_qwen.py`) consumes all of them:
 
-1. **GPT-5.4 CUA distillation** — record trajectories by having GPT-5.4 perform Mind2Web tasks in a browser ($0.55/trajectory)
-2. **QA repo pipeline** — find existing Playwright test repos on GitHub, instrument them to capture screenshots + coordinates, generate thinking blocks with Claude ($0.05–0.15/trajectory)
+1. **Path A — GPT-5.4 CUA distillation** (`record_trajectories_from_gpt_api.py`): GPT-5.4's `computer` tool works through Mind2Web tasks in a Playwright browser (~$0.55/trajectory). Contributes a handful of trainable trajectories today.
+2. **Path B — QA repo funnel** (`repo_pipeline/orchestrator.py`, stages 1–7): finds bootable web-app repos on GitHub, boots them in Docker sandboxes, and has a Claude teacher pursue proposed user tasks through a coordinate-recording browser driver. Only a fraction of a percent of discovered repos yield trajectories, so this is a minority of the corpus.
+3. **Public-site capture lanes** (`repo_pipeline/public_capture.py` and siblings): the same teacher, driver and verifier pointed at curated registries of real public sites — login-free, search goals, and login-gated behind burner accounts. The bulk of the trainable corpus.
 
-Both produce identical trajectory formats, so `train_qwen.py convert` works on either.
+The data philosophy is real third-party sites over self-hosted seeded clones
+(`docs/decisions/real-sites-vs-controlled-backends.md`). The trajectory schema in
+`repo_pipeline/schemas.py` is the contract between producers, converter, evals and RL.
 
 ## Prerequisites
 
-- Python 3.10+
-- For GPT-5.4 path: OpenAI API key with CUA access
-- For repo pipeline: GitHub token, Anthropic API key (Claude Agent SDK), Docker
-- For training: GPU with 16-24GB+ VRAM, ms-swift installed
+- Python 3.10+ (the code uses `match` statements)
+- For Path A: OpenAI API key with computer-use access
+- For Path B and every Claude-backed pass: a logged-in `claude` CLI (the Claude Agent SDK authenticates through its device OAuth — no `ANTHROPIC_API_KEY`), a GitHub token, Docker
+- For training: an 80 GB-class GPU (the 9B LoRA with two images per sample OOMs on 48 GB; `remote_train.yaml` floors rentals at 70 GB), ms-swift 4.x
 
 ## Setup
 
-    pip install -r requirements.txt
+    pip install -r requirements.txt            # or: make setup
     playwright install chromium
     export OPENAI_API_KEY=your_key_here
 
-For the repo pipeline:
+For Path B and the public-site lanes:
 
-    pip install -r requirements-pipeline.txt
-    export GITHUB_TOKEN=your_token
-    export ANTHROPIC_API_KEY=your_key
+    pip install -r requirements-pipeline.txt   # or: make setup-pipeline
+    export GITHUB_TOKEN=your_token             # stage 1 + the stage-2 gh probe
+    make build-sandbox                         # Docker sandbox image (~4.4 GB: Playwright base + pre-baked driver)
 
-For training (on GPU machine):
+Log the `claude` CLI in once; `sdk_runner.CLAUDE_CLI_PATH` pins the SDK to that binary (override with
+`CLAUDE_CLI_PATH`). The `ANTHROPIC_API_KEY` line in `crontab.example` is legacy.
 
-    pip install ms-swift[llm]
+For training (on a GPU machine):
+
+    pip install "ms-swift[llm]"                # or: make install-training
 
 ## Path A: GPT-5.4 CUA Distillation
 
@@ -48,34 +56,54 @@ For training (on GPU machine):
 Options:
 - `--max-steps 15` — max actions per task (default: 15)
 - `--viewport 1280x720` — browser viewport size (default: 1280x720)
-- `--resume` — skip tasks that already have a trajectory directory
+- `--resume` — skip tasks that already have a trajectory directory (`make record` passes it)
 
 ## Path B: QA Repo Pipeline
 
-Finds Playwright test repos on GitHub, instruments them to capture screenshots and pixel coordinates, runs the tests in Docker sandboxes, and generates thinking blocks with Claude. The output lands in `trajectories/` in the same format as Path A.
+Finds bootable web-app repos on GitHub, boots each one inside a Docker sandbox, and has a Claude
+teacher (`agent_capture.py`) pursue user tasks proposed by `task_proposer.py` through an in-container
+browser driver that records a screenshot and bbox-centre coordinates per action. A post-run verifier
+judges the final and sampled mid screenshots against the goal; only verified trajectories get
+`success: true`. Output lands in `trajectories/repo_<owner>_<repo>/task_*/` in the same format as every
+other lane. The original instrument-the-test-suite mode still exists as `--capture-mode replay`
+(env `PIPELINE_CAPTURE_MODE`), where `think_generator.py` generates thoughts from test source and
+screenshots; it is legacy and its trajectories train only with `--include-replay`.
 
 ### Architecture
 
-A 6-stage quality funnel — cast the widest net, then reject aggressively:
+A 7-stage quality funnel — cast the widest net, then reject aggressively:
 
-| Stage | What | LLM | Cost/repo |
-|-------|------|-----|-----------|
-| 1. Discover | GitHub API search (50+ queries) | None | $0 |
-| 2. Filter | Stars, recency, size, language | None | $0 |
-| 3. Shallow Score | Claude Sonnet scores repo metadata | Sonnet | ~$0.03 |
-| 4. Deep Analyze | Clone + statically inspect tests in Docker (no install) | Sonnet | ~$0.15 |
-| 5. Trial Run | POC instrumented test in Docker | Sonnet | ~$0.30 |
-| 6. Generate | Full trajectory generation in Docker | Sonnet | ~$0.60 |
+| Stage | What | LLM | Budget estimate/repo |
+|-------|------|-----|---------------------:|
+| 1. Discover | GitHub API search (50+ queries, down to `--star-floor`) | None | $0 |
+| 2. Filter | Stars, recency, size, fork/duplicate dedup, then a no-LLM bootable-app gate (`bootable_gate.py`) | None | $0 |
+| 3. Shallow score | Claude scores repo metadata on 7 dimensions | Sonnet | ~$0.15 |
+| 4. Deep analyze | Static analysis in a sandbox; bootability dominates, toys and boilerplates are vetoed | Sonnet | ~$0.20 |
+| 5. Boot gate | Clone, install, daemonize the app, probe it through the driver; reject `NO_BOOT` / trivial UIs | None | ~$0.02 |
+| 6. Capture | Propose tasks, run the teacher per task, verify, dedup, cap per repo → `captured` | Sonnet | ~$6 agent / ~$0.20 replay |
+| 7. Finalize | Polish raw teacher thoughts into student voice (agent) or generate them (replay) → `completed` | Sonnet | ~$0.50 |
 
-Stages 1–2 run on-demand. Stages 3–6 run as an overnight cron job with a configurable budget cap. Results are sent via Telegram in the morning.
+The per-repo figures are the `--budget` pacing estimates in `orchestrator.STAGE_COST_ESTIMATES`, not
+metered spend; the `agent_calls` table in the registry is the metered record.
 
-All repo code runs inside ephemeral Docker containers (stages 4–6). No repo code touches the host. Dependency install happens at stages 5–6 (each in its own fresh container, in code via `setup_repo_instrumentation`), not at stage 4 — stage 4 is a cheap static triage that only reads files.
+Stages 1–2 run on demand. Stages 3–7 run as an overnight job with a budget cap; results go to Telegram.
+Capture (6) and finalize (7) are split so a slow or flaky LLM pass can never block or fail a capture.
+Stage 7 runs last in the drain loop and is starved by the Claude usage limit, so run `make pipeline-think`
+on a fresh usage window to unstick `captured` repos.
+
+All repo code runs inside ephemeral, capability-dropped Docker containers (`sandbox.py`; stages 4–6
+hold one each). No repo code touches the host. Stage 4 is static triage that only reads files; the
+install and boot happen in stages 5 and 6, each in its own fresh container. Container memory, pids,
+CPUs and tmpfs are capped by the `SANDBOX_*` env knobs, and `safe_parallel_sandboxes` clamps
+parallelism so `workers × (mem + tmpfs)` stays under the Docker VM memory — exceeding it turns into a
+silent fast-then-one-per-hour collapse, not an error.
 
 ### Setup
 
     make setup-pipeline       # install Python deps
-    make build-sandbox        # build Docker sandbox image (~2GB, mostly Chromium)
-    make test-sandbox         # verify sandbox works
+    make build-sandbox        # build Docker sandbox image
+    make test-sandbox         # verify container lifecycle
+    make test-driver          # scripted no-LLM session asserting the trajectory contract
 
 Optional — Telegram notifications:
 
@@ -88,14 +116,20 @@ Optional — Telegram notifications:
     # Stage 1: Discover repos on GitHub
     make pipeline-discover
 
-    # Stage 2: Filter by metadata
+    # Stage 2: Filter by metadata + bootable gate
     make pipeline-filter
 
     # Stage 3: Score with Claude (costs money)
     make pipeline-score PIPELINE_LIMIT=50 PIPELINE_BUDGET=5
 
-    # Stages 3-6: Full overnight run
+    # Stages 3-7: one overnight pass + Telegram report
     make pipeline-overnight PIPELINE_BUDGET=30
+
+    # Loop stages 3-7 until 75% of the Claude usage limit
+    make pipeline-until-limit PIPELINE_LIMIT_PCT=75
+
+    # Stage 7 only (run first on a fresh usage window)
+    make pipeline-think
 
     # Check progress
     make pipeline-status
@@ -104,21 +138,29 @@ Or use the CLI directly:
 
     python -m repo_pipeline.orchestrator --stage 1
     python -m repo_pipeline.orchestrator --stage 2
-    python -m repo_pipeline.orchestrator --stage 3-6 --limit 10 --budget 5
+    python -m repo_pipeline.orchestrator --stage 3-7 --limit 10 --budget 5 --workers 5
+    python -m repo_pipeline.orchestrator --stage 6 --capture-mode replay
     python -m repo_pipeline.orchestrator --overnight --budget 30 --workers 5
     python -m repo_pipeline.orchestrator --until-limit 75 --budget 30
+    python -m repo_pipeline.orchestrator --requeue-infra --dry-run
     python -m repo_pipeline.orchestrator --status
 
 CLI options:
 - `--stage N` or `--stage N-M` — run specific stage(s)
-- `--overnight` — run stages 3–6 once, send Telegram report when done
-- `--until-limit [PCT]` — loop stages 3–6 until Claude subscription usage hits PCT% of the limit (bare flag = 100). Keeps draining the funnel across passes until the threshold, the `--budget`, or no pending repos remain — whichever comes first. Reads the SDK's `RateLimitEvent.utilization`; if no usage events are observed (possible under headless OAuth), it degrades to "until a hard 429 / funnel drained".
+- `--capture-mode agent|replay` — how stages 4–6 behave (default `agent`)
+- `--overnight` — run stages 3–7 once, send Telegram report when done
+- `--until-limit [PCT]` — loop stages 3–7 until Claude subscription usage hits PCT% of the limit (bare flag = 100). Keeps draining the funnel across passes until the threshold, the `--budget`, or no pending repos remain — whichever comes first. Reads the SDK's `RateLimitEvent.utilization`; if no usage events are observed (possible under headless OAuth), it degrades to "until a hard 429 / funnel drained".
+- `--requeue-infra` / `--requeue-stale` / `--requeue-stage N --min-score X` / `--prune-unfit` — re-queue or re-judge registry rows, all honoring `--dry-run`
 - `--status` — print registry stats
 - `--limit N` — max repos per stage
-- `--workers N` — parallel workers for LLM stages (default: 5)
-- `--budget N` — max USD for the run (default: 50)
+- `--workers N` — parallel workers for LLM stages (default: 5; the orchestrator caps container-holding stages lower)
+- `--budget N` — soft USD cap for the run based on per-repo estimates (default: 50)
+- `--star-floor N` — stage 1 scrapes down to this star count (default: 5)
 
-Rate-limit safety (all modes): a hard 429 from Claude stops the run cleanly and leaves the affected repo in its input status (it is **not** rejected), so the next run resumes it.
+Rate-limit safety (all modes): a hard 429 from Claude stops the run cleanly and leaves the affected
+repo in its input status (it is **not** rejected), so the next run resumes it. A "hung" LLM stage is
+usually a saturated 5-hour usage window (every CLI call waits at 0% CPU — time `claude -p pong` before
+debugging code) or Docker VM memory exhaustion.
 
 ### Cron Setup
 
@@ -126,80 +168,172 @@ See `crontab.example`. Example:
 
     0 1 * * * cd /path/to/dataset_gather && python -m repo_pipeline.orchestrator --overnight --budget 30 >> pipeline_data/run_logs/$(date +\%Y\%m\%d).log 2>&1
 
+Prefer a harness-tracked background run under `caffeinate` over `nohup` for anything long.
+
 ### Registry
 
-All repo state lives in `pipeline_data/registry.db` (SQLite). The registry tracks each repo through the pipeline:
+All repo state lives in `pipeline_data/registry.db` (SQLite, WAL). `schemas.py` maps each stage to the
+status it consumes, promotes to and rejects to (`STAGE_TO_INPUT_STATUS` / `STAGE_TO_PASSED_STATUS` /
+`STAGE_TO_REJECTED_STATUS`):
 
-    discovered → filtered → scored → analyzed → validated → completed
+    discovered → filtered → scored → analyzed → validated → captured → completed
+                    ↓          ↓         ↓          ↓           ↓
+              rejected_filter / _score / _analyze / _trial / _generate
+                                                      (stage 7: captured → completed, never rejects)
 
-Each stage is idempotent — running it twice on the same repo is a no-op. New search queries add new repos without touching existing ones.
+Each stage is idempotent — running it twice on the same repo is a no-op. New search queries add new
+repos without touching existing ones. Per-repo work returns normally (passed), raises `QualityReject`
+(terminal, never retried) or any other exception (infra; retried `PIPELINE_MAX_RETRIES` times, then
+rejected with an infra `FailureCategory` so it stays re-queueable).
 
-Re-evaluate rejected repos:
+Re-evaluate rejected repos with the `--requeue-*` flags above, or from Python:
 
 ```python
 from repo_pipeline.registry import RepoRegistry
 registry = RepoRegistry()
-registry.reset_rejected(stage=5)  # re-queue repos rejected at trial stage
+registry.reset_rejected(stage=5)  # re-queue repos rejected at the boot gate
 ```
 
 ### File Structure
 
     repo_pipeline/
-    ├── orchestrator.py              # Main entry point
+    ├── orchestrator.py              # Main entry point (stages, drain loop, requeue flags)
     ├── registry.py                  # SQLite repo registry
-    ├── schemas.py                   # Pydantic models
-    ├── sandbox.py                   # Docker container management
-    ├── stage1_discover.py           # GitHub API search
-    ├── stage2_filter.py             # Metadata filtering
-    ├── stage3_shallow_score.py      # Claude Sonnet scoring
-    ├── stage4_deep_analyze.py       # Deep inspection in Docker
-    ├── stage5_trial_run.py          # POC instrumented test in Docker
-    ├── stage6_generate.py           # Full trajectory generation
-    ├── think_generator.py           # Claude Sonnet thinking blocks
+    ├── schemas.py                   # Pydantic models + stage/status maps + Trajectory contract
+    ├── sandbox.py / remote_sandbox.py   # Docker container / ssh sandbox (same driver either way)
+    ├── stage1_discover.py … stage7_think.py
+    ├── bootable_gate.py             # Stage-2 no-LLM gate
+    ├── agent_capture.py             # Teacher loop + verify_trajectory (shared by every lane and eval)
+    ├── task_proposer.py             # Proposes user tasks for a booted app / site
+    ├── driver_session.py            # Host wrapper for the in-container browser driver
+    ├── sdk_runner.py / agent_runner.py  # The two Claude SDK chokepoints (timeout, ledger)
+    ├── llm_config.py                # Model per purpose; no model strings elsewhere
+    ├── public_capture.py, capture_logingated.py, provision_human.py, probe_*.py   # public-site lanes
+    ├── public_sites*.json           # Site registries (see below)
+    ├── app_secrets.py, persona.py, mailtm.py, mail_service.py, operator_pii.py   # burner identities + inboxes
+    ├── safety_watchdog.py           # Guarded-mode ApprovalPolicy
+    ├── corpus_audit.py, polish_pass.py, outcome_relabel.py, relabel_recoverable.py,
+    │   wall_supervision.py, instruction_style_pass.py   # corpus passes
+    ├── student_eval.py / eval_task_sources.py / site_blocks.py   # Online-Mind2Web + held-out student eval
+    ├── think_generator.py           # Replay-mode thought generation
     ├── notifier.py                  # Telegram reports
+    ├── dashboard/                   # Read-only Streamlit corpus explorer (make dashboard)
     └── instrumentation/
-        ├── capture.py               # Shared capture logic
-        ├── pw_python_conftest.py    # Python Playwright instrumentation
-        └── pw_ts_fixture.ts         # TS/JS Playwright instrumentation
+        ├── browser_driver.js        # Live agent-mode recorder (/observe, /act, /screenshot)
+        ├── pw_python_conftest.py    # Replay: pytest-playwright StepRecorder
+        ├── pw_ts_fixture.ts         # Replay: @playwright/test StepRecorder
+        └── selenium_python_conftest.py   # Replay: Selenium StepRecorder
     docker/
-    ├── Dockerfile.sandbox           # Isolated execution environment
+    ├── Dockerfile.sandbox           # Playwright base image + driver at /opt/driver
+    ├── Dockerfile.sandbox-selenium  # amd64 Selenium image (replay only)
     └── docker-compose.sandbox.yml
+    rl/, rl_train.py, rl_config*.yaml   # GRPO harness (frozen; see docs/decisions/grpo-v3-results.md)
+    remote_train/                    # Vast.ai lane (train / eval / grpo / serve)
+    modal_train.py, modal_serve.py, modal_merge.py, modal_grpo.py   # Modal lane
+    experiments/                     # Registry CSVs + README block renderer
+    eval_archive/                    # Committed raw eval artefacts
+
+## Public-site capture lanes
+
+The bulk of the corpus. Every lane reuses `agent_capture.run_teacher_task` + `verify_trajectory` and
+writes `trajectories/site_<name>/task_*/` with no registry row, so stage 7 never visits them —
+`make polish-pass` is their finalize. Capture attempts are recorded per task, so re-runs resume.
+
+    make capture-public [PUBLIC_SITES=a,b] [PUBLIC_MAX_TASKS=N]   # public_sites.json, login-free
+    make capture-search [SITES=a,b]                               # public_sites_search.json, search goals
+    make capture-qa-verify [SITES=a,b]                            # public_sites_qa_verify.json, act → save → re-check
+    python -m repo_pipeline.capture_logingated [--sites a,b] [--parallel K]   # self-registers a mail.tm burner
+    make provision-human SITE=<name>                              # headed host browser, a human clears the wall once
+    make capture-human [SITES=a,b]                                # replay saved sessions from public_sites_human.json
+    python -m repo_pipeline.probe_capturable [--dry-run]          # HTTP WAF pre-filter → needs_human
+    python -m repo_pipeline.probe_sandbox <config.json> [--mark]  # render-probe through the sandbox browser
+
+Site registries share one schema (`name`, `start_url`, `tasks[{id, instruction, difficulty,
+expected_actions, action_kinds, auth_required}]`, optional `provisioning`, `task_style`,
+`skip_capture`): `public_sites.json` (login-free; also the `held_out` eval pool),
+`public_sites_actions_loginfree.json` / `_actions.json` / `_actions_indie.json` / `_actions_frontier.json`
+(action UIs), `public_sites_actions_logingated.json` (~320 login-gated SaaS sites),
+`public_sites_search.json`, `public_sites_qa_verify.json`, `public_sites_guarded.json` (confirm/handoff
+tasks judged by `safety_watchdog.ApprovalPolicy`), `public_sites_saucedemo.json` (login smoke; leaks into
+both bench and corpus), and the gitignored `public_sites_human.json`.
+
+Login-gated capture never uses the operator's real accounts: a disposable identity (`persona.py`), a
+readable throwaway inbox (`mailtm.py` for real sites, `mail_service.py`'s GreenMail + Roundcube stack for
+sandboxed apps), an isolated browser context and a fail-closed registry under gitignored `credentials/`
+(`app_secrets.py`). Credentials only ever appear in trajectories as `<secret:...>` placeholders.
+
+### Corpus passes
+
+Dry-run by default, `APPLY=1` to write, all resumable:
+
+    make audit-corpus          # mechanical gate over trainable trajectories, exit 1 on defects
+    make polish-pass           # stage-7 thought polish for teacher_raw dirs outside the registry
+    make outcome-relabel       # every thought opens with the judged outcome of the previous action
+    make relabel-recoverable   # audited hindsight relabel, fresh verifier verdict gates every write
+    make wall-demos            # trim blocked runs into terminal handoff/done wall supervision
+    make instruction-style     # rewrite procedure-flavored instructions into goals
+    make dashboard             # read-only Streamlit corpus explorer, localhost:8501
 
 ## Converting and Training
 
-Both paths produce trajectories in the same format. Convert and train:
+Every lane produces the same trajectory format. Convert and train:
 
-    python train_qwen.py convert --input trajectories/ --output training_data/
+    python train_qwen.py convert --input trajectories/ --output training_data/ \
+        --exclude-waste-steps --meandering-mode subsample     # what `make convert` runs
     python train_qwen.py train --config config.yaml --dataset training_data/sft_dataset.jsonl
+
+`convert` emits **one SFT example per step** in the `sft3` observation format (`PROMPT_FORMAT_VERSION`):
+a 640x360 thumbnail of the previous screen plus the current 1280x720 screenshot, the instruction, and a
+20-entry text history with harness-computed effect annotations → `<think>` + action lines. Coordinates
+are emitted in `normalized_1000` (the base model's native convention); `trajectory.json` stays in
+pixels. A grounding slice (click steps whose recorded target has role, name and bbox) is added up to
+`--grounding-share`. Trainability is one shared function (`corpus_audit.trainability`): agent
+trajectories need the verifier's `success: true`, `metadata.excluded_reason` always skips. Every convert
+prints a corpus health report and enforces the thresholds in `corpus_health.json`; a violation refuses
+the dataset.
 
 Options for convert:
 - `--val-split 0.1` — fraction of data for validation (default: 0.1)
+- `--exclude-waste-steps` — drop flagged retry/backtrack clicks as targets (kept in history)
+- `--meandering-mode keep|subsample|exclude` — verifier-graded meandering trajectories (default `keep`; train lanes use `subsample`, tuned by `MEANDER_*` env knobs)
+- `--include-replay` — also train on legacy test-replay trajectories
+- `--grounding-share 0.25` / `--no-grounding` — ceiling on grounding examples as a share of agent step examples
+- `--health-config corpus_health.json` / `--skip-health-gate` — the gate, and the experiments-only bypass
 
-Options for train:
-- `--epochs 3` — override number of epochs
-- `--lr 5e-5` — override learning rate
-- `--batch-size 1` — override batch size
+Options for train (CLI overrides win over the config):
+- `--epochs N`, `--lr X`, `--batch-size N`
 
 Or use Make:
 
     make convert
-    make train
+    make train                 # CONFIG=config_sft_v2_conservative.yaml picks a variant
+
+GPU lanes, neither of which forks the training logic:
+
+    modal run modal_serve.py::warm && modal run modal_train.py --run-name sft-v3 --config config.yaml   # Modal A100-80GB
+    make remote-train          # Vast.ai (needs VAST_API_KEY), ALWAYS destroys the instance
+
+Serving a fine-tuned adapter needs `--response_prefix ''` (ms-swift's default prefills an empty
+`<think>` block so no action line is ever emitted) and the base passed explicitly, because
+`adapter_config.json` records a stale volume path. A GRPO adapter is trained over the MERGED SFT weights
+and must be served on those (`modal_merge.py`, `CUA_SERVE_MODEL`), never on the raw base.
 
 ## Experiment registry
 
 Every training run and every measured number lives in `experiments/models.csv` (what was
-trained) and `experiments/results.csv` (what was measured). One row per
-model × eval × metric × repeat, so adding an eval or a dataset version never reshapes the table.
+trained), `experiments/results.csv` (what was measured) and `experiments/sources.csv` (figures cited
+from other people's work). One row per model × eval × metric × repeat, so adding an eval or a dataset
+version never reshapes the table.
 
 The block below is generated. Edit the CSVs, then:
 
-    python experiments/render_registry.py            # re-render this README block
-    python experiments/render_registry.py --fill-ci  # fill Wilson intervals for new rows
-    python experiments/render_registry.py --check    # CI guard: fails if the block is stale
+    make registry                                    # fill Wilson intervals + re-render this block
+    make registry-check                              # CI guard: fails if the block is stale
+    python experiments/render_registry.py            # the renderer itself (--fill-ci, --check)
 
 `status` is part of the data: `done` is measured, `pending` means the run finished but the
 metric has not been computed, `planned` is on the worklist, and `superseded` marks numbers
-that must not be quoted.
+that must not be quoted (the row stays, `notes` says why).
 
 <!-- registry:start -->
 
@@ -616,40 +750,64 @@ _347 registry rows: 289 done, 1 pending, 3 planned, 54 superseded. Percentages c
 
 `eval_screenspot.py` measures **grounding** — given a screenshot and an instruction, the
 model predicts a click point and we score whether it lands inside the target bounding box.
-It is how you quantify what SFT actually bought you.
+It isolates *pointing* from task completion; the student eval below measures the latter.
 
     make install-eval          # eval deps (GPU box)
-    make eval-screenspot       # evals every model in eval_models.yaml -> eval_results/
+    make eval-screenspot       # local `swift infer` lane over eval_models.yaml -> eval_results/
     make test-eval             # harness self-test, no model/GPU/network
+
+Predictor backends are a registry (`PREDICTOR_BACKENDS`): `swift` (local `swift infer`, specs in
+`eval_models.yaml` with a repo id + `adapters` dir), `openai` (any OpenAI-compatible endpoint via
+`SCREENSPOT_ENDPOINT` / `SCREENSPOT_API_KEY`, specs in `eval_models_served.yaml` naming vLLM *served*
+models), `claude` (a frontier arm through the logged-in CLI, no GPU needed), `mock` (tests). The
+system prompt is imported from `train_qwen.py` so train and eval never drift.
 
 ### Measured results
 
-Baseline for the untrained starting checkpoint, on `rootsautomation/ScreenSpot` (`test`):
+Full 1,272-sample `rootsautomation/ScreenSpot` `test` split, every arm shown the identical
+native-resolution image, each scored in its own coordinate convention, identical 2048-token budget
+(2026-09-05; registry rows `ss-1272-*` / `ss-1272n-*`):
 
-| model | accuracy | parse rate | text | icon | n |
-|-------|---------:|-----------:|-----:|-----:|--:|
-| `Qwen/Qwen3.5-9B` (instruct, no SFT) | **85.0%** | 93% | 96.0% | 86.0% | 100 |
+| arm | accuracy | icon (n=575) | text (n=697) | parse |
+|-----|---------:|-------------:|-------------:|------:|
+| `claude-sonnet-5` (asked for pixels) | 68.3% | 65.9% | 70.3% | 100% |
+| `Qwen/Qwen3.5-9B` (base, no SFT) | 72.2% | 73.2% | 71.4% | 86.2% |
+| `cua-sft-v2` | 85.4% | 77.4% | 92.0% | 98.4% |
+| `cua-grpo-v3` | 85.1% | 77.2% | 91.5% | 98.3% |
+| **`cua-sft-v3`** | **91.6%** | **88.0%** | **94.5%** | 100% |
 
-**85% is the bar SFT has to beat** — the starting checkpoint is already a strong grounder.
+SFT improves grounding on both target types, and the sft3 round (whose corpus targeted grounding)
+extends it. The earlier 300-sample rows are kept in the registry but are not comparable to this
+table or to each other: head-sampled subsets, three harness commits, a 512-token cap that truncated
+the base before it emitted a click, and (for `viewport_abs` arms) inputs squashed to 1280x720. Why a 9B model outgrounds the frontier arm is documented in
+`docs/decisions/why-a-9b-outgrounds-the-frontier-model.md`.
 
 ### Coordinate conventions — read this before trusting any number
 
 Getting these wrong does **not** crash the eval. It reports a confident, completely wrong
-number. All three were verified against real model output, not assumed:
+number. All of them were verified against real model output, not assumed:
 
-- **`--coord-space` is per-model, not global.** A stock Qwen emits **`normalized_1000`**
-  (0–1000). A model fine-tuned on this project's corpus emits **`viewport_abs`** (1280x720
-  pixels, the training viewport). A before/after comparison therefore needs a *different*
-  coord space per spec — set `coord_space:` on the spec in `eval_models.yaml`. Scoring the
-  same base-model predictions as `viewport_abs` instead of `normalized_1000` drops the score
-  from 85% to 25%.
-- **`--bbox-normalized`** — `rootsautomation/ScreenSpot` stores bbox in 0–1, not pixels.
-  Omit this flag and every target collapses to a sub-pixel box at the origin: **0% accuracy
+- **`--coord-space` is per-model, not global.** A stock Qwen and every sft-v3+ checkpoint emit
+  **`normalized_1000`** (0–1000, Qwen's own convention). sft-v1 / sft-v2 checkpoints, and the GRPO
+  adapters trained over their merged weights, emit **`viewport_abs`** (1280x720 pixels, the training
+  viewport). `claude-sonnet-5` must be asked for pixels and scored `native_abs`: asked for 0–1000 it
+  half-complies, and no single mapping scores it (36.5% withdrawn vs 68.3%). Set `coord_space:` on
+  every spec in `eval_models*.yaml`. Scoring the same base-model predictions as `viewport_abs` instead
+  of `normalized_1000` drops the score from 85% to 25%.
+- **The image every arm sees is a harness setting, not a property of its coordinate space.**
+  `SCREENSPOT_IMAGE_SIZE` (default `native`) is recorded in every artifact as `prepared_image_size`.
+  Until 2026-09-06 `viewport_abs` resized inputs to 1280x720 on its own, so those arms were scored on
+  squashed screenshots while the others saw the source; correcting it moved sft-v2 from 76.3% to 85.4%.
+- **`--max-tokens` (default 2048).** At 512 the base model's reasoning was cut off before the click,
+  which scores the cap rather than the model.
+- **`--bbox-normalized`** (default on) — `rootsautomation/ScreenSpot` stores bbox in 0–1, not pixels.
+  Treating it as pixels collapses every target to a sub-pixel box at the origin: **0% accuracy
   by construction, regardless of the model.**
-- **`--bbox-format xyxy`** — that mirror stores `(x1,y1,x2,y2)`, not `xywh`.
+- **`--bbox-format xyxy`** (default) — that mirror stores `(x1,y1,x2,y2)`, not `xywh`.
 
-The defaults now match the default dataset. If you point `--dataset` somewhere else, re-check
-all three against that mirror's annotation convention.
+The defaults match the default dataset. If you point `--dataset` somewhere else (`os-copilot/ScreenSpot-v2`
+is raw JSON + an image zip that `load_dataset` cannot read), re-check every convention against that
+mirror's annotation format.
 
 ## Remote training / eval on a rented GPU (Vast.ai)
 
@@ -661,21 +819,28 @@ package:
     export VAST_API_KEY=...             # required
     make remote-train-dry               # dry run: cheapest allowed offer, rents nothing
     make remote-eval EVAL_MODEL=Qwen/Qwen3.5-9B EVAL_LIMIT=100   # benchmark, no training
-    make remote-train                   # full SFT, pulls the adapter back
-    make remote-train-cleanup           # safety net: destroy any leftover instance
+    make remote-train                   # full SFT, pulls the adapter back (--resume-from continues an interrupted run)
+    make remote-grpo                    # GRPO against the local env service (make rl-serve first)
+    make remote-serve                   # serve the student on 127.0.0.1:8001 through a tunnel
+    make remote-train-cleanup           # reclaim boxes whose owning run is dead
 
-Two jobs share one lifecycle: `train` (SFT) and `eval` (benchmark only). Adding a benchmark is
-one `Benchmark` entry in `remote_train/benchmarks.py`; adding a provider (RunPod, Lambda) is one
-module implementing `ComputeProvider` plus a line in `PROVIDERS`. The lifecycle and CLI never change.
+Four jobs share one lifecycle (`jobs.JOBS`): `train` (SFT), `eval` (a `benchmarks.BENCHMARKS` entry,
+no training), `grpo` and `serve`; `search`, `cleanup` and `release` are the maintenance subcommands.
+Adding a benchmark is one `Benchmark` entry; adding a provider (RunPod, Lambda) is one module
+implementing `ComputeProvider` plus a line in `PROVIDERS`. The lifecycle and CLI never change.
 
 **Teardown is guaranteed** — the instance dies in a `finally`, on SIGINT/SIGTERM/SIGHUP, via a
 `destroy` that polls until the box is *confirmed gone*, via a crash-safe state file + orphan
-sweep, and via a max-runtime watchdog. On a shared/team account the sweep only ever auto-destroys
-a box this tool provisioned; anything else carrying the label is reported, never killed.
+sweep, and via a max-runtime watchdog. **Teardown never outranks ownership**: the account is shared,
+so the sweep refuses any instance under a foreign label, records carry the owning pid so a live
+sibling run's box is never swept, and taking every labelled box needs an explicit `cleanup --all`.
+Never destroy by id from a bare `vastai show instances`.
 
-Offer selection is gated on `compute_cap >= 800` (bf16 needs Ampere+; the cheapest cards are
-Turing and **cannot** run this workload), on enough `disk_space` to hold the weights, and on an
-`exclude_countries` deny-list (default `RU, CN`). Every instance is labeled `roman.maior`.
+Offer selection (`remote_train.yaml`, defaults < env < CLI) requires `min_vram_gb: 70` (a 48 GB card
+OOMs mid-run with two images per sample), `min_compute_cap: 800` (bf16 needs Ampere+; the cheapest
+cards are Turing and **cannot** run this workload), `min_cuda_vers: 12.8` (older drivers fail only
+after boot), a price cap, a host reliability floor, and an `exclude_countries` deny-list (default
+`RU, CN`). Every instance is labeled `roman.maior`.
 
 ### Cost per run (measured, Vast.ai)
 
@@ -687,49 +852,79 @@ Turing and **cannot** run this workload), on enough `disk_space` to hold the wei
 | — of which: actual inference (100 samples) | | | ~4 min | ~$0.03 |
 | Failed/aborted attempt (dies in <5 min) | RTX A6000 48GB | $0.428 | 2–3 min | ~$0.02 |
 | Teardown smoke-check (rent + immediately destroy) | cheapest | $0.048 | ~20 s | ~$0.001 |
+| SFT v3 (2 epochs, epoch 1 kept) | A100 SXM4 80GB | | 14h15m | **$15.50** |
 
-Bandwidth is billed separately (~$2.67/TB down); an 18GB model pull adds roughly $0.05.
-Boot + install dominate a short eval — the marginal cost of *more samples* is small, so prefer
-one larger run over several small ones. A full 1272-sample ScreenSpot sweep is ~$0.35–0.50.
+The eval rows predate the 70 GB VRAM floor, which now excludes the 40 GB card they ran on. Bandwidth
+is billed separately (~$2.67/TB down); an 18GB model pull adds roughly $0.05. Boot + install dominate
+a short eval — the marginal cost of *more samples* is small, so prefer one larger run over several
+small ones.
 
 ## Output Structure
 
     trajectories/
-      task_mind2web_0001/            # from GPT-5.4 path
+      task_mind2web_0001/            # Path A
         metadata.json
         trajectory.json
         step_001_screenshot.png
-        step_002_screenshot.png
         ...
-      repo_owner_repo/               # from repo pipeline
-        task_owner_repo_testname/
+      repo_<owner>_<repo>/           # Path B
+        task_*/
           metadata.json
           trajectory.json
+          capture_meta.json          # raw verifier verdict + recorded click targets
           step_001_screenshot.png
           ...
+      site_<name>/                   # public-site lanes (no registry row)
+        task_*/
+          ...
+
+`trajectory.json` is `{task_id, instruction, start_url, steps: [{step, screenshot, thought, actions}],
+total_steps, success}`; actions are normalized across producers (`click`, `type`, `keypress`, `scroll`,
+`drag`, `move`, `navigate`, `wait`, `confirm`, `handoff`, `approval_event`, `done`) with pixel
+coordinates at a fixed 1280x720 viewport. Eval and RL episodes land under `eval_runs/` / `rl_runs/`
+with `metadata.excluded_reason` set, so they never enter training.
 
 ## Training Configuration
 
-See `config.yaml` for default hyperparameters. Key settings from the blueprint:
+See `config.yaml` for the SFT recipe (`train_qwen.py train` maps its keys to `swift sft` flags):
 - Model: Qwen/Qwen3.5-9B (post-trained checkpoint; the eval baseline is measured on it)
-- LoRA rank 64, alpha 128
-- Learning rate 5e-5, 3 epochs
-- Max sequence length 4096
-- Vision encoder frozen (freeze_vit: true)
+- LoRA rank 64, alpha 128, all-linear
+- Learning rate 5e-5, **2 epochs** (sft-v2's eval loss bottomed at epoch 2 and rose at 3; sft-v3's epoch 2 was trained and rejected for the same reason), warmup 0.05
+- Batch 2 × accumulation 4, max sequence length 4096, `packing: false` (the image inputs lack a flash-attention implementation)
+- Vision encoder frozen (`freeze_vit: true`), `max_pixels` 1003520
+- `config_sft_v2_conservative.yaml` is the r16 / 1-epoch / lr 1e-5 variant; variants are configs, not forks
 
-## Evaluation: Online-Mind2Web baseline
+A two-image step is ~2,020 tokens, of which ~1,100 are image padding; whole-trajectory multi-turn
+examples blew the 4096 limit, which is why convert emits one example per step.
 
-> **Raw records for every figure in this section and the three below are committed to
-> [`eval_archive/`](eval_archive/)** — 300 per-sample ScreenSpot records per model, both 50-episode
-> Online-Mind2Web runs (`results.json`, `report.md`, `run.log`), and a `manifest.json` carrying the
-> headline figures plus a sha256 for each file. The working directories these were produced in
-> (`eval_runs/`, `eval_results/`) are gitignored, so the archive is the durable copy. Per-episode
-> screenshots (~166 MB) are packed separately alongside the adapter — see
-> [`eval_archive/README.md`](eval_archive/README.md).
+## Evaluation: Online-Mind2Web
 
-The pre-training baseline every fine-tune is compared against. Captured 2026-08-26 with
+> **Raw records behind the first-round figures in this section are committed to
+> [`eval_archive/`](eval_archive/)** — per-sample ScreenSpot records for the SFT v1 and GRPO v2 runs,
+> the 50-episode Online-Mind2Web runs (baseline, after, and the same-judge base / SFT v1 / GRPO v2 triple
+> under `*-judge2/`), the pinned task files (`tasks_pinned_50.jsonl`, `tasks_pinned_v2.jsonl`,
+> `tasks_reachable_us_174.jsonl`), and a `manifest.json` carrying headline figures plus a sha256 for each
+> file. The working directories (`eval_runs/`, `eval_results/`) are gitignored, so the archive is the
+> durable copy. Per-episode screenshots (~166 MB) are packed alongside the adapter — see
+> [`eval_archive/README.md`](eval_archive/README.md). Later rounds live in the registry block above,
+> with their `artifacts_path` per row.
+
+`repo_pipeline/student_eval.py` runs a served model through real browser episodes and reports whether
+a checkpoint beat the base. **The deliverable is a delta**: every run takes `--label`, writes
+`eval_runs/<run_id>/{report.md,results.json,run.log,episodes/}`, and `compare` renders the before/after
+table plus a harness-parity check that flags any field two runs disagree on. Prompts are built by the
+same functions convert uses, the action grammar is tolerant (canonical form is its own metric),
+environment failures (`site_blocked`, `unreachable`, `harness_error`) are excluded from the scored
+denominator and reported separately, and the judge is `agent_capture.verify_trajectory` on Sonnet.
+`student_eval judge <run_dir>` scores a run recorded with `--no-judge` afterwards, without a GPU.
+
+### First-round baseline (2026-08-26, 50 tasks)
+
+The pre-training baseline the SFT v1 comparison below was made against. Captured with
 `make eval-online-mind2web`; raw artefacts archived at `eval_archive/online_mind2web/baseline/`
-(produced in `eval_runs/baseline_qwen35_9b_online_mind2web_20260826T165014Z/`).
+(produced in `eval_runs/baseline_qwen35_9b_online_mind2web_20260826T165014Z/`). **Superseded as the
+base figure** by the full 300-task arm in "Later rounds" below (that row's notes record which base
+rows it supersedes); it stays here because the SFT v1 delta was measured against it.
 
 **Model:** `Qwen/Qwen3.5-9B` (post-trained checkpoint, no adapter) served by vLLM 0.28.0 on a
 Modal L40S via `modal_serve.py`. Browser ran locally in `DockerSandbox` on a residential IP —
@@ -757,8 +952,8 @@ Judge: `claude-sonnet-5` (final + 2 mid screenshots).
 Two denominators are reported because they answer different questions. **8.8%** excludes
 episodes where the site blocked automation or never loaded — the model never saw those pages,
 so counting them measures the network. **6.0%** counts every task attempted, which is the
-convention the Online-Mind2Web paper and the Fara-1.5 results table use. Quote 6.0% when
-comparing to published work.
+convention the Online-Mind2Web paper and the Fara-1.5 results table use. Quote the all-episode
+figure when comparing to published work.
 
 ### Per level (scored episodes)
 
@@ -784,16 +979,19 @@ Published Online-Mind2Web results, all scored with WebJudge/o4-mini:
 | MolmoWeb (8B) | 35.3% |
 | Fara-7B | 34.1% |
 | baseline search agent | ~22% |
-| **`Qwen3.5-9B`, no agent training (this run)** | **6.0%** |
+| **`Qwen3.5-9B`, no agent training (50-task run)** | **6.0%** |
+| **`Qwen3.5-9B`, no agent training (full 300, 2026-09-05)** | **1.7%** |
 
 Sitting an order of magnitude below every purpose-trained CUA is the expected result for a model
 with no agent training, and it is the point of the measurement: it is the floor a fine-tune has
 to clear.
 
 **These numbers are not rankable against that table.** The judge is `claude-sonnet-5` on this
-repo's capture rubric, not WebJudge/o4-mini, and the OM2W authors measure WebJudge itself running
-6-10 points above human-rated success. The comparison is a plausibility check, not a leaderboard
-position. Closing that gap requires running a published checkpoint through this harness.
+repo's capture rubric, not WebJudge/o4-mini, the OM2W authors measure WebJudge itself running
+6-10 points above human-rated success, and roughly half of the 300 tasks are blocked or unreachable
+from this machine's egress (a residential US exit is the only thing that recovers a real share).
+The comparison is a plausibility check, not a leaderboard position.
+Closing that gap requires running a published checkpoint through this harness.
 
 ### What the baseline actually fails at
 
@@ -814,25 +1012,30 @@ Grounding, notably, was **not** a failure mode once the coordinate space was set
 ### Reproducing
 
 ```bash
-modal deploy modal_serve.py                     # serves Qwen/Qwen3.5-9B on an L40S
+modal deploy modal_serve.py                     # serves Qwen/Qwen3.5-9B on an L40S as cua-student
 make eval-online-mind2web \
   EVAL_ENDPOINT=<url>/v1 EVAL_MODEL=cua-student \
-  EVAL_LABEL=before EVAL_LIMIT=50 EVAL_COORD_SPACE=normalized_1000
+  EVAL_LABEL=before EVAL_COORD_SPACE=normalized_1000 \
+  EVAL_ARGS="--tasks-file eval_archive/online_mind2web/tasks_pinned_v2.jsonl --parallel 3"
 ```
 
-After fine-tuning, re-run with `EVAL_LABEL=after`, `EVAL_COORD_SPACE=viewport_abs` (a model
-trained on this corpus answers in viewport pixels, not normalised units) and otherwise identical
-flags, then `make eval-compare`. Read the harness-parity section of the comparison before
-trusting the delta.
+After fine-tuning, re-run with `EVAL_LABEL=after` and otherwise identical flags, then
+`make eval-compare`. Two settings are **per checkpoint** and never auto-detected: `EVAL_COORD_SPACE`
+(`normalized_1000` for the base and sft-v3+; `viewport_abs` for sft-v1/v2 and the GRPO adapters over
+them) and `--observation` (`v3`, the default two-image format, for the base and sft-v3+; `v2` for
+sft-v1/v2 and GRPO). The harness warns at the first impossible coordinate and prints a
+`COORDINATE SPACE SUSPECT` banner when more than a quarter fall outside the declared space. Read the
+harness-parity section of the comparison before trusting the delta; a `coord_space` difference is an
+expected, annotated model-side difference, anything else is a harness difference.
 
-### Fine-tuned result (SFT v1)
+### Fine-tuned result (SFT v1, first round)
 
 `Qwen/Qwen3.5-9B` + LoRA r64/alpha128 on 5,477 training examples (616 val) from 456 trajectories,
 3 epochs = 2,055 optimizer steps at effective batch 8, A100-80GB, ~7h35m. Adapter on the
 `cua-outputs` Modal volume at `sft-v1/adapter`; per-epoch checkpoints at
 `checkpoint-685` / `checkpoint-1370` / `checkpoint-2055`. Evaluated on the **same 50 tasks** as the
 baseline, same judge, same step-cap policy; the only intended difference is `coord_space`
-(`normalized_1000` -> `viewport_abs`, since a model trained on this corpus answers in viewport pixels).
+(`normalized_1000` -> `viewport_abs`, since sft-v1 answers in viewport pixels).
 
 | metric | baseline | fine-tuned | delta |
 | --- | --- | --- | --- |
@@ -856,24 +1059,25 @@ By difficulty (scored episodes):
 **Quote the audited row.** Two of the ten verified successes are confirmed false positives, checked
 against their final screenshots — see `docs/decisions/judge-consistency-audit.md`. The judge's
 leniency is concentrated on `meandering` episodes, which only the fine-tuned model produces, so it
-inflates the after side and not the baseline.
+inflates the after side and not the baseline. A criteria-first judge was adopted after this audit;
+the same-judge re-measurement of base / SFT v1 / GRPO v2 (registry rows `om2w-*-j2-*`) put SFT v1 at
+9.4% scored, inside noise of the base at n≈34 — which is why the sample was widened to 230 and then
+the full 300 tasks for every later round.
 
 **What the model learned, decomposed.** Reporting these separately is the point of the extra columns:
 
 - *Format: fully learned.* Canonical action form 26.8% -> 100%, parse failures 22.3% -> 7.4%.
-- *Browsing: genuinely improved.* Medium tasks went 0% -> 30%, which format alone cannot explain.
+- *Browsing: improved as measured.* Medium tasks went 0% -> 30%, which format alone cannot explain.
 - *Stopping: regressed.* `done()` fell 28% -> 18% and steps/reference rose 1.36x -> 2.14x; 4 of 10
   successes were graded meandering. The model acts more persistently but terminates worse.
 
 The honest claim is therefore "this corpus taught the model to emit valid actions and to browse
 better, at the cost of knowing when to stop" — not a single headline number.
 
-### Grounding: ScreenSpot (SFT v1)
+### Grounding: ScreenSpot (SFT v1, first round)
 
-Pixel-level grounding — predict a click point from a screenshot + instruction, score whether it
-lands inside the target bbox. Complements the agentic eval above: it isolates *pointing* from
-*task completion*. 300 samples of `rootsautomation/ScreenSpot` `test`, both models served from one
-vLLM container so hardware and sampling are identical.
+300 samples of `rootsautomation/ScreenSpot` `test`, both models served from one vLLM container so
+hardware and sampling are identical:
 
 | metric | before (base) | after (SFT v1) | delta |
 | --- | ---: | ---: | ---: |
@@ -884,61 +1088,88 @@ vLLM container so hardware and sampling are identical.
 | source: macOS | 87.0% (120/138) | 86.2% (119/138) | -0.8 pp |
 | source: Windows | 90.7% (147/162) | 84.0% (136/162) | -6.7 pp |
 
-Per-model coordinate spaces, as `eval_screenspot.py` requires: base in `normalized_1000`, LoRA in
-`viewport_abs`. Scoring one in the other's convention is meaningless: in a separate 100-sample check the
-same base-model predictions scored 85% under `normalized_1000` and 25% under `viewport_abs`.
-
-**The regression is real, not a resizing artifact.** `viewport_abs` resizes screenshots to
-1280x720, which distorts non-16:9 images, so the after-run was split by whether the resize actually
-changes the aspect ratio: distorted samples scored **88.6%** (n=167), near-16:9 samples **86.3%**
-(n=124). Distorted scored higher, so distortion does not explain the drop.
-
-Paired per-sample: 244 both hit, **23 lost**, 11 gained, 22 neither — net -12 of 300, which is the
--4.0 pp exactly. A modest shift, not a collapse.
+**This regression is unconfirmed, not established.** At the time the `viewport_abs` scoring path
+resized the after-run's inputs to 1280x720 while the base saw the source image, so the two arms were
+shown different pictures (see "Coordinate conventions" above). Under the corrected native-image
+protocol the same kind of checkpoint gains rather than loses grounding (sft-v2: +13 pp over the base,
+icons included). SFT v1 was never re-scored on native images, so its -4.0 pp stands only as a
+measurement under the superseded protocol.
 
 ### What SFT actually traded
 
-Both evaluations agree on the shape:
+Both first-round evaluations agreed on the shape, and the grounding row was later overturned:
 
 | axis | direction | evidence |
 | --- | --- | --- |
 | output format compliance | **up** | ScreenSpot parse 94.7% -> 97.0%; OM2W canonical form 26.8% -> 100% |
-| agentic task success | **up** | OM2W 8.8% -> 23.5% (audited) |
-| raw pointing accuracy | **down** | ScreenSpot 89.0% -> 85.0% |
+| agentic task success | **up** | OM2W 8.8% -> 23.5% (audited); 3.2% -> 16.4% for sft-v2 on the full 300 |
+| raw pointing accuracy | **up**, once every arm saw the same image | 72.2% -> 85.4% (sft-v2) -> 91.6% (sft-v3) on 1,272 native images; the first-round -4.0 pp was measured on squashed inputs |
 | verbosity | down | mean response 532 -> 196 chars |
 
-The corpus is 5,477 web-browsing steps at a fixed 1280x720 viewport; ScreenSpot is desktop and
-mobile UI pointing at native resolutions. Gaining format discipline and task completion while losing
-~4 points of general-purpose grounding is the expected narrow-SFT trade. State both halves.
+### Later rounds (SFT v2, SFT v3, GRPO v3)
 
-Reproduce with the `openai` backend (added so the harness can evaluate any OpenAI-compatible
-endpoint instead of shelling out to `swift infer`):
+All four arms on the **full 300-task set** under the same harness, 2048-token budget and judge, each
+arm prompted in the observation format and coordinate space it was trained for (2026-09-05;
+registry rows `om2w300-*`):
+
+| arm | verified success (scored) | 95% CI | n scored | all 300 | easy | medium | hard |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| base `Qwen3.5-9B` | 3.2% | [1.4, 7.2] | 157 | 1.7% | 12.5% | 0.0% | 0.0% |
+| `cua-sft-v2` | **16.4%** | [11.3, 23.3] | 146 | 8.0% | 47.4% | 4.9% | 6.4% |
+| `cua-sft-v3` | 11.1% | [7.0, 17.3] | 144 | 5.3% | 23.7% | 10.0% | 2.2% |
+| `cua-grpo-v3` | 13.4% | [8.7, 20.0] | 142 | 6.7% | 32.4% | 4.8% | 9.5% |
+
+Every fine-tuned arm is clearly above the base and none is separable from the others: the three
+checkpoints' intervals overlap almost entirely, so round-over-round browsing differences are noise
+at this sample size while the base-versus-fine-tuned difference is not. Parse failure goes from
+12.8% to at most 0.2% and canonical form to 100% for every fine-tuned arm. 143 of 300 tasks were
+blocked or unreachable from this egress, which is why both denominators are registered
+(`cua-grpo-v3`'s all-episode denominator is 284).
+
+Read with the other lanes, the sft3 round bought what it aimed at and nothing more: grounding rose
+decisively (ScreenSpot 85.4% -> 91.6%), the QA-bench error-verdict rate moved in the intended
+direction but not past its pre-registered band, and general web browsing did not improve
+(`docs/decisions/sft-v3-postmortem.md`, `docs/decisions/sft-v3-results.md`).
+GRPO v3 has no measured advantage on any lane and RL was dropped (`docs/decisions/grpo-v3-results.md`).
+The QA-benchmark rows (`qa-bench-refapp`) and the end-to-end cost model behind the hybrid
+local-executor / frontier-verdict architecture are in the registry block and
+`docs/decisions/hybrid-cost-and-the-product-gap.md`.
+
+Reproduce grounding with the `openai` backend (any OpenAI-compatible endpoint instead of `swift infer`):
 
 ```bash
 modal run modal_serve.py::warm                  # populate the weight cache on CPU first
-modal deploy modal_serve.py                     # serves base + LoRA from one container
+CUA_ADAPTER_NAME=<run>/adapter modal deploy modal_serve.py    # base as cua-student + LoRA as cua-student-lora
 SCREENSPOT_ENDPOINT=<url>/v1 SCREENSPOT_API_KEY=<key> \
   python eval_screenspot.py run --models-config eval_models_served.yaml \
-  --dataset rootsautomation/ScreenSpot --split test \
-  --bbox-format xyxy --bbox-normalized --limit 300
+  --dataset rootsautomation/ScreenSpot --split test --bbox-format xyxy --bbox-normalized
 ```
 
-`eval_models_served.yaml` carries the vLLM *served* names (`cua-student`, `cua-student-lora`) and
-`backend: openai` per spec; `eval_models.yaml` is the local `swift infer` lane and takes a repo id
-plus an adapters directory instead.
+`eval_models_served.yaml` carries the vLLM *served* names and a `coord_space` per spec;
+`eval_models.yaml` is the local `swift infer` lane and takes a repo id plus an adapters directory
+instead. A GRPO adapter needs its own serve on the merged SFT weights (`modal_merge.py`).
 
 ## Cost Estimates
 
-**GPT-5.4 CUA distillation:**
-- ~$0.55 per trajectory
-- 1,000 trajectories ≈ $550
+**Path A (GPT-5.4 CUA distillation):**
+- ~$0.55 per trajectory; 1,000 trajectories ≈ $550
 
-**QA repo pipeline:**
+**Path B (QA repo funnel), per repo, pacing estimates from `STAGE_COST_ESTIMATES`:**
 - Stages 1–2: free
-- Stage 3: ~$0.03/repo (scoring)
-- Stages 4–6: ~$0.15–0.60/repo (only repos passing prior gates)
-- Think blocks: ~$0.005/step (Sonnet)
-- Budget is capped per run — pipeline pauses when limit is hit
+- Stage 3: ~$0.15, stage 4: ~$0.20, stage 5: ~$0.02 (code-driven)
+- Stage 6: ~$6 in agent mode (proposer + ~8 teacher tasks + per-task verification), ~$0.20 in replay mode
+- Stage 7: ~$0.50
+- `--budget` is a soft cap on these estimates; the `agent_calls` ledger is the metered record
 
-**Training:**
-- 20-40 GPU hours on A100 80GB (~$16-32 on RunPod)
+**Public-site lanes:** the same teacher + verifier calls per task as stage 6, metered in the same
+ledger; Claude calls run on the CLI's subscription usage window rather than per-token billing.
+
+**Training (measured, see `experiments/models.csv`):**
+- SFT v1: ~7h35m on a Modal A100-80GB (3 epochs, 5,477 examples)
+- SFT v2: $18.31, Modal H100 to step 1500 then a Vast A100 (3 epochs, 8,482 examples)
+- SFT v3: $15.50, 14h15m on a Vast A100 SXM4 80GB (2 epochs, epoch 1 kept)
+- GRPO v2 / v3: ~$20 / ~$25 per run on two GPUs, including failed rentals
+
+**Evaluation:** ScreenSpot ~10 min per arm on a served model; Online-Mind2Web ~1.5 h per arm plus the
+judge on Claude usage; a Modal L40S serve is ~$1.95/GPU-hour. Cost checks must include volumes and
+caches on every workspace, not just running apps.
