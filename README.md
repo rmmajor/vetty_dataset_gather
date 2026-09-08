@@ -379,6 +379,7 @@ that must not be quoted (the row stays, `notes` says why).
 | corpus-v1 | all | sft_examples | 5477 |  | done | One example per recorded step of a trainable trajectory. |
 | corpus-v1 | all | trainable_trajectories | 504 |  | done | Verified successes that became SFT examples. |
 | corpus-v1 | all | trajectories | 1068 |  | done |  |
+| corpus-v2 | all | trajectories | 1299 |  | done | Task directories recorded when the general corpus reached the 738 trainable trajectories cua-sft-v2 trained on, at 02:50 on 2026-08-31. Derived, not recorded at the time: the admission gate of repo_pipeline.corpus_audit.is_trainable was re-run over every task directory in trajectories/, each dated by the earliest of its screenshots, which the later relabel and polish passes never rewrote. Replaying that history gives the corpus as it stood at any past moment. The same reconstruction reaches 1395 recorded at the QA freeze against the 1398 registered, and reproduces the four withheld counts as 461, 76, 45 and 31 against 461, 76, 46 and 31, so the figure is accurate to a handful of directories rather than exact. |
 
 #### `online-mind2web` — osunlp/Online-Mind2Web@eacad896a84d
 
@@ -742,7 +743,7 @@ that must not be quoted (the row stays, `notes` says why).
 | Share of record/replay web test breakages caused by stale locators | 73.6 % | 1065 | ICST | 2016 | 10.1109/ICST.2016.16 | deck slide 3, thesis ch.1 |
 | Legacy GUI tests on live sites that stopped passing within 18 months | 100.0 % | 120 | ASE | 2025 | 10.1109/ASE63991.2025.00251 | deck slide 3, thesis ch.1 |
 
-_347 registry rows: 289 done, 1 pending, 3 planned, 54 superseded. Percentages carry a 95 % Wilson interval where n is known._
+_348 registry rows: 290 done, 1 pending, 3 planned, 54 superseded. Percentages carry a 95 % Wilson interval where n is known._
 
 <!-- registry:end -->
 
