@@ -1,4 +1,5 @@
 """Episode runner that measures a served computer-use model on real browser tasks, before vs after fine-tuning."""
+
 import argparse
 import asyncio
 import base64
@@ -9,28 +10,31 @@ import re
 import subprocess
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import NamedTuple
 
-from repo_pipeline import driver_session
+from repo_pipeline import driver_session, remote_sandbox
 from repo_pipeline.agent_capture import VERIFIER_UNAVAILABLE_REASON, verify_trajectory
 from repo_pipeline.driver_session import DriverClient, DriverError
 from repo_pipeline.eval_task_sources import (
+    TASK_SOURCES,
     EvalTask,
     TaskLoadConfig,
     TaskSourceUnavailable,
-    TASK_SOURCES,
     episode_dir_name,
     load_tasks,
     load_tasks_from_file,
 )
 from repo_pipeline.instrumentation import RESULTS_DIR
 from repo_pipeline.llm_config import MODEL_FOR_REASONING
-from repo_pipeline import remote_sandbox
 from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler, safe_parallel_sandboxes
 from repo_pipeline.sdk_runner import UsageLimitReached
-from repo_pipeline.site_blocks import BLOCK_SIGNATURES, BLOCK_SIGNATURES_VERSION, detect_block  # noqa: F401  re-exported
+from repo_pipeline.site_blocks import (  # noqa: F401  re-exported
+    BLOCK_SIGNATURES,
+    BLOCK_SIGNATURES_VERSION,
+    detect_block,
+)
 from train_qwen import (
     HISTORY_WINDOW,
     MODEL_COORD_MAX,
@@ -82,8 +86,13 @@ OBSERVATION_FORMATS = ("v2", "v3")
 DEFAULT_OBSERVATION = "v3"
 
 
-def build_student_messages(instruction: str, action_history: list, cur_png: bytes,
-                           prev_png: bytes | None = None, observation: str = DEFAULT_OBSERVATION) -> list:
+def build_student_messages(
+    instruction: str,
+    action_history: list,
+    cur_png: bytes,
+    prev_png: bytes | None = None,
+    observation: str = DEFAULT_OBSERVATION,
+) -> list:
     """OpenAI chat messages for one step; v3 adds the previous screenshot from step 2 on, v2 never does."""
     if observation not in OBSERVATION_FORMATS:
         raise ValueError(f"unknown observation format {observation!r}; expected one of {OBSERVATION_FORMATS}")
@@ -110,8 +119,17 @@ class StudentClient:
 class OpenAIChatStudent(StudentClient):
     """Any OpenAI-compatible /chat/completions endpoint (vLLM, `swift deploy`, SGLang, a hosted API)."""
 
-    def __init__(self, endpoint: str, model: str, api_key: str = "", max_tokens: int = 512,
-                 temperature: float = 0.0, timeout_s: int = 180, retries: int = 2, retry_backoff_s: int = 90):
+    def __init__(
+        self,
+        endpoint: str,
+        model: str,
+        api_key: str = "",
+        max_tokens: int = 512,
+        temperature: float = 0.0,
+        timeout_s: int = 180,
+        retries: int = 2,
+        retry_backoff_s: int = 90,
+    ):
         self.url = self._chat_url(endpoint)
         self.model = model
         self.api_key = api_key
@@ -188,9 +206,13 @@ def build_openai_student(cfg: "EvalConfig") -> StudentClient:
     if not cfg.endpoint:
         raise StudentError("--endpoint is required for the 'openai' student backend")
     return OpenAIChatStudent(
-        endpoint=cfg.endpoint, model=cfg.model, api_key=cfg.api_key,
-        max_tokens=cfg.max_tokens, temperature=cfg.temperature,
-        timeout_s=cfg.student_timeout_s, retries=cfg.student_retries,
+        endpoint=cfg.endpoint,
+        model=cfg.model,
+        api_key=cfg.api_key,
+        max_tokens=cfg.max_tokens,
+        temperature=cfg.temperature,
+        timeout_s=cfg.student_timeout_s,
+        retries=cfg.student_retries,
     )
 
 
@@ -219,8 +241,21 @@ def build_student(cfg: "EvalConfig") -> StudentClient:
 # system prompt and charging surface deviation to its success rate would measure imitation.
 # ---------------------------------------------------------------------------
 
-ACTION_VERBS = ("click", "double_click", "move", "drag", "scroll", "type", "keypress",
-                "wait", "done", "screenshot", "navigate", "handoff", "confirm")
+ACTION_VERBS = (
+    "click",
+    "double_click",
+    "move",
+    "drag",
+    "scroll",
+    "type",
+    "keypress",
+    "wait",
+    "done",
+    "screenshot",
+    "navigate",
+    "handoff",
+    "confirm",
+)
 NO_ARG_VERBS = ("wait", "done", "screenshot")
 # Yield-control verbs: the episode ends there, but as a scored model outcome, not a parse failure.
 HANDOFF_VERBS = ("handoff", "confirm")
@@ -244,8 +279,8 @@ _THINK_PREFILLED_RE = re.compile(r"\A(.*?)</think>", re.DOTALL)
 
 class ParsedLine(NamedTuple):
     action: dict | None
-    kind: str                 # prefixed | bare | malformed | ignored
-    deviations: tuple = ()    # how it differed from the canonical form
+    kind: str  # prefixed | bare | malformed | ignored
+    deviations: tuple = ()  # how it differed from the canonical form
 
 
 def _squash(text: str) -> str:
@@ -331,6 +366,7 @@ def _point_only(action_type: str):
     def build(tokens, kwargs, note):
         point = _take_point(tokens, 0)
         return None if point is None else {"type": action_type, "x": point[0], "y": point[1]}
+
     return build
 
 
@@ -341,8 +377,7 @@ def _build_drag(tokens, kwargs, note):
     second = _take_point(tokens, first[2])
     if second is None:
         return None
-    return {"type": "drag", "path": [{"x": first[0], "y": first[1]},
-                                     {"x": second[0], "y": second[1]}]}
+    return {"type": "drag", "path": [{"x": first[0], "y": first[1]}, {"x": second[0], "y": second[1]}]}
 
 
 def _build_scroll(tokens, kwargs, note):
@@ -359,9 +394,13 @@ def _build_scroll(tokens, kwargs, note):
         scroll_y = _as_number(tokens[index])
     if scroll_x is None or scroll_y is None:
         note("default_kwargs")
-    return {"type": "scroll", "x": x, "y": y,
-            "scroll_x": DEFAULT_SCROLL[0] if scroll_x is None else scroll_x,
-            "scroll_y": DEFAULT_SCROLL[1] if scroll_y is None else scroll_y}
+    return {
+        "type": "scroll",
+        "x": x,
+        "y": y,
+        "scroll_x": DEFAULT_SCROLL[0] if scroll_x is None else scroll_x,
+        "scroll_y": DEFAULT_SCROLL[1] if scroll_y is None else scroll_y,
+    }
 
 
 def _build_type(tokens, kwargs, note):
@@ -405,6 +444,7 @@ def _no_args(action_type: str):
         if tokens or kwargs:
             note("extra_args")
         return {"type": action_type}
+
     return build
 
 
@@ -496,8 +536,13 @@ def _parse_call(body: str):
         return None, ()
     if not had_ref and any(key in action for key in ("x", "path")):
         note("bare_coords")
-    known = {"click": {"button"}, "scroll": {"scrollx", "scrolly", "scroll_x", "scroll_y", "dx", "dy"},
-             "navigate": {"url"}, "handoff": {"reason"}, "confirm": {"propose", "risk"}}
+    known = {
+        "click": {"button"},
+        "scroll": {"scrollx", "scrolly", "scroll_x", "scroll_y", "dx", "dy"},
+        "navigate": {"url"},
+        "handoff": {"reason"},
+        "confirm": {"propose", "risk"},
+    }
     if set(kwargs) - known.get(verb, set()):
         note("extra_args")
     return action, tuple(dict.fromkeys(deviations))
@@ -548,7 +593,7 @@ def parse_student_output(text: str, tolerant_grammar: bool = True) -> ParsedStep
     text = text or ""
     think_re = _THINK_RE if "<think>" in text else _THINK_PREFILLED_RE
     think_match = think_re.search(text)
-    think = (think_match.group(1).strip() if think_match else "")
+    think = think_match.group(1).strip() if think_match else ""
     body = think_re.sub("", text, count=1)
 
     actions, malformed, canonical = [], 0, 0
@@ -564,8 +609,14 @@ def parse_student_output(text: str, tolerant_grammar: bool = True) -> ParsedStep
             deviations[deviation] = deviations.get(deviation, 0) + 1
         canonical += not parsed.deviations
         actions.append(parsed.action)
-    return ParsedStep(think=think, actions=actions, malformed_lines=malformed, raw=text,
-                      canonical_actions=canonical, deviations=deviations)
+    return ParsedStep(
+        think=think,
+        actions=actions,
+        malformed_lines=malformed,
+        raw=text,
+        canonical_actions=canonical,
+        deviations=deviations,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -600,8 +651,10 @@ def scale_action(action: dict, coord_space: str) -> dict:
     """The action as it will be EXECUTED: model coordinates mapped into viewport pixels."""
     to_pixels = COORD_SPACES[coord_space]
     if action.get("type") == "drag":
-        return {**action, "path": [dict(zip(_POSITION_KEYS, to_pixels(p["x"], p["y"])))
-                                   for p in action["path"]]}
+        return {
+            **action,
+            "path": [dict(zip(_POSITION_KEYS, to_pixels(p["x"], p["y"]), strict=False)) for p in action["path"]],
+        }
     if "x" not in action or "y" not in action:
         return action
     x, y = to_pixels(action["x"], action["y"])
@@ -636,8 +689,13 @@ ACTION_TO_DRIVER: dict = {
     "move": lambda a: {"kind": "move_xy", "x": a["x"], "y": a["y"]},
     "type": lambda a: {"kind": "type_text", "text": a["text"]},
     "keypress": lambda a: {"kind": "press", "keys": a["keys"]},
-    "scroll": lambda a: {"kind": "scroll_xy", "x": a["x"], "y": a["y"],
-                         "dx": a.get("scroll_x", 0), "dy": a.get("scroll_y", 0)},
+    "scroll": lambda a: {
+        "kind": "scroll_xy",
+        "x": a["x"],
+        "y": a["y"],
+        "dx": a.get("scroll_x", 0),
+        "dy": a.get("scroll_y", 0),
+    },
     "drag": lambda a: {"kind": "drag_path", "path": a["path"]},
     "wait": lambda a: {"kind": "wait", "seconds": 1},
     "done": lambda a: {"kind": "done"},
@@ -693,8 +751,8 @@ class EvalConfig:
     tolerant_grammar: bool = True
     max_unproductive_steps: int = 5
     max_parse_failures: int = 3
-    max_steps: int = 0                 # >0 pins a FLAT cap; 0 derives one per task (below)
-    step_cap_multiple: float = 3.0     # cap = multiple x the task's own reference_length
+    max_steps: int = 0  # >0 pins a FLAT cap; 0 derives one per task (below)
+    step_cap_multiple: float = 3.0  # cap = multiple x the task's own reference_length
     step_cap_floor: int = 15
     step_cap_ceiling: int = 50
     stratify: bool = False
@@ -714,7 +772,8 @@ class EvalConfig:
         if self.screenshot_format != "png":
             raise ValueError(
                 f"screenshot_format={self.screenshot_format!r}: {PROMPT_FORMAT_VERSION} effect annotations compare "
-                f"consecutive screenshots pixel-wise and a lossy frame never compares identical — use png")
+                f"consecutive screenshots pixel-wise and a lossy frame never compares identical — use png"
+            )
 
 
 @dataclass
@@ -796,8 +855,7 @@ def _docker_browser(cfg):
 
 def _remote_ssh_browser(cfg):
     host, _, port = cfg.browser_host.partition(":")
-    return remote_sandbox.RemoteSandbox(host=host, port=int(port or 22),
-                                        container_timeout=EVAL_CONTAINER_TIMEOUT)
+    return remote_sandbox.RemoteSandbox(host=host, port=int(port or 22), container_timeout=EVAL_CONTAINER_TIMEOUT)
 
 
 def _vast_residential_browser(cfg):
@@ -832,11 +890,11 @@ class EvalBrowser:
         # just the backend — two residential rentals are different IPs.
         egress = getattr(self.sandbox, "egress", None)
         if egress and not self.cfg.egress_note:
-            self.cfg.egress_note = (f"{egress.get('country', '?')}/{egress.get('city', '?')}/"
-                                    f"{egress.get('org', '?')}")
+            self.cfg.egress_note = f"{egress.get('country', '?')}/{egress.get('city', '?')}/{egress.get('org', '?')}"
         await _run(driver_session.install_driver, self.sandbox)
-        await _run(driver_session.start_driver, self.sandbox,
-                   {"DRIVER_LOOP_GUARD_REPEATS": str(self.cfg.loop_guard_repeats)})
+        await _run(
+            driver_session.start_driver, self.sandbox, {"DRIVER_LOOP_GUARD_REPEATS": str(self.cfg.loop_guard_repeats)}
+        )
         self.client = DriverClient(self.sandbox)
 
     async def stop(self):
@@ -870,13 +928,21 @@ def _note_emitted_coordinates(record: EpisodeRecord, actions: list, cfg: EvalCon
             logger.warning(f"[{task.task_id}] COORDINATE SPACE: {record.coord_space_warning}")
 
 
-async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTask,
-                      cfg: EvalConfig, episode_dir: Path, max_steps: int) -> EpisodeRecord:
+async def run_episode(
+    browser: EvalBrowser, student: StudentClient, task: EvalTask, cfg: EvalConfig, episode_dir: Path, max_steps: int
+) -> EpisodeRecord:
     """Run one task start to finish, recording its trajectory into `episode_dir` for the judge."""
     record = EpisodeRecord(
-        task_id=task.task_id, instruction=task.instruction, start_url=task.start_url,
-        website=task.website, domain=task.domain, split_tag=task.split_tag, level=task.level,
-        reference_length=task.reference_length, step_cap=max_steps, episode_dir=str(episode_dir),
+        task_id=task.task_id,
+        instruction=task.instruction,
+        start_url=task.start_url,
+        website=task.website,
+        domain=task.domain,
+        split_tag=task.split_tag,
+        level=task.level,
+        reference_length=task.reference_length,
+        step_cap=max_steps,
+        episode_dir=str(episode_dir),
     )
     started = time.time()
     action_history: list[str] = []
@@ -894,10 +960,15 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
 
     try:
         try:
-            session = await _run(lambda: client.session(
-                task.task_id, task.start_url, task.instruction,
-                {"expected_actions": task.reference_length, "eval_label": cfg.label, "eval_source": task.source},
-                type_mode=cfg.type_mode))
+            session = await _run(
+                lambda: client.session(
+                    task.task_id,
+                    task.start_url,
+                    task.instruction,
+                    {"expected_actions": task.reference_length, "eval_label": cfg.label, "eval_source": task.source},
+                    type_mode=cfg.type_mode,
+                )
+            )
             session_open = True
         except (DriverError, ConnectionError) as e:
             record.outcome = "unreachable"
@@ -929,10 +1000,14 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
             cur_url = last_url
             if prev_png is not None:
                 # The last step enters the history only now: its effect is what THIS screenshot/url show.
-                action_history.extend(history_entries_for_step(
-                    {"actions": executed_actions}, observed_effect(prev_png, cur_png, prev_url, cur_url)))
-            messages = build_student_messages(task.instruction, action_history, cur_png, prev_png,
-                                              observation=cfg.observation)
+                action_history.extend(
+                    history_entries_for_step(
+                        {"actions": executed_actions}, observed_effect(prev_png, cur_png, prev_url, cur_url)
+                    )
+                )
+            messages = build_student_messages(
+                task.instruction, action_history, cur_png, prev_png, observation=cfg.observation
+            )
             prev_png, prev_url, executed_actions = cur_png, cur_url, []
             try:
                 raw = await _run(student.complete, messages)
@@ -956,8 +1031,7 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
                 record.parse_failure_steps += 1
                 consecutive_parse_failures += 1
                 consecutive_unproductive += 1
-                logger.warning(f"[{task.task_id}] step {step}: no parseable action in "
-                               f"{(raw or '')[:200]!r}")
+                logger.warning(f"[{task.task_id}] step {step}: no parseable action in {(raw or '')[:200]!r}")
                 if consecutive_parse_failures >= cfg.max_parse_failures:
                     record.outcome = "parse_failure_abort"
                     break
@@ -999,8 +1073,7 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
                     record.driver_errors += 1
                     if "outside the" in message:
                         record.out_of_bounds += 1
-                    logger.info(f"[{task.task_id}] step {step}: driver refused "
-                                f"{action['type']}: {message[:160]}")
+                    logger.info(f"[{task.task_id}] step {step}: driver refused {action['type']}: {message[:160]}")
                     continue
                 record.actions_executed += 1
                 executed_this_step += 1
@@ -1018,9 +1091,11 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
             consecutive_unproductive = 0 if executed_this_step else consecutive_unproductive + 1
             if consecutive_unproductive >= cfg.max_unproductive_steps:
                 record.outcome = "stuck"
-                logger.warning(f"[{task.task_id}] aborting: {consecutive_unproductive} consecutive "
-                               f"steps executed no action ({record.driver_errors} driver refusals, "
-                               f"{record.out_of_bounds} out of viewport)")
+                logger.warning(
+                    f"[{task.task_id}] aborting: {consecutive_unproductive} consecutive "
+                    f"steps executed no action ({record.driver_errors} driver refusals, "
+                    f"{record.out_of_bounds} out of viewport)"
+                )
                 break
 
             blocked = detect_block(last_url, last_snapshot)
@@ -1054,20 +1129,25 @@ async def run_episode(browser: EvalBrowser, student: StudentClient, task: EvalTa
 
 def _write_episode_metadata(episode_dir: Path, record: EpisodeRecord, cfg: EvalConfig):
     """Write metadata whose `excluded_reason` keeps an eval episode untrainable even if it is copied into the corpus."""
-    (episode_dir / "metadata.json").write_text(json.dumps({
-        "task_id": record.task_id,
-        "instruction": record.instruction,
-        "start_url": record.start_url,
-        "website": record.website,
-        "domain": record.domain,
-        "total_steps": record.driver_steps,
-        "success": record.verified_success,
-        "capture_source": "student_eval",
-        "excluded_reason": "eval_episode",
-        "eval_label": cfg.label,
-        "eval_model": cfg.model,
-        "viewport": {"width": 1280, "height": 720},
-    }, indent=2))
+    (episode_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "task_id": record.task_id,
+                "instruction": record.instruction,
+                "start_url": record.start_url,
+                "website": record.website,
+                "domain": record.domain,
+                "total_steps": record.driver_steps,
+                "success": record.verified_success,
+                "capture_source": "student_eval",
+                "excluded_reason": "eval_episode",
+                "eval_label": cfg.label,
+                "eval_model": cfg.model,
+                "viewport": {"width": 1280, "height": 720},
+            },
+            indent=2,
+        )
+    )
 
 
 async def judge_episode(record: EpisodeRecord, cfg: EvalConfig):
@@ -1077,7 +1157,8 @@ async def judge_episode(record: EpisodeRecord, cfg: EvalConfig):
         record.error = record.error or "no trajectory.json recorded — nothing to judge"
         return
     verdict = await verify_trajectory(
-        episode_dir, full_name=f"eval:{cfg.label}:{record.task_id}",
+        episode_dir,
+        full_name=f"eval:{cfg.label}:{record.task_id}",
         mid_screenshots=cfg.judge_mid_screenshots,
     )
     # verify_trajectory returns its `success: False` fallback for a wedged CLI, a budget cap or an
@@ -1119,8 +1200,9 @@ def _group_metrics(records: list[EpisodeRecord], key) -> dict:
     """Success / blocking / step-efficiency broken out by any grouping key (level, domain)."""
     groups: dict = {}
     for r in records:
-        bucket = groups.setdefault(key(r), {"n": 0, "scored": 0, "success": 0, "blocked": 0,
-                                            "_success_ratios": [], "_success_steps": []})
+        bucket = groups.setdefault(
+            key(r), {"n": 0, "scored": 0, "success": 0, "blocked": 0, "_success_ratios": [], "_success_steps": []}
+        )
         bucket["n"] += 1
         if r.outcome == "site_blocked":
             bucket["blocked"] += 1
@@ -1174,8 +1256,7 @@ def compute_metrics(records: list[EpisodeRecord]) -> dict:
         "successes": len(successes),
         "verified_success_rate": _rate(len(successes), len(scored)),
         "verified_success_rate_all_episodes": _rate(len(successes), total),
-        "efficient_success_rate": _rate(
-            sum(1 for r in successes if r.efficiency != "meandering"), len(scored)),
+        "efficient_success_rate": _rate(sum(1 for r in successes if r.efficiency != "meandering"), len(scored)),
         "site_blocked_rate": _rate(len(blocked), total),
         "parse_failure_rate": _rate(parse_failures, model_steps),
         "malformed_action_lines": sum(r.malformed_lines for r in records),
@@ -1187,13 +1268,15 @@ def compute_metrics(records: list[EpisodeRecord]) -> dict:
         "navigate_actions": sum(r.navigations for r in records),
         "handoff_episodes": sum(1 for r in records if r.handoff_kind),
         "think_rate": _rate(sum(r.think_steps for r in records), model_steps),
-        "driver_error_rate": _rate(sum(r.driver_errors for r in records),
-                                   sum(r.actions_executed + r.driver_errors for r in records)),
+        "driver_error_rate": _rate(
+            sum(r.driver_errors for r in records), sum(r.actions_executed + r.driver_errors for r in records)
+        ),
         "out_of_bounds_actions": sum(r.out_of_bounds for r in records),
         "emitted_coords": sum(r.emitted_coords for r in records),
         "emitted_out_of_viewport": sum(r.emitted_out_of_viewport for r in records),
-        "emitted_out_of_viewport_rate": _rate(sum(r.emitted_out_of_viewport for r in records),
-                                              sum(r.emitted_coords for r in records)),
+        "emitted_out_of_viewport_rate": _rate(
+            sum(r.emitted_out_of_viewport for r in records), sum(r.emitted_coords for r in records)
+        ),
         "stuck_episodes": sum(1 for r in records if r.outcome == "stuck"),
         "mean_steps_on_success": _mean(success_steps),
         "mean_steps_over_reference_on_success": _mean(success_ratios),
@@ -1208,10 +1291,12 @@ def compute_metrics(records: list[EpisodeRecord]) -> dict:
 
 def git_commit() -> str:
     try:
-        sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
-                             check=True).stdout.strip()[:12]
-        dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True,
-                               check=True).stdout.strip()
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()[
+            :12
+        ]
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
+        ).stdout.strip()
         return f"{sha}{'-dirty' if dirty else ''}"
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown"
@@ -1220,9 +1305,11 @@ def git_commit() -> str:
 def step_cap_policy(cfg: EvalConfig, source) -> str:
     if cfg.max_steps:
         return f"flat {cfg.max_steps}"
-    return (f"{cfg.step_cap_multiple}x reference_length, clamped to "
-            f"[{cfg.step_cap_floor}, {cfg.step_cap_ceiling}] "
-            f"(ungraded tasks: {source.default_step_cap})")
+    return (
+        f"{cfg.step_cap_multiple}x reference_length, clamped to "
+        f"[{cfg.step_cap_floor}, {cfg.step_cap_ceiling}] "
+        f"(ungraded tasks: {source.default_step_cap})"
+    )
 
 
 def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
@@ -1255,8 +1342,13 @@ def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
         "step_cap_policy": step_cap_policy(cfg, source),
         "max_unproductive_steps": cfg.max_unproductive_steps,
         "max_parse_failures": cfg.max_parse_failures,
-        "subset_strategy": (f"first {cfg.limit} by dataset order" if cfg.limit and not cfg.stratify
-                            else f"level-stratified {cfg.limit}" if cfg.limit else "full set"),
+        "subset_strategy": (
+            f"first {cfg.limit} by dataset order"
+            if cfg.limit and not cfg.stratify
+            else f"level-stratified {cfg.limit}"
+            if cfg.limit
+            else "full set"
+        ),
         "level_distribution": provenance.get("level_distribution", {}),
         "screenshot_format": cfg.screenshot_format,
         "temperature": cfg.temperature,
@@ -1344,20 +1436,30 @@ def render_report(results: dict) -> str:
         f"(final + {fingerprint['judge_mid_screenshots']} mid screenshots) |",
         f"| history window | {fingerprint['history_window']} |",
         f"| driver loop guard | {fingerprint['driver_loop_guard_repeats'] or 'disabled'} |",
-        f"| browser | local DockerSandbox on the invoking host |",
+        "| browser | local DockerSandbox on the invoking host |",
         f"| repo commit | `{fingerprint['git_commit']}` |",
         "",
     ]
     if results.get("aborted_reason"):
-        lines += [f"> **Run aborted early: {results['aborted_reason']}** — the numbers below "
-                  f"cover only the episodes that ran.", ""]
+        lines += [
+            f"> **Run aborted early: {results['aborted_reason']}** — the numbers below "
+            f"cover only the episodes that ran.",
+            "",
+        ]
     warning = coord_space_diagnosis(fingerprint, metrics)
     if warning:
         lines += [f"> **{warning}**", ""]
     if results.get("task_provenance"):
-        lines += ["<details><summary>task provenance</summary>", "",
-                  "```json", json.dumps(results["task_provenance"], indent=2), "```", "",
-                  "</details>", ""]
+        lines += [
+            "<details><summary>task provenance</summary>",
+            "",
+            "```json",
+            json.dumps(results["task_provenance"], indent=2),
+            "```",
+            "",
+            "</details>",
+            "",
+        ]
 
     lines += [
         "## Metrics",
@@ -1411,12 +1513,16 @@ def render_report(results: dict) -> str:
         "| level | n | scored | verified | success rate | steps/ref | blocked |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
-    for level in sorted(metrics["by_level"], key=lambda k: ("easy", "medium", "hard").index(k)
-                        if k in ("easy", "medium", "hard") else 99):
+    for level in sorted(
+        metrics["by_level"],
+        key=lambda k: ("easy", "medium", "hard").index(k) if k in ("easy", "medium", "hard") else 99,
+    ):
         bucket = metrics["by_level"][level]
-        lines.append(f"| {level} | {bucket['n']} | {bucket['scored']} | {bucket['success']} | "
-                     f"{bucket['success_rate'] * 100:.1f}% | "
-                     f"{bucket['mean_steps_over_reference']}x | {bucket['blocked']} |")
+        lines.append(
+            f"| {level} | {bucket['n']} | {bucket['scored']} | {bucket['success']} | "
+            f"{bucket['success_rate'] * 100:.1f}% | "
+            f"{bucket['mean_steps_over_reference']}x | {bucket['blocked']} |"
+        )
 
     lines += [
         "",
@@ -1428,16 +1534,26 @@ def render_report(results: dict) -> str:
     for outcome, count in sorted(metrics["outcomes"].items(), key=lambda kv: -kv[1]):
         lines.append(f"| {outcome} | {count} |")
 
-    lines += ["", "## Per-domain", "", "| domain | n | scored | verified | success rate | blocked |",
-              "| --- | --- | --- | --- | --- | --- |"]
+    lines += [
+        "",
+        "## Per-domain",
+        "",
+        "| domain | n | scored | verified | success rate | blocked |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
     for domain, bucket in sorted(metrics["by_domain"].items(), key=lambda kv: -kv[1]["n"]):
-        lines.append(f"| {domain} | {bucket['n']} | {bucket['scored']} | {bucket['success']} | "
-                     f"{bucket['success_rate'] * 100:.1f}% | {bucket['blocked']} |")
+        lines.append(
+            f"| {domain} | {bucket['n']} | {bucket['scored']} | {bucket['success']} | "
+            f"{bucket['success_rate'] * 100:.1f}% | {bucket['blocked']} |"
+        )
 
-    lines += ["", "## Episodes", "",
-              "| task | level | outcome | verified | efficiency | steps | cap | ref | parse fails | "
-              "driver errors | note |",
-              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    lines += [
+        "",
+        "## Episodes",
+        "",
+        "| task | level | outcome | verified | efficiency | steps | cap | ref | parse fails | driver errors | note |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
     for r in results["episodes"]:
         note = r["block_reason"] or r["error"] or (r["judge_reasoning"] or "")[:120]
         note = note.replace("|", "/").replace("\n", " ")
@@ -1445,12 +1561,18 @@ def render_report(results: dict) -> str:
             f"| `{r['task_id'][:40]}` | {r.get('level') or '-'} | {r['outcome']} | "
             f"{'yes' if r['verified_success'] else 'no'} | {r['efficiency'] or '-'} | "
             f"{r['model_steps']} | {r.get('step_cap', 0)} | {r['reference_length']} | "
-            f"{r['parse_failure_steps']} | {r['driver_errors']} | {note} |")
+            f"{r['parse_failure_steps']} | {r['driver_errors']} | {note} |"
+        )
 
-    lines += ["", "---", "",
-              "Episodes are recorded under this run directory and are excluded from training by "
-              "construction (outside `trajectories/`, and each carries "
-              "`metadata.excluded_reason=eval_episode`).", ""]
+    lines += [
+        "",
+        "---",
+        "",
+        "Episodes are recorded under this run directory and are excluded from training by "
+        "construction (outside `trajectories/`, and each carries "
+        "`metadata.excluded_reason=eval_episode`).",
+        "",
+    ]
     return "\n".join(lines)
 
 
@@ -1462,10 +1584,13 @@ PARITY_EXEMPT_KEYS = ("git_commit", "task_source_description", "level_distributi
 
 def render_comparison(runs: list[dict]) -> str:
     """Before/after table over two or more runs, with the parity check and per-level and per-domain diffs."""
-    lines = ["# Student eval — comparison", "",
-             "| label | verified success | all-episode success | parse-failure | canonical form | "
-             "done() rate | mean steps (success) | steps/ref | site-blocked | n |",
-             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    lines = [
+        "# Student eval — comparison",
+        "",
+        "| label | verified success | all-episode success | parse-failure | canonical form | "
+        "done() rate | mean steps (success) | steps/ref | site-blocked | n |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
     for run in runs:
         m = run["metrics"]
         lines.append(
@@ -1475,43 +1600,58 @@ def render_comparison(runs: list[dict]) -> str:
             f"{m.get('canonical_form_rate', 0) * 100:.1f}% | {m['done_rate'] * 100:.1f}% | "
             f"{m['mean_steps_on_success']} | "
             f"{m.get('mean_steps_over_reference_on_success', 0)}x | "
-            f"{m['site_blocked_rate'] * 100:.1f}% | {m['episodes']} |")
+            f"{m['site_blocked_rate'] * 100:.1f}% | {m['episodes']} |"
+        )
 
     base = runs[0]
-    levels = [level for level in ("easy", "medium", "hard", "ungraded")
-              if any(level in run["metrics"].get("by_level", {}) for run in runs)]
+    levels = [
+        level
+        for level in ("easy", "medium", "hard", "ungraded")
+        if any(level in run["metrics"].get("by_level", {}) for run in runs)
+    ]
     if levels:
-        lines += ["", "## By level", "",
-                  "| label | " + " | ".join(levels) + " |",
-                  "| --- | " + " | ".join("---" for _ in levels) + " |"]
+        lines += [
+            "",
+            "## By level",
+            "",
+            "| label | " + " | ".join(levels) + " |",
+            "| --- | " + " | ".join("---" for _ in levels) + " |",
+        ]
         for run in runs:
             cells = []
             for level in levels:
                 bucket = run["metrics"].get("by_level", {}).get(level)
-                cells.append(f"{bucket['success_rate'] * 100:.1f}% ({bucket['success']}/{bucket['scored']})"
-                             if bucket else "-")
+                cells.append(
+                    f"{bucket['success_rate'] * 100:.1f}% ({bucket['success']}/{bucket['scored']})" if bucket else "-"
+                )
             lines.append(f"| `{run['label']}` | " + " | ".join(cells) + " |")
 
     if len(runs) > 1:
-        lines += ["", f"## Delta vs `{base['label']}`", "",
-                  "| label | verified success | parse-failure | canonical form | done() rate | "
-                  + " | ".join(f"{level} success" for level in levels) + " |",
-                  "| --- | --- | --- | --- | --- | " + " | ".join("---" for _ in levels) + " |"]
+        lines += [
+            "",
+            f"## Delta vs `{base['label']}`",
+            "",
+            "| label | verified success | parse-failure | canonical form | done() rate | "
+            + " | ".join(f"{level} success" for level in levels)
+            + " |",
+            "| --- | --- | --- | --- | --- | " + " | ".join("---" for _ in levels) + " |",
+        ]
         for run in runs[1:]:
             a, b = base["metrics"], run["metrics"]
             level_cells = []
             for level in levels:
                 before = (a.get("by_level", {}).get(level) or {}).get("success_rate")
                 after = (b.get("by_level", {}).get(level) or {}).get("success_rate")
-                level_cells.append(f"{(after - before) * 100:+.1f} pp"
-                                   if before is not None and after is not None else "-")
+                level_cells.append(
+                    f"{(after - before) * 100:+.1f} pp" if before is not None and after is not None else "-"
+                )
             lines.append(
                 f"| `{run['label']}` | "
                 f"{(b['verified_success_rate'] - a['verified_success_rate']) * 100:+.1f} pp | "
                 f"{(b['parse_failure_rate'] - a['parse_failure_rate']) * 100:+.1f} pp | "
                 f"{(b.get('canonical_form_rate', 0) - a.get('canonical_form_rate', 0)) * 100:+.1f} pp | "
-                f"{(b['done_rate'] - a['done_rate']) * 100:+.1f} pp | "
-                + " | ".join(level_cells) + " |")
+                f"{(b['done_rate'] - a['done_rate']) * 100:+.1f} pp | " + " | ".join(level_cells) + " |"
+            )
 
     annotated = []
     for key in EXPECTED_TO_DIFFER_KEYS:
@@ -1525,31 +1665,43 @@ def render_comparison(runs: list[dict]) -> str:
             continue
         for run in runs[1:]:
             if run["harness"].get(key) != value:
-                differences.append(f"- `{key}`: `{base['label']}`={value!r} vs "
-                                   f"`{run['label']}`={run['harness'].get(key)!r}")
+                differences.append(
+                    f"- `{key}`: `{base['label']}`={value!r} vs `{run['label']}`={run['harness'].get(key)!r}"
+                )
     lines += ["", "## Harness parity", ""]
     if differences:
-        lines += ["**These runs are NOT the same harness — the delta above is not attributable to "
-                  "the model alone:**", ""] + differences
+        lines += [
+            "**These runs are NOT the same harness — the delta above is not attributable to the model alone:**",
+            "",
+        ] + differences
     else:
-        lines.append("All compared runs share the same task subset, step-cap and abort policy, "
-                     "prompt settings and judge configuration.")
+        lines.append(
+            "All compared runs share the same task subset, step-cap and abort policy, "
+            "prompt settings and judge configuration."
+        )
     if annotated:
-        lines += ["", "Expected model-side differences (not parity violations — each model is "
-                  "measured in its own convention):", ""] + annotated
+        lines += [
+            "",
+            "Expected model-side differences (not parity violations — each model is measured in its own convention):",
+            "",
+        ] + annotated
     commits = {run["label"]: run["harness"].get("git_commit") for run in runs}
     lines += ["", f"Repo commits: {json.dumps(commits)}", ""]
 
     domains = sorted({d for run in runs for d in run["metrics"]["by_domain"]})
-    lines += ["## Per-domain success rate", "",
-              "| domain | " + " | ".join(f"`{run['label']}`" for run in runs) + " |",
-              "| --- | " + " | ".join("---" for _ in runs) + " |"]
+    lines += [
+        "## Per-domain success rate",
+        "",
+        "| domain | " + " | ".join(f"`{run['label']}`" for run in runs) + " |",
+        "| --- | " + " | ".join("---" for _ in runs) + " |",
+    ]
     for domain in domains:
         cells = []
         for run in runs:
             bucket = run["metrics"]["by_domain"].get(domain)
-            cells.append(f"{bucket['success_rate'] * 100:.0f}% ({bucket['success']}/{bucket['scored']})"
-                         if bucket else "-")
+            cells.append(
+                f"{bucket['success_rate'] * 100:.0f}% ({bucket['success']}/{bucket['scored']})" if bucket else "-"
+            )
         lines.append(f"| {domain} | " + " | ".join(cells) + " |")
     lines.append("")
     return "\n".join(lines)
@@ -1563,7 +1715,7 @@ def render_comparison(runs: list[dict]) -> str:
 def _make_run_id(cfg: EvalConfig) -> str:
     if cfg.run_id:
         return cfg.run_id
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"{cfg.label}_{cfg.task_source}_{stamp}"
 
 
@@ -1577,8 +1729,14 @@ def _load_existing_episode(episode_dir: Path) -> EpisodeRecord | None:
         return None
 
 
-async def _process_task(task: EvalTask, cfg: EvalConfig, browser: EvalBrowser, run_dir: Path,
-                        source_default_cap: int, semaphore: asyncio.Semaphore) -> EpisodeRecord:
+async def _process_task(
+    task: EvalTask,
+    cfg: EvalConfig,
+    browser: EvalBrowser,
+    run_dir: Path,
+    source_default_cap: int,
+    semaphore: asyncio.Semaphore,
+) -> EpisodeRecord:
     episode_dir = run_dir / "episodes" / episode_dir_name(task)
     max_steps = step_cap_for(task, cfg, source_default_cap)
     async with semaphore:
@@ -1616,8 +1774,10 @@ async def _process_task(task: EvalTask, cfg: EvalConfig, browser: EvalBrowser, r
             logger.warning(f"[{task.task_id}] judging failed: {e}")
             record.error = record.error or f"judge failed: {str(e)[:200]}"
         _persist_episode(episode_dir, record, cfg)
-        logger.info(f"[{task.task_id}] {record.outcome} | verified={record.verified_success} | "
-                    f"{record.model_steps} steps | {record.duration_s}s")
+        logger.info(
+            f"[{task.task_id}] {record.outcome} | verified={record.verified_success} | "
+            f"{record.model_steps} steps | {record.duration_s}s"
+        )
         return record
 
 
@@ -1630,7 +1790,8 @@ def _persist_episode(episode_dir: Path, record: EpisodeRecord, cfg: EvalConfig):
 
 async def run_eval(cfg: EvalConfig) -> dict:
     load_cfg = TaskLoadConfig(
-        limit=cfg.limit, revision=cfg.dataset_revision,
+        limit=cfg.limit,
+        revision=cfg.dataset_revision,
         cache_dir=EVAL_RUNS_DIR / ".task_cache",
         trajectories_dir=Path(cfg.trajectories_dir),
         stratify=cfg.stratify,
@@ -1649,10 +1810,12 @@ async def run_eval(cfg: EvalConfig) -> dict:
     file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
     logging.getLogger().addHandler(file_handler)
 
-    logger.info(f"run {run_id}: {len(tasks)} tasks from {source.name} "
-                f"(levels: {provenance.get('level_distribution', {})}), "
-                f"step cap {step_cap_policy(cfg, source)}, coord_space={cfg.coord_space}, "
-                f"student={cfg.student} model={cfg.model or '(n/a)'}")
+    logger.info(
+        f"run {run_id}: {len(tasks)} tasks from {source.name} "
+        f"(levels: {provenance.get('level_distribution', {})}), "
+        f"step cap {step_cap_policy(cfg, source)}, coord_space={cfg.coord_space}, "
+        f"student={cfg.student} model={cfg.model or '(n/a)'}"
+    )
 
     workers = safe_parallel_sandboxes(max(1, cfg.parallel))
     if workers != cfg.parallel:
@@ -1660,13 +1823,12 @@ async def run_eval(cfg: EvalConfig) -> dict:
     browsers = [EvalBrowser(cfg, f"{run_id}_w{i}") for i in range(workers)]
     semaphores = [asyncio.Semaphore(1) for _ in browsers]
 
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
     records: list[EpisodeRecord] = []
     aborted_reason = ""
     try:
         coros = [
-            _process_task(task, cfg, browsers[i % workers], run_dir, source.default_step_cap,
-                          semaphores[i % workers])
+            _process_task(task, cfg, browsers[i % workers], run_dir, source.default_step_cap, semaphores[i % workers])
             for i, task in enumerate(tasks)
         ]
         for result in await asyncio.gather(*coros, return_exceptions=True):
@@ -1685,7 +1847,7 @@ async def run_eval(cfg: EvalConfig) -> dict:
         "run_id": run_id,
         "label": cfg.label,
         "started_at": started_at,
-        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": datetime.now(UTC).isoformat(),
         "config": asdict(cfg) | {"api_key": "<redacted>" if cfg.api_key else ""},
         "harness": harness_fingerprint(cfg, source, provenance),
         "task_provenance": provenance,
@@ -1715,8 +1877,14 @@ async def judge_run(run_dir: Path, cfg: EvalConfig) -> dict:
     except (FileNotFoundError, TaskSourceUnavailable):
         logger.warning(f"{run_dir.name}: no results.json — rebuilding from {len(on_disk)} episode(s) on disk")
         records = list(on_disk.values())
-        results = {"run_id": run_dir.name, "label": run_dir.name, "config": {}, "harness": {},
-                   "task_provenance": {}, "aborted_reason": "run interrupted; summary rebuilt from episodes"}
+        results = {
+            "run_id": run_dir.name,
+            "label": run_dir.name,
+            "config": {},
+            "harness": {},
+            "task_provenance": {},
+            "aborted_reason": "run interrupted; summary rebuilt from episodes",
+        }
     owed = [record for record in records if record.judge_deferred]
     logger.info(f"{run_dir.name}: {len(owed)} episode(s) owe a verdict of {len(records)} recorded")
 
@@ -1734,12 +1902,14 @@ async def judge_run(run_dir: Path, cfg: EvalConfig) -> dict:
             break
         _persist_episode(episode_dir, record, cfg)
         judged += 1
-        logger.info(f"[{record.task_id}] verified={record.verified_success} "
-                    f"deferred={record.judge_deferred} ({judged}/{len(owed)})")
+        logger.info(
+            f"[{record.task_id}] verified={record.verified_success} "
+            f"deferred={record.judge_deferred} ({judged}/{len(owed)})"
+        )
 
     results["episodes"] = [asdict(record) for record in records]
     results["metrics"] = compute_metrics(records)
-    results["finished_at"] = datetime.now(timezone.utc).isoformat()
+    results["finished_at"] = datetime.now(UTC).isoformat()
     (run_dir / "results.json").write_text(json.dumps(results, indent=2))
     (run_dir / "report.md").write_text(render_report(results))
     logger.info(f"judged {judged}; rewrote {run_dir / 'report.md'}")
@@ -1760,103 +1930,181 @@ def load_run(run_dir: str | Path) -> dict:
 
 
 def _add_run_arguments(parser):
-    parser.add_argument("--task-source", default="online_mind2web",
-                        choices=sorted(TASK_SOURCES), help="which task set to evaluate on")
-    parser.add_argument("--tasks-file", default="",
-                        help="JSON/JSONL of EvalTask rows, bypassing the registry loader")
+    parser.add_argument(
+        "--task-source", default="online_mind2web", choices=sorted(TASK_SOURCES), help="which task set to evaluate on"
+    )
+    parser.add_argument("--tasks-file", default="", help="JSON/JSONL of EvalTask rows, bypassing the registry loader")
     parser.add_argument("--limit", type=int, default=None, help="evaluate only the first N tasks")
-    parser.add_argument("--label", default="baseline",
-                        help="run label, e.g. 'before' / 'after' — names the run dir and the report")
+    parser.add_argument(
+        "--label", default="baseline", help="run label, e.g. 'before' / 'after' — names the run dir and the report"
+    )
     parser.add_argument("--run-id", default="", help="override the generated run directory name")
     parser.add_argument("--student", default="openai", choices=sorted(STUDENT_BACKENDS))
-    parser.add_argument("--endpoint", default=os.environ.get("EVAL_ENDPOINT", ""),
-                        help="OpenAI-compatible base URL (e.g. http://host:8000/v1)")
+    parser.add_argument(
+        "--endpoint",
+        default=os.environ.get("EVAL_ENDPOINT", ""),
+        help="OpenAI-compatible base URL (e.g. http://host:8000/v1)",
+    )
     parser.add_argument("--model", default=os.environ.get("EVAL_MODEL", ""), help="served model id")
-    parser.add_argument("--adapter", default=os.environ.get("EVAL_ADAPTER", ""),
-                        help="LoRA/checkpoint path served behind the endpoint (recorded in the report)")
+    parser.add_argument(
+        "--adapter",
+        default=os.environ.get("EVAL_ADAPTER", ""),
+        help="LoRA/checkpoint path served behind the endpoint (recorded in the report)",
+    )
     parser.add_argument("--api-key", default=os.environ.get("EVAL_API_KEY", ""))
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--student-timeout", type=int, default=180)
-    parser.add_argument("--student-retries", type=int, default=2,
-                        help="retries for transport errors only; HTTP errors are surfaced")
-    parser.add_argument("--mock-trajectory", default="",
-                        help="trajectory.json replayed by the 'mock' student backend")
-    parser.add_argument("--coord-space", default=os.environ.get("EVAL_COORD_SPACE", "normalized_1000"),
-                        choices=sorted(COORD_SPACES),
-                        help="the convention THIS model answers in: a stock Qwen and an sft3 checkpoint emit "
-                             "normalized_1000 (the prompt's 0-1000 grid); an sft-v1/v2 checkpoint emits "
-                             "viewport_abs (1280x720 pixels). Set it explicitly per model — it is never "
-                             "auto-detected")
-    parser.add_argument("--type-mode", default="replace", choices=("replace", "append"),
-                        help="driver typing mode; replace selects the focused field's text before typing, "
-                             "as capture and RL do")
-    parser.add_argument("--strict-action-grammar", action="store_true",
-                        help="accept ONLY the canonical form format_action_for_training emits. Off "
-                             "by default: any unambiguous spelling of a call is accepted, and how "
-                             "canonical each model's output was is reported as canonical_form_rate "
-                             "instead of being charged to its success rate")
-    parser.add_argument("--max-unproductive-steps", type=int, default=MAX_UNPRODUCTIVE_STEPS,
-                        help="abort the episode as 'stuck' after this many steps in a row that "
-                             "execute no action at all")
-    parser.add_argument("--max-parse-failures", type=int, default=MAX_CONSECUTIVE_PARSE_FAILURES,
-                        help="abort as 'parse_failure_abort' after this many unparseable steps in a row")
-    parser.add_argument("--max-steps", type=int, default=0,
-                        help="FLAT step cap per episode; 0 derives one from each task's reference_length")
-    parser.add_argument("--step-cap-multiple", type=float, default=3.0,
-                        help="derived cap = this x the task's reference_length")
+    parser.add_argument(
+        "--student-retries", type=int, default=2, help="retries for transport errors only; HTTP errors are surfaced"
+    )
+    parser.add_argument("--mock-trajectory", default="", help="trajectory.json replayed by the 'mock' student backend")
+    parser.add_argument(
+        "--coord-space",
+        default=os.environ.get("EVAL_COORD_SPACE", "normalized_1000"),
+        choices=sorted(COORD_SPACES),
+        help="the convention THIS model answers in: a stock Qwen and an sft3 checkpoint emit "
+        "normalized_1000 (the prompt's 0-1000 grid); an sft-v1/v2 checkpoint emits "
+        "viewport_abs (1280x720 pixels). Set it explicitly per model — it is never "
+        "auto-detected",
+    )
+    parser.add_argument(
+        "--type-mode",
+        default="replace",
+        choices=("replace", "append"),
+        help="driver typing mode; replace selects the focused field's text before typing, as capture and RL do",
+    )
+    parser.add_argument(
+        "--strict-action-grammar",
+        action="store_true",
+        help="accept ONLY the canonical form format_action_for_training emits. Off "
+        "by default: any unambiguous spelling of a call is accepted, and how "
+        "canonical each model's output was is reported as canonical_form_rate "
+        "instead of being charged to its success rate",
+    )
+    parser.add_argument(
+        "--max-unproductive-steps",
+        type=int,
+        default=MAX_UNPRODUCTIVE_STEPS,
+        help="abort the episode as 'stuck' after this many steps in a row that execute no action at all",
+    )
+    parser.add_argument(
+        "--max-parse-failures",
+        type=int,
+        default=MAX_CONSECUTIVE_PARSE_FAILURES,
+        help="abort as 'parse_failure_abort' after this many unparseable steps in a row",
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=0,
+        help="FLAT step cap per episode; 0 derives one from each task's reference_length",
+    )
+    parser.add_argument(
+        "--step-cap-multiple", type=float, default=3.0, help="derived cap = this x the task's reference_length"
+    )
     parser.add_argument("--step-cap-floor", type=int, default=15)
     parser.add_argument("--step-cap-ceiling", type=int, default=50)
-    parser.add_argument("--stratify", action="store_true",
-                        help="with --limit, keep the task set's easy/medium/hard mix instead of "
-                             "taking the first N rows")
+    parser.add_argument(
+        "--stratify",
+        action="store_true",
+        help="with --limit, keep the task set's easy/medium/hard mix instead of taking the first N rows",
+    )
     parser.add_argument("--episode-timeout", type=int, default=900)
-    parser.add_argument("--screenshot-format", default="png", choices=("png", "jpeg"),
-                        help="png only under sft3: effect annotations compare consecutive frames pixel-wise")
-    parser.add_argument("--no-judge", action="store_true",
-                        help="record episodes and DEFER the verdict; a later resume judges them off "
-                             "the GPU, so a usage limit can never burn rental hours")
-    parser.add_argument("--judge-mid-screenshots", type=int, default=2,
-                        help="mid-run frames per verdict on top of the final one; the main cost dial")
-    parser.add_argument("--observation", default=DEFAULT_OBSERVATION, choices=OBSERVATION_FORMATS,
-                        help="observation layout: v3 sends prev+current screenshots, v2 sends current "
-                             "only (required for sft-v1/v2 and any GRPO LoRA over them)")
-    parser.add_argument("--parallel", type=int, default=1,
-                        help="concurrent sandboxes (clamped to what the Docker VM can hold)")
-    parser.add_argument("--no-resume", action="store_true",
-                        help="re-run episodes that already have an episode.json")
+    parser.add_argument(
+        "--screenshot-format",
+        default="png",
+        choices=("png", "jpeg"),
+        help="png only under sft3: effect annotations compare consecutive frames pixel-wise",
+    )
+    parser.add_argument(
+        "--no-judge",
+        action="store_true",
+        help="record episodes and DEFER the verdict; a later resume judges them off "
+        "the GPU, so a usage limit can never burn rental hours",
+    )
+    parser.add_argument(
+        "--judge-mid-screenshots",
+        type=int,
+        default=2,
+        help="mid-run frames per verdict on top of the final one; the main cost dial",
+    )
+    parser.add_argument(
+        "--observation",
+        default=DEFAULT_OBSERVATION,
+        choices=OBSERVATION_FORMATS,
+        help="observation layout: v3 sends prev+current screenshots, v2 sends current "
+        "only (required for sft-v1/v2 and any GRPO LoRA over them)",
+    )
+    parser.add_argument(
+        "--parallel", type=int, default=1, help="concurrent sandboxes (clamped to what the Docker VM can hold)"
+    )
+    parser.add_argument("--no-resume", action="store_true", help="re-run episodes that already have an episode.json")
     parser.add_argument("--dataset-revision", default="main")
-    parser.add_argument("--trajectories-dir", default="trajectories",
-                        help="corpus checked by the held_out source to prove a task is unseen")
-    parser.add_argument("--loop-guard-repeats", type=int, default=0,
-                        help="driver loop guard for eval; 0 lets a stuck model actually repeat itself")
+    parser.add_argument(
+        "--trajectories-dir",
+        default="trajectories",
+        help="corpus checked by the held_out source to prove a task is unseen",
+    )
+    parser.add_argument(
+        "--loop-guard-repeats",
+        type=int,
+        default=0,
+        help="driver loop guard for eval; 0 lets a stuck model actually repeat itself",
+    )
     parser.add_argument("--sandbox-image", default="")
-    parser.add_argument("--browser-backend", default="docker", choices=sorted(BROWSER_BACKENDS),
-                        help="where the browser runs, i.e. which IP the sites see. "
-                             "`vast_residential` rents a US consumer-ISP box and destroys it after.")
-    parser.add_argument("--browser-host", default="",
-                        help="remote_ssh backend: host or host:port of an already-running box")
+    parser.add_argument(
+        "--browser-backend",
+        default="docker",
+        choices=sorted(BROWSER_BACKENDS),
+        help="where the browser runs, i.e. which IP the sites see. "
+        "`vast_residential` rents a US consumer-ISP box and destroys it after.",
+    )
+    parser.add_argument(
+        "--browser-host", default="", help="remote_ssh backend: host or host:port of an already-running box"
+    )
 
 
 def _config_from_args(args) -> EvalConfig:
     return EvalConfig(
-        task_source=args.task_source, tasks_file=args.tasks_file, limit=args.limit,
-        label=args.label, run_id=args.run_id, student=args.student, endpoint=args.endpoint,
-        model=args.model, adapter=args.adapter, api_key=args.api_key,
-        temperature=args.temperature, max_tokens=args.max_tokens,
-        student_timeout_s=args.student_timeout, student_retries=args.student_retries,
-        mock_trajectory=args.mock_trajectory, coord_space=args.coord_space, type_mode=args.type_mode,
+        task_source=args.task_source,
+        tasks_file=args.tasks_file,
+        limit=args.limit,
+        label=args.label,
+        run_id=args.run_id,
+        student=args.student,
+        endpoint=args.endpoint,
+        model=args.model,
+        adapter=args.adapter,
+        api_key=args.api_key,
+        temperature=args.temperature,
+        max_tokens=args.max_tokens,
+        student_timeout_s=args.student_timeout,
+        student_retries=args.student_retries,
+        mock_trajectory=args.mock_trajectory,
+        coord_space=args.coord_space,
+        type_mode=args.type_mode,
         tolerant_grammar=not args.strict_action_grammar,
         max_unproductive_steps=args.max_unproductive_steps,
-        max_parse_failures=args.max_parse_failures, max_steps=args.max_steps,
-        step_cap_multiple=args.step_cap_multiple, step_cap_floor=args.step_cap_floor,
-        step_cap_ceiling=args.step_cap_ceiling, stratify=args.stratify,
-        episode_timeout_s=args.episode_timeout, screenshot_format=args.screenshot_format,
-        judge=not args.no_judge, judge_mid_screenshots=args.judge_mid_screenshots,
-        parallel=args.parallel, observation=args.observation, resume=not args.no_resume,
-        dataset_revision=args.dataset_revision, trajectories_dir=args.trajectories_dir,
-        loop_guard_repeats=args.loop_guard_repeats, sandbox_image=args.sandbox_image,
-        browser_backend=args.browser_backend, browser_host=args.browser_host,
+        max_parse_failures=args.max_parse_failures,
+        max_steps=args.max_steps,
+        step_cap_multiple=args.step_cap_multiple,
+        step_cap_floor=args.step_cap_floor,
+        step_cap_ceiling=args.step_cap_ceiling,
+        stratify=args.stratify,
+        episode_timeout_s=args.episode_timeout,
+        screenshot_format=args.screenshot_format,
+        judge=not args.no_judge,
+        judge_mid_screenshots=args.judge_mid_screenshots,
+        parallel=args.parallel,
+        observation=args.observation,
+        resume=not args.no_resume,
+        dataset_revision=args.dataset_revision,
+        trajectories_dir=args.trajectories_dir,
+        loop_guard_repeats=args.loop_guard_repeats,
+        sandbox_image=args.sandbox_image,
+        browser_backend=args.browser_backend,
+        browser_host=args.browser_host,
     )
 
 
@@ -1869,14 +2117,18 @@ def main():
 
     judge_parser = subparsers.add_parser("judge", help="score the episodes a --no-judge run deferred")
     judge_parser.add_argument("run_dir")
-    judge_parser.add_argument("--judge-mid-screenshots", type=int, default=2,
-                              help="mid-run frames per verdict on top of the final one; the main cost dial")
+    judge_parser.add_argument(
+        "--judge-mid-screenshots",
+        type=int,
+        default=2,
+        help="mid-run frames per verdict on top of the final one; the main cost dial",
+    )
 
     compare_parser = subparsers.add_parser("compare", help="render a before/after table")
     compare_parser.add_argument("runs", nargs="+", help="two or more eval_runs/<id> directories")
-    compare_parser.add_argument("--output", default="",
-                                help="write the table here (default: print, plus comparison.md "
-                                     "next to the first run)")
+    compare_parser.add_argument(
+        "--output", default="", help="write the table here (default: print, plus comparison.md next to the first run)"
+    )
 
     list_parser = subparsers.add_parser("sources", help="list the registered task sources")
     list_parser.add_argument("--json", action="store_true")
@@ -1884,12 +2136,21 @@ def main():
     args = parser.parse_args()
 
     if args.command == "sources":
-        rows = [{"name": s.name, "description": s.description, "default_step_cap": s.default_step_cap,
-                 "live_web": s.live_web, "dataset": s.hf_dataset or s.access_url}
-                for s in TASK_SOURCES.values()]
-        print(json.dumps(rows, indent=2) if args.json else
-              "\n".join(f"{r['name']:<20} step cap {r['default_step_cap']:<4} {r['description']}"
-                        for r in rows))
+        rows = [
+            {
+                "name": s.name,
+                "description": s.description,
+                "default_step_cap": s.default_step_cap,
+                "live_web": s.live_web,
+                "dataset": s.hf_dataset or s.access_url,
+            }
+            for s in TASK_SOURCES.values()
+        ]
+        print(
+            json.dumps(rows, indent=2)
+            if args.json
+            else "\n".join(f"{r['name']:<20} step cap {r['default_step_cap']:<4} {r['description']}" for r in rows)
+        )
         return
 
     if args.command == "compare":
@@ -1919,10 +2180,12 @@ def main():
         logger.error(str(e))
         raise SystemExit(2)
     metrics = results["metrics"]
-    print(f"\nverified task success: {metrics['verified_success_rate'] * 100:.1f}% across "
-          f"{metrics['episodes']} {results['harness']['task_source']} tasks, "
-          f"parse-failure rate {metrics['parse_failure_rate'] * 100:.1f}%, "
-          f"site-blocked {metrics['site_blocked_rate'] * 100:.1f}%")
+    print(
+        f"\nverified task success: {metrics['verified_success_rate'] * 100:.1f}% across "
+        f"{metrics['episodes']} {results['harness']['task_source']} tasks, "
+        f"parse-failure rate {metrics['parse_failure_rate'] * 100:.1f}%, "
+        f"site-blocked {metrics['site_blocked_rate'] * 100:.1f}%"
+    )
     warning = coord_space_diagnosis(results["harness"], metrics)
     if warning:
         print(f"\n!! {warning}")

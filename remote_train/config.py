@@ -5,6 +5,7 @@ flags. This mirrors `train_qwen.py:train_model`'s "load YAML, then apply non-Non
 overrides" pattern. Secrets are never read from the YAML — only from env
 (`VAST_API_KEY`, `HF_TOKEN`), like `GITHUB_TOKEN`/`OPENAI_API_KEY` elsewhere in the repo.
 """
+
 import os
 from dataclasses import dataclass, field
 
@@ -31,7 +32,7 @@ class RemoteTrainConfig:
     min_inet_down_mbps: int = 300
     exclude_countries: tuple = DEFAULT_EXCLUDE_COUNTRIES
 
-    instance_label: str = "roman.maior"
+    instance_label: str = "cua-remote-train"
     image: str = "pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel"
     disk_gb: int = 80
 
@@ -55,7 +56,7 @@ class RemoteTrainConfig:
     eval_models: tuple = ()
     eval_limit: int = 0  # 0 = full dataset
     eval_results_dir: str = "eval_results"
-    eval_dataset: str = ""     # override the benchmark's default HF dataset
+    eval_dataset: str = ""  # override the benchmark's default HF dataset
     eval_split: str = ""
     eval_extra_args: str = ""  # extra flags passed straight to the harness
     # Coordinate convention THE MODEL answers in: normalized_1000 (stock Qwen, sft3), viewport_abs (sft-v1/v2).
@@ -77,15 +78,46 @@ class RemoteTrainConfig:
 
 
 _YAML_KEYS = {
-    "provider", "gpu_name", "min_vram_gb", "min_compute_cap", "min_cuda_vers", "num_gpus", "max_price_per_hour",
-    "min_reliability", "min_inet_down_mbps",
-    "exclude_countries", "instance_label", "image", "disk_gb", "max_runtime_hours",
-    "ready_timeout_s", "poll_interval_s", "ssh_key_path", "remote_workdir", "trajectories_dir",
-    "train_config", "output_dir", "val_split", "resume_from", "keep_on_signal",
-    "benchmark", "eval_models", "eval_limit",
-    "eval_results_dir", "eval_dataset", "eval_split", "eval_extra_args", "eval_coord_space",
-    "push_hf_repo", "notify",
-    "rl_config", "rl_runs_dir", "collect_every_polls", "serve_adapter", "serve_seconds", "env_url",
+    "provider",
+    "gpu_name",
+    "min_vram_gb",
+    "min_compute_cap",
+    "min_cuda_vers",
+    "num_gpus",
+    "max_price_per_hour",
+    "min_reliability",
+    "min_inet_down_mbps",
+    "exclude_countries",
+    "instance_label",
+    "image",
+    "disk_gb",
+    "max_runtime_hours",
+    "ready_timeout_s",
+    "poll_interval_s",
+    "ssh_key_path",
+    "remote_workdir",
+    "trajectories_dir",
+    "train_config",
+    "output_dir",
+    "val_split",
+    "resume_from",
+    "keep_on_signal",
+    "benchmark",
+    "eval_models",
+    "eval_limit",
+    "eval_results_dir",
+    "eval_dataset",
+    "eval_split",
+    "eval_extra_args",
+    "eval_coord_space",
+    "push_hf_repo",
+    "notify",
+    "rl_config",
+    "rl_runs_dir",
+    "collect_every_polls",
+    "serve_adapter",
+    "serve_seconds",
+    "env_url",
 }
 
 

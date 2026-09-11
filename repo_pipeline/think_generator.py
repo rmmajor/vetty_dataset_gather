@@ -18,6 +18,7 @@ Generation is sequential within a single trajectory because the prompt for step 
 on the (already-written) thought for step N-1. Concurrency happens at the trajectory level
 in the orchestrator, not inside this function.
 """
+
 import base64
 import json
 import logging
@@ -354,7 +355,9 @@ async def generate_thinks_for_trajectory(
                     if not isinstance(m, int) or m >= n or m in shown:
                         continue
                     if (prior.get("thought") or "").strip():
-                        seed_lines.append(f"{m}. [{prior['thought'].strip()}] → {action_nl_by_step.get(m, '(no action)')}")
+                        seed_lines.append(
+                            f"{m}. [{prior['thought'].strip()}] → {action_nl_by_step.get(m, '(no action)')}"
+                        )
                         shown.add(m)
 
                 about_to = action_nl_by_step.get(n, "(no action)")
@@ -367,9 +370,12 @@ async def generate_thinks_for_trajectory(
                     blocks.append(THINK_SYSTEM_TEMPLATE.format(goal=goal, start_url=start_url))
                 if seed_lines:
                     blocks.append("Steps so far in this trajectory:\n" + "\n".join(seed_lines))
-                reminder = ("Write the thought." if first_turn else
-                            "Write the next thought (1-3 sentences, first person, anchored in what is "
-                            "visible on screen; never quote selectors, roles, or coordinates).")
+                reminder = (
+                    "Write the thought."
+                    if first_turn
+                    else "Write the next thought (1-3 sentences, first person, anchored in what is "
+                    "visible on screen; never quote selectors, roles, or coordinates)."
+                )
                 blocks.append(
                     f"Now about to: {about_to}\n"
                     f"(Grounding hint — do not quote in your output: {grounding_hint})\n\n{reminder}"
@@ -378,8 +384,12 @@ async def generate_thinks_for_trajectory(
                 first_turn = False
 
                 step["thought"] = await _session_think_turn(
-                    client, user_text, screenshot_path,
-                    registry=registry, full_name=full_name, model=options.model,
+                    client,
+                    user_text,
+                    screenshot_path,
+                    registry=registry,
+                    full_name=full_name,
+                    model=options.model,
                 )
                 shown.add(n)
                 # Crash-safe: persist after each step so a mid-trajectory stop still resumes cleanly.
@@ -400,18 +410,22 @@ async def generate_thinks_for_trajectory(
     return True
 
 
-async def _session_think_turn(client, user_text: str, screenshot_path: Path, *,
-                              registry, full_name: str, model: str) -> str:
+async def _session_think_turn(
+    client, user_text: str, screenshot_path: Path, *, registry, full_name: str, model: str
+) -> str:
     """Send one step as a turn in the persistent session and return the model's thought. Soft-fails
     to "" on any error (the step stays empty and is retried on a later resume), so one bad turn
     can't abort the trajectory."""
     b64 = base64.b64encode(screenshot_path.read_bytes()).decode("utf-8")
     message = {
         "type": "user",
-        "message": {"role": "user", "content": [
-            {"type": "text", "text": user_text},
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-        ]},
+        "message": {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_text},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
+            ],
+        },
         "parent_tool_use_id": None,
         "session_id": "default",
     }
@@ -450,9 +464,18 @@ async def _session_think_turn(client, user_text: str, screenshot_path: Path, *,
     if result_msg is not None:
         cost_tracker.add(getattr(result_msg, "total_cost_usd", None))
         if registry is not None:
-            registry.record_agent_call(full_name, 7, "think", model, result_msg.num_turns,
-                                       result_msg.total_cost_usd, result_msg.usage, result_msg.subtype,
-                                       result_msg.is_error, result_msg.duration_ms)
+            registry.record_agent_call(
+                full_name,
+                7,
+                "think",
+                model,
+                result_msg.num_turns,
+                result_msg.total_cost_usd,
+                result_msg.usage,
+                result_msg.subtype,
+                result_msg.is_error,
+                result_msg.duration_ms,
+            )
     return thought.strip()
 
 
@@ -492,9 +515,7 @@ async def polish_thoughts_for_trajectory(
 
     lines = []
     for step in steps:
-        action_nl = render_action_nl(
-            step["actions"][0], role=step.get("role") or "", name=step.get("name") or ""
-        )
+        action_nl = render_action_nl(step["actions"][0], role=step.get("role") or "", name=step.get("name") or "")
         raw = (step.get("thought") or "").strip() or "(empty)"
         lines.append(f"{step['step']}. [{raw}] -> {action_nl}")
 
@@ -535,12 +556,10 @@ async def polish_thoughts_for_trajectory(
         logger.warning(f"  {trajectory_dir.name}: polish output unparseable")
         return False
     if len(rewritten) != len(steps) or not all(isinstance(t, str) and t.strip() for t in rewritten):
-        logger.warning(
-            f"  {trajectory_dir.name}: polish returned {len(rewritten)} thoughts for {len(steps)} steps"
-        )
+        logger.warning(f"  {trajectory_dir.name}: polish returned {len(rewritten)} thoughts for {len(steps)} steps")
         return False
 
-    for step, thought in zip(steps, rewritten):
+    for step, thought in zip(steps, rewritten, strict=False):
         step["thought"] = thought.strip()
     trajectory_path.write_text(json.dumps(trajectory, indent=2))
 
@@ -549,47 +568,3 @@ async def polish_thoughts_for_trajectory(
     metadata_path.write_text(json.dumps(metadata, indent=2))
     logger.info(f"  {trajectory_dir.name}: polished {len(steps)} thoughts")
     return True
-
-
-async def generate_thinks_for_all(
-    trajectories_dir: Path,
-    workers: int = 1,
-    budget_remaining: float | None = None,
-):
-    """Walk every `task_*/` subdir under `trajectories_dir` and fill missing thoughts."""
-    del workers
-
-    trajectory_dirs = sorted(trajectories_dir.glob("task_*/"))
-    logger.info(f"Generating think blocks for {len(trajectory_dirs)} trajectories")
-
-    cost_estimate = 0.0
-    processed = 0
-
-    for traj_dir in trajectory_dirs:
-        if rate_limit_tracker.limit_reached():
-            logger.warning("Usage limit reached, stopping think generation")
-            break
-        if budget_remaining is not None and cost_estimate > budget_remaining:
-            logger.warning("Budget limit reached for think generation")
-            break
-
-        trajectory_path = traj_dir / "trajectory.json"
-        if not trajectory_path.exists():
-            continue
-
-        with open(trajectory_path) as f:
-            traj = json.load(f)
-
-        step_count = len(traj.get("steps", []))
-        estimated_cost = step_count * 0.008
-
-        try:
-            await generate_thinks_for_trajectory(traj_dir)
-        except UsageLimitReached:
-            logger.warning("Usage limit reached, stopping think generation")
-            break
-        cost_estimate += estimated_cost
-        processed += 1
-
-    logger.info(f"Think generation complete: {processed} trajectories, ~${cost_estimate:.2f} estimated")
-    return {"processed": processed, "estimated_cost": cost_estimate}

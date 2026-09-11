@@ -1,4 +1,5 @@
 """ms-swift plugin: BrowserEnv (gym Env over the Mac env service), BrowserScheduler (one record per turn), ActionFormatORM. Module paths verified against ms-swift 4.5.2."""
+
 import asyncio
 import copy
 import functools
@@ -12,8 +13,15 @@ from swift.rollout.gym_env import Env, envs
 from swift.rollout.multi_turn import GYMScheduler, multi_turns
 
 from rl.observation import build_observation
-from rl.trainer.core import (EpisodeRecorder, action_format_score, blank_png_b64, env_client_for, episode_records,
-                             observation_to_user_message, require_reward)
+from rl.trainer.core import (
+    EpisodeRecorder,
+    action_format_score,
+    blank_png_b64,
+    env_client_for,
+    episode_records,
+    observation_to_user_message,
+    require_reward,
+)
 from train_qwen import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -46,11 +54,20 @@ class BrowserEnv(Env):
     async def reset(self, config):
         env_config = (config.data_dict or {}).get("env_config", {})
         try:
-            result = await self._call(self.client.reset, env_config["task_id"], int(env_config.get("sample_idx", 0)), RL_RUN_ID,
-                                      int(env_config.get("iteration", 0)), env_config.get("policy_tag", ""))
+            result = await self._call(
+                self.client.reset,
+                env_config["task_id"],
+                int(env_config.get("sample_idx", 0)),
+                RL_RUN_ID,
+                int(env_config.get("iteration", 0)),
+                env_config.get("policy_tag", ""),
+            )
         except Exception as e:
             self.env_error = str(e)[:300]
-            result = {"episode_id": None, "observation": build_observation("(env unavailable)", [], blank_png_b64((1280, 720)), 0)}
+            result = {
+                "episode_id": None,
+                "observation": build_observation("(env unavailable)", [], blank_png_b64((1280, 720)), 0),
+            }
         self.episode_id = result["episode_id"]
         self.observation = result["observation"]
         self.last_image_path = self.recorder.save_png(self.trajectory_uuid, 0, self.observation["image_b64"])
@@ -76,12 +93,19 @@ class BrowserEnv(Env):
         # ms-swift sums step rewards into total_reward, so a verdictless terminal must be flagged here and refused by the scheduler.
         if done and reward is None:
             self.reward_missing = True
-        return (observation or {}).get("text", ""), float(reward) if reward is not None else 0.0, done, result.get("info", {})
+        return (
+            (observation or {}).get("text", ""),
+            float(reward) if reward is not None else 0.0,
+            done,
+            result.get("info", {}),
+        )
 
     async def close(self):
         if self.episode_id is not None:
             try:
-                self.close_reward = (await self._call(self.client.close, self.episode_id, self.close_reason)).get("reward")
+                self.close_reward = (await self._call(self.client.close, self.episode_id, self.close_reason)).get(
+                    "reward"
+                )
             except Exception:
                 logger.exception(f"close failed for episode {self.episode_id}; its reward stays missing")
 
@@ -90,7 +114,9 @@ class BrowserScheduler(GYMScheduler):
     """Each turn is a fresh single-image prompt; run() returns one RolloutOutput per turn carrying the episode reward (spec D2)."""
 
     def _fresh_prompt(self, env):
-        return [{"role": "system", "content": SYSTEM_PROMPT}, observation_to_user_message(env.observation)], [env.last_image_path]
+        return [{"role": "system", "content": SYSTEM_PROMPT}, observation_to_user_message(env.observation)], [
+            env.last_image_path
+        ]
 
     async def run(self, infer_request, request_config, **kwargs):
         await self.on_trajectory_start([infer_request])
@@ -104,8 +130,15 @@ class BrowserScheduler(GYMScheduler):
             choice = response.choices[0]
             infer_request.messages.append({"role": "assistant", "content": choice.message.content})
             turn_result = await self.on_turn_end(infer_request, choice, turn)
-            turns.append({"response": response, "user": prompt[-1], "assistant": choice.message.content,
-                          "token_ids": list(choice.token_ids or []), "image": image})
+            turns.append(
+                {
+                    "response": response,
+                    "user": prompt[-1],
+                    "assistant": choice.message.content,
+                    "token_ids": list(choice.token_ids or []),
+                    "image": image,
+                }
+            )
             if turn_result.get("done"):
                 break
             if self.check_finished(infer_request, choice, turn):
@@ -125,8 +158,15 @@ class BrowserScheduler(GYMScheduler):
             total_reward = 0.0
         total_reward = require_reward(total_reward, infer_request.uuid)
         records = episode_records(SYSTEM_PROMPT, turns, total_reward, infer_request.uuid, env_error=env.env_error)
-        return [RolloutOutput(response=t["response"], messages=r["messages"], response_token_ids=[t["token_ids"]] if t["token_ids"] else None,
-                              rollout_infos=r["rollout_infos"]) for t, r in zip(turns, records)]
+        return [
+            RolloutOutput(
+                response=t["response"],
+                messages=r["messages"],
+                response_token_ids=[t["token_ids"]] if t["token_ids"] else None,
+                rollout_infos=r["rollout_infos"],
+            )
+            for t, r in zip(turns, records, strict=False)
+        ]
 
 
 class ActionFormatORM(ORM):

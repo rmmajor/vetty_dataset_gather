@@ -7,9 +7,18 @@ import urllib.error
 from pathlib import Path
 
 from rl.actions import encode_step
-from rl.trainer.core import (ENV_CLIENTS, EpisodeRecorder, HttpEnvClient, MissingRewardError, MockEnvClient,
-                             action_format_score, env_client_for, episode_records, observation_to_user_message,
-                             require_reward)
+from rl.trainer.core import (
+    ENV_CLIENTS,
+    EpisodeRecorder,
+    HttpEnvClient,
+    MissingRewardError,
+    MockEnvClient,
+    action_format_score,
+    env_client_for,
+    episode_records,
+    observation_to_user_message,
+    require_reward,
+)
 
 
 class FakeResponse:
@@ -39,7 +48,11 @@ def test_registry_and_scheme_dispatch():
 
 
 def test_http_client_reset_waits_through_5xx_and_fails_fast_on_4xx():
-    outcomes = [_http_error(524, {}), _http_error(503, {"retry_after": 0}), FakeResponse({"episode_id": "e", "observation": {}})]
+    outcomes = [
+        _http_error(524, {}),
+        _http_error(503, {"retry_after": 0}),
+        FakeResponse({"episode_id": "e", "observation": {}}),
+    ]
     calls = []
 
     def opener(request, timeout):
@@ -84,14 +97,31 @@ def test_user_message_uses_image_placeholder():
 
 
 def test_episode_records_one_per_turn_with_broadcast_reward():
-    turns = [{"user": {"role": "user", "content": "<image>u0"}, "assistant": "a0", "token_ids": [1, 2], "image": "/tmp/0.png"},
-             {"user": {"role": "user", "content": "<image>u1"}, "assistant": "a1", "token_ids": [3], "image": "/tmp/1.png"}]
+    turns = [
+        {
+            "user": {"role": "user", "content": "<image>u0"},
+            "assistant": "a0",
+            "token_ids": [1, 2],
+            "image": "/tmp/0.png",
+        },
+        {"user": {"role": "user", "content": "<image>u1"}, "assistant": "a1", "token_ids": [3], "image": "/tmp/1.png"},
+    ]
     records = episode_records("SYS", turns, 0.8, "uuid-1")
     assert len(records) == 2
-    assert records[1]["messages"] == [{"role": "system", "content": "SYS"}, turns[1]["user"], {"role": "assistant", "content": "a1"}]
+    assert records[1]["messages"] == [
+        {"role": "system", "content": "SYS"},
+        turns[1]["user"],
+        {"role": "assistant", "content": "a1"},
+    ]
     assert records[1]["images"] == ["/tmp/1.png"] and records[1]["response_token_ids"] == [3]
-    assert records[0]["rollout_infos"] == {"total_reward": 0.8, "num_turns": 2, "turn": 0, "trajectory_uuid": "uuid-1",
-                                           "images": ["/tmp/0.png"], "env_error": None}
+    assert records[0]["rollout_infos"] == {
+        "total_reward": 0.8,
+        "num_turns": 2,
+        "turn": 0,
+        "trajectory_uuid": "uuid-1",
+        "images": ["/tmp/0.png"],
+        "env_error": None,
+    }
 
 
 def test_recorder_writes_png_and_jsonl():

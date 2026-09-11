@@ -1,4 +1,5 @@
 """Serve the CUA student on a Modal GPU as an OpenAI-compatible endpoint, with or without a LoRA adapter."""
+
 # A second lane is env vars, not a fork: `CUA_SERVE_APP=... CUA_EVAL_SECRET=... modal deploy modal_serve.py`.
 import os
 import pathlib
@@ -34,9 +35,18 @@ image = (
     # Baked at deploy time: module-level env reads re-run in the container, where these are unset.
     # APP_NAME and EVAL_SECRET are read again when the container re-imports this module, so they
     # are baked too — otherwise a renamed lane would resolve differently there than at deploy.
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "VLLM_LOG_STATS_INTERVAL": "10",
-          "CUA_ADAPTER_NAME": ADAPTER_NAME, "CUA_SERVED_NAME": SERVED_NAME, "CUA_SERVE_MODEL": MODEL,
-          "CUA_SERVE_APP": APP_NAME, "CUA_EVAL_SECRET": EVAL_SECRET, "CUA_LIMIT_MM": LIMIT_MM})
+    .env(
+        {
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",
+            "VLLM_LOG_STATS_INTERVAL": "10",
+            "CUA_ADAPTER_NAME": ADAPTER_NAME,
+            "CUA_SERVED_NAME": SERVED_NAME,
+            "CUA_SERVE_MODEL": MODEL,
+            "CUA_SERVE_APP": APP_NAME,
+            "CUA_EVAL_SECRET": EVAL_SECRET,
+            "CUA_LIMIT_MM": LIMIT_MM,
+        }
+    )
 )
 
 
@@ -47,8 +57,13 @@ warm_image = (
 )
 
 
-@app.function(image=warm_image, volumes={HF_CACHE_MOUNT: hf_cache},
-              secrets=[modal.Secret.from_name("huggingface")], timeout=3600, cpu=4)
+@app.function(
+    image=warm_image,
+    volumes={HF_CACHE_MOUNT: hf_cache},
+    secrets=[modal.Secret.from_name("huggingface")],
+    timeout=3600,
+    cpu=4,
+)
 def warm_cache(model: str = MODEL):
     """Populate the weight cache on CPU so the GPU container starts against a warm volume."""
     import huggingface_hub
@@ -91,19 +106,30 @@ class Server:
         if not os.environ.get("VLLM_API_KEY"):
             raise RuntimeError("VLLM_API_KEY missing — the cua-eval secret is not attached")
         cmd = [
-            "vllm", "serve", MODEL,
-            "--served-model-name", SERVED_NAME,
-            "--host", "0.0.0.0",
-            "--port", "8000",
-            "--max-model-len", str(MAX_MODEL_LEN),
-            "--gpu-memory-utilization", GPU_MEM_UTIL,
-            "--limit-mm-per-prompt", LIMIT_MM,
+            "vllm",
+            "serve",
+            MODEL,
+            "--served-model-name",
+            SERVED_NAME,
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            str(MAX_MODEL_LEN),
+            "--gpu-memory-utilization",
+            GPU_MEM_UTIL,
+            "--limit-mm-per-prompt",
+            LIMIT_MM,
         ]
         if ADAPTER_NAME:
             # "a=path,b=path" serves several arms from one endpoint; a bare name keeps the canonical served name.
             entries = [part.strip() for part in ADAPTER_NAME.split(",") if part.strip()]
-            named = (dict(entry.split("=", 1) for entry in entries) if any("=" in e for e in entries)
-                     else {f"{SERVED_NAME}-lora": entries[0]})
+            named = (
+                dict(entry.split("=", 1) for entry in entries)
+                if any("=" in e for e in entries)
+                else {f"{SERVED_NAME}-lora": entries[0]}
+            )
             modules = []
             for served, volume_path in named.items():
                 adapter_path = f"{ADAPTERS_MOUNT}/{volume_path}"

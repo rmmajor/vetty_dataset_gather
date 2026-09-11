@@ -2,9 +2,9 @@ import json
 import tempfile
 from pathlib import Path
 
+import rl.runner
 from repo_pipeline.driver_session import DriverError
 from rl.backends import EnvBackend
-import rl.runner
 from rl.episode import Episode, EpisodeConfig, RunContext
 from rl.rewards import load_reward_config
 
@@ -66,7 +66,18 @@ class FakeClient:
         return {"ok": True, "steps": len(self.steps), "dir": str(self.dir)}
 
     def _write(self):
-        (self.dir / "trajectory.json").write_text(json.dumps({"task_id": "t", "instruction": "i", "start_url": "u", "steps": self.steps, "total_steps": len(self.steps), "success": False}))
+        (self.dir / "trajectory.json").write_text(
+            json.dumps(
+                {
+                    "task_id": "t",
+                    "instruction": "i",
+                    "start_url": "u",
+                    "steps": self.steps,
+                    "total_steps": len(self.steps),
+                    "success": False,
+                }
+            )
+        )
         (self.dir / "capture_meta.json").write_text(json.dumps({"recorder": "browser_driver", "steps": {}}))
 
 
@@ -78,9 +89,23 @@ class FakeWorker:
         return self._client
 
 
-TASK = {"task_id": "site__t1", "site": "site", "split": "train", "start_url": "http://x/", "instruction": "Do the thing", "difficulty": "easy",
-        "expected_actions": 2, "backend": "static_page", "env": "test", "lane": "autonomous", "auth_mode": "none", "idempotent": True,
-        "preconditions": {}, "allowed_hosts": [], "success_check": {"text_visible": "all good", "done_emitted": True}}
+TASK = {
+    "task_id": "site__t1",
+    "site": "site",
+    "split": "train",
+    "start_url": "http://x/",
+    "instruction": "Do the thing",
+    "difficulty": "easy",
+    "expected_actions": 2,
+    "backend": "static_page",
+    "env": "test",
+    "lane": "autonomous",
+    "auth_mode": "none",
+    "idempotent": True,
+    "preconditions": {},
+    "allowed_hosts": [],
+    "success_check": {"text_visible": "all good", "done_emitted": True},
+}
 
 
 def _episode(tmp, refuse_after=None, task=None, **cfg):
@@ -88,35 +113,56 @@ def _episode(tmp, refuse_after=None, task=None, **cfg):
     client = FakeClient(results, refuse_after)
     worker = FakeWorker(client, FakeSandbox(results))
     ctx = RunContext(run_id="r", out_root=Path(tmp) / "rl_runs", iteration=1, reward_config=load_reward_config())
-    return Episode(task or TASK, worker, 0, 2, ctx, EpisodeConfig(**{"max_steps": 4, "verifier_mode": "never", **cfg})), client
+    return Episode(
+        task or TASK, worker, 0, 2, ctx, EpisodeConfig(**{"max_steps": 4, "verifier_mode": "never", **cfg})
+    ), client
 
 
 def test_reset_observation_and_ids():
     with tempfile.TemporaryDirectory() as tmp:
         ep, client = _episode(tmp)
         obs = ep.reset()
-        assert ep.episode_id == "site__t1__i001__k02" and obs["text"] == "Task: Do the thing\nWhat action should you take?"
-        assert client.calls[0][2]["task_meta"]["expected_actions"] == 2 and client.calls[0][2]["task_meta"]["autonomy"] == "autonomous"
+        assert (
+            ep.episode_id == "site__t1__i001__k02" and obs["text"] == "Task: Do the thing\nWhat action should you take?"
+        )
+        assert (
+            client.calls[0][2]["task_meta"]["expected_actions"] == 2
+            and client.calls[0][2]["task_meta"]["autonomy"] == "autonomous"
+        )
 
 
 def test_full_episode_records_steps_history_and_reward():
     with tempfile.TemporaryDirectory() as tmp:
         ep, client = _episode(tmp)
         ep.reset()
-        obs, reward, done, info = ep.step("<think>c</think>\naction: click(<ref>(10, 10)</ref>, button=left)\naction: type(\"hi\")")
+        obs, reward, done, info = ep.step(
+            '<think>c</think>\naction: click(<ref>(10, 10)</ref>, button=left)\naction: type("hi")'
+        )
         assert not done and reward is None and info["parse"] == "ok" and info["executed"] == 2
-        assert obs["text"] == 'Task: Do the thing\nPrevious actions: [click(8, 14), type("hi")]\nWhat action should you take?'
+        assert (
+            obs["text"]
+            == 'Task: Do the thing\nPrevious actions: [click(8, 14), type("hi")]\nWhat action should you take?'
+        )
         obs, reward, done, info = ep.step("garbage")
         assert not done and info["parse"] == "failure" and len(client.steps) == 1
         obs, reward, done, info = ep.step("<think>d</think>\naction: done()")
         assert done and obs is None and info["terminal_reason"] == "done" and reward > 1.0
         rec = ep.record
-        assert rec["success"] is True and rec["success_source"] == "success_check" and rec["ui_steps"] == 1 and rec["steps"] == 2
+        assert (
+            rec["success"] is True
+            and rec["success_source"] == "success_check"
+            and rec["ui_steps"] == 1
+            and rec["steps"] == 2
+        )
         assert [t["clean"] for t in rec["turns"]] == [True, False, True]
         traj = json.loads((ep.traj_dir / "trajectory.json").read_text())
         assert [a["type"] for a in traj["steps"][0]["actions"]] == ["click", "type"]
         meta = json.loads((ep.traj_dir / "metadata.json").read_text())
-        assert meta["excluded_reason"] == "rl_rollout" and meta["source_repo"] == "rl:site__t1" and meta["autonomy"] == "autonomous"
+        assert (
+            meta["excluded_reason"] == "rl_rollout"
+            and meta["source_repo"] == "rl:site__t1"
+            and meta["autonomy"] == "autonomous"
+        )
         assert json.loads((ep.traj_dir / "capture_meta.json").read_text())["success_check"]["passed"] is True
         assert (ep.traj_dir / "episode.json").exists()
 
@@ -217,9 +263,13 @@ class DeadWorker:
 
 
 def test_a_vanished_sandbox_fails_one_episode_not_the_batch():
-    records = rl.runner.run_batch(lambda: None, [TASK], 2, DeadPool(),
-                                  RunContext(run_id="r", out_root=Path("/tmp/unused"), iteration=0, reward_config=load_reward_config()),
-                                  EpisodeConfig(max_steps=2, verifier_mode="never"))
+    records = rl.runner.run_batch(
+        lambda: None,
+        [TASK],
+        2,
+        DeadPool(),
+        RunContext(run_id="r", out_root=Path("/tmp/unused"), iteration=0, reward_config=load_reward_config()),
+        EpisodeConfig(max_steps=2, verifier_mode="never"),
+    )
     assert len(records) == 2
     assert all(r["terminal_reason"] == "harness_error" and r["reward"] is None for r in records)
-

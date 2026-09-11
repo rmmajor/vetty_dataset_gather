@@ -15,6 +15,7 @@ models (e.g. 27B ≈ 54GB of weights) won't fit hosts with tiny `disk_space`. Fi
 stay tolerant (`.get` with fallbacks); re-confirm with `make remote-train-dry` if the CLI
 version changes.
 """
+
 import json
 import logging
 import os
@@ -23,10 +24,10 @@ import time
 from pathlib import Path
 
 from remote_train.base import (
+    PROVIDERS,
     ComputeProvider,
     Instance,
     Offer,
-    PROVIDERS,
     ProviderError,
     normalize_country,
     select_cheapest_allowed,
@@ -81,14 +82,23 @@ class VastAIProvider(ComputeProvider):
             f"echo '{pub_min}' >> /root/.ssh/authorized_keys && "
             "chmod 600 /root/.ssh/authorized_keys && touch /workspace/.provisioned"
         )
-        result = self._cli_json([
-            "create", "instance", offer.id,
-            "--image", cfg.image,
-            "--disk", str(cfg.disk_gb),
-            "--label", cfg.instance_label,
-            "--onstart-cmd", onstart,
-            "--ssh", "--direct",
-        ])
+        result = self._cli_json(
+            [
+                "create",
+                "instance",
+                offer.id,
+                "--image",
+                cfg.image,
+                "--disk",
+                str(cfg.disk_gb),
+                "--label",
+                cfg.instance_label,
+                "--onstart-cmd",
+                onstart,
+                "--ssh",
+                "--direct",
+            ]
+        )
         instance_id = ""
         if isinstance(result, dict):
             instance_id = str(result.get("new_contract") or result.get("id") or "")
@@ -97,15 +107,19 @@ class VastAIProvider(ComputeProvider):
             # success=False alongside new_contract=49552760, which was billing until destroyed by
             # hand). Raising without destroying it leaks a rented box, so tear it down first.
             if instance_id:
-                logger.warning(f"Vast.ai create reported failure but allocated contract "
-                               f"{instance_id} — destroying it before raising")
+                logger.warning(
+                    f"Vast.ai create reported failure but allocated contract "
+                    f"{instance_id} — destroying it before raising"
+                )
                 self.destroy(Instance(id=instance_id, provider=self.name, label=cfg.instance_label))
             raise ProviderError(f"Vast.ai create failed for offer {offer.id}: {result}")
         if not instance_id:
             raise ProviderError(f"Vast.ai create returned no instance id: {result}")
         logger.info(f"Provisioned Vast.ai instance {instance_id} (label {cfg.instance_label})")
         self._attach_ssh_key(instance_id, pub)
-        return Instance(id=instance_id, provider=self.name, label=cfg.instance_label, raw=result if isinstance(result, dict) else {})
+        return Instance(
+            id=instance_id, provider=self.name, label=cfg.instance_label, raw=result if isinstance(result, dict) else {}
+        )
 
     def _public_key(self) -> str:
         """Our SSH public key, from `<ssh_key_path>.pub` or derived from the private key."""
@@ -211,10 +225,16 @@ class VastAIProvider(ComputeProvider):
         owned = []
         for r in records:
             if str(r.get("label") or "") == label:
-                owned.append(Instance(
-                    id=str(r.get("id")), provider=self.name, label=label,
-                    ssh_host=str(r.get("ssh_host") or ""), ssh_port=int(r.get("ssh_port") or 0), raw=r,
-                ))
+                owned.append(
+                    Instance(
+                        id=str(r.get("id")),
+                        provider=self.name,
+                        label=label,
+                        ssh_host=str(r.get("ssh_host") or ""),
+                        ssh_port=int(r.get("ssh_port") or 0),
+                        raw=r,
+                    )
+                )
         return owned
 
     # ----- internals -----
@@ -222,8 +242,16 @@ class VastAIProvider(ComputeProvider):
     def _ssh_base(self, instance) -> list:
         key = os.path.expanduser(self.cfg.ssh_key_path)
         # -n detaches ssh's own stdin; without it a backgrounded remote job can hold the channel open.
-        return ["ssh", "-n", "-p", str(instance.ssh_port), "-i", key, *_SSH_OPTS,
-                f"{instance.ssh_user}@{instance.ssh_host}"]
+        return [
+            "ssh",
+            "-n",
+            "-p",
+            str(instance.ssh_port),
+            "-i",
+            key,
+            *_SSH_OPTS,
+            f"{instance.ssh_user}@{instance.ssh_host}",
+        ]
 
     def _rsync(self, instance, src, dst, *, upload) -> None:
         key = os.path.expanduser(self.cfg.ssh_key_path)

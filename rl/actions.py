@@ -1,4 +1,5 @@
 """Decode the student's `action:` lines into trajectory action dicts — the inverse of train_qwen.format_action_for_training."""
+
 import ast
 import json
 import re
@@ -45,6 +46,7 @@ def _point_decoder(action_type):
             return None
         x, y = _xy(match)
         return {"type": action_type, "x": x, "y": y}
+
     return decode
 
 
@@ -52,6 +54,7 @@ def _quoted_decoder(action_type, key):
     def decode(args):
         match = re.fullmatch(r'"(.*)"', args, re.DOTALL)
         return {"type": action_type, key: match.group(1)} if match else None
+
     return decode
 
 
@@ -146,7 +149,7 @@ def decode_step(text):
     errors = []
     match = _THINK_RE.match(raw) or _THINK_PREFILLED_RE.match(raw)
     thought = match.group(1).strip() if match else ""
-    rest = raw[match.end():] if match else raw
+    rest = raw[match.end() :] if match else raw
     if not match and "<think>" in raw:
         errors.append("think_malformed")
         rest = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("<think>"))

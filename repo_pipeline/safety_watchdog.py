@@ -11,6 +11,7 @@ after approval. The same policy is reusable as the deployment-time safety gate.
 (deterministic, no LLM) and `HumanApprovalPolicy` are drop-ins. Selected via env
 `WATCHDOG_POLICY` so swapping the authority is config, not code.
 """
+
 import base64
 import json
 import logging
@@ -144,12 +145,18 @@ class LLMApprovalPolicy(ApprovalPolicy):
         risk = (risk_category or "").strip().lower()
 
         if env == "test":
-            return {"decision": "approve", "risk_category": risk,
-                    "rationale": "controlled test environment; actions are ephemeral (container resets)"}
+            return {
+                "decision": "approve",
+                "risk_category": risk,
+                "rationale": "controlled test environment; actions are ephemeral (container resets)",
+            }
 
         if risk in FINANCIAL_RISK:
-            return {"decision": "deny", "risk_category": risk,
-                    "rationale": f"{risk or 'financial'} action on a live site moves real money / is irreversible"}
+            return {
+                "decision": "deny",
+                "risk_category": risk,
+                "rationale": f"{risk or 'financial'} action on a live site moves real money / is irreversible",
+            }
 
         prompt = WATCHDOG_PROMPT.format(
             goal=goal or "(unspecified)",
@@ -179,8 +186,11 @@ class LLMApprovalPolicy(ApprovalPolicy):
             }
         except Exception as e:
             logger.warning(f"watchdog judgment failed ({full_name}): {e} — failing closed (deny)")
-            return {"decision": "deny", "risk_category": risk,
-                    "rationale": f"watchdog unavailable; denied by fail-closed default ({str(e)[:120]})"}
+            return {
+                "decision": "deny",
+                "risk_category": risk,
+                "rationale": f"watchdog unavailable; denied by fail-closed default ({str(e)[:120]})",
+            }
 
 
 class StaticRuleApprovalPolicy(ApprovalPolicy):
@@ -201,8 +211,11 @@ class HumanApprovalPolicy(ApprovalPolicy):
     channel it fails closed so it can never silently auto-approve."""
 
     async def get_approval(self, **kwargs) -> dict:
-        return {"decision": "deny", "risk_category": (kwargs.get("risk_category") or "").lower(),
-                "rationale": "human approval channel not configured; denied by fail-closed default"}
+        return {
+            "decision": "deny",
+            "risk_category": (kwargs.get("risk_category") or "").lower(),
+            "rationale": "human approval channel not configured; denied by fail-closed default",
+        }
 
 
 _POLICIES = {

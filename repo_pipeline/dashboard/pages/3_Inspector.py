@@ -23,7 +23,6 @@ from repo_pipeline.dashboard._state import (
     sidebar_global_controls,
 )
 
-
 BBOX_COLOR = (46, 160, 67, 220)
 CLICK_COLOR = (214, 39, 40, 220)
 
@@ -39,8 +38,7 @@ def overlay_screenshot(path: Path, bbox: dict | None, x: float | None, y: float 
             draw.rectangle([bx, by, bx + bw, by + bh], outline=BBOX_COLOR, width=4)
     if x is not None and y is not None:
         r = 10
-        draw.ellipse([x - r, y - r, x + r, y + r],
-                     fill=CLICK_COLOR, outline=(255, 255, 255, 255), width=2)
+        draw.ellipse([x - r, y - r, x + r, y + r], fill=CLICK_COLOR, outline=(255, 255, 255, 255), width=2)
     return Image.alpha_composite(img, canvas)
 
 
@@ -48,7 +46,7 @@ st.set_page_config(page_title="Trajectory inspector", page_icon="🔎", layout="
 page_header(
     "Trajectory inspector",
     "Step-by-step screenshots with action overlays. Bbox is drawn when available; "
-    "click point is drawn whenever an `(x, y)` action was recorded."
+    "click point is drawn whenever an `(x, y)` action was recorded.",
 )
 
 traj_df, step_df, warnings = cached_load_corpus(str(DEFAULT_TRAJ_DIR))
@@ -59,7 +57,7 @@ if traj_df.empty:
     st.stop()
 
 picker_labels = [f"({row.path_kind})  {row.task_id}" for row in traj_df.itertuples()]
-picker_to_task = dict(zip(picker_labels, traj_df["task_id"].tolist()))
+picker_to_task = dict(zip(picker_labels, traj_df["task_id"].tolist(), strict=False))
 
 with st.sidebar:
     st.markdown("### Inspector")

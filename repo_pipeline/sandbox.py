@@ -100,7 +100,7 @@ class ShellSandbox:
             f"mkdir -p $(dirname '{path}') && printf '%s' '{escaped_content}' > '{path}'"
         )
         if exit_code != 0:
-            raise IOError(f"Cannot write {path}: {stderr}")
+            raise OSError(f"Cannot write {path}: {stderr}")
 
     def start_background(self, command: str, log_path: str) -> tuple[str, str, int]:
         """Start a long-lived process that survives across exec calls.
@@ -241,8 +241,9 @@ class DockerSandbox(ShellSandbox):
             self.stop()
             raise TimeoutError(f"Sandbox container exceeded {self.container_timeout}s timeout")
 
-    def exec_command(self, command: str, timeout: int = EXEC_TIMEOUT_SECONDS,
-                     max_output: int = 50000) -> tuple[str, str, int]:
+    def exec_command(
+        self, command: str, timeout: int = EXEC_TIMEOUT_SECONDS, max_output: int = 50000
+    ) -> tuple[str, str, int]:
         self._check_timeout()
         if self.container is None:
             raise RuntimeError("Sandbox container not started")
@@ -271,7 +272,6 @@ class DockerSandbox(ShellSandbox):
             logger.error(f"exec_command failed: {e}")
             return "", str(e), 1
 
-
     def put_bytes(self, container_path: str, data: bytes):
         """Stream raw bytes into the container via the Docker archive (tar) API.
 
@@ -290,7 +290,7 @@ class DockerSandbox(ShellSandbox):
             tar.addfile(info, io.BytesIO(data))
         self.exec_command(f"mkdir -p '{directory}'")
         if not self.container.put_archive(directory, buf.getvalue()):
-            raise IOError(f"put_archive failed for {container_path}")
+            raise OSError(f"put_archive failed for {container_path}")
 
     def list_files(self, pattern: str = "*", directory: str = "/workspace") -> list[str]:
         # Prune node_modules / .git before matching: an installed repo holds thousands of vendored
@@ -359,7 +359,6 @@ class DockerSandbox(ShellSandbox):
             if exit_code2 == 0:
                 return stdout2, stderr2, exit_code2
         return stdout, stderr, exit_code
-
 
     @staticmethod
     def test_sandbox():
@@ -468,6 +467,7 @@ def build_sandbox_mcp_server(sandbox: DockerSandbox, server_name: str = "sandbox
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     import sys
+
     if "--test" in sys.argv:
         success = DockerSandbox.test_sandbox()
         sys.exit(0 if success else 1)

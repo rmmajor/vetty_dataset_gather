@@ -1,0 +1,13 @@
+RL run diagnostics
+
+positional arguments:
+  {bnorm,rollouts,select-frontier}
+    bnorm               LoRA A/B Frobenius norms of an adapter; --ref flags a
+                        dead run
+    rollouts            reward histogram, per-task pass@k, zero-variance
+                        groups
+    select-frontier     write frontier_selection.json with tasks inside the
+                        pass-rate band
+
+options:
+  -h, --help            show this help message and exit

@@ -5,6 +5,7 @@ Resumable by construction: `polish_thoughts_for_trajectory` flips metadata.thoug
 
   python -m repo_pipeline.polish_pass trajectories/ [--limit N] [--workers 3] [--dry-run]
 """
+
 import argparse
 import asyncio
 import logging
@@ -20,13 +21,19 @@ logger = logging.getLogger(__name__)
 
 def find_polish_targets(corpus_dir: Path, include_untrainable: bool = False) -> list[Path]:
     # Only trainable dirs by default — polishing unverified rejects buys nothing until a salvage pass promotes them.
-    return sorted(d for d in corpus_dir.glob("**/task_*")
-                  if d.is_dir() and (d / "trajectory.json").exists() and needs_polish(d)
-                  and (include_untrainable or is_trainable(d)))
+    return sorted(
+        d
+        for d in corpus_dir.glob("**/task_*")
+        if d.is_dir()
+        and (d / "trajectory.json").exists()
+        and needs_polish(d)
+        and (include_untrainable or is_trainable(d))
+    )
 
 
-async def run_pass(corpus_dir: Path, workers: int, limit: int | None,
-                   include_untrainable: bool = False) -> tuple[int, int]:
+async def run_pass(
+    corpus_dir: Path, workers: int, limit: int | None, include_untrainable: bool = False
+) -> tuple[int, int]:
     targets = find_polish_targets(corpus_dir, include_untrainable)
     if limit:
         targets = targets[:limit]

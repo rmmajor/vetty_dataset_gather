@@ -7,10 +7,8 @@ not impose targets, scores, or thresholds. The constants below are descriptive b
 
 from collections import Counter
 from math import log
-from typing import Optional
 
 import pandas as pd
-
 
 COORD_ACTION_TYPES = ("click", "type", "drag")
 
@@ -23,7 +21,7 @@ PLACEHOLDER_THOUGHT_SUBSTRINGS = (
 )
 
 
-def shannon_entropy_nats(counts: dict | Counter | pd.Series) -> Optional[float]:
+def shannon_entropy_nats(counts: dict | Counter | pd.Series) -> float | None:
     if isinstance(counts, pd.Series):
         counts = counts.value_counts().to_dict()
     elif isinstance(counts, Counter):

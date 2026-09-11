@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from claude_agent_sdk import ClaudeAgentOptions
 
-from repo_pipeline import app_runner, app_secrets, driver_session, mail_service
+from repo_pipeline import app_runner, app_secrets, driver_session, mail_service, schemas
 from repo_pipeline._processing import run_repo
 from repo_pipeline.agent_capture import run_teacher_task, verify_trajectory
 from repo_pipeline.agent_runner import run_agent
@@ -19,7 +19,6 @@ from repo_pipeline.llm_config import MODEL_FOR_CLASSIFICATION, MODEL_FOR_GROUNDE
 from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
-from repo_pipeline import schemas
 from repo_pipeline.schemas import FailureCategory, QualityReject, RepoStatus, RetryableFailure
 from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 from repo_pipeline.task_proposer import propose_tasks
@@ -122,8 +121,7 @@ def _is_valid_trajectory(traj_dir: Path) -> bool:
     if not steps:
         return False
     has_valid_coords = any(
-        any(a.get("x", 0) > 0 or a.get("y", 0) > 0 for a in step.get("actions", []))
-        for step in steps
+        any(a.get("x", 0) > 0 or a.get("y", 0) > 0 for a in step.get("actions", [])) for step in steps
     )
     screenshots_exist = all((traj_dir / step.get("screenshot", "")).exists() for step in steps)
     return has_valid_coords and screenshots_exist
@@ -145,8 +143,7 @@ def record_capture_attempt(traj_dir: Path, outcome: str) -> int:
     """Count one finalized capture attempt against this trajectory's retry bound."""
     # Host-only sidecar: every copy_out overwrites capture_meta.json, so a counter kept there resets.
     attempts = capture_attempts(traj_dir) + 1
-    (traj_dir / ATTEMPTS_FILE).write_text(
-        json.dumps({"attempts": attempts, "last_outcome": outcome}, indent=2))
+    (traj_dir / ATTEMPTS_FILE).write_text(json.dumps({"attempts": attempts, "last_outcome": outcome}, indent=2))
     return attempts
 
 
@@ -237,8 +234,10 @@ async def _capture_suite(rlog, repo: dict, profile, repo_traj_dir: Path, test_na
         # all handled in code). Whatever the suite executes is captured to /workspace/results;
         # a timeout just yields partial trajectories, which is fine.
         suite_cmd = profile.test_command_suite.format(
-            repo_name=repo_name, test_name_prefix=test_name_prefix,
-            framework=profile.test_framework, framework_language=profile.language,
+            repo_name=repo_name,
+            test_name_prefix=test_name_prefix,
+            framework=profile.test_framework,
+            framework_language=profile.language,
         )
         suite_cmd = app_runner.wrap_test_command(suite_cmd, app_spec)
         out, err, code = await _run(sandbox.exec_command, suite_cmd, SUITE_RUN_TIMEOUT)
@@ -341,8 +340,14 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
 
             readme, test_hints = await _run(_read_app_context, sandbox)
             proposal = await propose_tasks(
-                repo, homepage_snapshot, homepage_screenshot, readme, test_hints,
-                registry=registry, affordances=affordances, auth_flow=auth_flow,
+                repo,
+                homepage_snapshot,
+                homepage_screenshot,
+                readme,
+                test_hints,
+                registry=registry,
+                affordances=affordances,
+                auth_flow=auth_flow,
                 inbox=(known is None),
             )
             if proposal is None:
@@ -358,9 +363,12 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
             tasks = proposal["tasks"]
             repo_traj_dir.mkdir(parents=True, exist_ok=True)
             (repo_traj_dir / "proposed_tasks.json").write_text(json.dumps(proposal, indent=2))
-            rlog.info(f"proposed {len(tasks)} tasks for {app_url} "
-                      f"(health: {health.get('notes', 'ok')[:80]}): " +
-                      "; ".join(t["instruction"][:60] for t in tasks[:4]) + " ...")
+            rlog.info(
+                f"proposed {len(tasks)} tasks for {app_url} "
+                f"(health: {health.get('notes', 'ok')[:80]}): "
+                + "; ".join(t["instruction"][:60] for t in tasks[:4])
+                + " ..."
+            )
         else:
             rlog.info(f"resuming persisted proposal: {len(tasks)} tasks")
 
@@ -446,9 +454,18 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                 account_index += 1
             unproductive = False
             try:
-                state = await run_teacher_task(client, task, app_url, registry=registry, full_name=repo_name,
-                                               auth_mode=auth_mode, secrets=task_secrets, auth_config=task_authcfg,
-                                               mail_config=task_mail, capture_session=capture_session)
+                state = await run_teacher_task(
+                    client,
+                    task,
+                    app_url,
+                    registry=registry,
+                    full_name=repo_name,
+                    auth_mode=auth_mode,
+                    secrets=task_secrets,
+                    auth_config=task_authcfg,
+                    mail_config=task_mail,
+                    capture_session=capture_session,
+                )
                 rlog.info(
                     f"task '{task['id']}': {state['actions']} actions, auth={auth_mode}, "
                     f"outcome={state['agent_outcome'] or 'none'}"
@@ -570,7 +587,9 @@ async def generate_for_repo(
     deep_analysis = {}
     if repo.get("deep_analysis"):
         try:
-            deep_analysis = json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
+            deep_analysis = (
+                json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
+            )
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -644,8 +663,12 @@ async def generate_for_repo(
     # capture: trajectories + instructions + metadata land, and the repo is marked `captured`.
     for traj_dir in valid_dirs:
         await _enrich_metadata(
-            traj_dir, repo, profile, instruction_generated.get(traj_dir, True),
-            registry=registry, thought_source=thought_source,
+            traj_dir,
+            repo,
+            profile,
+            instruction_generated.get(traj_dir, True),
+            registry=registry,
+            thought_source=thought_source,
         )
 
     registry.update_status(
@@ -715,7 +738,11 @@ async def generate_instruction(
     repo = repo or {}
     repo_name = repo.get("full_name") or repo.get("name") or "(repository not identified)"
     repo_description = (repo.get("description") or "").strip() or "(no description)"
-    test_source_block = test_source.strip() if test_source and test_source.strip() else "(test source unavailable — rely on the test name and actions)"
+    test_source_block = (
+        test_source.strip()
+        if test_source and test_source.strip()
+        else "(test source unavailable — rely on the test name and actions)"
+    )
 
     prompt = INSTRUCTION_PROMPT.format(
         repo_name=repo_name,
@@ -868,8 +895,14 @@ async def classify_task_type(trajectory: dict, capture_meta: dict, registry=None
     return "other"
 
 
-async def _enrich_metadata(traj_dir: Path, repo: dict, profile, instruction_was_generated: bool,
-                           registry=None, thought_source: str = "generated"):
+async def _enrich_metadata(
+    traj_dir: Path,
+    repo: dict,
+    profile,
+    instruction_was_generated: bool,
+    registry=None,
+    thought_source: str = "generated",
+):
     """Fill the trajectory-level aggregate / provenance fields in metadata.json from the
     captured trajectory + capture_meta. Best-effort: never raise into the generation flow."""
     try:
@@ -949,8 +982,10 @@ async def run_generate(
     async def process_with_semaphore(repo):
         if rate_limit_tracker.limit_reached():
             return
+
         async def core(reg, r):
             return await generate_for_repo(reg, r, trajectory_base_dir, capture_mode=capture_mode)
+
         async with semaphore:
             try:
                 await run_repo(6, repo, registry, core, progress)

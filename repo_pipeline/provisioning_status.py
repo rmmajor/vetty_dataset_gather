@@ -8,6 +8,7 @@ Records whether a site's burner account could be created autonomously. The auton
 Generic site-name -> status store (status is just a string), so adding a status or a consumer is a
 data change, not a code change.
 """
+
 import json
 from pathlib import Path
 

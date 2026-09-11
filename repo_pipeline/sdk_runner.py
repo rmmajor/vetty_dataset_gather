@@ -8,6 +8,7 @@ both into a process-global signal (`rate_limit_tracker`) that the orchestrator c
 between stages, and we raise `UsageLimitReached` so a quota-exhausted call NEVER causes a
 repo to be rejected — the repo stays in its input status and is retried on the next run.
 """
+
 import asyncio
 import logging
 import os
@@ -89,14 +90,11 @@ class RateLimitTracker:
         if self._rejected:
             return True
         return any(
-            info.utilization is not None and info.utilization >= self.threshold
-            for info in self._by_type.values()
+            info.utilization is not None and info.utilization >= self.threshold for info in self._by_type.values()
         )
 
     def max_utilization(self) -> float | None:
-        utilizations = [
-            info.utilization for info in self._by_type.values() if info.utilization is not None
-        ]
+        utilizations = [info.utilization for info in self._by_type.values() if info.utilization is not None]
         return max(utilizations) if utilizations else None
 
     def latest(self) -> RateLimitInfo | None:

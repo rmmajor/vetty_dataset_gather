@@ -4,14 +4,13 @@ import logging
 import os
 import re
 
-from repo_pipeline import app_runner, driver_session
+from repo_pipeline import app_runner, driver_session, schemas
 from repo_pipeline._processing import run_repo
 from repo_pipeline.frameworks import resolve_profile
 from repo_pipeline.instrumentation import REPO_DIR, RESULTS_DIR, setup_repo_instrumentation
 from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox
-from repo_pipeline import schemas
 from repo_pipeline.schemas import (
     FailureCategory,
     QualityReject,
@@ -86,7 +85,9 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
     deep_analysis = {}
     if repo.get("deep_analysis"):
         try:
-            deep_analysis = json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
+            deep_analysis = (
+                json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
+            )
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -170,7 +171,9 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
     deep_analysis = {}
     if repo.get("deep_analysis"):
         try:
-            deep_analysis = json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
+            deep_analysis = (
+                json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
+            )
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -207,16 +210,18 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
         for test_file in test_files[:MAX_TRIAL_FILES]:
             rel = test_file.replace(REPO_DIR + "/", "")
             cmd = profile.test_command_single.format(
-                repo_name=repo_name, test_name_prefix=test_name_prefix,
-                framework=profile.test_framework, framework_language=profile.language,
+                repo_name=repo_name,
+                test_name_prefix=test_name_prefix,
+                framework=profile.test_framework,
+                framework_language=profile.language,
             ).replace("<test_file>", rel)
             cmd = app_runner.wrap_test_command(cmd, app_spec)
             out, err, _ = await _run(sandbox.exec_command, cmd, TEST_RUN_TIMEOUT)
             combined = out + err
             trial_outputs.append(f"$ {rel}\n{combined}")
-            if (m := _PASS_RE.search(combined)):
+            if m := _PASS_RE.search(combined):
                 passed += int(m.group(1))
-            if (m := _FAIL_RE.search(combined)):
+            if m := _FAIL_RE.search(combined):
                 failed += int(m.group(1))
             interim = await _run(_collect_metrics, sandbox)
             if interim.valid_bounding_boxes > 0:

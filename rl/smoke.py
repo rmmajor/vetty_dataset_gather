@@ -1,4 +1,5 @@
 """Docker-only end-to-end check of the RL harness: static page + scripted policy through Episode and the HTTP service, no LLM."""
+
 import base64
 import json
 import logging
@@ -21,9 +22,23 @@ from train_qwen import convert_trajectory_to_examples
 
 logger = logging.getLogger(__name__)
 
-TASK = {"task_id": "smoke__greet", "site": "smoke", "split": "train", "start_url": "http://127.0.0.1:3000/", "instruction": "Greet yourself by name",
-        "difficulty": "easy", "expected_actions": 3, "backend": "static_page", "env": "test", "lane": "autonomous", "auth_mode": "none",
-        "idempotent": True, "preconditions": {}, "allowed_hosts": [], "success_check": {"text_visible": "hello Smokey", "done_emitted": True}}
+TASK = {
+    "task_id": "smoke__greet",
+    "site": "smoke",
+    "split": "train",
+    "start_url": "http://127.0.0.1:3000/",
+    "instruction": "Greet yourself by name",
+    "difficulty": "easy",
+    "expected_actions": 3,
+    "backend": "static_page",
+    "env": "test",
+    "lane": "autonomous",
+    "auth_mode": "none",
+    "idempotent": True,
+    "preconditions": {},
+    "allowed_hosts": [],
+    "success_check": {"text_visible": "hello Smokey", "done_emitted": True},
+}
 
 
 def discover_coords(client, needles):
@@ -31,7 +46,11 @@ def discover_coords(client, needles):
     session = client.session("smoke_probe", TASK["start_url"], instruction="probe")
     coords = {}
     for needle in needles:
-        ref = next(int(line[1:line.index("]")]) for line in session["snapshot"].splitlines() if line.startswith("[") and needle in line)
+        ref = next(
+            int(line[1 : line.index("]")])
+            for line in session["snapshot"].splitlines()
+            if line.startswith("[") and needle in line
+        )
         client.act({"kind": "click", "ref": ref, "thought": f"probe {needle}"})
         recorded = json.loads(client.sandbox.read_file(f"{RESULTS_DIR}/task_smoke_probe/trajectory.json"))
         action = recorded["steps"][-1]["actions"][0]
@@ -44,11 +63,11 @@ def discover_coords(client, needles):
 def script(coords):
     (nx, ny), (gx, gy) = coords["Your name"], coords["Greet"]
     return [
-        f"<think>I will type my name into the field.</think>\naction: click(<ref>({nx}, {ny})</ref>, button=left)\naction: type(\"Smokey\")",
+        f'<think>I will type my name into the field.</think>\naction: click(<ref>({nx}, {ny})</ref>, button=left)\naction: type("Smokey")',
         "this is not an action",
         f"<think>Submitting the greeting.</think>\naction: click(<ref>({gx}, {gy})</ref>, button=left)",
         "<think>Checking below the fold.</think>\naction: scroll(<ref>(640, 360)</ref>, scrollX=0, scrollY=300)",
-        "<think>Back to the top.</think>\naction: keypress([\"Home\"])",
+        '<think>Back to the top.</think>\naction: keypress(["Home"])',
         "<think>The page greets me as Smokey; the task is complete.</think>\naction: done()",
     ]
 
@@ -65,7 +84,9 @@ class RecordingPolicy(ScriptedPolicy):
 
 def check_record(record, policy, traj_dir):
     assert record["terminal_reason"] == "done", record["terminal_reason"]
-    assert record["check"]["passed"] and record["success"] is True and record["success_source"] == "success_check", record["check"]
+    assert record["check"]["passed"] and record["success"] is True and record["success_source"] == "success_check", (
+        record["check"]
+    )
     assert [t["clean"] for t in record["turns"]] == [True, False, True, True, True, True], record["turns"]
     assert abs(record["breakdown"]["components"]["format_validity"] - 5 / 6) < 1e-6
     assert record["reward"] > 1.0, record["reward"]
@@ -73,12 +94,16 @@ def check_record(record, policy, traj_dir):
     assert [a["type"] for a in traj["steps"][0]["actions"]] == ["click", "type"], traj["steps"][0]["actions"]
     assert len(traj["steps"]) == 5 and traj["steps"][-1]["actions"] == [{"type": "done"}]
     emitted = [policy.observations[i] for i in (0, 2, 3, 4, 5)]
-    for step, obs in zip(traj["steps"], emitted):
-        assert (traj_dir / step["screenshot"]).read_bytes() == base64.b64decode(obs["image_b64"]), f"PNG parity broken at step {step['step']}"
+    for step, obs in zip(traj["steps"], emitted, strict=False):
+        assert (traj_dir / step["screenshot"]).read_bytes() == base64.b64decode(obs["image_b64"]), (
+            f"PNG parity broken at step {step['step']}"
+        )
     examples, _ = convert_trajectory_to_examples(traj, traj_dir)
     # The RL lane stays on the one-image v2 layout by decision, so parity is asserted on the task/history text only.
-    for example, obs in zip(examples, emitted):
-        assert example["messages"][1]["content"][-1]["text"].removeprefix("\n") == obs["text"], "SFT input != RL observation"
+    for example, obs in zip(examples, emitted, strict=False):
+        assert example["messages"][1]["content"][-1]["text"].removeprefix("\n") == obs["text"], (
+            "SFT input != RL observation"
+        )
     defects = audit_trajectory(traj_dir)
     assert defects == [], defects
     assert json.loads((traj_dir / "metadata.json").read_text())["excluded_reason"] == "rl_rollout"
@@ -86,14 +111,19 @@ def check_record(record, policy, traj_dir):
 
 
 def run_service_round_trip(pool, cfg, out_root, texts):
-    service = EnvService(pool, {TASK["task_id"]: TASK}, lambda run_id, it, tag: make_run_context(run_id, out_root, it, tag), cfg)
+    service = EnvService(
+        pool, {TASK["task_id"]: TASK}, lambda run_id, it, tag: make_run_context(run_id, out_root, it, tag), cfg
+    )
     server = serve(service, "127.0.0.1", 0, "smoke")
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}"
 
     def post(path, body):
-        request = urllib.request.Request(f"{base}{path}", data=json.dumps(body).encode(),
-                                         headers={"Content-Type": "application/json", "X-RL-Token": "smoke"})
+        request = urllib.request.Request(
+            f"{base}{path}",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json", "X-RL-Token": "smoke"},
+        )
         with urllib.request.urlopen(request, timeout=300) as response:
             return json.loads(response.read())
 

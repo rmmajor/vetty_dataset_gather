@@ -3,11 +3,9 @@ import asyncio
 import base64
 import hashlib
 import json
-import os
 import struct
-import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from openai import OpenAI
@@ -97,9 +95,18 @@ CUA_KEY_TO_PLAYWRIGHT = {
     "HOME": "Home",
     "END": "End",
     "INSERT": "Insert",
-    "F1": "F1", "F2": "F2", "F3": "F3", "F4": "F4",
-    "F5": "F5", "F6": "F6", "F7": "F7", "F8": "F8",
-    "F9": "F9", "F10": "F10", "F11": "F11", "F12": "F12",
+    "F1": "F1",
+    "F2": "F2",
+    "F3": "F3",
+    "F4": "F4",
+    "F5": "F5",
+    "F6": "F6",
+    "F7": "F7",
+    "F8": "F8",
+    "F9": "F9",
+    "F10": "F10",
+    "F11": "F11",
+    "F12": "F12",
 }
 
 
@@ -127,7 +134,6 @@ async def execute_actions(page, actions):
             path = action.path
             if len(path) >= 2:
                 start = path[0]
-                end = path[-1]
                 await page.mouse.move(start["x"], start["y"])
                 await page.mouse.down()
                 for point in path[1:]:
@@ -202,14 +208,16 @@ def send_screenshot(client, response, call_id, b64_screenshot):
         model="gpt-5.4-mini",
         previous_response_id=response.id,
         tools=[{"type": "computer"}],
-        input=[{
-            "type": "computer_call_output",
-            "call_id": call_id,
-            "output": {
-                "type": "computer_screenshot",
-                "image_url": f"data:image/png;base64,{b64_screenshot}",
-            },
-        }],
+        input=[
+            {
+                "type": "computer_call_output",
+                "call_id": call_id,
+                "output": {
+                    "type": "computer_screenshot",
+                    "image_url": f"data:image/png;base64,{b64_screenshot}",
+                },
+            }
+        ],
         truncation="auto",
     )
 
@@ -249,10 +257,12 @@ async def record_single_task(client, task, output_dir, max_steps, viewport_width
             response = client.responses.create(
                 model="gpt-5.4-mini",
                 tools=[{"type": "computer"}],
-                input=[{
-                    "role": "user",
-                    "content": task["instruction"],
-                }],
+                input=[
+                    {
+                        "role": "user",
+                        "content": task["instruction"],
+                    }
+                ],
                 truncation="auto",
             )
         except Exception as e:
@@ -304,28 +314,32 @@ async def record_single_task(client, task, output_dir, max_steps, viewport_width
             screenshot_path.write_bytes(screenshot_bytes)
             screenshot_counter += 1
 
-            steps.append({
-                "step": len(steps) + 1,
-                "screenshot": screenshot_filename,
-                "thought": reasoning,
-                "actions": action_dicts,
-            })
+            steps.append(
+                {
+                    "step": len(steps) + 1,
+                    "screenshot": screenshot_filename,
+                    "thought": reasoning,
+                    "actions": action_dicts,
+                }
+            )
 
             # DOM-free capture metadata: GPT's computer tool is screenshot-only, so element
             # semantics stay null; we still record url/screenshot/timing signals.
             sha = hashlib.sha256(screenshot_bytes).hexdigest()
             w, h = png_dims(screenshot_bytes)
             now = time.monotonic()
-            step_metas.append({
-                "url_before": safe_page_url(page),
-                "url_after": None,
-                "caused_navigation": False,
-                "dom_changed": (sha != prev_sha) if prev_sha else None,
-                "screenshot_sha": sha,
-                "screenshot_width": w,
-                "screenshot_height": h,
-                "dt_ms": int((now - last_time) * 1000) if last_time else 0,
-            })
+            step_metas.append(
+                {
+                    "url_before": safe_page_url(page),
+                    "url_after": None,
+                    "caused_navigation": False,
+                    "dom_changed": (sha != prev_sha) if prev_sha else None,
+                    "screenshot_sha": sha,
+                    "screenshot_width": w,
+                    "screenshot_height": h,
+                    "dt_ms": int((now - last_time) * 1000) if last_time else 0,
+                }
+            )
             prev_sha = sha
             last_time = now
 
@@ -398,7 +412,7 @@ def save_metadata(task, task_dir, steps, success, viewport_width, viewport_heigh
         "total_steps": len(steps),
         "success": success,
         "viewport": {"width": viewport_width, "height": viewport_height},
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         # GPT CUA distillation: instruction comes from the Mind2Web task, reasoning from GPT.
         "framework": "playwright",
         "framework_language": "python",

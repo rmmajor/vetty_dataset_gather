@@ -1,0 +1,20 @@
+Remote GPU jobs (train / eval).
+
+positional arguments:
+  {train,run,eval,grpo,serve,search,cleanup,release}
+    train               Fine-tune on a rented GPU, pull the adapter, destroy.
+    run                 Alias of `train`; `run --smoke` is the no-cost self-
+                        test.
+    eval                Benchmark model(s) on a rented GPU. No training.
+    grpo                GRPO on a rented GPU against the local env service
+                        (make rl-serve first); ALWAYS destroys.
+    serve               Serve the student on 127.0.0.1:8001 through a tunnel
+                        until --for-seconds or Ctrl-C.
+    search              Dry run: print the cheapest allowed offer, provision
+                        nothing.
+    cleanup             Destroy instances abandoned by dead runs (see --all).
+    release             Hand a recorded instance over to `cleanup` (writes the
+                        pid null sentinel; destroys nothing).
+
+options:
+  -h, --help            show this help message and exit

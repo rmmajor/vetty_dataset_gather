@@ -1,9 +1,7 @@
 import argparse
 import json
-import sys
 
 from datasets import load_dataset
-
 
 WEBSITE_URL_MAP = {
     "aa": "https://www.aa.com",

@@ -1,4 +1,5 @@
 """Run the unchanged train_qwen.py convert+train on a Modal GPU, leaving the adapter on a volume the serve app mounts."""
+
 # Variants are configs, not forks: `modal run modal_train.py --config config_sft_v2_conservative.yaml --run-name sft-v2`.
 import os
 import pathlib
@@ -68,9 +69,16 @@ for _name in CONFIGS:
     secrets=[modal.Secret.from_name("huggingface")],
     timeout=TRAIN_TIMEOUT,
 )
-def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_examples: int = 0,
-          run_name: str = "", config: str = DEFAULT_CONFIG,
-          extra_convert_args: list = None, extra_train_args: list = None, skip_audit: bool = False):
+def train(
+    val_split: float = 0.1,
+    data_subdir: str = "trajectories",
+    max_examples: int = 0,
+    run_name: str = "",
+    config: str = DEFAULT_CONFIG,
+    extra_convert_args: list = None,
+    extra_train_args: list = None,
+    skip_audit: bool = False,
+):
     import json
     import shutil
     import subprocess
@@ -102,11 +110,18 @@ def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_example
         subprocess.run(audit, cwd=CODE_ROOT, check=True)
 
     convert = [
-        sys.executable, "train_qwen.py", "convert",
-        "--input", str(traj_dir),
-        "--output", str(dataset_dir),
-        "--val-split", str(val_split),
-        "--exclude-waste-steps", "--meandering-mode", "subsample",
+        sys.executable,
+        "train_qwen.py",
+        "convert",
+        "--input",
+        str(traj_dir),
+        "--output",
+        str(dataset_dir),
+        "--val-split",
+        str(val_split),
+        "--exclude-waste-steps",
+        "--meandering-mode",
+        "subsample",
     ] + (extra_convert_args or [])
     print("+", " ".join(convert), flush=True)
     subprocess.run(convert, cwd=CODE_ROOT, check=True)
@@ -128,9 +143,13 @@ def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_example
     run_config.write_text(yaml.safe_dump(config, sort_keys=False))
 
     train_cmd = [
-        sys.executable, "train_qwen.py", "train",
-        "--config", str(run_config),
-        "--dataset", str(dataset_file),
+        sys.executable,
+        "train_qwen.py",
+        "train",
+        "--config",
+        str(run_config),
+        "--dataset",
+        str(dataset_file),
     ] + (extra_train_args or [])
     print("+", " ".join(train_cmd), flush=True)
 
@@ -167,29 +186,54 @@ def train(val_split: float = 0.1, data_subdir: str = "trajectories", max_example
     return summary
 
 
-@app.function(image=image, volumes={HF_CACHE_MOUNT: hf_cache}, secrets=[modal.Secret.from_name("huggingface")],
-              timeout=1800, cpu=4, memory=16384)
+@app.function(
+    image=image,
+    volumes={HF_CACHE_MOUNT: hf_cache},
+    secrets=[modal.Secret.from_name("huggingface")],
+    timeout=1800,
+    cpu=4,
+    memory=16384,
+)
 def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
     """CPU-only: tokenize one two-image sft3 step and one grounding example through ms-swift's template and report the image-pad and label counts."""
-    import io
     import json
     import sys
+
     from PIL import Image
+
     os.environ.setdefault("MAX_PIXELS", "1003520")
     sys.path.insert(0, CODE_ROOT)
-    import train_qwen as tq
     from swift.model import get_model_processor
     from swift.template import get_template
+
+    import train_qwen as tq
+
     tmp = pathlib.Path("/tmp/encode_check")
     tmp.mkdir(exist_ok=True)
     cur, prev = tmp / "cur.png", tmp / "prev.png"
     Image.new("RGB", (1280, 720), (240, 240, 240)).save(cur)
     prev.write_bytes(tq.downscale_prev(cur.read_bytes()))
-    history = [f"click({i * 10 + 5}, {i * 7 + 3}) [no change] -> /settings/notifications/preferences" for i in range(23)]
-    step = tq.build_step_messages(tq.SYSTEM_PROMPT, tq.build_step_observation(
-        "Toggling Email notifications persists after reload. Verify the box stays unchecked.", history, str(cur), str(prev)))
-    step.append({"role": "assistant", "content": "<think>Clicking Save worked: a banner is visible. I reload to confirm.</think>\naction: click(<ref>(500, 500)</ref>, button=left)"})
-    grounding = tq.build_step_messages(tq.GROUNDING_SYSTEM_PROMPT, tq.build_grounding_observation('the "Save" button', str(cur)))
+    history = [
+        f"click({i * 10 + 5}, {i * 7 + 3}) [no change] -> /settings/notifications/preferences" for i in range(23)
+    ]
+    step = tq.build_step_messages(
+        tq.SYSTEM_PROMPT,
+        tq.build_step_observation(
+            "Toggling Email notifications persists after reload. Verify the box stays unchecked.",
+            history,
+            str(cur),
+            str(prev),
+        ),
+    )
+    step.append(
+        {
+            "role": "assistant",
+            "content": "<think>Clicking Save worked: a banner is visible. I reload to confirm.</think>\naction: click(<ref>(500, 500)</ref>, button=left)",
+        }
+    )
+    grounding = tq.build_step_messages(
+        tq.GROUNDING_SYSTEM_PROMPT, tq.build_grounding_observation('the "Save" button', str(cur))
+    )
     grounding.append({"role": "assistant", "content": "action: click(<ref>(500, 500)</ref>, button=left)"})
     loaded = get_model_processor(model, load_model=False)
     processor = loaded[1] if isinstance(loaded, tuple) else loaded
@@ -201,22 +245,41 @@ def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
         encoded = template.encode({"messages": messages})
         ids, labels = list(encoded["input_ids"]), list(encoded.get("labels") or [])
         supervised = [t for t in labels if t != -100]
-        report[name] = {"input_tokens": len(ids), "image_pad_tokens": ids.count(pad_id), "label_tokens": len(supervised),
-                        "labels_text": processor.tokenizer.decode(supervised)[:300]}
+        report[name] = {
+            "input_tokens": len(ids),
+            "image_pad_tokens": ids.count(pad_id),
+            "label_tokens": len(supervised),
+            "labels_text": processor.tokenizer.decode(supervised)[:300],
+        }
     print(json.dumps(report, indent=2), flush=True)
     hf_cache.commit()
     return report
 
 
 @app.local_entrypoint()
-def main(val_split: float = 0.1, data_subdir: str = "trajectories", max_examples: int = 0,
-         epochs: int = 0, run_name: str = "", config: str = DEFAULT_CONFIG, train_args: str = "",
-         convert_args: str = "", skip_audit: bool = False):
+def main(
+    val_split: float = 0.1,
+    data_subdir: str = "trajectories",
+    max_examples: int = 0,
+    epochs: int = 0,
+    run_name: str = "",
+    config: str = DEFAULT_CONFIG,
+    train_args: str = "",
+    convert_args: str = "",
+    skip_audit: bool = False,
+):
     extra_train_args = ["--epochs", str(epochs)] if epochs else []
     extra_train_args += train_args.split()
     extra_train_args = extra_train_args or None
-    result = train.remote(val_split=val_split, data_subdir=data_subdir, max_examples=max_examples,
-                          run_name=run_name, config=config, extra_train_args=extra_train_args,
-                          extra_convert_args=convert_args.split() or None, skip_audit=skip_audit)
+    result = train.remote(
+        val_split=val_split,
+        data_subdir=data_subdir,
+        max_examples=max_examples,
+        run_name=run_name,
+        config=config,
+        extra_train_args=extra_train_args,
+        extra_convert_args=convert_args.split() or None,
+        skip_audit=skip_audit,
+    )
     print(f"\nadapter ready on volume cua-outputs at {result['adapter']}")
     print(f"serve it with:  CUA_ADAPTER_NAME={result['run']}/adapter modal serve modal_serve.py")

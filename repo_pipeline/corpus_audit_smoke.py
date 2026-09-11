@@ -1,4 +1,5 @@
 """Scripted (no-LLM, no-Docker, no-network) check of the corpus audit's outcome metrics and health gates."""
+
 import json
 import logging
 import sys
@@ -25,8 +26,11 @@ def _done(index: int, thought: str) -> dict:
 RECHECK_STEPS = [
     _click(1, "I open the notification settings to find the Email toggle."),
     _click(2, "I uncheck Email notifications and save the form."),
-    _step(3, "I'll reload the settings page to confirm the change persisted.",
-          [{"type": "navigate", "url": "http://app.test/settings"}]),
+    _step(
+        3,
+        "I'll reload the settings page to confirm the change persisted.",
+        [{"type": "navigate", "url": "http://app.test/settings"}],
+    ),
     _done(4, "The settings page now shows Email notifications unchecked, so the change persisted."),
 ]
 NO_EVIDENCE_STEPS = [
@@ -43,21 +47,45 @@ EVIDENCE_ONLY_STEPS = [
 CASES = [
     {"name": "task_recheck", "steps": RECHECK_STEPS, "success": True, "meta": {"thought_source": "teacher_outcome"}},
     {"name": "task_no_evidence", "steps": NO_EVIDENCE_STEPS, "success": True, "meta": {"thought_source": "teacher"}},
-    {"name": "task_unverified", "steps": EVIDENCE_ONLY_STEPS, "success": False, "meta": {"thought_source": "teacher_outcome"}},
-    {"name": "task_qa_voice", "steps": EVIDENCE_ONLY_STEPS, "success": True, "meta": {"instruction_style": "qa_verify"}},
+    {
+        "name": "task_unverified",
+        "steps": EVIDENCE_ONLY_STEPS,
+        "success": False,
+        "meta": {"thought_source": "teacher_outcome"},
+    },
+    {
+        "name": "task_qa_voice",
+        "steps": EVIDENCE_ONLY_STEPS,
+        "success": True,
+        "meta": {"instruction_style": "qa_verify"},
+    },
     {"name": "task_qa_captured", "steps": NO_EVIDENCE_STEPS, "success": True, "meta": {"task_style": "qa_verify"}},
 ]
-EXPECTED_METRICS = {"trainable_trajectories": 4, "done_steps": 4, "done_with_evidence": 2, "done_after_recheck": 1,
-                    "done_evidence_share": 0.5, "done_after_recheck_share": 0.25, "qa_verify_trajectories": 2,
-                    "outcome_relabeled": 1, "outcome_relabeled_share": 0.25}
+EXPECTED_METRICS = {
+    "trainable_trajectories": 4,
+    "done_steps": 4,
+    "done_with_evidence": 2,
+    "done_after_recheck": 1,
+    "done_evidence_share": 0.5,
+    "done_after_recheck_share": 0.25,
+    "qa_verify_trajectories": 2,
+    "outcome_relabeled": 1,
+    "outcome_relabeled_share": 0.25,
+}
 
 
 def _write_corpus(root: Path) -> None:
     for case in CASES:
         traj_dir = root / "repo_smoke" / case["name"]
         traj_dir.mkdir(parents=True)
-        trajectory = {"task_id": case["name"], "instruction": "Do the thing", "start_url": "http://app.test/",
-                      "steps": case["steps"], "total_steps": len(case["steps"]), "success": case["success"]}
+        trajectory = {
+            "task_id": case["name"],
+            "instruction": "Do the thing",
+            "start_url": "http://app.test/",
+            "steps": case["steps"],
+            "total_steps": len(case["steps"]),
+            "success": case["success"],
+        }
         (traj_dir / "trajectory.json").write_text(json.dumps(trajectory))
         (traj_dir / "metadata.json").write_text(json.dumps({"capture_source": "agent", **case["meta"]}))
         for step in case["steps"]:
@@ -89,11 +117,20 @@ def check_metrics(root: Path, failures: list[str]) -> None:
 
 
 def check_partial_stats(failures: list[str]) -> None:
-    thresholds = {"min_trainable_trajectories": 500, "min_done_coverage": 0.95, "max_teacher_raw_trajectories": 0,
-                  "max_meandering_example_share": 0.25, "max_group_example_share": 0.15,
-                  "min_example_action_share": {"click": 0.2}, "min_done_evidence_share": 0.8,
-                  "max_grounding_example_share": 0.25, "min_outcome_relabeled_share": 0.9}
-    only_audit = corpus_audit.corpus_health_violations({"done_evidence_share": 0.5, "done_after_recheck_share": 0.1}, thresholds)
+    thresholds = {
+        "min_trainable_trajectories": 500,
+        "min_done_coverage": 0.95,
+        "max_teacher_raw_trajectories": 0,
+        "max_meandering_example_share": 0.25,
+        "max_group_example_share": 0.15,
+        "min_example_action_share": {"click": 0.2},
+        "min_done_evidence_share": 0.8,
+        "max_grounding_example_share": 0.25,
+        "min_outcome_relabeled_share": 0.9,
+    }
+    only_audit = corpus_audit.corpus_health_violations(
+        {"done_evidence_share": 0.5, "done_after_recheck_share": 0.1}, thresholds
+    )
     if len(only_audit) != 1 or "outcome-relabel" not in only_audit[0]:
         failures.append(f"partial stats: expected one outcome-relabel violation, got {only_audit!r}")
     provenance = corpus_audit.corpus_health_violations({"outcome_relabeled_share": 0.0}, thresholds)
@@ -105,7 +142,8 @@ def check_partial_stats(failures: list[str]) -> None:
     if corpus_audit.corpus_health_violations({}, thresholds):
         failures.append("empty stats must produce no violations")
     passing = corpus_audit.corpus_health_violations(
-        {"done_evidence_share": 0.9, "grounding_example_share": 0.1, "outcome_relabeled_share": 0.95}, thresholds)
+        {"done_evidence_share": 0.9, "grounding_example_share": 0.1, "outcome_relabeled_share": 0.95}, thresholds
+    )
     if passing:
         failures.append(f"passing stats produced violations: {passing!r}")
 
@@ -122,7 +160,11 @@ def check_exit_codes(root: Path, failures: list[str]) -> None:
         ("gate violation exits 1", [str(corpus), "--health-config", str(strict)], 1),
         ("provenance gate violation exits 1", [str(corpus), "--health-config", str(provenance)], 1),
         ("gate pass exits 0", [str(corpus), "--health-config", str(lenient)], 0),
-        ("--skip-health-gate reports but exits 0", [str(corpus), "--health-config", str(strict), "--skip-health-gate"], 0),
+        (
+            "--skip-health-gate reports but exits 0",
+            [str(corpus), "--health-config", str(strict), "--skip-health-gate"],
+            0,
+        ),
         ("missing thresholds file skips the gate", [str(corpus), "--health-config", str(root / "absent.json")], 0),
     ]
     for name, argv, want in cases:

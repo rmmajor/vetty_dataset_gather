@@ -1,4 +1,5 @@
 """Run episodes in-process over a WorkerPool — shared by rollout, eval and smoke."""
+
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -11,8 +12,14 @@ logger = logging.getLogger(__name__)
 
 
 def make_run_context(run_id, out_root, iteration=0, policy_tag="", bridge=None):
-    return RunContext(run_id=run_id, out_root=Path(out_root), iteration=iteration, policy_tag=policy_tag,
-                      reward_config=load_reward_config(), bridge=bridge)
+    return RunContext(
+        run_id=run_id,
+        out_root=Path(out_root),
+        iteration=iteration,
+        policy_tag=policy_tag,
+        reward_config=load_reward_config(),
+        bridge=bridge,
+    )
 
 
 def require_oracles(tasks, verifier_mode):
@@ -37,9 +44,21 @@ def run_episode(policy, task, pool, sample_k, run_ctx, cfg):
             reason = "skipped" if isinstance(e, RuntimeError) else "harness_error"
             episode_id = getattr(episode, "episode_id", f"{task['task_id']}__i{run_ctx.iteration:03d}__k{sample_k:02d}")
             logger.warning(f"{episode_id}: episode did not start ({reason}): {str(e)[:200]}")
-            return {"episode_id": episode_id, "task_id": task["task_id"], "site": task.get("site"), "split": task.get("split"),
-                    "k": sample_k, "iter": run_ctx.iteration, "skipped": str(e)[:300], "reward": None, "success": None,
-                    "terminal_reason": reason, "turns": [], "steps": 0, "reward_status": "skipped"}
+            return {
+                "episode_id": episode_id,
+                "task_id": task["task_id"],
+                "site": task.get("site"),
+                "split": task.get("split"),
+                "k": sample_k,
+                "iter": run_ctx.iteration,
+                "skipped": str(e)[:300],
+                "reward": None,
+                "success": None,
+                "terminal_reason": reason,
+                "turns": [],
+                "steps": 0,
+                "reward_status": "skipped",
+            }
         done = False
         try:
             while not done:
@@ -82,10 +101,14 @@ def summarize(records):
     successes = [r for r in records if r.get("success")]
     turns = [t for r in records for t in r.get("turns", [])]
     return {
-        "episodes": len(records), "final": len(final), "deferred": sum(1 for r in records if r.get("reward_status") == "deferred"),
+        "episodes": len(records),
+        "final": len(final),
+        "deferred": sum(1 for r in records if r.get("reward_status") == "deferred"),
         "success_rate": round(len(successes) / len(records), 4) if records else 0.0,
         "mean_reward": round(sum(r["reward"] for r in final) / len(final), 4) if final else 0.0,
-        "done_rate": round(sum(1 for r in records if r.get("terminal_reason") == "done") / len(records), 4) if records else 0.0,
+        "done_rate": round(sum(1 for r in records if r.get("terminal_reason") == "done") / len(records), 4)
+        if records
+        else 0.0,
         "parse_failure_rate": round(sum(1 for t in turns if not t.get("clean")) / len(turns), 4) if turns else 0.0,
         "mean_steps_success": round(sum(r["steps"] for r in successes) / len(successes), 2) if successes else 0.0,
     }

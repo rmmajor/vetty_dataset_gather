@@ -90,8 +90,9 @@ async def think_for_repo(registry: RepoRegistry, repo: dict):
         rlog.info("think blocks still incomplete -> staying captured (will resume next run)")
 
 
-async def run_think(registry: RepoRegistry, trajectory_dir=None, limit: int = None,
-                    workers: int = 2, budget_remaining: float = None):
+async def run_think(
+    registry: RepoRegistry, trajectory_dir=None, limit: int = None, workers: int = 2, budget_remaining: float = None
+):
     repos = registry.get_repos_for_stage(7, limit=limit)
     logger.info(f"Think generation for {len(repos)} captured repos with {workers} workers")
 
@@ -120,7 +121,14 @@ async def run_think(registry: RepoRegistry, trajectory_dir=None, limit: int = No
 
     await asyncio.gather(*[process(repo) for repo in repos])
 
-    logger.info(f"[stage 7] complete — {completed} repos completed, {still_captured} still captured, "
-                f"{trajectories} trajectories finished")
-    return {"processed": len(repos), "passed": completed, "rejected": 0,
-            "still_captured": still_captured, "trajectories": trajectories}
+    logger.info(
+        f"[stage 7] complete — {completed} repos completed, {still_captured} still captured, "
+        f"{trajectories} trajectories finished"
+    )
+    return {
+        "processed": len(repos),
+        "passed": completed,
+        "rejected": 0,
+        "still_captured": still_captured,
+        "trajectories": trajectories,
+    }

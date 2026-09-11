@@ -2,11 +2,11 @@
   "suite_sha256": "3705ec317f1ba3bc37a12c39ba351d4d176ffb07b2d1d9506db5452fa21d45f8",
   "built_from": [
     {
-      "path": "/Users/rmajor/unik/maga/dataset_gather/.claude/worktrees/binary-snacking-codd/repo_pipeline/public_sites_actions_frontier.json",
+      "path": "repo_pipeline/public_sites_actions_frontier.json",
       "sites": 55
     },
     {
-      "path": "/Users/rmajor/unik/maga/dataset_gather/.claude/worktrees/binary-snacking-codd/rl/rl_tasks.json",
+      "path": "rl/rl_tasks.json",
       "sites": null
     }
   ],

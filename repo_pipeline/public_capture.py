@@ -13,6 +13,7 @@ then `make convert` / `make audit-corpus` ingest them like any agent capture.
 Run: python -m repo_pipeline.public_capture [--sites wikipedia,mdn] [--max-tasks N]
      (or `make capture-public`)
 """
+
 import argparse
 import asyncio
 import json
@@ -28,8 +29,13 @@ from repo_pipeline.provision_human import find_site
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler, safe_parallel_sandboxes
 from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
-from repo_pipeline.stage6_generate import (CAPTURE_MAX_ATTEMPTS, _load_proposed_tasks, _safe_task_id,
-                                           is_capture_settled, record_capture_attempt)
+from repo_pipeline.stage6_generate import (
+    CAPTURE_MAX_ATTEMPTS,
+    _load_proposed_tasks,
+    _safe_task_id,
+    is_capture_settled,
+    record_capture_attempt,
+)
 from repo_pipeline.task_proposer import propose_tasks
 from repo_pipeline.think_generator import needs_polish, polish_thoughts_for_trajectory
 
@@ -71,14 +77,17 @@ def resolve_named_sites(names: list[str], preferred: Path | None = None) -> list
         winning_cfg, site = matches[0]
         # The same name can appear in several registries with different task sets; say which one won.
         if len(matches) > 1:
-            logger.warning(f"'{name}' is defined in {len(matches)} configs — using "
-                           f"{winning_cfg.name} ({len(site.get('tasks', []))} tasks), ignoring "
-                           f"{', '.join(c.name for c, _ in matches[1:])}")
+            logger.warning(
+                f"'{name}' is defined in {len(matches)} configs — using "
+                f"{winning_cfg.name} ({len(site.get('tasks', []))} tasks), ignoring "
+                f"{', '.join(c.name for c, _ in matches[1:])}"
+            )
         resolved.append(site)
     # Hard error, never a warning: silently dropping a site the caller asked for by name reads as success.
     if unknown:
-        raise ValueError(f"no site named {', '.join(unknown)} in any known config "
-                         f"({', '.join(c.name for c in configs)})")
+        raise ValueError(
+            f"no site named {', '.join(unknown)} in any known config ({', '.join(c.name for c in configs)})"
+        )
     return resolved
 
 
@@ -97,8 +106,9 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
     verifier = capture_meta.get("verifier", {})
     task_meta = capture_meta.get("task_meta") or {}
     # The trajectory's terminal risk class: the last consequential action the agent paused on.
-    risks = [a.get("risk_category", "") for s in traj["steps"]
-             for a in s.get("actions", []) if a.get("type") == "confirm"]
+    risks = [
+        a.get("risk_category", "") for s in traj["steps"] for a in s.get("actions", []) if a.get("type") == "confirm"
+    ]
     metadata = {
         "task_id": traj["task_id"],
         "instruction": traj["instruction"],
@@ -134,8 +144,10 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
 
     attempts = record_capture_attempt(traj_dir, "success" if traj["success"] else "failed")
     if not traj["success"] and attempts >= CAPTURE_MAX_ATTEMPTS:
-        logger.warning(f"[{site['name']}] task '{task['id']}' has now failed {attempts}x — resume will "
-                       f"stop re-capturing it (raise CAPTURE_MAX_ATTEMPTS to keep trying)")
+        logger.warning(
+            f"[{site['name']}] task '{task['id']}' has now failed {attempts}x — resume will "
+            f"stop re-capturing it (raise CAPTURE_MAX_ATTEMPTS to keep trying)"
+        )
 
     if traj["success"] and needs_polish(traj_dir):
         await polish_thoughts_for_trajectory(traj_dir, registry=registry, full_name=f"site:{site['name']}")
@@ -159,8 +171,9 @@ def _merge_tasks(curated: list[dict], proposed: list[dict], max_tasks: int | Non
     return merged[:max_tasks] if max_tasks else merged
 
 
-async def _propose_for_site(client, sandbox, site: dict, avoid: list[str], registry,
-                            auth_config: dict | None = None) -> dict | None:
+async def _propose_for_site(
+    client, sandbox, site: dict, avoid: list[str], registry, auth_config: dict | None = None
+) -> dict | None:
     """Ground the proposer in the LIVE public site (homepage snapshot + screenshot + affordances),
     mirroring stage 6's context probe. Returns the proposal dict, or None on SDK/parse failure."""
     # The probe carries the site's session so a login-gated site is proposed from its signed-in state, not its login wall.
@@ -179,9 +192,15 @@ async def _propose_for_site(client, sandbox, site: dict, avoid: list[str], regis
         "description": site.get("domain") or site.get("category") or site["name"],
     }
     return await propose_tasks(
-        repo, snapshot, screenshot, "", "",
-        n_tasks=PUBLIC_TASKS_PER_SITE, registry=registry,
-        affordances=affordances, avoid_instructions=avoid,
+        repo,
+        snapshot,
+        screenshot,
+        "",
+        "",
+        n_tasks=PUBLIC_TASKS_PER_SITE,
+        registry=registry,
+        affordances=affordances,
+        avoid_instructions=avoid,
         task_style=site.get("task_style", ""),
     )
 
@@ -205,15 +224,19 @@ def _resolve_site_auth(site: dict):
 
     burner_id = site.get("burner_account_id")
     if not app_secrets.is_registered_burner(burner_id):
-        logger.warning(f"[{site['name']}] FAIL-CLOSED: needs auth ({autonomy}/{auth_mode}) but burner "
-                       f"'{burner_id}' is not a registered burner — skipping site")
+        logger.warning(
+            f"[{site['name']}] FAIL-CLOSED: needs auth ({autonomy}/{auth_mode}) but burner "
+            f"'{burner_id}' is not a registered burner — skipping site"
+        )
         return None
     auth_config = None
     if auth_mode == "pre_session":
         storage_state = app_secrets.load_storage_state(site.get("storage_state_ref"))
         if storage_state is None:
-            logger.warning(f"[{site['name']}] FAIL-CLOSED: pre_session but storage_state "
-                           f"'{site.get('storage_state_ref')}' is missing — skipping site")
+            logger.warning(
+                f"[{site['name']}] FAIL-CLOSED: pre_session but storage_state "
+                f"'{site.get('storage_state_ref')}' is missing — skipping site"
+            )
             return None
         auth_config = {"auth_mode": "pre_session", "storage_state": storage_state}
     # Guarded capture NEVER types the password: the agent hands off at a login/secret wall and a
@@ -223,8 +246,9 @@ def _resolve_site_auth(site: dict):
     return autonomy, auth_mode, secrets, auth_config
 
 
-async def capture_site(site: dict, trajectory_base_dir: Path, registry,
-                       max_tasks: int | None = None, propose: bool = True) -> dict:
+async def capture_site(
+    site: dict, trajectory_base_dir: Path, registry, max_tasks: int | None = None, propose: bool = True
+) -> dict:
     """One sandbox per site (the driver's browser is in-container; no app boot needed).
 
     Lever 1: curated config tasks are deepened with proposer-generated tasks grounded in the live
@@ -263,15 +287,17 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry,
 
         proposed = persisted
         if proposed is None and propose:
-            proposal = await _propose_for_site(client, sandbox, site, [t["instruction"] for t in curated], registry,
-                                               auth_config=site_auth_config)
+            proposal = await _propose_for_site(
+                client, sandbox, site, [t["instruction"] for t in curated], registry, auth_config=site_auth_config
+            )
             if proposal is not None:
                 proposed = proposal.get("tasks") or []
                 site_dir.mkdir(parents=True, exist_ok=True)
                 (site_dir / "proposed_tasks.json").write_text(json.dumps(proposal, indent=2))
                 health = proposal.get("app_health") or {}
-                logger.info(f"[{site['name']}] proposed {len(proposed)} extra tasks "
-                            f"(health: {health.get('notes', 'ok')[:80]})")
+                logger.info(
+                    f"[{site['name']}] proposed {len(proposed)} extra tasks (health: {health.get('notes', 'ok')[:80]})"
+                )
             else:
                 logger.warning(f"[{site['name']}] task proposal failed — using curated config tasks only")
 
@@ -286,17 +312,25 @@ async def capture_site(site: dict, trajectory_base_dir: Path, registry,
             if rate_limit_tracker.limit_reached():
                 raise UsageLimitReached("usage limit reached during public capture")
             state = await run_teacher_task(
-                client, task, site["start_url"], registry=registry, full_name=f"site:{site['name']}",
-                autonomy=autonomy, auth_mode=auth_mode, secrets=site_secrets,
-                auth_config=site_auth_config, task_style=site.get("task_style", ""),
+                client,
+                task,
+                site["start_url"],
+                registry=registry,
+                full_name=f"site:{site['name']}",
+                autonomy=autonomy,
+                auth_mode=auth_mode,
+                secrets=site_secrets,
+                auth_config=site_auth_config,
+                task_style=site.get("task_style", ""),
             )
             states[task["id"]] = state
             ran.append(task)
             summary["captured"] += 1
             site_dir.mkdir(parents=True, exist_ok=True)
             await _run(sandbox.copy_out, RESULTS_DIR, str(site_dir))
-            logger.info(f"[{site['name']}] task '{task['id']}': {state['actions']} actions, "
-                        f"outcome={state['agent_outcome']}")
+            logger.info(
+                f"[{site['name']}] task '{task['id']}': {state['actions']} actions, outcome={state['agent_outcome']}"
+            )
     finally:
         await _run(sandbox.stop)
 
@@ -321,12 +355,12 @@ async def main():
     parser = argparse.ArgumentParser(description="Public-site teacher capture lane")
     parser.add_argument("--sites", type=str, default=None, help="Comma-separated site names (default: all)")
     parser.add_argument("--max-tasks", type=int, default=None, help="Max tasks per site this run")
-    parser.add_argument("--no-propose", action="store_true",
-                        help="Disable proposer-generated tasks; run only curated config tasks")
+    parser.add_argument(
+        "--no-propose", action="store_true", help="Disable proposer-generated tasks; run only curated config tasks"
+    )
     parser.add_argument("--parallel", type=int, default=3, help="Concurrent site sandboxes")
     parser.add_argument("--traj-dir", type=str, default="trajectories/")
-    parser.add_argument("--config", type=str, default=None,
-                        help="Path to a sites JSON (default: public_sites.json)")
+    parser.add_argument("--config", type=str, default=None, help="Path to a sites JSON (default: public_sites.json)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -352,12 +386,13 @@ async def main():
             if rate_limit_tracker.limit_reached():
                 return
             try:
-                r = await capture_site(
-                    site, Path(args.traj_dir), registry, args.max_tasks, propose=not args.no_propose)
+                r = await capture_site(site, Path(args.traj_dir), registry, args.max_tasks, propose=not args.no_propose)
                 results.append(r)
                 # Log per-site as it finishes (not all at the end) so a long run is observable.
-                logger.info(f"[{r['site']}] done ({len(results)}/{len(sites)} sites): "
-                            f"{r['captured']} captured, {r['verified']} verified, {r['skipped']} already on disk")
+                logger.info(
+                    f"[{r['site']}] done ({len(results)}/{len(sites)} sites): "
+                    f"{r['captured']} captured, {r['verified']} verified, {r['skipped']} already on disk"
+                )
             except UsageLimitReached:
                 logger.warning(f"[{site['name']}] usage limit reached — captures so far are kept")
             except Exception as e:
@@ -368,9 +403,11 @@ async def main():
     finally:
         registry.close()
 
-    logger.info(f"Done: {len(results)}/{len(sites)} sites — "
-                f"{sum(r['captured'] for r in results)} captured, "
-                f"{sum(r['verified'] for r in results)} verified")
+    logger.info(
+        f"Done: {len(results)}/{len(sites)} sites — "
+        f"{sum(r['captured'] for r in results)} captured, "
+        f"{sum(r['verified'] for r in results)} verified"
+    )
 
 
 if __name__ == "__main__":

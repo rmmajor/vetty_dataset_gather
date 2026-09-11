@@ -1,0 +1,8 @@
+options:
+  -h, --help            show this help message and exit
+  --config CONFIG       Path to config.yaml
+  --dataset DATASET     Override dataset path
+  --epochs EPOCHS       Override number of epochs
+  --lr LR               Override learning rate
+  --batch-size BATCH_SIZE
+                        Override batch size

@@ -15,7 +15,6 @@ from PIL import Image, ImageChops
 from repo_pipeline import operator_pii
 from repo_pipeline.corpus_audit import corpus_health_violations, trainability
 
-
 # Unambiguous secret literals that must NEVER reach the training corpus. Masked credentials are
 # recorded as `<secret:NAME>` placeholders (driver-side substitution), so any of these appearing as
 # a literal is a real leak. Scoped to high-entropy keys/tokens that CANNOT be legitimate page
@@ -44,8 +43,10 @@ def _scan_examples_for_secrets(examples) -> list[str]:
     for example in examples:
         for message in example["messages"]:
             content = message["content"]
-            text = content if isinstance(content, str) else " ".join(
-                c.get("text", "") for c in content if isinstance(c, dict)
+            text = (
+                content
+                if isinstance(content, str)
+                else " ".join(c.get("text", "") for c in content if isinstance(c, dict))
             )
             for finding in _scan_text_for_secrets(text):
                 if finding not in findings:
@@ -138,7 +139,7 @@ def _diff_plane(png_bytes):
 
 def _changed_fraction(plane_a, plane_b):
     histogram = ImageChops.difference(plane_a, plane_b).histogram()
-    return sum(histogram[EFFECT_PIXEL_DELTA + 1:]) / (plane_a.width * plane_a.height)
+    return sum(histogram[EFFECT_PIXEL_DELTA + 1 :]) / (plane_a.width * plane_a.height)
 
 
 def screenshot_changed_fraction(png_a_bytes, png_b_bytes):
@@ -188,8 +189,9 @@ def step_effects(trajectory_dir, steps, capture_meta):
             continue
         url_before = (meta_steps.get(str(step.get("step"))) or {}).get("url")
         url_after = (meta_steps.get(str(steps[k + 1].get("step"))) or {}).get("url")
-        effects.append({"changed": _changed_fraction(plane_at(k), plane_at(k + 1)),
-                        "path": url_path_change(url_before, url_after)})
+        effects.append(
+            {"changed": _changed_fraction(plane_at(k), plane_at(k + 1)), "path": url_path_change(url_before, url_after)}
+        )
         planes.pop(k, None)
     return effects
 
@@ -207,21 +209,21 @@ def format_action_for_training(action):
     if action_type == "click":
         x, y = action["x"], action["y"]
         button = action.get("button", "left")
-        return f'action: click(<ref>({x}, {y})</ref>, button={button})'
+        return f"action: click(<ref>({x}, {y})</ref>, button={button})"
 
     elif action_type == "double_click":
         x, y = action["x"], action["y"]
-        return f'action: double_click(<ref>({x}, {y})</ref>)'
+        return f"action: double_click(<ref>({x}, {y})</ref>)"
 
     elif action_type == "drag":
         path = action["path"]
         start = path[0]
         end = path[-1]
-        return f'action: drag(<ref>({start["x"]}, {start["y"]})</ref> -> <ref>({end["x"]}, {end["y"]})</ref>)'
+        return f"action: drag(<ref>({start['x']}, {start['y']})</ref> -> <ref>({end['x']}, {end['y']})</ref>)"
 
     elif action_type == "move":
         x, y = action["x"], action["y"]
-        return f'action: move(<ref>({x}, {y})</ref>)'
+        return f"action: move(<ref>({x}, {y})</ref>)"
 
     elif action_type == "type":
         text = action["text"]
@@ -229,12 +231,12 @@ def format_action_for_training(action):
 
     elif action_type == "keypress":
         keys = action["keys"]
-        return f'action: keypress({json.dumps(keys)})'
+        return f"action: keypress({json.dumps(keys)})"
 
     elif action_type == "scroll":
         x, y = action["x"], action["y"]
         sx, sy = action["scroll_x"], action["scroll_y"]
-        return f'action: scroll(<ref>({x}, {y})</ref>, scrollX={sx}, scrollY={sy})'
+        return f"action: scroll(<ref>({x}, {y})</ref>, scrollX={sx}, scrollY={sy})"
 
     elif action_type == "wait":
         return "action: wait()"
@@ -243,18 +245,18 @@ def format_action_for_training(action):
         return f'action: navigate("{action.get("url", "")}")'
 
     elif action_type == "handoff":
-        return f'action: handoff(reason={action.get("reason", "login")})'
+        return f"action: handoff(reason={action.get('reason', 'login')})"
 
     elif action_type == "confirm":
         risk = action.get("risk_category", "")
         proposed = action.get("proposed_action") or {}
         if "x" in proposed and "y" in proposed:
-            inner = f'{proposed.get("type") or "click"}(<ref>({proposed["x"]}, {proposed["y"]})</ref>)'
+            inner = f"{proposed.get('type') or 'click'}(<ref>({proposed['x']}, {proposed['y']})</ref>)"
         elif proposed.get("type"):
-            inner = f'{proposed["type"]}()'
+            inner = f"{proposed['type']}()"
         else:
             inner = "action()"
-        return f'action: confirm(propose={inner}, risk={risk})'
+        return f"action: confirm(propose={inner}, risk={risk})"
 
     elif action_type == "done":
         return "action: done()"
@@ -269,22 +271,22 @@ def format_action_summary(action):
     action_type = action["type"]
 
     if action_type in ("click", "double_click", "move"):
-        return f'{action_type}({action["x"]}, {action["y"]})'
+        return f"{action_type}({action['x']}, {action['y']})"
     elif action_type == "type":
         return f'type("{action["text"]}")'
     elif action_type == "keypress":
-        return f'keypress({action["keys"]})'
+        return f"keypress({action['keys']})"
     elif action_type == "scroll":
-        return f'scroll({action["x"]}, {action["y"]})'
+        return f"scroll({action['x']}, {action['y']})"
     elif action_type == "drag":
         path = action["path"]
-        return f'drag({path[0]["x"]},{path[0]["y"]} -> {path[-1]["x"]},{path[-1]["y"]})'
+        return f"drag({path[0]['x']},{path[0]['y']} -> {path[-1]['x']},{path[-1]['y']})"
     elif action_type == "navigate":
-        return f'navigate({action.get("url", "")})'
+        return f"navigate({action.get('url', '')})"
     elif action_type == "handoff":
-        return f'handoff({action.get("reason", "")})'
+        return f"handoff({action.get('reason', '')})"
     elif action_type == "confirm":
-        return f'confirm(risk={action.get("risk_category", "")})'
+        return f"confirm(risk={action.get('risk_category', '')})"
     return action_type
 
 
@@ -353,15 +355,22 @@ def build_step_messages(system, observation):
 
 
 def to_openai_content(content, image_b64_for):
-    return [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64_for(item['image'])}"}}
-            if item["type"] == "image" else _text_item(item["text"]) for item in content]
+    return [
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64_for(item['image'])}"}}
+        if item["type"] == "image"
+        else _text_item(item["text"])
+        for item in content
+    ]
 
 
 def to_claude_content(content, image_b64_for):
     """The same observation in Anthropic's block form, so a frontier arm is prompted identically."""
-    return [{"type": "image", "source": {"type": "base64", "media_type": "image/png",
-                                         "data": image_b64_for(item["image"])}}
-            if item["type"] == "image" else _text_item(item["text"]) for item in content]
+    return [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_b64_for(item["image"])}}
+        if item["type"] == "image"
+        else _text_item(item["text"])
+        for item in content
+    ]
 
 
 GROUNDING_INSTRUCTION_TEMPLATE = "Click {description}."
@@ -394,11 +403,29 @@ MEANDER_MID_KEEP_EVERY = int(os.environ.get("MEANDER_MID_KEEP_EVERY", "6"))
 # target: the post-chain screenshot no longer matches a sensible per-press supervision signal.
 KEYPRESS_MAX_REPEAT = int(os.environ.get("KEYPRESS_MAX_REPEAT", "6"))
 
-_KEY_CANON = {k.lower(): k for k in (
-    "Enter", "Escape", "Tab", "Backspace", "Delete", "Home", "End", "Space",
-    "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "PageDown", "PageUp",
-    "Control", "Shift", "Alt", "Meta",
-)}
+_KEY_CANON = {
+    k.lower(): k
+    for k in (
+        "Enter",
+        "Escape",
+        "Tab",
+        "Backspace",
+        "Delete",
+        "Home",
+        "End",
+        "Space",
+        "ArrowDown",
+        "ArrowUp",
+        "ArrowLeft",
+        "ArrowRight",
+        "PageDown",
+        "PageUp",
+        "Control",
+        "Shift",
+        "Alt",
+        "Meta",
+    )
+}
 
 
 def normalize_trajectory_actions(trajectory):
@@ -406,8 +433,7 @@ def normalize_trajectory_actions(trajectory):
     for step in trajectory.get("steps", []):
         for action in step.get("actions", []):
             if action.get("type") == "keypress" and action.get("keys"):
-                action["keys"] = [k if len(k) == 1 else _KEY_CANON.get(k.lower(), k)
-                                  for k in action["keys"]]
+                action["keys"] = [k if len(k) == 1 else _KEY_CANON.get(k.lower(), k) for k in action["keys"]]
 
 
 def _meander_drop_indices(steps, head=None, tail=None, keep_every=None):
@@ -449,8 +475,7 @@ def _waste_step_indices(steps, radius_px=WASTE_CLICK_RADIUS_PX, lookback=WASTE_L
         clicks = [a for a in actions if a.get("type") == "click" and a.get("x") is not None]
         if len(actions) == 1 and len(clicks) == 1:
             x, y = clicks[0]["x"], clicks[0]["y"]
-            if any(i - j <= lookback and abs(x - px) <= radius_px and abs(y - py) <= radius_px
-                   for px, py, j in recent):
+            if any(i - j <= lookback and abs(x - px) <= radius_px and abs(y - py) <= radius_px for px, py, j in recent):
                 waste.add(i)
         for a in clicks:
             recent.append((a["x"], a["y"], i))
@@ -471,12 +496,14 @@ def _maybe_synthesize_done_step(trajectory, trajectory_dir, capture_meta):
     final_screenshot = trajectory_dir / "final_screenshot.png"
     if not summary or not final_screenshot.exists():
         return
-    steps.append({
-        "step": (steps[-1]["step"] + 1) if steps else 1,
-        "screenshot": "final_screenshot.png",
-        "thought": summary,
-        "actions": [{"type": "done"}],
-    })
+    steps.append(
+        {
+            "step": (steps[-1]["step"] + 1) if steps else 1,
+            "screenshot": "final_screenshot.png",
+            "thought": summary,
+            "actions": [{"type": "done"}],
+        }
+    )
 
 
 def _write_prev_image(trajectory_dir, steps, index, prev_dir):
@@ -492,8 +519,9 @@ def _write_prev_image(trajectory_dir, steps, index, prev_dir):
     return str(target.resolve())
 
 
-def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_steps=False,
-                                   extra_drop_indices=(), capture_meta=None, prev_dir=None):
+def convert_trajectory_to_examples(
+    trajectory, trajectory_dir, exclude_waste_steps=False, extra_drop_indices=(), capture_meta=None, prev_dir=None
+):
     """One training example PER STEP: current screenshot + task + windowed text history ->
     <think> + action(s). A whole trajectory as one multi-turn example packs every screenshot
     (~300 visual tokens each) into a single sequence — a 21-step trajectory is ~9k tokens
@@ -507,8 +535,15 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_ste
     downstream context stays intact — only the bad supervision target is removed."""
     instruction = trajectory["instruction"]
     steps = trajectory["steps"]
-    stats = {"waste_dropped": 0, "subsample_dropped": 0, "target_actions": {}, "done_emitted": False,
-             "effect_steps": 0, "effect_no_change": 0, "effect_url_change": 0}
+    stats = {
+        "waste_dropped": 0,
+        "subsample_dropped": 0,
+        "target_actions": {},
+        "done_emitted": False,
+        "effect_steps": 0,
+        "effect_no_change": 0,
+        "effect_url_change": 0,
+    }
     if not steps:
         return [], stats
 
@@ -539,10 +574,14 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_ste
             observation = build_step_observation(instruction, action_history, str(screenshot_path), prev_image)
             action_str = "\n".join(format_action_for_training(to_model_action(a)) for a in actions)
             assistant_content = f"<think>{thought}</think>\n{action_str}" if thought else action_str
-            examples.append({"messages": [
-                *build_step_messages(SYSTEM_PROMPT, observation),
-                {"role": "assistant", "content": assistant_content},
-            ]})
+            examples.append(
+                {
+                    "messages": [
+                        *build_step_messages(SYSTEM_PROMPT, observation),
+                        {"role": "assistant", "content": assistant_content},
+                    ]
+                }
+            )
             for a in actions:
                 t = a.get("type", "?")
                 stats["target_actions"][t] = stats["target_actions"].get(t, 0) + 1
@@ -558,17 +597,25 @@ def convert_trajectory_to_examples(trajectory, trajectory_dir, exclude_waste_ste
 # Grounding slice: recorded clicks land on a named element's bbox centre — a free ScreenSpot-style set on our distribution.
 GROUNDING_ROLE_NOUNS = {
     "button": "button",
-    "a": "link", "link": "link",
-    "input": "text field", "textbox": "text field", "searchbox": "text field",
+    "a": "link",
+    "link": "link",
+    "input": "text field",
+    "textbox": "text field",
+    "searchbox": "text field",
     "textarea": "text area",
-    "select": "dropdown", "combobox": "dropdown",
+    "select": "dropdown",
+    "combobox": "dropdown",
     "option": "option",
     "menuitem": "menu item",
     "tab": "tab",
     "checkbox": "checkbox",
     "radio": "radio button",
     "spinbutton": "number field",
-    "treeitem": "item", "listitem": "item", "li": "item", "gridcell": "item", "summary": "item",
+    "treeitem": "item",
+    "listitem": "item",
+    "li": "item",
+    "gridcell": "item",
+    "summary": "item",
     "switch": "toggle",
     "img": "image",
 }
@@ -614,7 +661,10 @@ def _grounding_skip_reason(action, meta, screenshot_path):
         return "no_name"
     if len(name) > GROUNDING_NAME_MAX_CHARS:
         return "name_too_long"
-    if any(p.search(name) for p in GROUNDING_SKIP_NAME_PATTERNS) or (meta.get("attrs") or {}).get("type") in GROUNDING_SKIP_INPUT_TYPES:
+    if (
+        any(p.search(name) for p in GROUNDING_SKIP_NAME_PATTERNS)
+        or (meta.get("attrs") or {}).get("type") in GROUNDING_SKIP_INPUT_TYPES
+    ):
         return "password_or_masked"
     if _scan_text_for_secrets(name):
         return "secret"
@@ -644,9 +694,17 @@ def grounding_targets(trajectory, trajectory_dir, capture_meta):
             continue
         bbox = meta["bbox"]
         cx, cy = _bbox_centre(bbox)
-        targets.append({"screenshot": str(screenshot_path), "name": meta["name"].strip(), "role": meta["role"],
-                        "noun": GROUNDING_ROLE_NOUNS[meta["role"]], "x": cx, "y": cy,
-                        "small": bbox["width"] <= GROUNDING_SMALL_TARGET_PX and bbox["height"] <= GROUNDING_SMALL_TARGET_PX})
+        targets.append(
+            {
+                "screenshot": str(screenshot_path),
+                "name": meta["name"].strip(),
+                "role": meta["role"],
+                "noun": GROUNDING_ROLE_NOUNS[meta["role"]],
+                "x": cx,
+                "y": cy,
+                "small": bbox["width"] <= GROUNDING_SMALL_TARGET_PX and bbox["height"] <= GROUNDING_SMALL_TARGET_PX,
+            }
+        )
     return targets, skipped
 
 
@@ -655,15 +713,23 @@ def grounding_example(target, variant=0):
     description = grounding_description(target["name"], target["noun"], variant)
     observation = build_grounding_observation(description, target["screenshot"])
     action = to_model_action({"type": "click", "x": target["x"], "y": target["y"], "button": "left"})
-    return {"messages": [*build_step_messages(GROUNDING_SYSTEM_PROMPT, observation),
-                         {"role": "assistant", "content": format_action_for_training(action)}]}
+    return {
+        "messages": [
+            *build_step_messages(GROUNDING_SYSTEM_PROMPT, observation),
+            {"role": "assistant", "content": format_action_for_training(action)},
+        ]
+    }
 
 
 def _dedupe_targets(targets, dedupe_max):
     """At most `dedupe_max` targets per (name, 8px cell): one button clicked in ten trajectories is one element."""
     seen, kept = {}, []
     for target in targets:
-        key = (target["name"], round(target["x"] / GROUNDING_DEDUPE_CELL_PX), round(target["y"] / GROUNDING_DEDUPE_CELL_PX))
+        key = (
+            target["name"],
+            round(target["x"] / GROUNDING_DEDUPE_CELL_PX),
+            round(target["y"] / GROUNDING_DEDUPE_CELL_PX),
+        )
         seen[key] = seen.get(key, 0) + 1
         if seen[key] <= dedupe_max:
             kept.append(target)
@@ -692,15 +758,23 @@ def select_grounding_examples(targets_by_group, budget, rng, oversample=None, pe
         unique = _dedupe_targets(targets, dedupe_max)
         stats["grounding_candidates"] += len(targets)
         stats["grounding_deduped"] += len(targets) - len(unique)
-        group_rows = [{"group": group, "tier": _grounding_tier(t, v), "small": t["small"], "role": t["role"],
-                       "example": grounding_example(t, v)}
-                      for t in unique for v in range(oversample if t["small"] else 1)]
+        group_rows = [
+            {
+                "group": group,
+                "tier": _grounding_tier(t, v),
+                "small": t["small"],
+                "role": t["role"],
+                "example": grounding_example(t, v),
+            }
+            for t in unique
+            for v in range(oversample if t["small"] else 1)
+        ]
         group_rows = _ranked(group_rows, rng)
         stats["grounding_capped"] += max(0, len(group_rows) - per_group_cap)
         rows.extend(group_rows[:per_group_cap])
     rows = _ranked(rows, rng)
     stats["grounding_ceiling_dropped"] = max(0, len(rows) - max(0, budget))
-    rows = rows[:max(0, budget)]
+    rows = rows[: max(0, budget)]
     examples_by_group, roles = {}, {}
     for row in rows:
         examples_by_group.setdefault(row["group"], []).append(row["example"])
@@ -711,10 +785,19 @@ def select_grounding_examples(targets_by_group, budget, rng, oversample=None, pe
     return examples_by_group, stats
 
 
-def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
-                         meandering_mode="keep", exclude_waste_steps=False,
-                         health_config="corpus_health.json", skip_health_gate=False,
-                         grounding_share=GROUNDING_DEFAULT_SHARE, grounding_seed=GROUNDING_SEED):
+def convert_trajectories(
+    input_dir,
+    output_dir,
+    val_split,
+    include_replay=False,
+    meandering_mode="keep",
+    exclude_waste_steps=False,
+    health_config="corpus_health.json",
+    skip_health_gate=False,
+    grounding_share=GROUNDING_DEFAULT_SHARE,
+    grounding_seed=GROUNDING_SEED,
+    seed=None,
+):
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -723,20 +806,39 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     leak_sources = []
     examples_by_group = {}
     grounding_targets_by_group = {}
-    skipped = {"excluded": 0, "unverified": 0, "replay_gated": 0, "empty": 0, "meandering": 0,
-               "stuck_loop": 0, "unreadable": 0}
+    skipped = {
+        "excluded": 0,
+        "unverified": 0,
+        "replay_gated": 0,
+        "empty": 0,
+        "meandering": 0,
+        "stuck_loop": 0,
+        "unreadable": 0,
+    }
     report = {
-        "trajectories": 0, "by_source": {}, "actions": {}, "target_actions": {}, "lengths": [],
-        "domains": {}, "done_steps": 0, "done_trajectories": 0, "thought_sources": {},
-        "meandering": 0, "meandering_examples": 0, "teacher_raw": 0,
-        "waste_steps_dropped": 0, "subsample_dropped": 0, "autonomy": {}, "auth_mode": {},
-        "effect_steps": 0, "effect_no_change": 0, "effect_url_change": 0, "grounding_skipped": {},
+        "trajectories": 0,
+        "by_source": {},
+        "actions": {},
+        "target_actions": {},
+        "lengths": [],
+        "domains": {},
+        "done_steps": 0,
+        "done_trajectories": 0,
+        "thought_sources": {},
+        "meandering": 0,
+        "meandering_examples": 0,
+        "teacher_raw": 0,
+        "waste_steps_dropped": 0,
+        "subsample_dropped": 0,
+        "autonomy": {},
+        "auth_mode": {},
+        "effect_steps": 0,
+        "effect_no_change": 0,
+        "effect_url_change": 0,
+        "grounding_skipped": {},
     }
 
-    trajectory_dirs = sorted(
-        d for d in input_path.glob("**/task_*")
-        if d.is_dir() and (d / "trajectory.json").exists()
-    )
+    trajectory_dirs = sorted(d for d in input_path.glob("**/task_*") if d.is_dir() and (d / "trajectory.json").exists())
     print(f"Found {len(trajectory_dirs)} trajectory directories")
 
     for traj_dir in trajectory_dirs:
@@ -768,21 +870,19 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
             except (json.JSONDecodeError, OSError):
                 pass
 
-        source = metadata.get("capture_source") or (
-            "path_a" if "mind2web" in traj_dir.name else "replay"
-        )
+        source = metadata.get("capture_source") or ("path_a" if "mind2web" in traj_dir.name else "replay")
 
         # The ONE trainability gate, shared with repo_pipeline.corpus_audit so they cannot drift.
-        skip_reason = trainability(trajectory, metadata, capture_meta, traj_dir.name,
-                                   include_replay=include_replay)
+        skip_reason = trainability(trajectory, metadata, capture_meta, traj_dir.name, include_replay=include_replay)
         if skip_reason:
             skipped[skip_reason] += 1
             continue
 
         # Efficiency is a quality tag, not a gate: meandering goal-completions train subsampled or
         # in full, or can be dropped for a clean run. `success` already means the goal was met.
-        is_meandering = ((capture_meta.get("verifier") or {}).get("efficiency") == "meandering"
-                         or metadata.get("efficiency") == "meandering")
+        is_meandering = (capture_meta.get("verifier") or {}).get("efficiency") == "meandering" or metadata.get(
+            "efficiency"
+        ) == "meandering"
         if meandering_mode == "exclude" and is_meandering:
             skipped["meandering"] += 1
             continue
@@ -803,9 +903,13 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
         group = parent if parent.startswith(("repo_", "site_")) else traj_dir.name
 
         examples, traj_stats = convert_trajectory_to_examples(
-            trajectory, traj_dir, exclude_waste_steps=exclude_waste_steps,
-            extra_drop_indices=extra_drop, capture_meta=capture_meta,
-            prev_dir=output_path / "prev" / group)
+            trajectory,
+            traj_dir,
+            exclude_waste_steps=exclude_waste_steps,
+            extra_drop_indices=extra_drop,
+            capture_meta=capture_meta,
+            prev_dir=output_path / "prev" / group,
+        )
         report["waste_steps_dropped"] += traj_stats["waste_dropped"]
         report["subsample_dropped"] += traj_stats["subsample_dropped"]
         for key in ("effect_steps", "effect_no_change", "effect_url_change"):
@@ -854,7 +958,8 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     # Grounding joins each site's split group so val stays leak-free; the ceiling is a share of AGENT examples.
     agent_example_count = len(all_examples)
     grounding_by_group, grounding = select_grounding_examples(
-        grounding_targets_by_group, int(grounding_share * agent_example_count), random.Random(grounding_seed))
+        grounding_targets_by_group, int(grounding_share * agent_example_count), random.Random(grounding_seed)
+    )
     for group, examples in grounding_by_group.items():
         leaks = _scan_examples_for_secrets(examples)
         if leaks:
@@ -866,59 +971,99 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     # regression at convert time instead of in a JSON file weeks later. ----
     lengths = sorted(report["lengths"])
     total_actions = sum(report["actions"].values()) or 1
-    print(f"\n=== Corpus report ===")
-    print(f"Prompt format: {PROMPT_FORMAT_VERSION} ({COORD_SPACE}, prev image {PREV_IMAGE_SIZE[0]}x{PREV_IMAGE_SIZE[1]})")
-    print(f"Trajectories trained on: {report['trajectories']}  (examples: {len(all_examples)} = "
-          f"{agent_example_count} agent steps + {grounding['grounding_examples']} grounding)")
+    print("\n=== Corpus report ===")
+    print(
+        f"Prompt format: {PROMPT_FORMAT_VERSION} ({COORD_SPACE}, prev image {PREV_IMAGE_SIZE[0]}x{PREV_IMAGE_SIZE[1]})"
+    )
+    print(
+        f"Trajectories trained on: {report['trajectories']}  (examples: {len(all_examples)} = "
+        f"{agent_example_count} agent steps + {grounding['grounding_examples']} grounding)"
+    )
     print(f"By source: {report['by_source']}")
     print(f"Autonomy: {report['autonomy']}  Auth modes: {report['auth_mode']}")
     print(f"Thought sources: {report['thought_sources']}")
     if lengths:
         mid = lengths[len(lengths) // 2]
-        print(f"Steps/trajectory: min={lengths[0]} median={mid} p90={lengths[int(len(lengths)*0.9)]} max={lengths[-1]}")
-    print("Action mix: " + ", ".join(
-        f"{t}={n} ({n / total_actions:.0%})" for t, n in sorted(report["actions"].items(), key=lambda kv: -kv[1])
-    ))
+        print(
+            f"Steps/trajectory: min={lengths[0]} median={mid} p90={lengths[int(len(lengths) * 0.9)]} max={lengths[-1]}"
+        )
+    print(
+        "Action mix: "
+        + ", ".join(
+            f"{t}={n} ({n / total_actions:.0%})" for t, n in sorted(report["actions"].items(), key=lambda kv: -kv[1])
+        )
+    )
     total_targets = sum(report["target_actions"].values()) or 1
-    print("Supervision-target mix: " + ", ".join(
-        f"{t}={n} ({n / total_targets:.0%})" for t, n in sorted(report["target_actions"].items(), key=lambda kv: -kv[1])
-    ))
-    print(f"Terminal done() steps: {report['done_steps']}/{report['trajectories']} trajectories "
-          f"(done in emitted targets: {report['done_trajectories']})")
-    print(f"Meandering (mode={meandering_mode}): {report['meandering']} trajectories, "
-          f"{report['meandering_examples']} examples kept, {report['subsample_dropped']} step targets subsampled away")
+    print(
+        "Supervision-target mix: "
+        + ", ".join(
+            f"{t}={n} ({n / total_targets:.0%})"
+            for t, n in sorted(report["target_actions"].items(), key=lambda kv: -kv[1])
+        )
+    )
+    print(
+        f"Terminal done() steps: {report['done_steps']}/{report['trajectories']} trajectories "
+        f"(done in emitted targets: {report['done_trajectories']})"
+    )
+    print(
+        f"Meandering (mode={meandering_mode}): {report['meandering']} trajectories, "
+        f"{report['meandering_examples']} examples kept, {report['subsample_dropped']} step targets subsampled away"
+    )
     print(f"Waste steps dropped as targets (--exclude-waste-steps): {report['waste_steps_dropped']}")
     effect_steps = report["effect_steps"] or 1
-    print(f"History effects: [no change] on {report['effect_no_change']}/{report['effect_steps']} annotated steps "
-          f"({report['effect_no_change'] / effect_steps:.1%}), URL path change on "
-          f"{report['effect_url_change']}/{report['effect_steps']} ({report['effect_url_change'] / effect_steps:.1%})")
+    print(
+        f"History effects: [no change] on {report['effect_no_change']}/{report['effect_steps']} annotated steps "
+        f"({report['effect_no_change'] / effect_steps:.1%}), URL path change on "
+        f"{report['effect_url_change']}/{report['effect_steps']} ({report['effect_url_change'] / effect_steps:.1%})"
+    )
     grounding_share_actual = grounding["grounding_examples"] / agent_example_count if agent_example_count else 0.0
-    print(f"Grounding slice (ceiling {grounding_share:.0%} of agent examples, seed {grounding_seed}): "
-          f"{grounding['grounding_examples']} examples = {grounding_share_actual:.1%} of agent steps, "
-          f"{grounding['grounding_examples'] / (len(all_examples) or 1):.1%} of all; "
-          f"small (<= {GROUNDING_SMALL_TARGET_PX}px) targets {grounding['grounding_small_target_share']:.1%}")
-    print(f"Grounding funnel: {grounding['grounding_candidates']} candidates, -{grounding['grounding_deduped']} dedupe, "
-          f"-{grounding['grounding_capped']} per-group cap ({GROUNDING_PER_GROUP_CAP}), "
-          f"-{grounding['grounding_ceiling_dropped']} ceiling; small targets x{GROUNDING_SMALL_OVERSAMPLE}")
-    print("Grounding roles: " + (", ".join(
-        f"{r}={n}" for r, n in sorted(grounding["grounding_roles"].items(), key=lambda kv: -kv[1])) or "none"))
-    print("Grounding skipped steps: " + (", ".join(
-        f"{r}={n}" for r, n in sorted(report["grounding_skipped"].items(), key=lambda kv: -kv[1])) or "none"))
+    print(
+        f"Grounding slice (ceiling {grounding_share:.0%} of agent examples, seed {grounding_seed}): "
+        f"{grounding['grounding_examples']} examples = {grounding_share_actual:.1%} of agent steps, "
+        f"{grounding['grounding_examples'] / (len(all_examples) or 1):.1%} of all; "
+        f"small (<= {GROUNDING_SMALL_TARGET_PX}px) targets {grounding['grounding_small_target_share']:.1%}"
+    )
+    print(
+        f"Grounding funnel: {grounding['grounding_candidates']} candidates, -{grounding['grounding_deduped']} dedupe, "
+        f"-{grounding['grounding_capped']} per-group cap ({GROUNDING_PER_GROUP_CAP}), "
+        f"-{grounding['grounding_ceiling_dropped']} ceiling; small targets x{GROUNDING_SMALL_OVERSAMPLE}"
+    )
+    print(
+        "Grounding roles: "
+        + (
+            ", ".join(f"{r}={n}" for r, n in sorted(grounding["grounding_roles"].items(), key=lambda kv: -kv[1]))
+            or "none"
+        )
+    )
+    print(
+        "Grounding skipped steps: "
+        + (
+            ", ".join(f"{r}={n}" for r, n in sorted(report["grounding_skipped"].items(), key=lambda kv: -kv[1]))
+            or "none"
+        )
+    )
     print("Domains: " + ", ".join(f"{d}={n}" for d, n in sorted(report["domains"].items(), key=lambda kv: -kv[1])[:10]))
     print(f"Skipped: {skipped}")
     print("======================\n")
 
     identities = operator_pii.configured_identities()
-    print("Operator-identity patterns: " + (", ".join(operator_pii.mask(v) for v in identities)
-          or "NONE — the PII gate is inert; set OPERATOR_PII or credentials/operator_pii.txt"))
+    print(
+        "Operator-identity patterns: "
+        + (
+            ", ".join(operator_pii.mask(v) for v in identities)
+            or "NONE — the PII gate is inert; set OPERATOR_PII or credentials/operator_pii.txt"
+        )
+    )
 
     # Leak gate (FAIL CLOSED): any literal secret or operator identity refuses the whole dataset.
     if leak_sources:
         print(f"SECRET/PII LEAK DETECTED in {len(leak_sources)} trajectories — refusing to write dataset.")
         for traj_dir, findings in leak_sources:
             print(f"  {traj_dir}: {', '.join(findings)}")
-        print("Quarantine each one (metadata.json excluded_reason) or re-capture: credentials belong in "
-              "<secret:NAME> placeholders, and a real person's identity belongs nowhere in the corpus.")
+        print(
+            "Quarantine each one (metadata.json excluded_reason) or re-capture: credentials belong in "
+            "<secret:NAME> placeholders, and a real person's identity belongs nowhere in the corpus."
+        )
         sys.exit(1)
 
     # Corpus health gate (FAIL CLOSED): the regressions that produced sft-v1's gaps refuse to ship
@@ -927,14 +1072,13 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     max_group, max_group_examples = max(examples_by_group.items(), key=lambda kv: len(kv[1]), default=("", []))
     stats = {
         "trainable": report["trajectories"],
-        "done_coverage": (report["done_trajectories"] / report["trajectories"]
-                          if report["trajectories"] else 0.0),
+        "done_coverage": (report["done_trajectories"] / report["trajectories"] if report["trajectories"] else 0.0),
         "teacher_raw": report["teacher_raw"],
-        "meandering_example_share": (report["meandering_examples"] / agent_example_count
-                                     if agent_example_count else 0.0),
+        "meandering_example_share": (
+            report["meandering_examples"] / agent_example_count if agent_example_count else 0.0
+        ),
         "max_group": max_group,
-        "max_group_example_share": (len(max_group_examples) / len(all_examples)
-                                    if all_examples else 0.0),
+        "max_group_example_share": (len(max_group_examples) / len(all_examples) if all_examples else 0.0),
         # Agent step targets only: grounding clicks would otherwise inflate the click share past every floor.
         "example_action_share": {t: n / total_targets for t, n in report["target_actions"].items()},
         "grounding_examples": grounding["grounding_examples"],
@@ -945,8 +1089,10 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
     if health_path.is_file():
         violations = corpus_health_violations(stats, json.loads(health_path.read_text()))
         if violations:
-            print(f"CORPUS HEALTH GATE {'(bypassed with --skip-health-gate)' if skip_health_gate else 'FAILED'} "
-                  f"— {len(violations)} violation(s) against {health_path}:")
+            print(
+                f"CORPUS HEALTH GATE {'(bypassed with --skip-health-gate)' if skip_health_gate else 'FAILED'} "
+                f"— {len(violations)} violation(s) against {health_path}:"
+            )
             for violation in violations:
                 print(f"  - {violation}")
             if not skip_health_gate:
@@ -959,6 +1105,8 @@ def convert_trajectories(input_dir, output_dir, val_split, include_replay=False,
 
     # Group-wise split: whole apps go to val, never individual steps.
     groups = list(examples_by_group.items())
+    if seed is not None:
+        random.seed(seed)
     random.shuffle(groups)
     val_target = int(len(all_examples) * val_split)
     val_examples, train_examples, val_groups = [], [], []
@@ -1032,8 +1180,14 @@ def build_sft_command(config, dataset=None, val_dataset=None, passthrough_args=N
     return cmd
 
 
-def train_model(config_path, dataset_override=None, epochs_override=None, lr_override=None,
-                batch_size_override=None, passthrough_args=None):
+def train_model(
+    config_path,
+    dataset_override=None,
+    epochs_override=None,
+    lr_override=None,
+    batch_size_override=None,
+    passthrough_args=None,
+):
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
@@ -1057,8 +1211,10 @@ def train_model(config_path, dataset_override=None, epochs_override=None, lr_ove
             # eval_strategy without a val set makes the trainer raise at startup, so honour the
             # warning instead of dying: no split means no evaluation.
             dropped = config.pop("eval_strategy", None)
-            print(f"No validation split at {sibling} — training will report no eval_loss"
-                  + (f" (eval_strategy={dropped} dropped)" if dropped else ""))
+            print(
+                f"No validation split at {sibling} — training will report no eval_loss"
+                + (f" (eval_strategy={dropped} dropped)" if dropped else "")
+            )
 
     cmd = build_sft_command(config, passthrough_args=passthrough_args)
 
@@ -1084,24 +1240,53 @@ def main():
     convert_parser.add_argument("--input", type=str, required=True, help="Input trajectories directory")
     convert_parser.add_argument("--output", type=str, default="training_data/", help="Output directory")
     convert_parser.add_argument("--val-split", type=float, default=0.1, help="Validation split fraction")
-    convert_parser.add_argument("--exclude-waste-steps", action="store_true",
-                                help="Drop retry/backtrack click steps as training targets (kept in "
-                                     "history); non-destructive, trajectory files untouched")
-    convert_parser.add_argument("--meandering-mode", choices=("keep", "subsample", "exclude"), default="keep",
-                                help="Verifier-graded meandering trajectories: keep all steps, subsample "
-                                     "mid-wander targets (head/tail kept, MEANDER_* env knobs), or drop whole")
-    convert_parser.add_argument("--exclude-meandering", action="store_true",
-                                help="Deprecated alias for --meandering-mode exclude")
-    convert_parser.add_argument("--include-replay", action="store_true",
-                                help="Also train on legacy test-replay trajectories (QA-style supervision; off by default)")
-    convert_parser.add_argument("--health-config", type=str, default="corpus_health.json",
-                                help="Corpus health thresholds JSON (missing file skips the gate)")
-    convert_parser.add_argument("--skip-health-gate", action="store_true",
-                                help="Report health violations but write the dataset anyway (experiments only)")
-    convert_parser.add_argument("--grounding-share", type=float, default=GROUNDING_DEFAULT_SHARE,
-                                help="Ceiling on element-grounding click examples as a share of agent step examples "
-                                     "(mined from recorded click targets; GROUNDING_* env knobs tune sampling)")
+    convert_parser.add_argument(
+        "--exclude-waste-steps",
+        action="store_true",
+        help="Drop retry/backtrack click steps as training targets (kept in "
+        "history); non-destructive, trajectory files untouched",
+    )
+    convert_parser.add_argument(
+        "--meandering-mode",
+        choices=("keep", "subsample", "exclude"),
+        default="keep",
+        help="Verifier-graded meandering trajectories: keep all steps, subsample "
+        "mid-wander targets (head/tail kept, MEANDER_* env knobs), or drop whole",
+    )
+    convert_parser.add_argument(
+        "--exclude-meandering", action="store_true", help="Deprecated alias for --meandering-mode exclude"
+    )
+    convert_parser.add_argument(
+        "--include-replay",
+        action="store_true",
+        help="Also train on legacy test-replay trajectories (QA-style supervision; off by default)",
+    )
+    convert_parser.add_argument(
+        "--health-config",
+        type=str,
+        default="corpus_health.json",
+        help="Corpus health thresholds JSON (missing file skips the gate)",
+    )
+    convert_parser.add_argument(
+        "--skip-health-gate",
+        action="store_true",
+        help="Report health violations but write the dataset anyway (experiments only)",
+    )
+    convert_parser.add_argument(
+        "--grounding-share",
+        type=float,
+        default=GROUNDING_DEFAULT_SHARE,
+        help="Ceiling on element-grounding click examples as a share of agent step examples "
+        "(mined from recorded click targets; GROUNDING_* env knobs tune sampling)",
+    )
     convert_parser.add_argument("--no-grounding", action="store_true", help="Alias for --grounding-share 0")
+    convert_parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed the split shuffles and the grounding sampler for a reproducible dataset "
+        "(default: unseeded splits, GROUNDING_SEED for grounding)",
+    )
 
     train_parser = subparsers.add_parser("train", help="Launch ms-swift SFT training")
     train_parser.add_argument("--config", type=str, required=True, help="Path to config.yaml")
@@ -1114,11 +1299,19 @@ def main():
 
     if args.command == "convert":
         meandering_mode = "exclude" if args.exclude_meandering else args.meandering_mode
-        convert_trajectories(args.input, args.output, args.val_split, include_replay=args.include_replay,
-                             meandering_mode=meandering_mode,
-                             exclude_waste_steps=args.exclude_waste_steps,
-                             health_config=args.health_config, skip_health_gate=args.skip_health_gate,
-                             grounding_share=0.0 if args.no_grounding else args.grounding_share)
+        convert_trajectories(
+            args.input,
+            args.output,
+            args.val_split,
+            include_replay=args.include_replay,
+            meandering_mode=meandering_mode,
+            exclude_waste_steps=args.exclude_waste_steps,
+            health_config=args.health_config,
+            skip_health_gate=args.skip_health_gate,
+            grounding_share=0.0 if args.no_grounding else args.grounding_share,
+            grounding_seed=GROUNDING_SEED if args.seed is None else args.seed,
+            seed=args.seed,
+        )
     elif args.command == "train":
         train_model(args.config, args.dataset, args.epochs, args.lr, args.batch_size, passthrough)
 

@@ -23,7 +23,9 @@ def test_verifier_retries_through_a_stale_usage_limit():
     bridge = AsyncBridge()
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            result = judge_success(_traj_dir(tmp), {"task_id": "t"}, None, "fallback", bridge, verify=flaky_verify, sleep=sleeps.append)
+            result = judge_success(
+                _traj_dir(tmp), {"task_id": "t"}, None, "fallback", bridge, verify=flaky_verify, sleep=sleeps.append
+            )
     finally:
         bridge.close()
     assert result == (True, "verifier", "final") and len(attempts) == 2 and sleeps == [VERIFY_RETRY_S]
@@ -31,8 +33,15 @@ def test_verifier_retries_through_a_stale_usage_limit():
 
 
 def test_verdict_success_requires_every_criterion_met():
-    verdict = verdict_from_parsed({"criteria": ["sorted by most helpful", "5-star filter on"], "criteria_met": [True, False],
-                                   "success": True, "efficiency": "meandering", "reasoning": "not filtered for 5-star"})
+    verdict = verdict_from_parsed(
+        {
+            "criteria": ["sorted by most helpful", "5-star filter on"],
+            "criteria_met": [True, False],
+            "success": True,
+            "efficiency": "meandering",
+            "reasoning": "not filtered for 5-star",
+        }
+    )
     assert verdict["success"] is False and verdict["claimed_success"] is True and verdict["contradiction"] is True
     assert verdict["efficiency"] == "meandering" and verdict["criteria_met"] == [True, False]
     assert verdict_from_parsed({"criteria_met": [True, True], "success": True})["success"] is True
@@ -42,7 +51,11 @@ def test_verdict_success_requires_every_criterion_met():
 
 def _traj_dir(tmp, success=False, verifier=None):
     d = Path(tmp)
-    (d / "trajectory.json").write_text(json.dumps({"task_id": "t", "instruction": "i", "start_url": "u", "steps": [], "total_steps": 0, "success": success}))
+    (d / "trajectory.json").write_text(
+        json.dumps(
+            {"task_id": "t", "instruction": "i", "start_url": "u", "steps": [], "total_steps": 0, "success": success}
+        )
+    )
     (d / "capture_meta.json").write_text(json.dumps({"verifier": verifier} if verifier else {}))
     return d
 
@@ -54,7 +67,14 @@ def test_check_wins_in_fallback_mode_without_verifier_call():
         calls.append(traj_dir)
 
     with tempfile.TemporaryDirectory() as tmp:
-        result = judge_success(_traj_dir(tmp), {"task_id": "t", "lane": "autonomous"}, {"passed": True}, "fallback", None, verify=fake_verify)
+        result = judge_success(
+            _traj_dir(tmp),
+            {"task_id": "t", "lane": "autonomous"},
+            {"passed": True},
+            "fallback",
+            None,
+            verify=fake_verify,
+        )
     assert result == (True, "success_check", "final") and calls == []
 
 
@@ -76,7 +96,14 @@ def test_verifier_runs_on_bridge_and_reads_trajectory_success():
     bridge = AsyncBridge()
     try:
         with tempfile.TemporaryDirectory() as tmp:
-            result = judge_success(_traj_dir(tmp), {"task_id": "t", "lane": "guarded"}, {"passed": False}, "always", bridge, verify=fake_verify)
+            result = judge_success(
+                _traj_dir(tmp),
+                {"task_id": "t", "lane": "guarded"},
+                {"passed": False},
+                "always",
+                bridge,
+                verify=fake_verify,
+            )
     finally:
         bridge.close()
     assert result == (True, "verifier", "final") and seen["autonomy"] == "guarded"

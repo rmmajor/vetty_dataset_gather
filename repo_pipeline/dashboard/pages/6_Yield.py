@@ -10,7 +10,6 @@ import json
 import sys
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -68,11 +67,15 @@ st.plotly_chart(charts.capture_yield_by_framework(repos_df), width="stretch", ke
 lang = reached["da_framework_language"].fillna("?") if "da_framework_language" in reached else "?"
 fw = reached["da_test_framework"].fillna("?") if "da_test_framework" in reached else "?"
 reached["framework"] = lang.astype(str) + " / " + fw.astype(str)
-summary = reached.groupby("framework").agg(
-    reached=("status", "size"),
-    passed=("passed", "sum"),
-    no_capture=("no_capture", "sum"),
-).reset_index()
+summary = (
+    reached.groupby("framework")
+    .agg(
+        reached=("status", "size"),
+        passed=("passed", "sum"),
+        no_capture=("no_capture", "sum"),
+    )
+    .reset_index()
+)
 summary["yield_%"] = (100 * summary["passed"] / summary["reached"]).round(0)
 summary = summary.sort_values("reached", ascending=False)
 st.markdown("#### Per-framework yield")
@@ -83,6 +86,7 @@ nc = reached[reached["no_capture"]].copy()
 if nc.empty:
     st.caption("No no_capture rejections recorded yet.")
 else:
+
     def _notes(blob):
         try:
             data = json.loads(blob) if isinstance(blob, str) else (blob or {})

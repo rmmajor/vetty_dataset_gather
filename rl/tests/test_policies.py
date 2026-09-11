@@ -1,9 +1,8 @@
 import json
-import tempfile
-from pathlib import Path
-
 import ssl
+import tempfile
 import urllib.error
+from pathlib import Path
 
 from rl.policies import MockReplayPolicy, OpenAICompatiblePolicy, ScriptedPolicy, make_policy
 from rl.runner import summarize
@@ -11,10 +10,17 @@ from rl.runner import summarize
 
 def test_mock_replay_emits_recorded_steps_then_done():
     with tempfile.TemporaryDirectory() as tmp:
-        (Path(tmp) / "trajectory.json").write_text(json.dumps({"steps": [
-            {"thought": "a", "actions": [{"type": "click", "x": 1, "y": 2, "button": "left"}]},
-            {"thought": "", "actions": [], "event": {"kind": "approval", "decision": "approve"}},
-            {"thought": "b", "actions": [{"type": "done"}]}]}))
+        (Path(tmp) / "trajectory.json").write_text(
+            json.dumps(
+                {
+                    "steps": [
+                        {"thought": "a", "actions": [{"type": "click", "x": 1, "y": 2, "button": "left"}]},
+                        {"thought": "", "actions": [], "event": {"kind": "approval", "decision": "approve"}},
+                        {"thought": "b", "actions": [{"type": "done"}]},
+                    ]
+                }
+            )
+        )
         policy = MockReplayPolicy(tmp)
     assert policy.act({}) == "<think>a</think>\naction: click(<ref>(1, 2)</ref>, button=left)"
     assert policy.act({}) == "<think>b</think>\naction: done()"
@@ -31,10 +37,35 @@ def test_make_policy_registry():
 
 
 def test_summarize_counts():
-    records = [{"reward": 1.0, "success": True, "terminal_reason": "done", "turns": [{"clean": True}], "steps": 3, "reward_status": "final"},
-               {"reward": None, "success": None, "terminal_reason": "step_cap", "turns": [{"clean": False}], "steps": 5, "reward_status": "deferred"}]
+    records = [
+        {
+            "reward": 1.0,
+            "success": True,
+            "terminal_reason": "done",
+            "turns": [{"clean": True}],
+            "steps": 3,
+            "reward_status": "final",
+        },
+        {
+            "reward": None,
+            "success": None,
+            "terminal_reason": "step_cap",
+            "turns": [{"clean": False}],
+            "steps": 5,
+            "reward_status": "deferred",
+        },
+    ]
     s = summarize(records)
-    assert s == {"episodes": 2, "final": 1, "deferred": 1, "success_rate": 0.5, "mean_reward": 1.0, "done_rate": 0.5, "parse_failure_rate": 0.5, "mean_steps_success": 3.0}
+    assert s == {
+        "episodes": 2,
+        "final": 1,
+        "deferred": 1,
+        "success_rate": 0.5,
+        "mean_reward": 1.0,
+        "done_rate": 0.5,
+        "parse_failure_rate": 0.5,
+        "mean_steps_success": 3.0,
+    }
 
 
 class FakeChatResponse:
@@ -54,9 +85,11 @@ def _policy(outcomes, slept):
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
+
     ticks = iter(range(0, 100000, 7))
-    return OpenAICompatiblePolicy("http://x/v1", "m", opener=opener, backoff_s=0, sleep=slept.append,
-                                  wait_s=20, clock=lambda: next(ticks))
+    return OpenAICompatiblePolicy(
+        "http://x/v1", "m", opener=opener, backoff_s=0, sleep=slept.append, wait_s=20, clock=lambda: next(ticks)
+    )
 
 
 def test_policy_retries_a_dropped_connection_then_succeeds():
@@ -80,4 +113,3 @@ def test_policy_gives_up_when_the_wait_budget_runs_out_and_never_retries_4xx():
         raise AssertionError("4xx must not be retried")
     except urllib.error.HTTPError:
         pass
-

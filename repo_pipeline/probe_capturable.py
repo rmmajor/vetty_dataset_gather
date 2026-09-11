@@ -13,6 +13,7 @@ render) for the more accurate capture attempt to judge.
 
 Run: python -m repo_pipeline.probe_capturable [--provisioning email_verify] [--dry-run] [--workers N]
 """
+
 import argparse
 import concurrent.futures
 import json
@@ -26,25 +27,29 @@ from repo_pipeline import provisioning_status
 logger = logging.getLogger(__name__)
 
 CONFIG = Path(__file__).parent / "public_sites_actions_logingated.json"
-_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
 
 # Explicit full-page WAF block / challenge signatures (matched as lowercased substrings of the body).
 BLOCK_SIGNATURES = [
     "just a moment...",
     "attention required! | cloudflare",
-    "cf-browser-verification", "cf_chl_opt", "cf-challenge-running",
+    "cf-browser-verification",
+    "cf_chl_opt",
+    "cf-challenge-running",
     "checking if the site connection is secure",
     "enable javascript and cookies to continue",
     "verifying you are human. this may take a few seconds",
     "performance & security by cloudflare",
-    "pardon our interruption",              # PerimeterX / HUMAN
-    "request unsuccessful. incapsula",       # Imperva
-    "incident id:",                          # Imperva Incapsula block
+    "pardon our interruption",  # PerimeterX / HUMAN
+    "request unsuccessful. incapsula",  # Imperva
+    "incident id:",  # Imperva Incapsula block
     "powered by perimeterx",
-    "access to this page has been denied",   # PerimeterX
-    "captcha-delivery.com",                  # DataDome
-    "you don't have permission to access",   # Akamai / generic deny
+    "access to this page has been denied",  # PerimeterX
+    "captcha-delivery.com",  # DataDome
+    "you don't have permission to access",  # Akamai / generic deny
     "akamai reference",
 ]
 WAF_SERVERS = ("cloudflare", "akamaighost", "akamai", "imperva")
@@ -78,8 +83,9 @@ def probe(start_url: str, timeout: int = 15) -> tuple[bool, str]:
 
 def main():
     parser = argparse.ArgumentParser(description="HTTP capturability pre-filter (mark WAF-blocked sites needs_human)")
-    parser.add_argument("--provisioning", type=str, default="email_verify",
-                        help="Comma-separated provisioning classes to probe")
+    parser.add_argument(
+        "--provisioning", type=str, default="email_verify", help="Comma-separated provisioning classes to probe"
+    )
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--workers", type=int, default=12)
     parser.add_argument("--dry-run", action="store_true", help="Report only; do not write needs_human marks")
@@ -90,11 +96,13 @@ def main():
     allow = set(args.provisioning.split(","))
     sites = [s for s in json.loads(cfg.read_text())["sites"] if s.get("provisioning") in allow]
     # Skip sites already classified (registered, or already in the human queue) — don't re-probe.
-    already = (set(provisioning_status.sites_with_status(provisioning_status.NEEDS_HUMAN))
-               | set(provisioning_status.sites_with_status(provisioning_status.REGISTERED)))
+    already = set(provisioning_status.sites_with_status(provisioning_status.NEEDS_HUMAN)) | set(
+        provisioning_status.sites_with_status(provisioning_status.REGISTERED)
+    )
     todo = [s for s in sites if s["name"] not in already]
-    logger.info(f"Probing {len(todo)} site(s) ({len(sites) - len(todo)} already classified) "
-                f"[provisioning={args.provisioning}]")
+    logger.info(
+        f"Probing {len(todo)} site(s) ({len(sites) - len(todo)} already classified) [provisioning={args.provisioning}]"
+    )
 
     def work(s):
         cap, reason = probe(s["start_url"])
@@ -110,12 +118,17 @@ def main():
         blocked += 1
         logger.info(f"[{s['name']}] BLOCKED — {reason}")
         if not args.dry_run:
-            provisioning_status.mark(s["name"], provisioning_status.NEEDS_HUMAN,
-                                     reason=f"{reason} — needs human lane (real browser/IP)",
-                                     provisioning=s.get("provisioning", ""))
+            provisioning_status.mark(
+                s["name"],
+                provisioning_status.NEEDS_HUMAN,
+                reason=f"{reason} — needs human lane (real browser/IP)",
+                provisioning=s.get("provisioning", ""),
+            )
     capturable = len(todo) - blocked
-    logger.info(f"DONE: {capturable} capturable, {blocked} WAF-blocked"
-                f"{' (dry-run, not marked)' if args.dry_run else ' (marked needs_human)'}")
+    logger.info(
+        f"DONE: {capturable} capturable, {blocked} WAF-blocked"
+        f"{' (dry-run, not marked)' if args.dry_run else ' (marked needs_human)'}"
+    )
 
 
 if __name__ == "__main__":

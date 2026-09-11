@@ -1,13 +1,62 @@
 """The disposable QA identity every capture hands its teacher, so it never invents (or recalls) a real one."""
+
 import os
 import secrets
 
-_FIRST_NAMES = ["Emma", "Liam", "Olivia", "Noah", "Ava", "Ethan", "Sophia", "Mason", "Isabella",
-                "Lucas", "Mia", "Oliver", "Amelia", "Elijah", "Charlotte", "James", "Harper",
-                "Benjamin", "Evelyn", "Henry", "Chloe", "Daniel", "Grace", "Owen", "Nora"]
-_LAST_NAMES = ["Smith", "Johnson", "Miller", "Davis", "Garcia", "Wilson", "Anderson", "Thomas",
-               "Taylor", "Moore", "Martin", "Lee", "Walker", "Hall", "Allen", "Young", "King",
-               "Wright", "Scott", "Bennett", "Reed", "Cooper", "Bailey", "Rivera", "Hughes"]
+_FIRST_NAMES = [
+    "Emma",
+    "Liam",
+    "Olivia",
+    "Noah",
+    "Ava",
+    "Ethan",
+    "Sophia",
+    "Mason",
+    "Isabella",
+    "Lucas",
+    "Mia",
+    "Oliver",
+    "Amelia",
+    "Elijah",
+    "Charlotte",
+    "James",
+    "Harper",
+    "Benjamin",
+    "Evelyn",
+    "Henry",
+    "Chloe",
+    "Daniel",
+    "Grace",
+    "Owen",
+    "Nora",
+]
+_LAST_NAMES = [
+    "Smith",
+    "Johnson",
+    "Miller",
+    "Davis",
+    "Garcia",
+    "Wilson",
+    "Anderson",
+    "Thomas",
+    "Taylor",
+    "Moore",
+    "Martin",
+    "Lee",
+    "Walker",
+    "Hall",
+    "Allen",
+    "Young",
+    "King",
+    "Wright",
+    "Scott",
+    "Bennett",
+    "Reed",
+    "Cooper",
+    "Bailey",
+    "Rivera",
+    "Hughes",
+]
 
 # RFC 2606 reserves example.com and NANPA reserves 555-01xx: neither can reach a real person.
 PERSONA_EMAIL_DOMAIN = os.environ.get("PERSONA_EMAIL_DOMAIN", "example.com")

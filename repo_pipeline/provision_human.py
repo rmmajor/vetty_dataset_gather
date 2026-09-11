@@ -26,6 +26,7 @@ operator only ever types into the browser window in front of them.
 Run: python -m repo_pipeline.provision_human <site-name> | --sites a,b,c | --all [--config <cfg>]
      python -m repo_pipeline.provision_human --serve [--port 8778] [--config <cfg>]
 """
+
 import argparse
 import functools
 import hashlib
@@ -33,15 +34,12 @@ import json
 import logging
 import secrets
 import socket
-from http.server import BaseHTTPRequestHandler
-from http.server import HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from repo_pipeline import app_secrets
-from repo_pipeline import mailtm
-from repo_pipeline import provisioning_status
+from repo_pipeline import app_secrets, mailtm, provisioning_status
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +52,60 @@ PROVISIONING_MODE = "human_provisioned"
 CONTROL_HOST = "127.0.0.1"
 DEFAULT_CONTROL_PORT = 8778
 
-_FIRST_NAMES = ["Emma", "Liam", "Olivia", "Noah", "Ava", "Ethan", "Sophia", "Mason", "Isabella",
-                "Lucas", "Mia", "Oliver", "Amelia", "Elijah", "Charlotte", "James", "Harper",
-                "Benjamin", "Evelyn", "Henry", "Chloe", "Daniel", "Grace", "Owen", "Nora"]
-_LAST_NAMES = ["Smith", "Johnson", "Miller", "Davis", "Garcia", "Wilson", "Anderson", "Thomas",
-               "Taylor", "Moore", "Martin", "Lee", "Walker", "Hall", "Allen", "Young", "King",
-               "Wright", "Scott", "Bennett", "Reed", "Cooper", "Bailey", "Rivera", "Hughes"]
+_FIRST_NAMES = [
+    "Emma",
+    "Liam",
+    "Olivia",
+    "Noah",
+    "Ava",
+    "Ethan",
+    "Sophia",
+    "Mason",
+    "Isabella",
+    "Lucas",
+    "Mia",
+    "Oliver",
+    "Amelia",
+    "Elijah",
+    "Charlotte",
+    "James",
+    "Harper",
+    "Benjamin",
+    "Evelyn",
+    "Henry",
+    "Chloe",
+    "Daniel",
+    "Grace",
+    "Owen",
+    "Nora",
+]
+_LAST_NAMES = [
+    "Smith",
+    "Johnson",
+    "Miller",
+    "Davis",
+    "Garcia",
+    "Wilson",
+    "Anderson",
+    "Thomas",
+    "Taylor",
+    "Moore",
+    "Martin",
+    "Lee",
+    "Walker",
+    "Hall",
+    "Allen",
+    "Young",
+    "King",
+    "Wright",
+    "Scott",
+    "Bennett",
+    "Reed",
+    "Cooper",
+    "Bailey",
+    "Rivera",
+    "Hughes",
+]
 
 
 def random_name() -> tuple[str, str]:
@@ -72,7 +118,7 @@ def find_site(key: str, config_path: Path | None = None) -> dict | None:
     in `config_path` (if given) else both source configs. Accepting the URL too lets the operator paste
     either the site name or the signup URL straight from the worklist."""
     key_url = key.rstrip("/")
-    for cfg in ([config_path] if config_path else SOURCE_CONFIGS):
+    for cfg in [config_path] if config_path else SOURCE_CONFIGS:
         if not cfg or not cfg.exists():
             continue
         for site in json.loads(cfg.read_text()).get("sites", []):
@@ -85,8 +131,13 @@ def mint_batch_identity() -> dict:
     """The ONE disposable burner every site in this batch is signed up with (see module docstring)."""
     mailbox = mailtm.create_mailbox()
     first, last = random_name()
-    return {"email": mailbox["address"], "password": mailbox["password"], "token": mailbox["token"],
-            "first_name": first, "last_name": last}
+    return {
+        "email": mailbox["address"],
+        "password": mailbox["password"],
+        "token": mailbox["token"],
+        "first_name": first,
+        "last_name": last,
+    }
 
 
 def print_identity(identity: dict) -> None:
@@ -175,8 +226,10 @@ class Webmail:
     def _sign_in_script(self) -> str:
         account = {"address": self.identity["email"], "password": self.identity["password"]}
         # mail.tm has no login form: the web app signs in from the account it finds in localStorage.
-        return (f"localStorage.setItem('accounts', {json.dumps(json.dumps([account]))});"
-                f"localStorage.setItem('active', {json.dumps(json.dumps(account))});")
+        return (
+            f"localStorage.setItem('accounts', {json.dumps(json.dumps([account]))});"
+            f"localStorage.setItem('active', {json.dumps(json.dumps(account))});"
+        )
 
     def _shown_address(self) -> str:
         """The address the inbox is actually displaying, or '' when it cannot be read."""
@@ -201,8 +254,10 @@ class Webmail:
         if shown == self.identity["email"]:
             logger.info(f"inbox window open at {mailtm.WEBMAIL_URL}, signed in as {shown}")
         else:
-            logger.warning(f"inbox window is not showing the burner ({shown or 'address unreadable'}) — "
-                           f"sign in by hand with the printed credentials, or read mail with 'mail'")
+            logger.warning(
+                f"inbox window is not showing the burner ({shown or 'address unreadable'}) — "
+                f"sign in by hand with the printed credentials, or read mail with 'mail'"
+            )
         return self.page
 
     def ensure(self):
@@ -268,18 +323,30 @@ def save_site(site: dict, context, identity: dict, app_url: str, baseline: dict 
     state = context.storage_state(indexed_db=True)
     changed = changed_storage_keys(baseline or {}, storage_fingerprint(state))
     if baseline is not None and not changed:
-        raise ValueError("browser storage is unchanged since the tab opened (not one cookie, localStorage "
-                         "or IndexedDB entry differs), so no login happened")
+        raise ValueError(
+            "browser storage is unchanged since the tab opened (not one cookie, localStorage "
+            "or IndexedDB entry differs), so no login happened"
+        )
     # Raises if the dump carries no session at all, before any burner is registered.
-    app_secrets.save_provisioned_session(ref, identity["email"], identity["password"], state,
-                                         provisioning_mode=PROVISIONING_MODE,
-                                         first_name=identity["first_name"], last_name=identity["last_name"])
-    provisioning_status.mark(site["name"], provisioning_status.REGISTERED,
-                             provisioning=site.get("provisioning", ""))
+    app_secrets.save_provisioned_session(
+        ref,
+        identity["email"],
+        identity["password"],
+        state,
+        provisioning_mode=PROVISIONING_MODE,
+        first_name=identity["first_name"],
+        last_name=identity["last_name"],
+    )
+    provisioning_status.mark(site["name"], provisioning_status.REGISTERED, provisioning=site.get("provisioning", ""))
     upsert_human_config(site, ref, app_url)
-    return {"ref": ref, "cookies": len(state.get("cookies", [])),
-            "origins": len(state.get("origins", [])), "bytes": len(json.dumps(state)),
-            "changed_keys": len(changed), "changed_sample": changed[:8]}
+    return {
+        "ref": ref,
+        "cookies": len(state.get("cookies", [])),
+        "origins": len(state.get("origins", [])),
+        "bytes": len(json.dumps(state)),
+        "changed_keys": len(changed),
+        "changed_sample": changed[:8],
+    }
 
 
 def provision_site(browser, site: dict, identity: dict, webmail: Webmail, position: tuple[int, int]) -> str:
@@ -293,8 +360,10 @@ def provision_site(browser, site: dict, identity: dict, webmail: Webmail, positi
     print("=" * 72)
 
     context, page, opened = open_site(browser, site, webmail)
-    print("\n  Sign up / log in with the burner above and solve any captcha. When you are fully signed\n"
-          "  in (the app's own screen is showing), return here.\n")
+    print(
+        "\n  Sign up / log in with the burner above and solve any captcha. When you are fully signed\n"
+        "  in (the app's own screen is showing), return here.\n"
+    )
     saved = None
     try:
         while True:
@@ -313,8 +382,10 @@ def provision_site(browser, site: dict, identity: dict, webmail: Webmail, positi
     finally:
         context.close()
 
-    print(f"\n  ✓ provisioned {site['name']}: session saved ({saved['ref']}), burner registered, "
-          f"added to {HUMAN_CONFIG.name}")
+    print(
+        f"\n  ✓ provisioned {site['name']}: session saved ({saved['ref']}), burner registered, "
+        f"added to {HUMAN_CONFIG.name}"
+    )
     return "provisioned"
 
 
@@ -370,11 +441,15 @@ class ProvisionSession:
 
     def status(self, body: dict | None = None) -> dict:
         """Everything the assistant needs to narrate the loop: shared identity, open site, progress."""
-        return {"ok": True, "identity": self._public_identity(),
-                "current_site": self.site["name"] if self.site else None,
-                "current_url": self._current_url(),
-                "provisioned": list(self.provisioned), "skipped": list(self.skipped),
-                "browser_alive": self.browser.is_connected()}
+        return {
+            "ok": True,
+            "identity": self._public_identity(),
+            "current_site": self.site["name"] if self.site else None,
+            "current_url": self._current_url(),
+            "provisioned": list(self.provisioned),
+            "skipped": list(self.skipped),
+            "browser_alive": self.browser.is_connected(),
+        }
 
     def open(self, key: str | None) -> dict:
         """Open a site in a fresh context; an unknown site or a failed navigation never ends the run."""
@@ -393,16 +468,23 @@ class ProvisionSession:
             raise ControlError(502, f"could not open {site['name']}: {e}")
         self.site = site
         self.baseline = opened["baseline"]
-        return {"ok": True, "site": site["name"], "start_url": site["start_url"],
-                "identity": self._public_identity(), "navigation_error": opened["navigation_error"] or None,
-                "provisioning": site.get("provisioning", ""), "tasks": len(site.get("tasks", []))}
+        return {
+            "ok": True,
+            "site": site["name"],
+            "start_url": site["start_url"],
+            "identity": self._public_identity(),
+            "navigation_error": opened["navigation_error"] or None,
+            "provisioning": site.get("provisioning", ""),
+            "tasks": len(site.get("tasks", [])),
+        }
 
     def save(self, key: str | None) -> dict:
         """Persist the open site under its own ref; a logged-out dump fails loudly and keeps the tab open."""
         site = self._require_open(key)
         try:
-            saved = save_site(site, self.context, self.identity,
-                              self._current_url() or site["start_url"], self.baseline)
+            saved = save_site(
+                site, self.context, self.identity, self._current_url() or site["start_url"], self.baseline
+            )
         except ValueError as e:
             raise ControlError(422, f"{e} — {site['name']} is not signed in; log in, then POST /save again")
         self._close_context()
@@ -422,8 +504,7 @@ class ProvisionSession:
         self._close_context()
         self.stopped = True
         self.close_browser()
-        return {"ok": True, "stopped": True,
-                "provisioned": list(self.provisioned), "skipped": list(self.skipped)}
+        return {"ok": True, "stopped": True, "provisioned": list(self.provisioned), "skipped": list(self.skipped)}
 
     def close_browser(self) -> None:
         try:
@@ -475,8 +556,14 @@ class ControlHandler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0].rstrip("/") or "/status"
         route = routes.get(path)
         if route is None:
-            self._respond(404, {"ok": False, "error": f"unknown endpoint {path}",
-                                "endpoints": sorted(set(_GET_ROUTES) | set(_POST_ROUTES))})
+            self._respond(
+                404,
+                {
+                    "ok": False,
+                    "error": f"unknown endpoint {path}",
+                    "endpoints": sorted(set(_GET_ROUTES) | set(_POST_ROUTES)),
+                },
+            )
             return
         # Nothing may escape: one bad request must never end a 37-site session.
         try:
@@ -572,10 +659,15 @@ def main() -> None:
     parser.add_argument("--sites", default=None, help="Comma-separated site names/URLs to provision in a loop")
     parser.add_argument("--all", action="store_true", help="Provision ALL needs_human sites in a loop")
     parser.add_argument("--config", default=None, help="Source config path (default: search both)")
-    parser.add_argument("--serve", action="store_true",
-                        help="Serve the localhost control API instead of prompting in the terminal")
-    parser.add_argument("--port", type=int, default=DEFAULT_CONTROL_PORT,
-                        help=f"Control API port on {CONTROL_HOST} (default {DEFAULT_CONTROL_PORT})")
+    parser.add_argument(
+        "--serve", action="store_true", help="Serve the localhost control API instead of prompting in the terminal"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_CONTROL_PORT,
+        help=f"Control API port on {CONTROL_HOST} (default {DEFAULT_CONTROL_PORT})",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     config_path = Path(args.config) if args.config else None
@@ -610,8 +702,10 @@ def main() -> None:
         finally:
             browser.close()
 
-    print(f"\n  done: {len(results['provisioned'])} provisioned, {len(results['skipped'])} skipped, "
-          f"{len(results['failed'])} failed")
+    print(
+        f"\n  done: {len(results['provisioned'])} provisioned, {len(results['skipped'])} skipped, "
+        f"{len(results['failed'])} failed"
+    )
     for outcome, names in results.items():
         if names:
             print(f"    {outcome}: {', '.join(names)}")

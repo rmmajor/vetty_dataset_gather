@@ -80,9 +80,15 @@ cols[3].metric("Quality rejections", f"{quality_rejected:,}")
 cols[4].metric("Infra/flaky rejections", f"{infra_rejected:,}")
 
 st.markdown("---")
-tab_funnel, tab_s3, tab_s4, tab_reasons, tab_turns = st.tabs([
-    "📉 Funnel", "3️⃣ Stage 3 scores", "4️⃣ Stage 4 scores", "🏷️ Reasons & errors", "⏱️ Turns & cost",
-])
+tab_funnel, tab_s3, tab_s4, tab_reasons, tab_turns = st.tabs(
+    [
+        "📉 Funnel",
+        "3️⃣ Stage 3 scores",
+        "4️⃣ Stage 4 scores",
+        "🏷️ Reasons & errors",
+        "⏱️ Turns & cost",
+    ]
+)
 
 with tab_funnel:
     st.plotly_chart(charts.status_bar(repos_df), width="stretch", key="rej_status_bar")
@@ -91,54 +97,70 @@ with tab_funnel:
     c2.plotly_chart(charts.retry_hist(repos_df), width="stretch", key="rej_retry_hist")
 
 with tab_s3:
-    st.caption(f"Stage-3 gate rejects if app < {_GATE_APP} OR runnability < {_GATE_RUN} OR "
-               f"interaction_richness < {_GATE_INTERACT}. Bars left of each dashed line are rejected.")
+    st.caption(
+        f"Stage-3 gate rejects if app < {_GATE_APP} OR runnability < {_GATE_RUN} OR "
+        f"interaction_richness < {_GATE_INTERACT}. Bars left of each dashed line are rejected."
+    )
     c1, c2 = st.columns(2)
     c1.plotly_chart(
-        charts.score_dim_bar(repos_df, "sc_application_vs_library", "s3_outcome",
-                             "application_vs_library", threshold=_GATE_APP),
-        width="stretch", key="rej_s3_app")
+        charts.score_dim_bar(
+            repos_df, "sc_application_vs_library", "s3_outcome", "application_vs_library", threshold=_GATE_APP
+        ),
+        width="stretch",
+        key="rej_s3_app",
+    )
     c2.plotly_chart(
-        charts.score_dim_bar(repos_df, "sc_runnability", "s3_outcome",
-                             "runnability", threshold=_GATE_RUN),
-        width="stretch", key="rej_s3_run")
+        charts.score_dim_bar(repos_df, "sc_runnability", "s3_outcome", "runnability", threshold=_GATE_RUN),
+        width="stretch",
+        key="rej_s3_run",
+    )
     c3, c4 = st.columns(2)
     c3.plotly_chart(
-        charts.score_dim_bar(repos_df, "sc_interaction_richness", "s3_outcome",
-                             "interaction_richness", threshold=_GATE_INTERACT),
-        width="stretch", key="rej_s3_interact")
+        charts.score_dim_bar(
+            repos_df, "sc_interaction_richness", "s3_outcome", "interaction_richness", threshold=_GATE_INTERACT
+        ),
+        width="stretch",
+        key="rej_s3_interact",
+    )
     c4.plotly_chart(
-        charts.score_dim_bar(repos_df, "shallow_total", "s3_outcome",
-                             "shallow total (/40)"),
-        width="stretch", key="rej_s3_total")
+        charts.score_dim_bar(repos_df, "shallow_total", "s3_outcome", "shallow total (/40)"),
+        width="stretch",
+        key="rej_s3_total",
+    )
 
 with tab_s4:
-    st.caption(f"Stage-4 gate rejects if the deep score (0–10) is below {_DEEP_GATE}. "
-               "Bars left of the dashed line are what the gate rejects.")
+    st.caption(
+        f"Stage-4 gate rejects if the deep score (0–10) is below {_DEEP_GATE}. "
+        "Bars left of the dashed line are what the gate rejects."
+    )
     c1, c2 = st.columns(2)
     c1.plotly_chart(
         charts.score_dim_bar(repos_df, "deep_score", "s4_outcome", "deep_score", threshold=_DEEP_GATE),
-        width="stretch", key="rej_s4_deep")
+        width="stretch",
+        key="rej_s4_deep",
+    )
     c2.plotly_chart(
         charts.score_dim_bar(repos_df, "da_test_case_count", "s4_outcome", "test_case_count"),
-        width="stretch", key="rej_s4_tests")
+        width="stretch",
+        key="rej_s4_tests",
+    )
 
 with tab_reasons:
     c1, c2 = st.columns(2)
-    c1.plotly_chart(charts.rejection_reason_bar(repos_df, "rejected_score"),
-                    width="stretch", key="rej_reason_score")
-    c2.plotly_chart(charts.rejection_reason_bar(repos_df, "rejected_analyze"),
-                    width="stretch", key="rej_reason_analyze")
+    c1.plotly_chart(charts.rejection_reason_bar(repos_df, "rejected_score"), width="stretch", key="rej_reason_score")
+    c2.plotly_chart(
+        charts.rejection_reason_bar(repos_df, "rejected_analyze"), width="stretch", key="rej_reason_analyze"
+    )
     c3, c4 = st.columns(2)
-    c3.plotly_chart(charts.rejection_reason_bar(repos_df, "rejected_trial"),
-                    width="stretch", key="rej_reason_trial")
-    c4.plotly_chart(charts.rejection_reason_bar(repos_df, "rejected_filter"),
-                    width="stretch", key="rej_reason_filter")
+    c3.plotly_chart(charts.rejection_reason_bar(repos_df, "rejected_trial"), width="stretch", key="rej_reason_trial")
+    c4.plotly_chart(charts.rejection_reason_bar(repos_df, "rejected_filter"), width="stretch", key="rej_reason_filter")
 
 with tab_turns:
     if calls_df.empty:
-        st.info("No agent_calls recorded yet. Run an agent stage (3, 4, or 6) to populate turn / "
-                "cost telemetry. Stage 4 (max_turns=25) is the one to watch.")
+        st.info(
+            "No agent_calls recorded yet. Run an agent stage (3, 4, or 6) to populate turn / "
+            "cost telemetry. Stage 4 (max_turns=25) is the one to watch."
+        )
     else:
         st.plotly_chart(charts.agent_turns_box(calls_df), width="stretch", key="rej_turns_box")
         c1, c2 = st.columns(2)

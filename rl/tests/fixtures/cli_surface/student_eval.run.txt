@@ -1,0 +1,88 @@
+options:
+  -h, --help            show this help message and exit
+  --task-source {held_out,online_mind2web}
+                        which task set to evaluate on
+  --tasks-file TASKS_FILE
+                        JSON/JSONL of EvalTask rows, bypassing the registry
+                        loader
+  --limit LIMIT         evaluate only the first N tasks
+  --label LABEL         run label, e.g. 'before' / 'after' — names the run dir
+                        and the report
+  --run-id RUN_ID       override the generated run directory name
+  --student {mock,openai}
+  --endpoint ENDPOINT   OpenAI-compatible base URL (e.g. http://host:8000/v1)
+  --model MODEL         served model id
+  --adapter ADAPTER     LoRA/checkpoint path served behind the endpoint
+                        (recorded in the report)
+  --api-key API_KEY
+  --temperature TEMPERATURE
+  --max-tokens MAX_TOKENS
+  --student-timeout STUDENT_TIMEOUT
+  --student-retries STUDENT_RETRIES
+                        retries for transport errors only; HTTP errors are
+                        surfaced
+  --mock-trajectory MOCK_TRAJECTORY
+                        trajectory.json replayed by the 'mock' student backend
+  --coord-space {normalized_1000,viewport_abs}
+                        the convention THIS model answers in: a stock Qwen and
+                        an sft3 checkpoint emit normalized_1000 (the prompt's
+                        0-1000 grid); an sft-v1/v2 checkpoint emits
+                        viewport_abs (1280x720 pixels). Set it explicitly per
+                        model — it is never auto-detected
+  --type-mode {replace,append}
+                        driver typing mode; replace selects the focused
+                        field's text before typing, as capture and RL do
+  --strict-action-grammar
+                        accept ONLY the canonical form
+                        format_action_for_training emits. Off by default: any
+                        unambiguous spelling of a call is accepted, and how
+                        canonical each model's output was is reported as
+                        canonical_form_rate instead of being charged to its
+                        success rate
+  --max-unproductive-steps MAX_UNPRODUCTIVE_STEPS
+                        abort the episode as 'stuck' after this many steps in
+                        a row that execute no action at all
+  --max-parse-failures MAX_PARSE_FAILURES
+                        abort as 'parse_failure_abort' after this many
+                        unparseable steps in a row
+  --max-steps MAX_STEPS
+                        FLAT step cap per episode; 0 derives one from each
+                        task's reference_length
+  --step-cap-multiple STEP_CAP_MULTIPLE
+                        derived cap = this x the task's reference_length
+  --step-cap-floor STEP_CAP_FLOOR
+  --step-cap-ceiling STEP_CAP_CEILING
+  --stratify            with --limit, keep the task set's easy/medium/hard mix
+                        instead of taking the first N rows
+  --episode-timeout EPISODE_TIMEOUT
+  --screenshot-format {png,jpeg}
+                        png only under sft3: effect annotations compare
+                        consecutive frames pixel-wise
+  --no-judge            record episodes and DEFER the verdict; a later resume
+                        judges them off the GPU, so a usage limit can never
+                        burn rental hours
+  --judge-mid-screenshots JUDGE_MID_SCREENSHOTS
+                        mid-run frames per verdict on top of the final one;
+                        the main cost dial
+  --observation {v2,v3}
+                        observation layout: v3 sends prev+current screenshots,
+                        v2 sends current only (required for sft-v1/v2 and any
+                        GRPO LoRA over them)
+  --parallel PARALLEL   concurrent sandboxes (clamped to what the Docker VM
+                        can hold)
+  --no-resume           re-run episodes that already have an episode.json
+  --dataset-revision DATASET_REVISION
+  --trajectories-dir TRAJECTORIES_DIR
+                        corpus checked by the held_out source to prove a task
+                        is unseen
+  --loop-guard-repeats LOOP_GUARD_REPEATS
+                        driver loop guard for eval; 0 lets a stuck model
+                        actually repeat itself
+  --sandbox-image SANDBOX_IMAGE
+  --browser-backend {docker,remote_ssh,vast_residential}
+                        where the browser runs, i.e. which IP the sites see.
+                        `vast_residential` rents a US consumer-ISP box and
+                        destroys it after.
+  --browser-host BROWSER_HOST
+                        remote_ssh backend: host or host:port of an already-
+                        running box

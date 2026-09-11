@@ -30,7 +30,7 @@ session. If a volume, secret or cached weight is missing there, create it there 
 ## 1. Re-check contamination against the grown corpus (free)
 
 ```
-python -m rl.tasks build-candidates --trajectories /Users/rmajor/unik/maga/dataset_gather/trajectories --max-expected 18
+python -m rl.tasks build-candidates --trajectories trajectories --max-expected 18
 ```
 
 `excluded_trained` must be reported and the printed problem list empty. The corpus grows between runs,

@@ -841,7 +841,7 @@ Offer selection (`remote_train.yaml`, defaults < env < CLI) requires `min_vram_g
 OOMs mid-run with two images per sample), `min_compute_cap: 800` (bf16 needs Ampere+; the cheapest
 cards are Turing and **cannot** run this workload), `min_cuda_vers: 12.8` (older drivers fail only
 after boot), a price cap, a host reliability floor, and an `exclude_countries` deny-list (default
-`RU, CN`). Every instance is labeled `roman.maior`.
+`RU, CN`). Every instance is labeled `cua-remote-train`.
 
 ### Cost per run (measured, Vast.ai)
 

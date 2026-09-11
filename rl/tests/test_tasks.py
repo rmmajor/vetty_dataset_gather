@@ -8,10 +8,27 @@ SRC = {"path": None, "backend": "public_site", "env": "live", "lane": "autonomou
 
 
 def _sites(n_sites=6, tasks_per_site=3):
-    return {"sites": [{"name": f"site{i}", "start_url": f"https://site{i}.example/", "domain": "d", "tasks": [
-        {"id": f"t{j}", "instruction": f"Open the settings page and change the theme to dark {i}-{j}", "difficulty": "hard",
-         "expected_actions": 12, "action_kinds": ["click", "scroll"], "auth_required": False} for j in range(tasks_per_site)]}
-        for i in range(n_sites)]}
+    return {
+        "sites": [
+            {
+                "name": f"site{i}",
+                "start_url": f"https://site{i}.example/",
+                "domain": "d",
+                "tasks": [
+                    {
+                        "id": f"t{j}",
+                        "instruction": f"Open the settings page and change the theme to dark {i}-{j}",
+                        "difficulty": "hard",
+                        "expected_actions": 12,
+                        "action_kinds": ["click", "scroll"],
+                        "auth_required": False,
+                    }
+                    for j in range(tasks_per_site)
+                ],
+            }
+            for i in range(n_sites)
+        ]
+    }
 
 
 def _write(tmp, name, data):
@@ -38,14 +55,27 @@ def test_build_excludes_trained_tasks_and_checks_disjointness():
     with tempfile.TemporaryDirectory() as tmp:
         sites = _sites()
         src = {**SRC, "path": _write(tmp, "src.json", sites)}
-        seen = _write(tmp, "seen.json", {"sites": [{"name": "site1", "tasks": [{"id": "x", "instruction": sites["sites"][1]["tasks"][0]["instruction"]}]}]})
+        seen = _write(
+            tmp,
+            "seen.json",
+            {
+                "sites": [
+                    {
+                        "name": "site1",
+                        "tasks": [{"id": "x", "instruction": sites["sites"][1]["tasks"][0]["instruction"]}],
+                    }
+                ]
+            },
+        )
         traj = Path(tmp) / "trajectories" / "site_site2" / "task_t1"
         traj.mkdir(parents=True)
         (traj / "trajectory.json").write_text(json.dumps({"instruction": "irrelevant", "success": True, "steps": []}))
         (traj / "metadata.json").write_text(json.dumps({"capture_source": "agent"}))
         failed = Path(tmp) / "trajectories" / "site_site3" / "task_t2"
         failed.mkdir(parents=True)
-        (failed / "trajectory.json").write_text(json.dumps({"instruction": "irrelevant", "success": False, "steps": []}))
+        (failed / "trajectory.json").write_text(
+            json.dumps({"instruction": "irrelevant", "success": False, "steps": []})
+        )
         (failed / "metadata.json").write_text(json.dumps({"capture_source": "agent"}))
         suite = build_suite([src], Path(tmp) / "trajectories", seen, unseen_site_pct=0)
         ids = {t["task_id"] for t in suite["tasks"]}
@@ -63,35 +93,127 @@ def test_build_candidates_merges_forces_train_and_excludes():
         frontier = {
             "_config": {"exclude_sites": ["banned"], "exclude_domains": ["evil.example"]},
             "sites": [
-                {"name": "toolsite", "start_url": "https://toolsite.example/", "domain": "d", "tasks": [
-                    {"id": "f1", "instruction": "Convert 5 miles to km ending with the value shown", "expected_actions": 5,
-                     "idempotent": True, "success_check": {"text_visible": "8.04"},
-                     "milestones": [{"name": "entered", "check": {"text_visible": "5"}, "weight": 1.0}]},
-                    {"id": "f2", "instruction": "Look up the weekday of 2000-01-01 ending with it shown", "expected_actions": 6,
-                     "idempotent": True, "success_check": {"text_visible": "Saturday"}}]},
-                {"name": "banned", "start_url": "https://banned.example/", "domain": "d", "tasks": [
-                    {"id": "x", "instruction": "Open the page ending shown", "expected_actions": 4, "idempotent": True,
-                     "success_check": {"url_contains": "p"}}]},
-                {"name": "evilfront", "start_url": "https://www.evil.example/app", "domain": "d", "tasks": [
-                    {"id": "y", "instruction": "Open the app page ending shown", "expected_actions": 4, "idempotent": True,
-                     "success_check": {"url_contains": "app"}}]},
+                {
+                    "name": "toolsite",
+                    "start_url": "https://toolsite.example/",
+                    "domain": "d",
+                    "tasks": [
+                        {
+                            "id": "f1",
+                            "instruction": "Convert 5 miles to km ending with the value shown",
+                            "expected_actions": 5,
+                            "idempotent": True,
+                            "success_check": {"text_visible": "8.04"},
+                            "milestones": [{"name": "entered", "check": {"text_visible": "5"}, "weight": 1.0}],
+                        },
+                        {
+                            "id": "f2",
+                            "instruction": "Look up the weekday of 2000-01-01 ending with it shown",
+                            "expected_actions": 6,
+                            "idempotent": True,
+                            "success_check": {"text_visible": "Saturday"},
+                        },
+                    ],
+                },
+                {
+                    "name": "banned",
+                    "start_url": "https://banned.example/",
+                    "domain": "d",
+                    "tasks": [
+                        {
+                            "id": "x",
+                            "instruction": "Open the page ending shown",
+                            "expected_actions": 4,
+                            "idempotent": True,
+                            "success_check": {"url_contains": "p"},
+                        }
+                    ],
+                },
+                {
+                    "name": "evilfront",
+                    "start_url": "https://www.evil.example/app",
+                    "domain": "d",
+                    "tasks": [
+                        {
+                            "id": "y",
+                            "instruction": "Open the app page ending shown",
+                            "expected_actions": 4,
+                            "idempotent": True,
+                            "success_check": {"url_contains": "app"},
+                        }
+                    ],
+                },
             ],
         }
         frontier_path = _write(tmp, "frontier.json", frontier)
-        base = {"suite_sha256": "s", "tasks": [
-            {"task_id": "old__short", "site": "old", "start_url": "https://old.example/", "instruction": "Do the short one until done",
-             "difficulty": "medium", "expected_actions": 10, "action_kinds": [], "backend": "public_site", "env": "live",
-             "lane": "autonomous", "auth_mode": "none", "idempotent": True, "split": "train", "preconditions": {},
-             "allowed_hosts": ["old.example"], "success_check": {"url_contains": "done"}, "milestones": None, "throttle": {"min_interval_s": 30}, "source": "b"},
-            {"task_id": "old__unoracled", "site": "old", "start_url": "https://old.example/", "instruction": "Do the unoracled one until done",
-             "difficulty": "medium", "expected_actions": 8, "action_kinds": [], "backend": "public_site", "env": "live",
-             "lane": "autonomous", "auth_mode": "none", "idempotent": True, "split": "train", "preconditions": {},
-             "allowed_hosts": ["old.example"], "success_check": None, "milestones": None, "throttle": {"min_interval_s": 30}, "source": "b"},
-            {"task_id": "old__long", "site": "old", "start_url": "https://old.example/", "instruction": "Do the long one until done",
-             "difficulty": "hard", "expected_actions": 30, "action_kinds": [], "backend": "public_site", "env": "live",
-             "lane": "autonomous", "auth_mode": "none", "idempotent": True, "split": "train", "preconditions": {},
-             "allowed_hosts": ["old.example"], "success_check": None, "milestones": None, "throttle": {"min_interval_s": 30}, "source": "b"},
-        ]}
+        base = {
+            "suite_sha256": "s",
+            "tasks": [
+                {
+                    "task_id": "old__short",
+                    "site": "old",
+                    "start_url": "https://old.example/",
+                    "instruction": "Do the short one until done",
+                    "difficulty": "medium",
+                    "expected_actions": 10,
+                    "action_kinds": [],
+                    "backend": "public_site",
+                    "env": "live",
+                    "lane": "autonomous",
+                    "auth_mode": "none",
+                    "idempotent": True,
+                    "split": "train",
+                    "preconditions": {},
+                    "allowed_hosts": ["old.example"],
+                    "success_check": {"url_contains": "done"},
+                    "milestones": None,
+                    "throttle": {"min_interval_s": 30},
+                    "source": "b",
+                },
+                {
+                    "task_id": "old__unoracled",
+                    "site": "old",
+                    "start_url": "https://old.example/",
+                    "instruction": "Do the unoracled one until done",
+                    "difficulty": "medium",
+                    "expected_actions": 8,
+                    "action_kinds": [],
+                    "backend": "public_site",
+                    "env": "live",
+                    "lane": "autonomous",
+                    "auth_mode": "none",
+                    "idempotent": True,
+                    "split": "train",
+                    "preconditions": {},
+                    "allowed_hosts": ["old.example"],
+                    "success_check": None,
+                    "milestones": None,
+                    "throttle": {"min_interval_s": 30},
+                    "source": "b",
+                },
+                {
+                    "task_id": "old__long",
+                    "site": "old",
+                    "start_url": "https://old.example/",
+                    "instruction": "Do the long one until done",
+                    "difficulty": "hard",
+                    "expected_actions": 30,
+                    "action_kinds": [],
+                    "backend": "public_site",
+                    "env": "live",
+                    "lane": "autonomous",
+                    "auth_mode": "none",
+                    "idempotent": True,
+                    "split": "train",
+                    "preconditions": {},
+                    "allowed_hosts": ["old.example"],
+                    "success_check": None,
+                    "milestones": None,
+                    "throttle": {"min_interval_s": 30},
+                    "source": "b",
+                },
+            ],
+        }
         base_path = _write(tmp, "base.json", base)
         suite = build_candidates(frontier_path, base_path, Path(tmp) / "none", None, max_expected=12)
         ids = [t["task_id"] for t in suite["tasks"]]

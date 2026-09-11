@@ -32,7 +32,6 @@ import time
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 import yaml
 
@@ -44,7 +43,6 @@ from train_qwen import (
     to_claude_content,
     to_openai_content,
 )
-
 
 # The element description handed to the grounding observation; a ScreenSpot instruction names the target.
 GROUNDING_DESCRIPTION_TEMPLATE = 'the element described as "{instruction}"'
@@ -88,26 +86,26 @@ def prepare_sample_image(image):
 @dataclass
 class Sample:
     instruction: str
-    bbox_xyxy: tuple                  # absolute pixels in the original image
+    bbox_xyxy: tuple  # absolute pixels in the original image
     orig_w: int
     orig_h: int
     data_type: str = "unknown"
     data_source: str = "unknown"
-    image: object = None              # PIL.Image, or None when no image is needed
+    image: object = None  # PIL.Image, or None when no image is needed
 
 
 @dataclass
 class ModelSpec:
     label: str
     model: str
-    adapters: Optional[str] = None
-    backend: Optional[str] = None     # overrides EvalConfig.backend when set
+    adapters: str | None = None
+    backend: str | None = None  # overrides EvalConfig.backend when set
     # Overrides EvalConfig.coord_space for THIS model. Different checkpoints answer in different
     # coordinate conventions: a stock Qwen and an sft3 checkpoint emit `normalized_1000`, while
     # an sft-v1/v2 checkpoint emits `viewport_abs` (1280x720). A before/after comparison is
     # therefore only meaningful if each spec is scored in its own space — a single global
     # --coord-space silently mis-scores one side of the comparison.
-    coord_space: Optional[str] = None
+    coord_space: str | None = None
 
 
 @dataclass
@@ -124,7 +122,7 @@ class EvalConfig:
     coord_space: str = "normalized_1000"
     parse_patterns: list = field(default_factory=lambda: list(DEFAULT_PARSE_PATTERNS))
     backend: str = "swift"
-    limit: Optional[int] = None
+    limit: int | None = None
     output_dir: str = "eval_results"
     max_pixels: int = DEFAULT_MAX_PIXELS
     max_tokens: int = 2048
@@ -137,8 +135,8 @@ class Record:
     data_type: str
     data_source: str
     raw: str
-    parsed_point: Optional[tuple]     # coordinate as the model emitted it
-    mapped_point: Optional[tuple]     # mapped into original-image pixels
+    parsed_point: tuple | None  # coordinate as the model emitted it
+    mapped_point: tuple | None  # mapped into original-image pixels
     bbox_xyxy: tuple
     hit: bool
     # Without the source dimensions a saved run cannot be re-scored in another coordinate space,
@@ -200,15 +198,13 @@ COORD_SPACES: dict = {
 
 def resolve_coord_space(cfg, spec=None) -> str:
     """The coord space for one spec: its own if set, else the global default."""
-    return (spec.coord_space if spec is not None and spec.coord_space else cfg.coord_space)
+    return spec.coord_space if spec is not None and spec.coord_space else cfg.coord_space
 
 
 def build_coord_space(cfg, spec=None):
     name = resolve_coord_space(cfg, spec)
     if name not in COORD_SPACES:
-        raise ValueError(
-            f"Unknown coord space {name!r}. Available: {sorted(COORD_SPACES)}"
-        )
+        raise ValueError(f"Unknown coord space {name!r}. Available: {sorted(COORD_SPACES)}")
     return COORD_SPACES[name](cfg)
 
 
@@ -327,10 +323,7 @@ class MockPredictor(Predictor):
 def default_mock_response(sample, cfg, coord_space):
     center_x = cfg.viewport_w / 2
     center_y = cfg.viewport_h / 2
-    return (
-        "<think>mock prediction</think>\n"
-        f"action: click(<ref>({int(center_x)}, {int(center_y)})</ref>, button=left)"
-    )
+    return f"<think>mock prediction</think>\naction: click(<ref>({int(center_x)}, {int(center_y)})</ref>, button=left)"
 
 
 class SwiftPredictor(Predictor):
@@ -365,10 +358,14 @@ class SwiftPredictor(Predictor):
             if self.adapters:
                 cmd += ["--adapters", self.adapters]
             cmd += [
-                "--val_dataset", str(infer_path),
-                "--result_path", str(result_path),
-                "--max_new_tokens", str(cfg.max_tokens),
-                "--temperature", str(cfg.temperature),
+                "--val_dataset",
+                str(infer_path),
+                "--result_path",
+                str(result_path),
+                "--max_new_tokens",
+                str(cfg.max_tokens),
+                "--temperature",
+                str(cfg.temperature),
             ]
 
             env = os.environ.copy()
@@ -426,11 +423,19 @@ class OpenAIPredictor(Predictor):
     def _one(self, sample, coord_space):
         image = prepare_sample_image(sample.image)
         messages = build_openai_messages(sample.instruction, self._encode(image))
-        body = json.dumps({"model": self.model, "messages": messages,
-                           "temperature": self.cfg.temperature, "max_tokens": self.cfg.max_tokens}).encode()
+        body = json.dumps(
+            {
+                "model": self.model,
+                "messages": messages,
+                "temperature": self.cfg.temperature,
+                "max_tokens": self.cfg.max_tokens,
+            }
+        ).encode()
         req = urllib.request.Request(
-            f"{self.endpoint}/chat/completions", data=body,
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})
+            f"{self.endpoint}/chat/completions",
+            data=body,
+            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+        )
         for attempt in range(3):
             try:
                 with urllib.request.urlopen(req, timeout=180) as r:
@@ -484,8 +489,12 @@ class ClaudePredictor(Predictor):
         content = build_claude_content(sample.instruction, self._encode(image))
 
         async def stream():
-            yield {"type": "user", "message": {"role": "user", "content": content},
-                   "parent_tool_use_id": None, "session_id": ""}
+            yield {
+                "type": "user",
+                "message": {"role": "user", "content": content},
+                "parent_tool_use_id": None,
+                "session_id": "",
+            }
 
         options = ClaudeAgentOptions(
             model=self.model or MODEL_FOR_REASONING,
@@ -530,9 +539,7 @@ PREDICTOR_BACKENDS: dict = {
 def build_predictor(spec, cfg):
     backend = spec.backend or cfg.backend
     if backend not in PREDICTOR_BACKENDS:
-        raise ValueError(
-            f"Unknown backend {backend!r}. Available: {sorted(PREDICTOR_BACKENDS)}"
-        )
+        raise ValueError(f"Unknown backend {backend!r}. Available: {sorted(PREDICTOR_BACKENDS)}")
     return PREDICTOR_BACKENDS[backend](spec, cfg)
 
 
@@ -544,7 +551,7 @@ def build_predictor(spec, cfg):
 def evaluate(samples, predictor, cfg, coord_space):
     raws = predictor.predict_batch(samples, cfg, coord_space)
     records = []
-    for sample, raw in zip(samples, raws):
+    for sample, raw in zip(samples, raws, strict=False):
         parsed = parse_point(raw, cfg.parse_patterns)
         if parsed is None:
             mapped = None
@@ -666,34 +673,35 @@ def format_group(group):
 def print_comparison(summaries):
     labels = list(summaries.keys())
 
-    rows = [("overall accuracy", [f"{summaries[l]['accuracy'] * 100:.1f}%" for l in labels])]
-    rows.append(("parse rate", [f"{summaries[l]['parse_rate'] * 100:.1f}%" for l in labels]))
-    rows.append(("samples", [str(summaries[l]["total"]) for l in labels]))
+    rows = [("overall accuracy", [f"{summaries[label]['accuracy'] * 100:.1f}%" for label in labels])]
+    rows.append(("parse rate", [f"{summaries[label]['parse_rate'] * 100:.1f}%" for label in labels]))
+    rows.append(("samples", [str(summaries[label]["total"]) for label in labels]))
 
-    data_types = sorted({t for l in labels for t in summaries[l]["by_data_type"]})
+    data_types = sorted({t for label in labels for t in summaries[label]["by_data_type"]})
     for data_type in data_types:
         rows.append(
-            (f"  type:{data_type}", [format_group(summaries[l]["by_data_type"].get(data_type)) for l in labels])
+            (f"  type:{data_type}", [format_group(summaries[label]["by_data_type"].get(data_type)) for label in labels])
         )
 
-    data_sources = sorted({s for l in labels for s in summaries[l]["by_data_source"]})
+    data_sources = sorted({s for label in labels for s in summaries[label]["by_data_source"]})
     for data_source in data_sources:
         rows.append(
-            (f"  source:{data_source}", [format_group(summaries[l]["by_data_source"].get(data_source)) for l in labels])
+            (
+                f"  source:{data_source}",
+                [format_group(summaries[label]["by_data_source"].get(data_source)) for label in labels],
+            )
         )
 
     label_width = max([len("metric")] + [len(name) for name, _ in rows])
     col_widths = [max(len(label), *(len(row[1][i]) for row in rows)) for i, label in enumerate(labels)]
 
-    header = "metric".ljust(label_width) + "  " + "  ".join(
-        label.ljust(col_widths[i]) for i, label in enumerate(labels)
+    header = (
+        "metric".ljust(label_width) + "  " + "  ".join(label.ljust(col_widths[i]) for i, label in enumerate(labels))
     )
     print(header)
     print("-" * len(header))
     for name, cells in rows:
-        print(name.ljust(label_width) + "  " + "  ".join(
-            cell.ljust(col_widths[i]) for i, cell in enumerate(cells)
-        ))
+        print(name.ljust(label_width) + "  " + "  ".join(cell.ljust(col_widths[i]) for i, cell in enumerate(cells)))
 
 
 # ----------------------------------------------------------------------------
@@ -718,8 +726,11 @@ def load_model_specs(args):
             for spec in raw_specs
         ]
     if args.model:
-        return [ModelSpec(label=args.label or "model", model=args.model, adapters=args.adapters,
-                          coord_space=args.coord_space)]
+        return [
+            ModelSpec(
+                label=args.label or "model", model=args.model, adapters=args.adapters, coord_space=args.coord_space
+            )
+        ]
     raise ValueError("Provide --models-config or --model (or use --smoke-test).")
 
 
@@ -763,8 +774,10 @@ def run_smoke_test(cfg):
     observation = build_grounding_observation('the element described as "the login button"', "/tmp/x.png")
     assert messages[1] == {"role": "user", "content": observation["content"]}, messages[1]
     assert observation["images"] == ["/tmp/x.png"]
-    assert observation["text"] == ('Current screenshot:\n<image>\nTask: Click the element described as "the login button".\n'
-                                   "What action should you take?"), observation["text"]
+    assert observation["text"] == (
+        'Current screenshot:\n<image>\nTask: Click the element described as "the login button".\n'
+        "What action should you take?"
+    ), observation["text"]
     rendered = build_openai_messages("the login button", "QUJD")
     assert rendered[0] == messages[0]
     assert [item["type"] for item in rendered[1]["content"]] == ["text", "image_url", "text"], rendered[1]
@@ -894,25 +907,36 @@ def build_parser():
     run_parser.add_argument("--backend", default="swift", choices=sorted(PREDICTOR_BACKENDS))
     run_parser.add_argument("--dataset", default=DEFAULT_DATASET)
     run_parser.add_argument("--split", default=DEFAULT_SPLIT)
-    run_parser.add_argument("--bbox-format", default="xyxy", choices=["xywh", "xyxy"],
-                            help="Annotation convention of --dataset (default matches DEFAULT_DATASET).")
-    run_parser.add_argument("--bbox-normalized", action=argparse.BooleanOptionalAction, default=True,
-                            help="Dataset bbox is 0-1 rather than pixels. Use --no-bbox-normalized "
-                                 "for a mirror that stores absolute pixels.")
+    run_parser.add_argument(
+        "--bbox-format",
+        default="xyxy",
+        choices=["xywh", "xyxy"],
+        help="Annotation convention of --dataset (default matches DEFAULT_DATASET).",
+    )
+    run_parser.add_argument(
+        "--bbox-normalized",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Dataset bbox is 0-1 rather than pixels. Use --no-bbox-normalized "
+        "for a mirror that stores absolute pixels.",
+    )
     run_parser.add_argument("--limit", type=int)
     run_parser.add_argument("--viewport", default=f"{DEFAULT_VIEWPORT_W}x{DEFAULT_VIEWPORT_H}")
-    run_parser.add_argument("--coord-space", default="normalized_1000", choices=sorted(COORD_SPACES),
-                            help="Global default. A spec in --models-config may override it with "
-                                 "`coord_space:` — a stock Qwen and an sft3 checkpoint answer in "
-                                 "normalized_1000, an sft-v1/v2 checkpoint answers in viewport_abs, so a "
-                                 "before/after comparison MUST score each side in its own space.")
+    run_parser.add_argument(
+        "--coord-space",
+        default="normalized_1000",
+        choices=sorted(COORD_SPACES),
+        help="Global default. A spec in --models-config may override it with "
+        "`coord_space:` — a stock Qwen and an sft3 checkpoint answer in "
+        "normalized_1000, an sft-v1/v2 checkpoint answers in viewport_abs, so a "
+        "before/after comparison MUST score each side in its own space.",
+    )
     run_parser.add_argument("--parse-pattern", action="append", help="Override default regex(es); repeatable.")
     run_parser.add_argument("--output-dir", default="eval_results")
     run_parser.add_argument("--max-pixels", type=int, default=DEFAULT_MAX_PIXELS)
     run_parser.add_argument("--max-tokens", type=int, default=2048)
     run_parser.add_argument("--temperature", type=float, default=0.0)
-    run_parser.add_argument("--smoke-test", action="store_true",
-                            help="Run the no-model pipeline self-test and exit.")
+    run_parser.add_argument("--smoke-test", action="store_true", help="Run the no-model pipeline self-test and exit.")
     run_parser.set_defaults(func=run)
     return parser
 

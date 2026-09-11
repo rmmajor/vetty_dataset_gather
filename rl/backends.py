@@ -1,4 +1,5 @@
 """Environment backends (registry) and the sandbox worker pool that hosts rollout browsers."""
+
 import logging
 import os
 import queue
@@ -61,6 +62,7 @@ class PublicSiteBackend(EnvBackend):
 
 class StaticPageBackend(EnvBackend):
     """Serves one in-container HTML page — the no-network backend for smoke tests."""
+
     key = "static_page"
     port = 3000
 
@@ -112,7 +114,11 @@ class RolloutWorker:
         return self.clients[slot]
 
     def needs_recycle(self):
-        if self.sandbox is None or self.sandbox.container is None or self.sandbox.remaining_seconds() < RL_RECYCLE_RESERVE_S:
+        if (
+            self.sandbox is None
+            or self.sandbox.container is None
+            or self.sandbox.remaining_seconds() < RL_RECYCLE_RESERVE_S
+        ):
             return True
         try:
             # `browser` is absent on older drivers, so default it True rather than recycling forever.
@@ -135,10 +141,19 @@ class RolloutWorker:
 class WorkerPool:
     """Free-slot queue over N workers; a slot (worker, index) hosts exactly one live episode."""
 
-    def __init__(self, backend, requested_workers, drivers_per_sandbox=RL_DRIVERS_PER_SANDBOX, loop_guard_repeats=RL_LOOP_GUARD_REPEATS):
+    def __init__(
+        self,
+        backend,
+        requested_workers,
+        drivers_per_sandbox=RL_DRIVERS_PER_SANDBOX,
+        loop_guard_repeats=RL_LOOP_GUARD_REPEATS,
+    ):
         self.loop_guard_repeats = loop_guard_repeats
         driver_env = {"DRIVER_LOOP_GUARD_REPEATS": str(loop_guard_repeats)}
-        self.workers = [RolloutWorker(i, backend, drivers_per_sandbox, driver_env) for i in range(safe_parallel_sandboxes(requested_workers))]
+        self.workers = [
+            RolloutWorker(i, backend, drivers_per_sandbox, driver_env)
+            for i in range(safe_parallel_sandboxes(requested_workers))
+        ]
         self.free = queue.Queue()
 
     @property
@@ -159,7 +174,9 @@ class WorkerPool:
                 try:
                     worker.recycle()
                 except Exception as e:
-                    logger.error(f"worker {worker.worker_id}: recycle failed, its episodes will fail until it recovers: {e}")
+                    logger.error(
+                        f"worker {worker.worker_id}: recycle failed, its episodes will fail until it recovers: {e}"
+                    )
             worker.live += 1
         return worker, slot
 

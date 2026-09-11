@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "<repo>/record_trajectories_from_gpt_api.py", line 11, in <module>
+    from openai import OpenAI
+ModuleNotFoundError: No module named 'openai'
+[exit 1]

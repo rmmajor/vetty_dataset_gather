@@ -55,8 +55,7 @@ def categorize(status: str, reason: str):
 
 def backfill(registry: RepoRegistry, dry_run: bool = False) -> dict:
     rows = registry.conn.execute(
-        "SELECT full_name, status, filter_reason, shallow_scores, deep_score "
-        "FROM repos WHERE status LIKE 'rejected_%'"
+        "SELECT full_name, status, filter_reason, shallow_scores, deep_score FROM repos WHERE status LIKE 'rejected_%'"
     ).fetchall()
 
     counts = {"categorized": 0, "shallow_scores": 0, "deep_score": 0}
@@ -72,21 +71,25 @@ def backfill(registry: RepoRegistry, dry_run: bool = False) -> dict:
         if status == "rejected_score" and not row["shallow_scores"]:
             m = GATE_RE.search(reason or "")
             if m:
-                updates["shallow_scores"] = json.dumps({
-                    "application_vs_library": int(m.group(1)),
-                    "runnability": int(m.group(2)),
-                    "interaction_richness": int(m.group(3)),
-                })
+                updates["shallow_scores"] = json.dumps(
+                    {
+                        "application_vs_library": int(m.group(1)),
+                        "runnability": int(m.group(2)),
+                        "interaction_richness": int(m.group(3)),
+                    }
+                )
                 counts["shallow_scores"] += 1
 
         if status == "rejected_analyze" and row["deep_score"] is None:
             m = DEEP_RE.search(reason or "")
             if m:
                 updates["deep_score"] = int(m.group(1))
-                updates["deep_analysis"] = json.dumps({
-                    "test_case_count": int(m.group(2)),
-                    "is_self_contained": m.group(3) == "True",
-                })
+                updates["deep_analysis"] = json.dumps(
+                    {
+                        "test_case_count": int(m.group(2)),
+                        "is_self_contained": m.group(3) == "True",
+                    }
+                )
                 counts["deep_score"] += 1
 
         if updates and not dry_run:

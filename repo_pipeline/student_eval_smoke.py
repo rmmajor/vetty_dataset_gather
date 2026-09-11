@@ -1,6 +1,7 @@
 """Self-test for the student eval harness: pure checks, a mock replay episode, and a real judge verdict."""
-import asyncio
+
 import argparse
+import asyncio
 import base64
 import io
 import json
@@ -12,36 +13,35 @@ from pathlib import Path
 
 from PIL import Image
 
+from repo_pipeline.eval_task_sources import TASK_SOURCES, EvalTask
+from repo_pipeline.sandbox import ShellSandbox
 from repo_pipeline.student_eval import (
-    EXPECTED_TO_DIFFER_KEYS,
-    PARITY_EXEMPT_KEYS,
     ACTION_TO_DRIVER,
     BROWSER_BACKENDS,
+    EXPECTED_TO_DIFFER_KEYS,
+    PARITY_EXEMPT_KEYS,
+    EpisodeRecord,
     EvalBrowser,
     EvalConfig,
     ReplayStudent,
     action_coordinates,
-    EpisodeRecord,
     build_student_messages,
+    classify_action_line,
+    compute_metrics,
     coord_space_diagnosis,
     detect_block,
     driver_payload,
+    harness_fingerprint,
     judge_episode,
     observed_effect,
     outside_coord_space,
     outside_viewport,
-    classify_action_line,
-    compute_metrics,
-    parse_action_line,
     parse_student_output,
     render_comparison,
-    harness_fingerprint,
     render_report,
     run_episode,
     scale_action,
 )
-from repo_pipeline.eval_task_sources import TASK_SOURCES, EvalTask
-from repo_pipeline.sandbox import ShellSandbox
 from train_qwen import (
     HISTORY_WINDOW,
     PREV_IMAGE_SIZE,
@@ -84,25 +84,33 @@ CANVAS_FROM = (150, 340)
 CANVAS_TO = (350, 420)
 
 REPLAY_STEPS = [
-    ({"type": "scroll", "x": 640, "y": 360, "scroll_x": 0, "scroll_y": 400},
-     "The page is taller than the window, so I scroll down to see what else is here."),
-    ({"type": "scroll", "x": 640, "y": 360, "scroll_x": 0, "scroll_y": -400},
-     "Nothing useful below, so I scroll back up to the greeting form."),
-    ({"type": "move", "x": MENU_BUTTON[0], "y": MENU_BUTTON[1]},
-     "The menu button may hide extra options, so I hover over it to check."),
-    ({"type": "click", "x": NAME_FIELD[0], "y": NAME_FIELD[1], "button": "left"},
-     "The name field is empty; I click it so I can enter my name."),
-    ({"type": "type", "text": "Smokey"},
-     "I type my name so the greeting has something to address."),
-    ({"type": "keypress", "keys": ["Enter"]},
-     "I press Enter in case the form submits on its own."),
-    ({"type": "drag", "path": [{"x": CANVAS_FROM[0], "y": CANVAS_FROM[1]},
-                               {"x": CANVAS_TO[0], "y": CANVAS_TO[1]}]},
-     "I draw a stroke across the sketch area to confirm it responds."),
-    ({"type": "wait"},
-     "I wait a moment to let the page settle before the final click."),
-    ({"type": "click", "x": GREET_BUTTON[0], "y": GREET_BUTTON[1], "button": "left"},
-     "My name is entered, so clicking Greet should produce the greeting."),
+    (
+        {"type": "scroll", "x": 640, "y": 360, "scroll_x": 0, "scroll_y": 400},
+        "The page is taller than the window, so I scroll down to see what else is here.",
+    ),
+    (
+        {"type": "scroll", "x": 640, "y": 360, "scroll_x": 0, "scroll_y": -400},
+        "Nothing useful below, so I scroll back up to the greeting form.",
+    ),
+    (
+        {"type": "move", "x": MENU_BUTTON[0], "y": MENU_BUTTON[1]},
+        "The menu button may hide extra options, so I hover over it to check.",
+    ),
+    (
+        {"type": "click", "x": NAME_FIELD[0], "y": NAME_FIELD[1], "button": "left"},
+        "The name field is empty; I click it so I can enter my name.",
+    ),
+    ({"type": "type", "text": "Smokey"}, "I type my name so the greeting has something to address."),
+    ({"type": "keypress", "keys": ["Enter"]}, "I press Enter in case the form submits on its own."),
+    (
+        {"type": "drag", "path": [{"x": CANVAS_FROM[0], "y": CANVAS_FROM[1]}, {"x": CANVAS_TO[0], "y": CANVAS_TO[1]}]},
+        "I draw a stroke across the sketch area to confirm it responds.",
+    ),
+    ({"type": "wait"}, "I wait a moment to let the page settle before the final click."),
+    (
+        {"type": "click", "x": GREET_BUTTON[0], "y": GREET_BUTTON[1], "button": "left"},
+        "My name is entered, so clicking Greet should produce the greeting.",
+    ),
 ]
 
 ROUND_TRIP_ACTIONS = [
@@ -122,8 +130,11 @@ ROUND_TRIP_ACTIONS = [
     {"type": "screenshot"},
     {"type": "navigate", "url": "https://example.com/search?q=visa&page=2"},
     {"type": "handoff", "reason": "login"},
-    {"type": "confirm", "risk_category": "purchase",
-     "proposed_action": {"type": "click", "x": 200, "y": 300, "button": "left"}},
+    {
+        "type": "confirm",
+        "risk_category": "purchase",
+        "proposed_action": {"type": "click", "x": 200, "y": 300, "button": "left"},
+    },
 ]
 
 
@@ -137,98 +148,151 @@ def check_parser_round_trip():
         assert parsed.kind == "prefixed", f"{line!r} classified {parsed.kind}"
         assert parsed.deviations == (), f"canonical line reported deviations {parsed.deviations}"
         seen.add(action["type"])
-    required = {"click", "double_click", "move", "type", "keypress", "scroll", "drag", "wait",
-                "done", "navigate", "handoff", "confirm"}
+    required = {
+        "click",
+        "double_click",
+        "move",
+        "type",
+        "keypress",
+        "scroll",
+        "drag",
+        "wait",
+        "done",
+        "navigate",
+        "handoff",
+        "confirm",
+    }
     assert required <= seen, f"round-trip missed action types: {required - seen}"
-    logger.info(f"parser round-trip OK for {len(ROUND_TRIP_ACTIONS)} canonical actions "
-                f"over {len(seen)} types")
+    logger.info(f"parser round-trip OK for {len(ROUND_TRIP_ACTIONS)} canonical actions over {len(seen)} types")
 
 
 # Every accepted surface variant, per verb, against the action it must produce. The canonical form
 # is generated from the action itself, so this table only lists DEVIATIONS.
 GRAMMAR_MATRIX = [
-    ({"type": "click", "x": 217, "y": 925, "button": "left"}, [
-        "click(<ref>(217, 925)</ref>, button=left)",
-        "click(<ref>(217, 925)</ref>)",
-        "click((217, 925))",
-        "click(217, 925)",
-        "click(217, 925, left)",
-        "click(217.0, 925.0)",
-        "CLICK(217, 925)",
-    ]),
-    ({"type": "click", "x": 10, "y": 20, "button": "right"}, [
-        "click(<ref>(10, 20)</ref>, button=right)",
-        "click(10, 20, right)",
-        "click((10, 20), button=RIGHT)",
-    ]),
-    ({"type": "double_click", "x": 100, "y": 200}, [
-        "double_click(<ref>(100, 200)</ref>)",
-        "double_click((100, 200))",
-        "double_click(100, 200)",
-    ]),
-    ({"type": "move", "x": 5, "y": 719}, [
-        "move(<ref>(5, 719)</ref>)",
-        "move((5, 719))",
-        "move(5, 719)",
-    ]),
-    ({"type": "drag", "path": [{"x": 10, "y": 20}, {"x": 300, "y": 400}]}, [
-        "drag(<ref>(10, 20)</ref> -> <ref>(300, 400)</ref>)",
-        "drag((10, 20) -> (300, 400))",
-        "drag(10, 20 -> 300, 400)",
-        "drag((10, 20), (300, 400))",
-        "drag(10, 20, 300, 400)",
-        "drag(<ref>(10, 20)</ref> -> 300, 400)",
-        "drag(10, 20 -> <ref>(300, 400)</ref>)",
-    ]),
-    ({"type": "scroll", "x": 640, "y": 360, "scroll_x": 0, "scroll_y": 500}, [
-        "scroll(<ref>(640, 360)</ref>, scrollX=0, scrollY=500)",
-        "scroll(<ref>(640, 360)</ref>)",
-        "scroll((640, 360), scrollY=500)",
-        "scroll(640, 360)",
-        "scroll(640, 360, 0, 500)",
-        "scroll((640, 360), scroll_x=0, scroll_y=500)",
-        "scroll((640, 360), dx=0, dy=500)",
-    ]),
-    ({"type": "scroll", "x": 100, "y": 100, "scroll_x": -50, "scroll_y": -500}, [
-        "scroll(<ref>(100, 100)</ref>, scrollX=-50, scrollY=-500)",
-        "scroll(100, 100, -50, -500)",
-    ]),
-    ({"type": "type", "text": "hello, world"}, [
-        'type("hello, world")',
-        "type('hello, world')",
-    ]),
-    ({"type": "keypress", "keys": ["Enter"]}, [
-        'keypress(["Enter"])',
-        "keypress(['Enter'])",
-        'keypress("Enter")',
-        "keypress(Enter)",
-    ]),
-    ({"type": "keypress", "keys": ["Control", "a"]}, [
-        'keypress(["Control", "a"])',
-        "keypress(Control, a)",
-        "keypress(Control+a)",
-    ]),
+    (
+        {"type": "click", "x": 217, "y": 925, "button": "left"},
+        [
+            "click(<ref>(217, 925)</ref>, button=left)",
+            "click(<ref>(217, 925)</ref>)",
+            "click((217, 925))",
+            "click(217, 925)",
+            "click(217, 925, left)",
+            "click(217.0, 925.0)",
+            "CLICK(217, 925)",
+        ],
+    ),
+    (
+        {"type": "click", "x": 10, "y": 20, "button": "right"},
+        [
+            "click(<ref>(10, 20)</ref>, button=right)",
+            "click(10, 20, right)",
+            "click((10, 20), button=RIGHT)",
+        ],
+    ),
+    (
+        {"type": "double_click", "x": 100, "y": 200},
+        [
+            "double_click(<ref>(100, 200)</ref>)",
+            "double_click((100, 200))",
+            "double_click(100, 200)",
+        ],
+    ),
+    (
+        {"type": "move", "x": 5, "y": 719},
+        [
+            "move(<ref>(5, 719)</ref>)",
+            "move((5, 719))",
+            "move(5, 719)",
+        ],
+    ),
+    (
+        {"type": "drag", "path": [{"x": 10, "y": 20}, {"x": 300, "y": 400}]},
+        [
+            "drag(<ref>(10, 20)</ref> -> <ref>(300, 400)</ref>)",
+            "drag((10, 20) -> (300, 400))",
+            "drag(10, 20 -> 300, 400)",
+            "drag((10, 20), (300, 400))",
+            "drag(10, 20, 300, 400)",
+            "drag(<ref>(10, 20)</ref> -> 300, 400)",
+            "drag(10, 20 -> <ref>(300, 400)</ref>)",
+        ],
+    ),
+    (
+        {"type": "scroll", "x": 640, "y": 360, "scroll_x": 0, "scroll_y": 500},
+        [
+            "scroll(<ref>(640, 360)</ref>, scrollX=0, scrollY=500)",
+            "scroll(<ref>(640, 360)</ref>)",
+            "scroll((640, 360), scrollY=500)",
+            "scroll(640, 360)",
+            "scroll(640, 360, 0, 500)",
+            "scroll((640, 360), scroll_x=0, scroll_y=500)",
+            "scroll((640, 360), dx=0, dy=500)",
+        ],
+    ),
+    (
+        {"type": "scroll", "x": 100, "y": 100, "scroll_x": -50, "scroll_y": -500},
+        [
+            "scroll(<ref>(100, 100)</ref>, scrollX=-50, scrollY=-500)",
+            "scroll(100, 100, -50, -500)",
+        ],
+    ),
+    (
+        {"type": "type", "text": "hello, world"},
+        [
+            'type("hello, world")',
+            "type('hello, world')",
+        ],
+    ),
+    (
+        {"type": "keypress", "keys": ["Enter"]},
+        [
+            'keypress(["Enter"])',
+            "keypress(['Enter'])",
+            'keypress("Enter")',
+            "keypress(Enter)",
+        ],
+    ),
+    (
+        {"type": "keypress", "keys": ["Control", "a"]},
+        [
+            'keypress(["Control", "a"])',
+            "keypress(Control, a)",
+            "keypress(Control+a)",
+        ],
+    ),
     ({"type": "wait"}, ["wait()", "wait", "wait( )"]),
     ({"type": "done"}, ["done()", "done"]),
     ({"type": "screenshot"}, ["screenshot()", "screenshot"]),
-    ({"type": "navigate", "url": "https://example.com/a?q=1"}, [
-        'navigate("https://example.com/a?q=1")',
-        "navigate('https://example.com/a?q=1')",
-        "navigate(https://example.com/a?q=1)",
-        'navigate(url="https://example.com/a?q=1")',
-    ]),
-    ({"type": "handoff", "reason": "login"}, [
-        "handoff(reason=login)",
-        "handoff(login)",
-        'handoff("login")',
-        'handoff(reason="login")',
-    ]),
-    ({"type": "confirm", "risk_category": "purchase",
-      "proposed_action": {"type": "click", "x": 200, "y": 300, "button": "left"}}, [
-        "confirm(propose=click(<ref>(200, 300)</ref>), risk=purchase)",
-        "confirm(propose=click(200, 300), risk=purchase)",
-        'confirm(propose=click((200, 300)), risk="purchase")',
-    ]),
+    (
+        {"type": "navigate", "url": "https://example.com/a?q=1"},
+        [
+            'navigate("https://example.com/a?q=1")',
+            "navigate('https://example.com/a?q=1')",
+            "navigate(https://example.com/a?q=1)",
+            'navigate(url="https://example.com/a?q=1")',
+        ],
+    ),
+    (
+        {"type": "handoff", "reason": "login"},
+        [
+            "handoff(reason=login)",
+            "handoff(login)",
+            'handoff("login")',
+            'handoff(reason="login")',
+        ],
+    ),
+    (
+        {
+            "type": "confirm",
+            "risk_category": "purchase",
+            "proposed_action": {"type": "click", "x": 200, "y": 300, "button": "left"},
+        },
+        [
+            "confirm(propose=click(<ref>(200, 300)</ref>), risk=purchase)",
+            "confirm(propose=click(200, 300), risk=purchase)",
+            'confirm(propose=click((200, 300)), risk="purchase")',
+        ],
+    ),
 ]
 
 # Shapes rejected because they have more than one reading, not because they are unfamiliar.
@@ -258,16 +322,20 @@ def check_grammar_matrix():
                 assert parsed.kind in ("prefixed", "bare"), f"{line!r} classified {parsed.kind}"
                 # Whitespace is not a meaningful deviation, so canonicality ignores it.
                 is_canonical = "".join(line.split()) == "".join(canonical.split())
-                assert bool(parsed.deviations) != is_canonical, \
+                assert bool(parsed.deviations) != is_canonical, (
                     f"{line!r} deviations={parsed.deviations} but canonical={is_canonical}"
+                )
                 variants += 1
 
     for shape, why in AMBIGUOUS_SHAPES:
         parsed = classify_action_line(shape)
-        assert parsed.action is None and parsed.kind == "malformed", \
+        assert parsed.action is None and parsed.kind == "malformed", (
             f"{shape!r} was accepted as {parsed.action} but is ambiguous: {why}"
-    logger.info(f"grammar matrix OK: {variants} accepted spellings over "
-                f"{len(GRAMMAR_MATRIX)} action shapes, {len(AMBIGUOUS_SHAPES)} ambiguous rejected")
+        )
+    logger.info(
+        f"grammar matrix OK: {variants} accepted spellings over "
+        f"{len(GRAMMAR_MATRIX)} action shapes, {len(AMBIGUOUS_SHAPES)} ambiguous rejected"
+    )
 
 
 def check_line_discipline():
@@ -287,8 +355,9 @@ def check_line_discipline():
         "First, click(217, 925) to focus it.",
     ]:
         parsed = classify_action_line(near_miss)
-        assert (parsed.action, parsed.kind) == (None, "malformed"), \
+        assert (parsed.action, parsed.kind) == (None, "malformed"), (
             f"{near_miss!r} -> {parsed.kind}, expected malformed"
+        )
     logger.info("line discipline OK (prose with a call is malformed, narration is ignored)")
 
 
@@ -296,7 +365,8 @@ def check_live_response_shapes():
     """The three surface variants the live baseline actually emitted, end to end through a step."""
     step = parse_student_output(
         "I have clicked into the search bar. The next step is to type a query.\n</think>\n\n"
-        'type("UK visa requirements for American citizens working in healthcare")')
+        'type("UK visa requirements for American citizens working in healthcare")'
+    )
     assert step.actions == [
         {"type": "type", "text": "UK visa requirements for American citizens working in healthcare"}
     ], step.actions
@@ -306,15 +376,13 @@ def check_live_response_shapes():
 
     bare_coords = parse_student_output("<think>t</think>\nclick(217, 925)")
     assert bare_coords.actions == [{"type": "click", "x": 217, "y": 925, "button": "left"}]
-    assert set(bare_coords.deviations) == {"missing_prefix", "bare_coords", "default_kwargs"}, \
-        bare_coords.deviations
+    assert set(bare_coords.deviations) == {"missing_prefix", "bare_coords", "default_kwargs"}, bare_coords.deviations
 
     no_parens = parse_student_output("<think>t</think>\naction: wait")
     assert no_parens.actions == [{"type": "wait"}], no_parens.actions
     assert no_parens.deviations == {"missing_parens": 1}, no_parens.deviations
 
-    mixed = parse_student_output(
-        "<think>t</think>\naction: click(<ref>(10, 20)</ref>, button=left)\nwait()\nnonsense(")
+    mixed = parse_student_output("<think>t</think>\naction: click(<ref>(10, 20)</ref>, button=left)\nwait()\nnonsense(")
     assert [a["type"] for a in mixed.actions] == ["click", "wait"], mixed.actions
     assert mixed.canonical_actions == 1, mixed.canonical_actions
     assert mixed.deviations == {"missing_prefix": 1}, mixed.deviations
@@ -323,7 +391,8 @@ def check_live_response_shapes():
     strict = parse_student_output(step.raw, tolerant_grammar=False)
     assert strict.parse_failed and strict.malformed_lines == 1, strict
     strict_ok = parse_student_output(
-        "<think>t</think>\naction: click(<ref>(10, 20)</ref>, button=left)", tolerant_grammar=False)
+        "<think>t</think>\naction: click(<ref>(10, 20)</ref>, button=left)", tolerant_grammar=False
+    )
     assert strict_ok.canonical_actions == 1 and not strict_ok.parse_failed, strict_ok
     logger.info("live response shapes OK (bare prefix, bare coords, missing parens, strict mode)")
 
@@ -335,8 +404,9 @@ def check_canonical_form_rate():
     assert metrics["canonical_form_rate"] == 1.0, metrics
     assert metrics["action_form_deviations"] == {}, metrics
 
-    mixed = [EpisodeRecordFactory(actions_parsed=8, actions_canonical=2,
-                                  deviations={"missing_prefix": 6, "bare_coords": 4})]
+    mixed = [
+        EpisodeRecordFactory(actions_parsed=8, actions_canonical=2, deviations={"missing_prefix": 6, "bare_coords": 4})
+    ]
     metrics = compute_metrics(mixed)
     assert metrics["canonical_form_rate"] == 0.25, metrics
     assert metrics["action_form_deviations"] == {"missing_prefix": 6, "bare_coords": 4}, metrics
@@ -345,18 +415,27 @@ def check_canonical_form_rate():
 
 
 def EpisodeRecordFactory(actions_parsed, actions_canonical, deviations):
-    return EpisodeRecord(task_id="t", instruction="i", start_url="https://x/", domain="d",
-                         outcome="completed", model_steps=4, actions_parsed=actions_parsed,
-                         actions_canonical=actions_canonical, form_deviations=deviations)
+    return EpisodeRecord(
+        task_id="t",
+        instruction="i",
+        start_url="https://x/",
+        domain="d",
+        outcome="completed",
+        model_steps=4,
+        actions_parsed=actions_parsed,
+        actions_canonical=actions_canonical,
+        form_deviations=deviations,
+    )
 
 
 def check_parser_tolerance():
     """Multi-action steps, code fences and a missing think block all still parse."""
     parsed = parse_student_output(
         "<think>I need to search.</think>\n"
-        'action: click(<ref>(100, 200)</ref>, button=left)\n'
+        "action: click(<ref>(100, 200)</ref>, button=left)\n"
         'action: type("laptop")\n'
-        'action: keypress(["Enter"])')
+        'action: keypress(["Enter"])'
+    )
     assert parsed.think == "I need to search.", parsed.think
     assert [a["type"] for a in parsed.actions] == ["click", "type", "keypress"], parsed.actions
     assert parsed.canonical_actions == 3 and parsed.deviations == {}, parsed
@@ -376,26 +455,31 @@ def check_parser_tolerance():
 
 def check_coordinate_scaling():
     """normalized_1000 -> viewport pixels for every coordinate-bearing action, drag endpoints included."""
-    assert scale_action({"type": "click", "x": 353, "y": 968, "button": "left"}, "normalized_1000") \
-        == {"type": "click", "x": 452, "y": 697, "button": "left"}
+    assert scale_action({"type": "click", "x": 353, "y": 968, "button": "left"}, "normalized_1000") == {
+        "type": "click",
+        "x": 452,
+        "y": 697,
+        "button": "left",
+    }
     # The eval scales with train_qwen's own mapping, and the EXECUTED pixel action reads back in model space.
     assert (452, 697) == to_viewport_coords(353, 968)
     executed = scale_action({"type": "click", "x": 353, "y": 968, "button": "left"}, "normalized_1000")
     assert history_entries_for_step({"actions": [executed]}) == ["click(353, 968)"]
-    executed_drag = scale_action({"type": "drag", "path": [{"x": 100, "y": 200}, {"x": 900, "y": 800}]},
-                                 "normalized_1000")
+    executed_drag = scale_action(
+        {"type": "drag", "path": [{"x": 100, "y": 200}, {"x": 900, "y": 800}]}, "normalized_1000"
+    )
     assert history_entries_for_step({"actions": [executed_drag]}) == ["drag(100,200 -> 900,800)"]
     assert outside_coord_space(1100, 500, "normalized_1000") and not outside_coord_space(1000, 1000, "normalized_1000")
     assert outside_coord_space(1000, 1000, "viewport_abs") and not outside_coord_space(1279, 719, "viewport_abs")
-    assert scale_action({"type": "double_click", "x": 500, "y": 500}, "normalized_1000") \
-        == {"type": "double_click", "x": 640, "y": 360}
-    assert scale_action({"type": "move", "x": 0, "y": 999}, "normalized_1000") \
-        == {"type": "move", "x": 0, "y": 719}
-    scrolled = scale_action(
-        {"type": "scroll", "x": 500, "y": 500, "scroll_x": 0, "scroll_y": 500}, "normalized_1000")
+    assert scale_action({"type": "double_click", "x": 500, "y": 500}, "normalized_1000") == {
+        "type": "double_click",
+        "x": 640,
+        "y": 360,
+    }
+    assert scale_action({"type": "move", "x": 0, "y": 999}, "normalized_1000") == {"type": "move", "x": 0, "y": 719}
+    scrolled = scale_action({"type": "scroll", "x": 500, "y": 500, "scroll_x": 0, "scroll_y": 500}, "normalized_1000")
     assert scrolled == {"type": "scroll", "x": 640, "y": 360, "scroll_x": 0, "scroll_y": 500}, scrolled
-    dragged = scale_action(
-        {"type": "drag", "path": [{"x": 100, "y": 200}, {"x": 900, "y": 800}]}, "normalized_1000")
+    dragged = scale_action({"type": "drag", "path": [{"x": 100, "y": 200}, {"x": 900, "y": 800}]}, "normalized_1000")
     assert dragged == {"type": "drag", "path": [{"x": 128, "y": 144}, {"x": 1152, "y": 576}]}, dragged
 
     for action in ROUND_TRIP_ACTIONS:
@@ -412,7 +496,8 @@ def check_coordinate_scaling():
 def check_prefilled_think():
     """A prefilled `<think>` leaves only the closing tag; the reasoning must still be captured."""
     parsed = parse_student_output(
-        "The search bar is visible at the bottom.\n</think>\n\naction: click(<ref>(353, 968)</ref>)")
+        "The search bar is visible at the bottom.\n</think>\n\naction: click(<ref>(353, 968)</ref>)"
+    )
     assert parsed.think == "The search bar is visible at the bottom.", parsed.think
     assert parsed.actions == [{"type": "click", "x": 353, "y": 968, "button": "left"}], parsed.actions
     logger.info("prefilled <think> handling OK")
@@ -476,11 +561,17 @@ def check_prompt_format():
     same_url, new_url = "https://x.test/", "https://x.test/projects/new"
     click = {"type": "click", "x": 640, "y": 360, "button": "left"}
     typed = {"type": "type", "text": "hello"}
-    history = (history_entries_for_step({"actions": [click]}, observed_effect(cur, cur, same_url, same_url))
-               + history_entries_for_step({"actions": [click, typed]}, observed_effect(cur, prev, same_url, new_url))
-               + history_entries_for_step({"actions": [click]}, observed_effect(cur, cur, same_url, new_url)))
-    assert history == ["click(500, 500) [no change]", "click(500, 500)", 'type("hello") -> /projects/new',
-                       "click(500, 500) [no change] -> /projects/new"], history
+    history = (
+        history_entries_for_step({"actions": [click]}, observed_effect(cur, cur, same_url, same_url))
+        + history_entries_for_step({"actions": [click, typed]}, observed_effect(cur, prev, same_url, new_url))
+        + history_entries_for_step({"actions": [click]}, observed_effect(cur, cur, same_url, new_url))
+    )
+    assert history == [
+        "click(500, 500) [no change]",
+        "click(500, 500)",
+        'type("hello") -> /projects/new',
+        "click(500, 500) [no change] -> /projects/new",
+    ], history
     later = build_student_messages(GOLDEN_INSTRUCTION, history, cur, prev)
     assert _flatten_openai(later[1]["content"]) == golden["observations"]["annotated_stepn"]["text"]
     assert [im.size for im in _decode_images(later[1]["content"])] == [PREV_IMAGE_SIZE, (4, 4)]
@@ -529,29 +620,29 @@ def check_block_detection():
     assert detect_block("https://shop.example/x", "Please complete the CAPTCHA to continue") == "captcha"
     assert detect_block("https://x/y", "Checking your browser before accessing") == "cloudflare"
     assert detect_block("https://x/y", "Pardon Our Interruption") == "waf_block"
-    assert detect_block("https://x/y", "## Interactive elements\n[1] button \"Add to cart\"") is None
+    assert detect_block("https://x/y", '## Interactive elements\n[1] button "Add to cart"') is None
 
     # Every wording below was scored as a MODEL failure in the 2026-08-31 runs.
     for snapshot, expected in (
-            ("This page is not available in your area", "geo_block"),
-            ("Your request is coming from a country which we do not currently support", "geo_block"),
-            ("ERROR: The request could not be satisfied. Request blocked.", "waf_block"),
-            ("Generated by cloudfront (CloudFront)", "waf_block"),
-            ("Access temporarily restricted", "waf_block"),
-            ("Performing security verification...", "cloudflare"),
-            ("Just a moment...", "cloudflare"),
-            ("Verifying you are human. This may take a few seconds.", "human_verification"),
-            ("We're sorry, there seems to be a problem with our website", "site_error"),
-            ("This site is temporarily unavailable", "site_error"),
+        ("This page is not available in your area", "geo_block"),
+        ("Your request is coming from a country which we do not currently support", "geo_block"),
+        ("ERROR: The request could not be satisfied. Request blocked.", "waf_block"),
+        ("Generated by cloudfront (CloudFront)", "waf_block"),
+        ("Access temporarily restricted", "waf_block"),
+        ("Performing security verification...", "cloudflare"),
+        ("Just a moment...", "cloudflare"),
+        ("Verifying you are human. This may take a few seconds.", "human_verification"),
+        ("We're sorry, there seems to be a problem with our website", "site_error"),
+        ("This site is temporarily unavailable", "site_error"),
     ):
         assert detect_block("https://x/y", snapshot) == expected, (snapshot, detect_block("https://x/y", snapshot))
 
     # Ordinary page copy that must NOT drop an episode out of the success denominator.
     for snapshot in (
-            "This item is temporarily unavailable in your size",
-            "Sorry, this product is not available in this color",
-            "Country: United States. Region blocked list: none",
-            "Read our article: how bot detection works",
+        "This item is temporarily unavailable in your size",
+        "Sorry, this product is not available in this color",
+        "Country: United States. Region blocked list: none",
+        "Read our article: how bot detection works",
     ):
         assert detect_block("https://x/y", snapshot) is None, snapshot
     logger.info("block detection OK")
@@ -559,8 +650,19 @@ def check_block_detection():
 
 def check_browser_backends():
     """Every egress backend must satisfy the surface the driver calls, or it fails mid-run."""
-    surface = ["read_file", "write_file", "start_background", "wait_for_port", "http_json",
-               "exec_command", "copy_out", "put_bytes", "start", "stop", "remaining_seconds"]
+    surface = [
+        "read_file",
+        "write_file",
+        "start_background",
+        "wait_for_port",
+        "http_json",
+        "exec_command",
+        "copy_out",
+        "put_bytes",
+        "start",
+        "stop",
+        "remaining_seconds",
+    ]
     for name, factory in BROWSER_BACKENDS.items():
         cfg = EvalConfig(browser_backend=name, browser_host="example.test:2222")
         built = factory(cfg)
@@ -572,8 +674,7 @@ def check_browser_backends():
     # must not silently compare as the same harness.
     source = TASK_SOURCES["online_mind2web"]
     local = harness_fingerprint(EvalConfig(browser_backend="docker", egress_note="UA/Lviv"), source, {})
-    rented = harness_fingerprint(
-        EvalConfig(browser_backend="vast_residential", egress_note="US/NYC"), source, {})
+    rented = harness_fingerprint(EvalConfig(browser_backend="vast_residential", egress_note="US/NYC"), source, {})
     assert local["egress"] != rented["egress"], "egress must differ in the fingerprint"
     assert local["browser_backend"] != rented["browser_backend"]
     logger.info(f"browser backends OK ({', '.join(sorted(BROWSER_BACKENDS))}); egress is a parity key")
@@ -582,21 +683,50 @@ def check_browser_backends():
 def check_report_rendering():
     """Both renderers must run on a synthetic payload, or a crash surfaces only after a full run."""
     records = [
-        EpisodeRecord(task_id="a", instruction="i", start_url="https://a/", domain="shop",
-                      outcome="completed", verified_success=True, model_steps=8, done_emitted=True,
-                      emitted_coords=8, actions_parsed=10, actions_canonical=6,
-                      form_deviations={"missing_prefix": 4}),
-        EpisodeRecord(task_id="b", instruction="i", start_url="https://b/", domain="travel",
-                      outcome="site_blocked", block_reason="captcha", model_steps=2),
-        EpisodeRecord(task_id="c", instruction="i", start_url="https://c/", domain="shop",
-                      outcome="parse_failure_abort", model_steps=3, parse_failure_steps=3),
+        EpisodeRecord(
+            task_id="a",
+            instruction="i",
+            start_url="https://a/",
+            domain="shop",
+            outcome="completed",
+            verified_success=True,
+            model_steps=8,
+            done_emitted=True,
+            emitted_coords=8,
+            actions_parsed=10,
+            actions_canonical=6,
+            form_deviations={"missing_prefix": 4},
+        ),
+        EpisodeRecord(
+            task_id="b",
+            instruction="i",
+            start_url="https://b/",
+            domain="travel",
+            outcome="site_blocked",
+            block_reason="captcha",
+            model_steps=2,
+        ),
+        EpisodeRecord(
+            task_id="c",
+            instruction="i",
+            start_url="https://c/",
+            domain="shop",
+            outcome="parse_failure_abort",
+            model_steps=3,
+            parse_failure_steps=3,
+        ),
     ]
     cfg = EvalConfig(label="before", model="qwen", endpoint="http://x/v1")
     results = {
-        "run_id": "before_x", "label": "before", "started_at": "t0", "finished_at": "t1",
-        "config": asdict(cfg), "task_provenance": {},
+        "run_id": "before_x",
+        "label": "before",
+        "started_at": "t0",
+        "finished_at": "t1",
+        "config": asdict(cfg),
+        "task_provenance": {},
         "harness": harness_fingerprint(cfg, TASK_SOURCES["online_mind2web"], {}),
-        "aborted_reason": "", "episodes": [asdict(r) for r in records],
+        "aborted_reason": "",
+        "episodes": [asdict(r) for r in records],
         "metrics": compute_metrics(records),
     }
     metrics = results["metrics"]
@@ -611,8 +741,9 @@ def check_report_rendering():
     assert "form deviations | missing_prefix 4" in report, report
     assert metrics["canonical_form_rate"] == 0.6, metrics
     assert results["harness"]["action_grammar"] == "tolerant", results["harness"]
-    assert "action_grammar" not in EXPECTED_TO_DIFFER_KEYS, \
+    assert "action_grammar" not in EXPECTED_TO_DIFFER_KEYS, (
         "grammar tolerance is a harness property — a parity key, not an expected difference"
+    )
     assert "action_grammar" not in PARITY_EXEMPT_KEYS, PARITY_EXEMPT_KEYS
     # The observation layout is a parity key: a run prompted in sft2 is not comparable to an sft3 run.
     harness = results["harness"]
@@ -655,29 +786,38 @@ def check_coord_space_diagnosis():
     """The run-level 'is this even measuring the model?' banner."""
     suspect = coord_space_diagnosis(
         {"coord_space": "viewport_abs"},
-        {"emitted_coords": 36, "emitted_out_of_viewport": 36, "emitted_out_of_viewport_rate": 1.0})
+        {"emitted_coords": 36, "emitted_out_of_viewport": 36, "emitted_out_of_viewport_rate": 1.0},
+    )
     assert "COORDINATE SPACE SUSPECT" in suspect and "--coord-space normalized_1000" in suspect, suspect
     # The inverse: an sft-v1/v2 checkpoint answering in pixels while scored as normalized_1000.
     inverse = coord_space_diagnosis(
         {"coord_space": "normalized_1000"},
-        {"emitted_coords": 36, "emitted_out_of_viewport": 36, "emitted_out_of_viewport_rate": 1.0})
+        {"emitted_coords": 36, "emitted_out_of_viewport": 36, "emitted_out_of_viewport_rate": 1.0},
+    )
     assert "COORDINATE SPACE SUSPECT" in inverse and "--coord-space viewport_abs" in inverse, inverse
     assert "sft-v1/v2" in inverse, inverse
     assert not coord_space_diagnosis(
         {"coord_space": "viewport_abs"},
-        {"emitted_coords": 40, "emitted_out_of_viewport": 1, "emitted_out_of_viewport_rate": 0.025})
+        {"emitted_coords": 40, "emitted_out_of_viewport": 1, "emitted_out_of_viewport_rate": 0.025},
+    )
     assert not coord_space_diagnosis(
         {"coord_space": "normalized_1000"},
-        {"emitted_coords": 40, "emitted_out_of_viewport": 1, "emitted_out_of_viewport_rate": 0.025})
+        {"emitted_coords": 40, "emitted_out_of_viewport": 1, "emitted_out_of_viewport_rate": 0.025},
+    )
     logger.info("coordinate-space diagnosis OK (both directions)")
 
 
 def _write_mock_trajectory(path: Path, start_url: str) -> Path:
     trajectory = {
-        "task_id": "smoke", "instruction": SMOKE_INSTRUCTION, "start_url": start_url,
-        "steps": [{"step": i + 1, "screenshot": "", "thought": thought, "actions": [action]}
-                  for i, (action, thought) in enumerate(REPLAY_STEPS)],
-        "total_steps": len(REPLAY_STEPS), "success": True,
+        "task_id": "smoke",
+        "instruction": SMOKE_INSTRUCTION,
+        "start_url": start_url,
+        "steps": [
+            {"step": i + 1, "screenshot": "", "thought": thought, "actions": [action]}
+            for i, (action, thought) in enumerate(REPLAY_STEPS)
+        ],
+        "total_steps": len(REPLAY_STEPS),
+        "success": True,
     }
     path.write_text(json.dumps(trajectory, indent=2))
     return path
@@ -697,10 +837,14 @@ class FixedActionStudent:
 
 
 def _to_normalized_1000(action: dict) -> dict:
-    to_norm = lambda x, y: (round(x / 1280 * 1000), round(y / 720 * 1000))
+    def to_norm(x, y):
+        return (round(x / 1280 * 1000), round(y / 720 * 1000))
+
     if action.get("type") == "drag":
-        return {**action, "path": [dict(zip(("x", "y"), to_norm(p["x"], p["y"])))
-                                   for p in action["path"]]}
+        return {
+            **action,
+            "path": [dict(zip(("x", "y"), to_norm(p["x"], p["y"]), strict=False)) for p in action["path"]],
+        }
     if "x" not in action:
         return action
     x, y = to_norm(action["x"], action["y"])
@@ -726,26 +870,50 @@ EFFECT_STEPS = [
     ({"type": "navigate", "url": "http://127.0.0.1:3000/index.html"}, "Open the page by its file name."),
     ({"type": "wait"}, "Give it a moment."),
 ]
-EFFECT_HISTORY = ["wait [no change]", "scroll(500, 500)",
-                  "navigate(http://127.0.0.1:3000/index.html) -> /index.html", "wait [no change]"]
+EFFECT_HISTORY = [
+    "wait [no change]",
+    "scroll(500, 500)",
+    "navigate(http://127.0.0.1:3000/index.html) -> /index.html",
+    "wait [no change]",
+]
 
 
 async def _run_effect_episode(browser, tmp_dir: Path, start_url: str):
     """History entries come from EXECUTED actions with the effect the next screenshot showed; two images from step 2."""
     trajectory = {
-        "task_id": "effect", "instruction": SMOKE_INSTRUCTION, "start_url": start_url,
-        "steps": [{"step": i + 1, "screenshot": "", "thought": thought, "actions": [action]}
-                  for i, (action, thought) in enumerate(EFFECT_STEPS)],
-        "total_steps": len(EFFECT_STEPS), "success": True,
+        "task_id": "effect",
+        "instruction": SMOKE_INSTRUCTION,
+        "start_url": start_url,
+        "steps": [
+            {"step": i + 1, "screenshot": "", "thought": thought, "actions": [action]}
+            for i, (action, thought) in enumerate(EFFECT_STEPS)
+        ],
+        "total_steps": len(EFFECT_STEPS),
+        "success": True,
     }
-    cfg = EvalConfig(task_source="held_out", label="effect", student="mock",
-                     max_steps=len(EFFECT_STEPS) + 3, judge=False, resume=False, coord_space="normalized_1000")
-    task = EvalTask(task_id="effect", instruction=SMOKE_INSTRUCTION, start_url=start_url,
-                    domain="smoke", reference_length=len(EFFECT_STEPS), source="smoke")
+    cfg = EvalConfig(
+        task_source="held_out",
+        label="effect",
+        student="mock",
+        max_steps=len(EFFECT_STEPS) + 3,
+        judge=False,
+        resume=False,
+        coord_space="normalized_1000",
+    )
+    task = EvalTask(
+        task_id="effect",
+        instruction=SMOKE_INSTRUCTION,
+        start_url=start_url,
+        domain="smoke",
+        reference_length=len(EFFECT_STEPS),
+        source="smoke",
+    )
     student = RecordingStudent(ReplayStudent(trajectory))
     record = await run_episode(browser, student, task, cfg, tmp_dir / "episodes" / "task_effect", cfg.max_steps)
-    logger.info(f"effect episode: outcome={record.outcome} executed={record.actions_executed} "
-                f"driver_errors={record.driver_errors}")
+    logger.info(
+        f"effect episode: outcome={record.outcome} executed={record.actions_executed} "
+        f"driver_errors={record.driver_errors}"
+    )
     assert record.outcome == "completed", f"expected completed, got {record.outcome}: {record.error}"
     assert record.actions_executed == len(EFFECT_STEPS), record.actions_executed
     assert len(student.seen) == len(EFFECT_STEPS) + 1, len(student.seen)
@@ -770,18 +938,31 @@ async def _run_effect_episode(browser, tmp_dir: Path, start_url: str):
 
 async def _run_stuck_episode(browser, tmp_dir: Path, start_url: str):
     """A model answering in the wrong space must be abandoned in a few steps, not a full cap."""
-    cfg = EvalConfig(task_source="held_out", label="stuck", student="mock", max_steps=30,
-                     judge=False, resume=False, coord_space="viewport_abs",
-                     max_unproductive_steps=5)
-    task = EvalTask(task_id="stuck", instruction=SMOKE_INSTRUCTION, start_url=start_url,
-                    domain="smoke", reference_length=9, source="smoke")
+    cfg = EvalConfig(
+        task_source="held_out",
+        label="stuck",
+        student="mock",
+        max_steps=30,
+        judge=False,
+        resume=False,
+        coord_space="viewport_abs",
+        max_unproductive_steps=5,
+    )
+    task = EvalTask(
+        task_id="stuck",
+        instruction=SMOKE_INSTRUCTION,
+        start_url=start_url,
+        domain="smoke",
+        reference_length=9,
+        source="smoke",
+    )
     student = FixedActionStudent(
-        "The search bar is visible at the bottom of the screen.\n</think>\n\n"
-        "action: click(<ref>(353, 968)</ref>)")
-    record = await run_episode(browser, student, task, cfg,
-                               tmp_dir / "episodes" / "task_stuck", cfg.max_steps)
-    logger.info(f"stuck episode: outcome={record.outcome} steps={record.model_steps} "
-                f"out_of_bounds={record.out_of_bounds}")
+        "The search bar is visible at the bottom of the screen.\n</think>\n\naction: click(<ref>(353, 968)</ref>)"
+    )
+    record = await run_episode(browser, student, task, cfg, tmp_dir / "episodes" / "task_stuck", cfg.max_steps)
+    logger.info(
+        f"stuck episode: outcome={record.outcome} steps={record.model_steps} out_of_bounds={record.out_of_bounds}"
+    )
     assert record.outcome == "stuck", f"expected stuck, got {record.outcome}"
     assert record.model_steps == 5, f"aborted after {record.model_steps} steps, expected 5"
     assert record.actions_executed == 0 and record.out_of_bounds == 5, record
@@ -792,23 +973,48 @@ async def _run_stuck_episode(browser, tmp_dir: Path, start_url: str):
 async def _run_normalized_episode(browser, tmp_dir: Path, start_url: str) -> Path:
     """The SAME trajectory expressed in normalized_1000 must execute identically."""
     mock_path = tmp_dir / "mock_normalized.json"
-    mock_path.write_text(json.dumps({
-        "task_id": "normalized", "instruction": SMOKE_INSTRUCTION, "start_url": start_url,
-        "steps": [{"step": i + 1, "screenshot": "", "thought": thought,
-                   "actions": [_to_normalized_1000(action)]}
-                  for i, (action, thought) in enumerate(REPLAY_STEPS)],
-        "total_steps": len(REPLAY_STEPS), "success": True,
-    }, indent=2))
-    cfg = EvalConfig(task_source="held_out", label="normalized", student="mock",
-                     mock_trajectory=str(mock_path), max_steps=len(REPLAY_STEPS) + 3,
-                     judge=False, resume=False, coord_space="normalized_1000")
-    task = EvalTask(task_id="normalized", instruction=SMOKE_INSTRUCTION, start_url=start_url,
-                    domain="smoke", reference_length=len(REPLAY_STEPS), source="smoke")
+    mock_path.write_text(
+        json.dumps(
+            {
+                "task_id": "normalized",
+                "instruction": SMOKE_INSTRUCTION,
+                "start_url": start_url,
+                "steps": [
+                    {"step": i + 1, "screenshot": "", "thought": thought, "actions": [_to_normalized_1000(action)]}
+                    for i, (action, thought) in enumerate(REPLAY_STEPS)
+                ],
+                "total_steps": len(REPLAY_STEPS),
+                "success": True,
+            },
+            indent=2,
+        )
+    )
+    cfg = EvalConfig(
+        task_source="held_out",
+        label="normalized",
+        student="mock",
+        mock_trajectory=str(mock_path),
+        max_steps=len(REPLAY_STEPS) + 3,
+        judge=False,
+        resume=False,
+        coord_space="normalized_1000",
+    )
+    task = EvalTask(
+        task_id="normalized",
+        instruction=SMOKE_INSTRUCTION,
+        start_url=start_url,
+        domain="smoke",
+        reference_length=len(REPLAY_STEPS),
+        source="smoke",
+    )
     episode_dir = tmp_dir / "episodes" / "task_normalized"
-    record = await run_episode(browser, ReplayStudent(json.loads(mock_path.read_text())), task,
-                               cfg, episode_dir, cfg.max_steps)
-    logger.info(f"normalized episode: outcome={record.outcome} executed={record.actions_executed} "
-                f"driver_errors={record.driver_errors}")
+    record = await run_episode(
+        browser, ReplayStudent(json.loads(mock_path.read_text())), task, cfg, episode_dir, cfg.max_steps
+    )
+    logger.info(
+        f"normalized episode: outcome={record.outcome} executed={record.actions_executed} "
+        f"driver_errors={record.driver_errors}"
+    )
     assert record.outcome == "completed", f"expected completed, got {record.outcome}: {record.error}"
     assert record.actions_executed == len(REPLAY_STEPS), record.actions_executed
     assert record.driver_errors == 0 and record.out_of_bounds == 0, record
@@ -824,27 +1030,38 @@ async def run_episode_smoke(judge: bool) -> bool:
         mock_path = _write_mock_trajectory(tmp_dir / "mock_trajectory.json", start_url)
         # REPLAY_STEPS are pixel coordinates read off the page layout, so this replay is a viewport_abs student.
         cfg = EvalConfig(
-            task_source="held_out", label="smoke", student="mock", coord_space="viewport_abs",
-            mock_trajectory=str(mock_path), max_steps=len(REPLAY_STEPS) + 3,
-            judge=judge, judge_mid_screenshots=2, episode_timeout_s=600, resume=False,
+            task_source="held_out",
+            label="smoke",
+            student="mock",
+            coord_space="viewport_abs",
+            mock_trajectory=str(mock_path),
+            max_steps=len(REPLAY_STEPS) + 3,
+            judge=judge,
+            judge_mid_screenshots=2,
+            episode_timeout_s=600,
+            resume=False,
         )
-        task = EvalTask(task_id="smoke", instruction=SMOKE_INSTRUCTION, start_url=start_url,
-                        website="127.0.0.1:3000", domain="smoke",
-                        reference_length=len(REPLAY_STEPS), source="smoke")
+        task = EvalTask(
+            task_id="smoke",
+            instruction=SMOKE_INSTRUCTION,
+            start_url=start_url,
+            website="127.0.0.1:3000",
+            domain="smoke",
+            reference_length=len(REPLAY_STEPS),
+            source="smoke",
+        )
 
         browser = EvalBrowser(cfg, "student_eval_smoke")
         try:
             await browser.ensure()
             browser.sandbox.exec_command("mkdir -p /workspace/site")
             browser.sandbox.write_file("/workspace/site/index.html", TEST_PAGE)
-            browser.sandbox.start_background(
-                "cd /workspace/site && python3 -m http.server 3000", "/workspace/site.log")
+            browser.sandbox.start_background("cd /workspace/site && python3 -m http.server 3000", "/workspace/site.log")
             assert browser.sandbox.wait_for_port(3000, 30), "test page server did not start"
 
             episode_dir = tmp_dir / "episodes" / "task_smoke"
             student = ReplayStudent(json.loads(mock_path.read_text()))
-            record = await run_episode(browser, student, task, cfg, episode_dir,
-                                       cfg.max_steps)
+            record = await run_episode(browser, student, task, cfg, episode_dir, cfg.max_steps)
             normalized_dir = await _run_normalized_episode(browser, tmp_dir, start_url)
             await _run_effect_episode(browser, tmp_dir, start_url)
             await _run_stuck_episode(browser, tmp_dir, start_url)
@@ -855,27 +1072,33 @@ async def run_episode_smoke(judge: bool) -> bool:
         for step in normalized["steps"]:
             for executed in step["actions"]:
                 if "x" in executed:
-                    assert not outside_viewport(executed["x"], executed["y"]), \
+                    assert not outside_viewport(executed["x"], executed["y"]), (
                         f"trajectory.json must record EXECUTED pixel coords, got {executed}"
+                    )
 
-        logger.info(f"episode outcome={record.outcome} steps={record.model_steps} "
-                    f"executed={record.actions_executed} driver_errors={record.driver_errors}")
+        logger.info(
+            f"episode outcome={record.outcome} steps={record.model_steps} "
+            f"executed={record.actions_executed} driver_errors={record.driver_errors}"
+        )
         assert record.outcome == "completed", f"expected completed, got {record.outcome}: {record.error}"
         assert record.done_emitted, "the replay student never emitted done()"
         assert record.parse_failure_steps == 0, f"{record.parse_failure_steps} parse failures on recorded actions"
         assert record.malformed_lines == 0, f"{record.malformed_lines} malformed action lines"
         assert record.driver_errors == 0, f"driver refused {record.driver_errors} actions: {record.error}"
-        assert record.actions_executed == len(REPLAY_STEPS), \
+        assert record.actions_executed == len(REPLAY_STEPS), (
             f"executed {record.actions_executed} of {len(REPLAY_STEPS)} actions"
+        )
         # A replay executed in the wrong coordinate space still "completes"; only the page outcome exposes it.
-        assert "hello Smokey" in record.final_snapshot, \
+        assert "hello Smokey" in record.final_snapshot, (
             f"the greeting never landed — a mis-scaled replay? final page text: {record.final_snapshot[:300]!r}"
+        )
 
         traj = json.loads((episode_dir / "trajectory.json").read_text())
         assert traj["total_steps"] == len(REPLAY_STEPS) + 1, traj["total_steps"]
         recorded_kinds = {a["type"] for s in traj["steps"] for a in s["actions"]}
-        assert {"click", "type", "keypress", "scroll", "move", "drag", "wait", "done"} <= recorded_kinds, \
+        assert {"click", "type", "keypress", "scroll", "move", "drag", "wait", "done"} <= recorded_kinds, (
             f"missing recorded action kinds: {recorded_kinds}"
+        )
         for step in traj["steps"]:
             assert (episode_dir / step["screenshot"]).exists(), f"missing {step['screenshot']}"
             assert step["thought"].strip(), f"step {step['step']} recorded no thought"
@@ -889,10 +1112,11 @@ async def run_episode_smoke(judge: bool) -> bool:
             return True
 
         await judge_episode(record, cfg)
-        logger.info(f"judge: success={record.verified_success} efficiency={record.efficiency} "
-                    f"reasoning={record.judge_reasoning}")
-        assert record.verified_success, \
-            f"the replayed episode did not verify: {record.judge_reasoning or 'no verdict'}"
+        logger.info(
+            f"judge: success={record.verified_success} efficiency={record.efficiency} "
+            f"reasoning={record.judge_reasoning}"
+        )
+        assert record.verified_success, f"the replayed episode did not verify: {record.judge_reasoning or 'no verdict'}"
         logger.info("episode + judge smoke OK")
         return True
 
@@ -919,10 +1143,10 @@ PARSER_CHECKS = [
 
 def main():
     parser = argparse.ArgumentParser(description="Self-test for the student eval harness")
-    parser.add_argument("--parser-only", action="store_true",
-                        help="run only the pure checks (no Docker, no Claude)")
-    parser.add_argument("--no-judge", action="store_true",
-                        help="run the replay episode but skip verification (no Claude calls)")
+    parser.add_argument("--parser-only", action="store_true", help="run only the pure checks (no Docker, no Claude)")
+    parser.add_argument(
+        "--no-judge", action="store_true", help="run the replay episode but skip verification (no Claude calls)"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

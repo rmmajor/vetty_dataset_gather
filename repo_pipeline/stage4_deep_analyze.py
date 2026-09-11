@@ -5,6 +5,7 @@ import os
 
 from claude_agent_sdk import ClaudeAgentOptions
 
+from repo_pipeline import schemas
 from repo_pipeline._processing import run_repo
 from repo_pipeline.agent_runner import run_agent
 from repo_pipeline.frameworks import all_interactive_actions, is_supported_profile
@@ -12,7 +13,6 @@ from repo_pipeline.llm_config import MODEL_FOR_REASONING
 from repo_pipeline.logging_utils import StageProgress, repo_logger
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, build_sandbox_mcp_server
-from repo_pipeline import schemas
 from repo_pipeline.schemas import (
     DeepAnalysis,
     FailureCategory,
@@ -158,8 +158,10 @@ def fit_veto(analysis: DeepAnalysis, shallow_scores: dict | None) -> str | None:
     and catches boilerplates / course repos / login-walled apps that the raw numbers rate highly."""
     if schemas.CAPTURE_MODE == "agent":
         if MIN_EST_TRAJECTORIES > 0 and analysis.estimated_trajectories < MIN_EST_TRAJECTORIES:
-            return (f"only ~{analysis.estimated_trajectories} usable trajectories "
-                    f"(< {MIN_EST_TRAJECTORIES}) — too little for a capture-worthy app")
+            return (
+                f"only ~{analysis.estimated_trajectories} usable trajectories "
+                f"(< {MIN_EST_TRAJECTORIES}) — too little for a capture-worthy app"
+            )
         if analysis.needs_external_backend and not can_self_host(analysis):
             return "needs an external backend/service the sandbox cannot provide"
 
@@ -190,8 +192,9 @@ Decide based on the evidence above. Output ONLY this JSON, nothing else:
 """
 
 
-async def judge_fit(registry: RepoRegistry, repo: dict, analysis: DeepAnalysis,
-                    shallow_scores: dict | None) -> tuple[bool, str]:
+async def judge_fit(
+    registry: RepoRegistry, repo: dict, analysis: DeepAnalysis, shallow_scores: dict | None
+) -> tuple[bool, str]:
     """Holistic, text-only 'is this a good fit?' verdict over an ALREADY-computed analysis — no
     clone, no sandbox. Renders the same judgment the stage-4 prompt now produces inline, for repos
     analyzed before that verdict existed (used by prune_unfit). Parse failure → (True, "") so a
@@ -247,7 +250,9 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
         shallow_scores_raw = repo.get("shallow_scores")
         shallow_scores_dict = {}
         if shallow_scores_raw:
-            shallow_scores_dict = json.loads(shallow_scores_raw) if isinstance(shallow_scores_raw, str) else shallow_scores_raw
+            shallow_scores_dict = (
+                json.loads(shallow_scores_raw) if isinstance(shallow_scores_raw, str) else shallow_scores_raw
+            )
             shallow_scores_summary = ", ".join(f"{k}={v}" for k, v in shallow_scores_dict.items())
             shallow_scores_summary += f" (total: {repo.get('shallow_total', '?')}/35)"
         else:
@@ -282,7 +287,9 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
         # Replay mode runs the repo's own tests, so frameworks with no capture hook (e.g. Java
         # Playwright, non-Python Selenium) are rejected before burning a stage-5 sandbox. Agent
         # mode never runs the tests — the framework is irrelevant to capture there.
-        if schemas.CAPTURE_MODE == "replay" and not is_supported_profile(analysis.test_framework, analysis.framework_language):
+        if schemas.CAPTURE_MODE == "replay" and not is_supported_profile(
+            analysis.test_framework, analysis.framework_language
+        ):
             raise QualityReject(
                 FailureCategory.QUALITY_GATE,
                 f"unsupported framework: {analysis.test_framework}/{analysis.framework_language}",
@@ -357,8 +364,9 @@ async def run_deep_analyze(
 ):
     effective_limit = min(limit, TOP_K_PER_PASS) if limit else TOP_K_PER_PASS
     repos = registry.get_repos_for_stage(4, limit=effective_limit)
-    logger.info(f"Deep analyzing {len(repos)} repos with {workers} workers "
-                f"(top-{effective_limit} by richness ordering)")
+    logger.info(
+        f"Deep analyzing {len(repos)} repos with {workers} workers (top-{effective_limit} by richness ordering)"
+    )
 
     semaphore = asyncio.Semaphore(workers)
     progress = StageProgress(4, len(repos))

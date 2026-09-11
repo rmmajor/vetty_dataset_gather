@@ -14,6 +14,7 @@ teacher reading the code from the inbox screenshot is what the full agent E2E ex
 
 Run: python -m repo_pipeline.auth_flow_smoke
 """
+
 import imaplib
 import json
 import logging
@@ -194,14 +195,15 @@ def _ref_for(snapshot: str, needle: str, role: str = None) -> int:
     for line in snapshot.splitlines():
         if not line.startswith("[") or needle.lower() not in line.lower():
             continue
-        if role and f'] {role} ' not in line:
+        if role and f"] {role} " not in line:
             continue
-        return int(line[1:line.index("]")])
+        return int(line[1 : line.index("]")])
     raise AssertionError(f"no {role or 'element'} matching {needle!r} in snapshot:\n{snapshot[:800]}")
 
 
 def _read_reset_url_via_imap(stack, address: str) -> str:
     import re as _re
+
     for _ in range(20):
         try:
             M = imaplib.IMAP4("127.0.0.1", stack.host_imap_port)
@@ -218,6 +220,7 @@ def _read_reset_url_via_imap(stack, address: str) -> str:
         except Exception:
             pass
         import time
+
         time.sleep(1)
     raise AssertionError("reset link never arrived in the mailbox")
 
@@ -239,6 +242,7 @@ def _read_code_via_imap(stack, address: str) -> str:
         except Exception:
             pass
         import time
+
         time.sleep(1)
     raise AssertionError("verification code never arrived in the mailbox")
 
@@ -264,7 +268,8 @@ def run_smoke() -> bool:
         address = mail_service.scenario_address("smoke", "signup")
         app_url = f"http://127.0.0.1:{APP_PORT}/"
         session = client.session(
-            "auth_flow_smoke", app_url,
+            "auth_flow_smoke",
+            app_url,
             instruction="Register a new account and verify the email address.",
             secrets={"email": address, "password": "Passw0rd!"},
             mail_config={"url": stack.webmail_url, "address": address, "password": "qa"},
@@ -272,43 +277,76 @@ def run_smoke() -> bool:
         snapshot = session["snapshot"]
 
         # 1. Register with the masked email placeholder (driver types the real disposable address).
-        client.act({
-            "kind": "type", "ref": _ref_for(snapshot, "Email address"), "text": "<secret:email>",
-            "thought": "I'm creating an account, so I enter my email address to sign up.",
-        })
-        result = client.act({
-            "kind": "click", "ref": _ref_for(snapshot, "Sign up"),
-            "thought": "With my email entered, I click Sign up to create the account.",
-        })
-        assert "verification code" in result["snapshot"].lower() or "almost there" in result["snapshot"].lower(), \
+        client.act(
+            {
+                "kind": "type",
+                "ref": _ref_for(snapshot, "Email address"),
+                "text": "<secret:email>",
+                "thought": "I'm creating an account, so I enter my email address to sign up.",
+            }
+        )
+        result = client.act(
+            {
+                "kind": "click",
+                "ref": _ref_for(snapshot, "Sign up"),
+                "thought": "With my email entered, I click Sign up to create the account.",
+            }
+        )
+        assert "verification code" in result["snapshot"].lower() or "almost there" in result["snapshot"].lower(), (
             f"signup did not reach the check-your-email page: {result['snapshot'][:400]}"
+        )
 
         # 2. Walk to the webmail in the browser — a RECORDED navigate step.
-        inbox = client.act({
-            "kind": "navigate", "url": stack.webmail_url,
-            "thought": "The app emailed me a code, so I open my inbox to read it.",
-        })
+        inbox = client.act(
+            {
+                "kind": "navigate",
+                "url": stack.webmail_url,
+                "thought": "The app emailed me a code, so I open my inbox to read it.",
+            }
+        )
         # Pre-login means the inbox is already shown; the new mail appears on this fresh load.
         client.act({"kind": "wait", "seconds": 2, "thought": "Letting the inbox refresh so the new message shows."})
         inbox_snap = client.snapshot()["snapshot"]
-        assert "verification code" in inbox_snap.lower(), \
+        assert "verification code" in inbox_snap.lower(), (
             f"verification email not visible in the Roundcube inbox: {inbox_snap[:600]}"
+        )
 
         # 3. Read the code (out-of-band here; the LLM teacher reads it from the screenshot), return
         #    to the app's verify page, and enter it.
         code = _read_code_via_imap(stack, address)
         verify_url = f"http://127.0.0.1:{APP_PORT}/verify"
-        client.act({"kind": "navigate", "url": verify_url,
-                    "thought": "I have the code now, so I go back to the app to finish verifying."})
+        client.act(
+            {
+                "kind": "navigate",
+                "url": verify_url,
+                "thought": "I have the code now, so I go back to the app to finish verifying.",
+            }
+        )
         vsnap = client.snapshot()["snapshot"]
-        client.act({"kind": "type", "ref": _ref_for(vsnap, "Email address"), "text": "<secret:email>",
-                    "thought": "I re-enter my email on the verification form."})
-        client.act({"kind": "type", "ref": _ref_for(vsnap, "Verification code"), "text": code,
-                    "thought": "I type the verification code from my email."})
-        done = client.act({"kind": "click", "ref": _ref_for(vsnap, "Verify"),
-                           "thought": "I submit the code to confirm my email and finish signing up."})
-        assert "account verified" in done["snapshot"].lower(), \
-            f"verification did not succeed: {done['snapshot'][:400]}"
+        client.act(
+            {
+                "kind": "type",
+                "ref": _ref_for(vsnap, "Email address"),
+                "text": "<secret:email>",
+                "thought": "I re-enter my email on the verification form.",
+            }
+        )
+        client.act(
+            {
+                "kind": "type",
+                "ref": _ref_for(vsnap, "Verification code"),
+                "text": code,
+                "thought": "I type the verification code from my email.",
+            }
+        )
+        done = client.act(
+            {
+                "kind": "click",
+                "ref": _ref_for(vsnap, "Verify"),
+                "thought": "I submit the code to confirm my email and finish signing up.",
+            }
+        )
+        assert "account verified" in done["snapshot"].lower(), f"verification did not succeed: {done['snapshot'][:400]}"
         client.act({"kind": "done", "thought": "The page confirms my account is verified — the goal is met."})
         client.finish("completed", "Registered, read the emailed code in the webmail, and verified the account.")
 
@@ -320,8 +358,12 @@ def run_smoke() -> bool:
 
             assert address not in blob, "LEAK: the real disposable address appears in the trajectory"
             assert "<secret:email>" in blob, "masked email placeholder was not recorded"
-            navs = [a for s in traj["steps"] for a in s["actions"]
-                    if a.get("type") == "navigate" and a.get("url") == stack.webmail_url]
+            navs = [
+                a
+                for s in traj["steps"]
+                for a in s["actions"]
+                if a.get("type") == "navigate" and a.get("url") == stack.webmail_url
+            ]
             assert navs, "the webmail navigation was not recorded as a navigate step"
             for step in traj["steps"]:
                 for a in step["actions"]:
@@ -332,25 +374,46 @@ def run_smoke() -> bool:
         # Roundcube renders in an iframe — exercises cross-iframe snapshot + ref resolution). ----
         addr2 = mail_service.scenario_address("smoke", "reset")
         session2 = client.session(
-            "auth_flow_reset", f"http://127.0.0.1:{APP_PORT}/forgot",
+            "auth_flow_reset",
+            f"http://127.0.0.1:{APP_PORT}/forgot",
             instruction="Reset your password using the link emailed to you.",
             secrets={"email": addr2},
             mail_config={"url": stack.webmail_url, "address": addr2, "password": "qa"},
         )
         fsnap = session2["snapshot"]
-        client.act({"kind": "type", "ref": _ref_for(fsnap, "Email address"), "text": "<secret:email>",
-                    "thought": "I forgot my password, so I enter my email to request a reset link."})
-        sent = client.act({"kind": "click", "ref": _ref_for(fsnap, "Send reset link"),
-                           "thought": "I submit the form to have the reset link emailed to me."})
-        assert "reset link sent" in sent["snapshot"].lower(), \
-            f"reset request did not confirm: {sent['snapshot'][:300]}"
+        client.act(
+            {
+                "kind": "type",
+                "ref": _ref_for(fsnap, "Email address"),
+                "text": "<secret:email>",
+                "thought": "I forgot my password, so I enter my email to request a reset link.",
+            }
+        )
+        sent = client.act(
+            {
+                "kind": "click",
+                "ref": _ref_for(fsnap, "Send reset link"),
+                "thought": "I submit the form to have the reset link emailed to me.",
+            }
+        )
+        assert "reset link sent" in sent["snapshot"].lower(), f"reset request did not confirm: {sent['snapshot'][:300]}"
 
-        client.act({"kind": "navigate", "url": stack.webmail_url,
-                    "thought": "I open my inbox to find the password-reset email."})
+        client.act(
+            {
+                "kind": "navigate",
+                "url": stack.webmail_url,
+                "thought": "I open my inbox to find the password-reset email.",
+            }
+        )
         client.act({"kind": "wait", "seconds": 2, "thought": "Letting the inbox load the new message."})
         rsnap = client.snapshot()["snapshot"]
-        client.act({"kind": "click", "ref": _ref_for(rsnap, "Reset your password", role="link"),
-                    "thought": "I open the password-reset email to read the reset link."})
+        client.act(
+            {
+                "kind": "click",
+                "ref": _ref_for(rsnap, "Reset your password", role="link"),
+                "thought": "I open the password-reset email to read the reset link.",
+            }
+        )
         # The body renders async into an iframe; poll (non-recorded) until its link surfaces — this is
         # the cross-iframe-traversal proof (the link lives inside Roundcube's message-body iframe).
         msnap = ""
@@ -359,17 +422,24 @@ def run_smoke() -> bool:
             msnap = client.snapshot()["snapshot"]
             if "choose a new password" in msnap.lower():
                 break
-        assert "choose a new password" in msnap.lower(), \
+        assert "choose a new password" in msnap.lower(), (
             f"reset link not surfaced from the message iframe: {msnap[:500]}"
+        )
 
         # Follow the link by NAVIGATING to it (the robust real-world pattern: webmail clients sandbox
         # message-body links against navigation, so the agent reads the link and goes to it). The URL
         # is read here over IMAP; the LLM teacher reads it from the rendered message.
         reset_url = _read_reset_url_via_imap(stack, addr2)
-        done = client.act({"kind": "navigate", "url": reset_url,
-                           "thought": "I follow the reset link from the email to set a new password."})
-        assert "password reset link verified" in done["snapshot"].lower(), \
+        done = client.act(
+            {
+                "kind": "navigate",
+                "url": reset_url,
+                "thought": "I follow the reset link from the email to set a new password.",
+            }
+        )
+        assert "password reset link verified" in done["snapshot"].lower(), (
             f"following the reset link did not verify: {done['snapshot'][:400]}"
+        )
         client.act({"kind": "done", "thought": "The reset link is confirmed valid — the goal is met."})
         client.finish("completed", "Requested a reset, opened the email, and followed the reset link.")
 
@@ -383,19 +453,38 @@ def run_smoke() -> bool:
         # "account" tasks start ALREADY signed in instead of replaying a login on every trajectory. ----
         addr3 = mail_service.scenario_address("smoke", "account")
         login_session = client.session(
-            "auth_login_capture", f"http://127.0.0.1:{APP_PORT}/login",
+            "auth_login_capture",
+            f"http://127.0.0.1:{APP_PORT}/login",
             instruction="Sign in to the account.",
             secrets={"email": addr3, "password": "Passw0rd!"},
         )
         lsnap = login_session["snapshot"]
-        client.act({"kind": "type", "ref": _ref_for(lsnap, "Email address"), "text": "<secret:email>",
-                    "thought": "I enter my email to sign in."})
-        client.act({"kind": "type", "ref": _ref_for(lsnap, "Password"), "text": "<secret:password>",
-                    "thought": "I enter my password to sign in."})
-        dash = client.act({"kind": "click", "ref": _ref_for(lsnap, "Sign in"),
-                           "thought": "I submit the sign-in form to access my account."})
-        assert "your dashboard" in dash["snapshot"].lower(), \
+        client.act(
+            {
+                "kind": "type",
+                "ref": _ref_for(lsnap, "Email address"),
+                "text": "<secret:email>",
+                "thought": "I enter my email to sign in.",
+            }
+        )
+        client.act(
+            {
+                "kind": "type",
+                "ref": _ref_for(lsnap, "Password"),
+                "text": "<secret:password>",
+                "thought": "I enter my password to sign in.",
+            }
+        )
+        dash = client.act(
+            {
+                "kind": "click",
+                "ref": _ref_for(lsnap, "Sign in"),
+                "thought": "I submit the sign-in form to access my account.",
+            }
+        )
+        assert "your dashboard" in dash["snapshot"].lower(), (
             f"login did not reach the dashboard: {dash['snapshot'][:300]}"
+        )
         captured = client.storage_state()
         assert captured.get("cookies"), "no cookies captured in the storage_state"
         client.act({"kind": "done", "thought": "I'm signed in and on my dashboard — the goal is met."})
@@ -403,21 +492,25 @@ def run_smoke() -> bool:
 
         # Control: a FRESH session (no injected state) at /account is signed OUT — confirms the
         # protected page really gates on the session, so the reuse test below proves something.
-        control = client.session("auth_no_session", f"http://127.0.0.1:{APP_PORT}/account",
-                                 instruction="Open the account page.")
-        assert "please sign in" in control["snapshot"].lower(), \
+        control = client.session(
+            "auth_no_session", f"http://127.0.0.1:{APP_PORT}/account", instruction="Open the account page."
+        )
+        assert "please sign in" in control["snapshot"].lower(), (
             f"a fresh session should be signed out at /account: {control['snapshot'][:300]}"
+        )
         client.finish("partial", "Not signed in.")
 
         # Reuse: inject the captured session — /account loads the protected dashboard WITHOUT any
         # login step, exactly as a pre_session "account" task would start.
         reused = client.session(
-            "auth_pre_session", f"http://127.0.0.1:{APP_PORT}/account",
+            "auth_pre_session",
+            f"http://127.0.0.1:{APP_PORT}/account",
             instruction="Open the account page.",
             auth_config={"auth_mode": "pre_session", "storage_state": captured},
         )
-        assert "your dashboard" in reused["snapshot"].lower(), \
+        assert "your dashboard" in reused["snapshot"].lower(), (
             f"pre_session injection did not start signed in: {reused['snapshot'][:300]}"
+        )
         client.act({"kind": "done", "thought": "I'm already signed in, so the account page is shown directly."})
         client.finish("completed", "Reached the account area via the reused session, no login needed.")
 

@@ -12,6 +12,7 @@
 `--provider` / `--benchmark` choices come straight from the registries, so a new provider or a
 new eval shows up in the CLI with no changes here.
 """
+
 import argparse
 import logging
 import sys
@@ -20,7 +21,6 @@ from remote_train import lifecycle, state
 from remote_train.base import PROVIDERS, ProviderError, build_provider
 from remote_train.benchmarks import BENCHMARKS
 from remote_train.config import load_config
-from remote_train.jobs import JOBS
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -126,13 +126,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     train_p = sub.add_parser("train", help="Fine-tune on a rented GPU, pull the adapter, destroy.")
     _add_common(train_p)
-    train_p.add_argument("--resume-from", dest="resume_from", default=None,
-                         help="Local trainer checkpoint dir to continue from instead of step 0.")
-    train_p.add_argument("--trajectories-dir", dest="trajectories_dir", default=None,
-                         help="Corpus directory to ship (default: ./trajectories).")
-    train_p.add_argument("--keep-on-signal", dest="keep_on_signal", action="store_true", default=None,
-                         help="If this supervisor is killed, leave the box running so the detached "
-                              "job finishes; recover with `remote_train cleanup`.")
+    train_p.add_argument(
+        "--resume-from",
+        dest="resume_from",
+        default=None,
+        help="Local trainer checkpoint dir to continue from instead of step 0.",
+    )
+    train_p.add_argument(
+        "--trajectories-dir",
+        dest="trajectories_dir",
+        default=None,
+        help="Corpus directory to ship (default: ./trajectories).",
+    )
+    train_p.add_argument(
+        "--keep-on-signal",
+        dest="keep_on_signal",
+        action="store_true",
+        default=None,
+        help="If this supervisor is killed, leave the box running so the detached "
+        "job finishes; recover with `remote_train cleanup`.",
+    )
     train_p.add_argument("--push-hf", default=None, help="HuggingFace repo to upload the adapter to.")
     train_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     train_p.set_defaults(func=train_cmd)
@@ -147,27 +160,39 @@ def build_parser() -> argparse.ArgumentParser:
 
     eval_p = sub.add_parser("eval", help="Benchmark model(s) on a rented GPU. No training.")
     _add_common(eval_p)
-    eval_p.add_argument("--model", action="append", dest="models",
-                        help="Model id to evaluate (repeatable, e.g. Qwen/Qwen3.5-9B-Base).")
+    eval_p.add_argument(
+        "--model", action="append", dest="models", help="Model id to evaluate (repeatable, e.g. Qwen/Qwen3.5-9B-Base)."
+    )
     eval_p.add_argument("--benchmark", default=None, choices=sorted(BENCHMARKS), help="Which eval to run.")
     eval_p.add_argument("--limit", type=int, default=None, help="Cap samples (omit = full dataset).")
     eval_p.add_argument("--dataset", default=None, help="Override the benchmark's default HF dataset.")
     eval_p.add_argument("--split", default=None, help="Override the dataset split.")
-    eval_p.add_argument("--coord-space", default=None,
-                        choices=["normalized_1000", "viewport_abs", "native_abs"],
-                        help="Coordinate convention THE MODEL answers in. normalized_1000 for a "
-                             "stock Qwen; viewport_abs for a checkpoint fine-tuned on this corpus.")
+    eval_p.add_argument(
+        "--coord-space",
+        default=None,
+        choices=["normalized_1000", "viewport_abs", "native_abs"],
+        help="Coordinate convention THE MODEL answers in. normalized_1000 for a "
+        "stock Qwen; viewport_abs for a checkpoint fine-tuned on this corpus.",
+    )
     eval_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     eval_p.set_defaults(func=eval_cmd)
 
-    grpo_p = sub.add_parser("grpo", help="GRPO on a rented GPU against the local env service (make rl-serve first); ALWAYS destroys.")
+    grpo_p = sub.add_parser(
+        "grpo", help="GRPO on a rented GPU against the local env service (make rl-serve first); ALWAYS destroys."
+    )
     _add_common(grpo_p)
     grpo_p.add_argument("--rl-config", default=None, help="RL run config (default rl_config.yaml)")
-    grpo_p.add_argument("--env-url", default=None, help="Env service URL as seen from the box (default from rl_config; mock:// for smokes)")
+    grpo_p.add_argument(
+        "--env-url",
+        default=None,
+        help="Env service URL as seen from the box (default from rl_config; mock:// for smokes)",
+    )
     grpo_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     grpo_p.set_defaults(func=grpo_cmd)
 
-    serve_p = sub.add_parser("serve", help="Serve the student on 127.0.0.1:8001 through a tunnel until --for-seconds or Ctrl-C.")
+    serve_p = sub.add_parser(
+        "serve", help="Serve the student on 127.0.0.1:8001 through a tunnel until --for-seconds or Ctrl-C."
+    )
     _add_common(serve_p)
     serve_p.add_argument("--rl-config", default=None, help="RL run config (default rl_config.yaml)")
     serve_p.add_argument("--adapter", default=None, help="LoRA adapter dir to serve on top of the base (e.g. output)")
@@ -180,12 +205,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     cleanup_p = sub.add_parser("cleanup", help="Destroy instances abandoned by dead runs (see --all).")
     _add_common(cleanup_p)
-    cleanup_p.add_argument("--all", action="store_true", dest="sweep_all",
-                           help="Also destroy every instance carrying the run label, INCLUDING boxes a "
-                                "concurrent run is using. Only when you know no sibling run is live.")
+    cleanup_p.add_argument(
+        "--all",
+        action="store_true",
+        dest="sweep_all",
+        help="Also destroy every instance carrying the run label, INCLUDING boxes a "
+        "concurrent run is using. Only when you know no sibling run is live.",
+    )
     cleanup_p.set_defaults(func=cleanup_cmd)
 
-    release_p = sub.add_parser("release", help="Hand a recorded instance over to `cleanup` (writes the pid null sentinel; destroys nothing).")
+    release_p = sub.add_parser(
+        "release", help="Hand a recorded instance over to `cleanup` (writes the pid null sentinel; destroys nothing)."
+    )
     release_p.add_argument("--instance", required=True, help="Instance id as recorded in the state file.")
     release_p.add_argument("--verbose", action="store_true", help="Debug logging")
     release_p.set_defaults(func=release_cmd)

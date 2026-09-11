@@ -11,20 +11,20 @@ as a harness sanity check; the agent still reads it in the browser.
 
 Run: python -m repo_pipeline.register_real_site <name> <signup_url> ["instruction"]
 """
+
 import asyncio
 import json
 import logging
 import sys
-import tempfile
 from pathlib import Path
 
 from repo_pipeline import driver_session, mailtm
-from repo_pipeline.agent_capture import run_teacher_task, verify_trajectory
+from repo_pipeline.agent_capture import run_teacher_task
 from repo_pipeline.instrumentation import RESULTS_DIR
 from repo_pipeline.public_capture import _verify_and_finalize
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler
-from repo_pipeline.stage6_generate import _safe_task_id, _is_valid_trajectory
+from repo_pipeline.stage6_generate import _is_valid_trajectory, _safe_task_id
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("register_real_site")
@@ -58,8 +58,7 @@ async def capture(name: str, signup_url: str, instruction: str) -> dict:
     # One password for both the site account and the mail.tm inbox login -> a single masked secret.
     secrets = {"email": mailbox["address"], "password": mailbox["password"]}
     site = {"name": name, "start_url": signup_url, "domain": "public_web"}
-    task = {"id": f"register-{name}", "instruction": instruction, "difficulty": "hard",
-            "instruction_source": "curated"}
+    task = {"id": f"register-{name}", "instruction": instruction, "difficulty": "hard", "instruction_source": "curated"}
     site_dir = Path("trajectories") / f"site_{name}"
 
     registry = RepoRegistry("pipeline_data/registry.db")
@@ -73,9 +72,16 @@ async def capture(name: str, signup_url: str, instruction: str) -> dict:
 
         logger.info(f"[{name}] mailbox={mailbox['address']} — running register+verify teacher")
         state = await run_teacher_task(
-            client, task, signup_url, registry=registry, full_name=f"site:{name}",
-            autonomy="autonomous", auth_mode="login", secrets=secrets,
-            webmail_url=mailtm.WEBMAIL_URL, webmail_preauthed=False,
+            client,
+            task,
+            signup_url,
+            registry=registry,
+            full_name=f"site:{name}",
+            autonomy="autonomous",
+            auth_mode="login",
+            secrets=secrets,
+            webmail_url=mailtm.WEBMAIL_URL,
+            webmail_preauthed=False,
         )
         logger.info(f"[{name}] teacher: {state['actions']} actions, outcome={state['agent_outcome']}")
         site_dir.mkdir(parents=True, exist_ok=True)
@@ -85,8 +91,7 @@ async def capture(name: str, signup_url: str, instruction: str) -> dict:
 
     # Out-of-band harness check: did the site actually deliver verification mail to the box?
     got_mail = mailtm.wait_for_message(mailbox["token"], timeout=10)
-    logger.info(f"[{name}] verification mail in box (out-of-band): "
-                f"{got_mail.get('subject') if got_mail else 'NONE'}")
+    logger.info(f"[{name}] verification mail in box (out-of-band): {got_mail.get('subject') if got_mail else 'NONE'}")
 
     traj_dir = site_dir / f"task_{_safe_task_id(task['id'])}"
     if not _is_valid_trajectory(traj_dir):
@@ -95,14 +100,21 @@ async def capture(name: str, signup_url: str, instruction: str) -> dict:
         return {"name": name, "captured": False}
     verdict = await _verify_and_finalize(traj_dir, site, task, state, registry)
     registry.close()
-    logger.info(f"[{name}] verified={verdict.get('final_success')} ({verdict.get('efficiency')}) "
-                f"— {verdict.get('reasoning', '')[:160]}")
+    logger.info(
+        f"[{name}] verified={verdict.get('final_success')} ({verdict.get('efficiency')}) "
+        f"— {verdict.get('reasoning', '')[:160]}"
+    )
     # Leak check: the masked password must never appear literally in the recording.
     blob = (traj_dir / "trajectory.json").read_text()
     leaked = mailbox["password"] in blob
     logger.info(f"[{name}] password leaked literally: {leaked}  (must be False)")
-    return {"name": name, "captured": True, "verified": verdict.get("final_success"),
-            "mail_received": bool(got_mail), "password_leaked": leaked}
+    return {
+        "name": name,
+        "captured": True,
+        "verified": verdict.get("final_success"),
+        "mail_received": bool(got_mail),
+        "password_leaked": leaked,
+    }
 
 
 async def capture_register_then_reset(name: str, signup_url: str) -> dict:
@@ -113,15 +125,22 @@ async def capture_register_then_reset(name: str, signup_url: str) -> dict:
     Three masked secrets: email, password (mailbox/email-account login), new_password (the reset
     value). The instructions tell the agent which is which; the driver substitutes at type time."""
     mailbox = mailtm.create_mailbox()
-    secrets = {"email": mailbox["address"], "password": mailbox["password"],
-               "new_password": mailtm._random_password()}
+    secrets = {"email": mailbox["address"], "password": mailbox["password"], "new_password": mailtm._random_password()}
     site = {"name": name, "start_url": signup_url, "domain": "public_web"}
     label = _site_label(signup_url)
     tasks = [
-        {"id": f"register-{name}", "instruction": _default_instruction(label),
-         "difficulty": "hard", "instruction_source": "curated"},
-        {"id": f"reset-{name}", "instruction": _reset_instruction(label),
-         "difficulty": "hard", "instruction_source": "curated"},
+        {
+            "id": f"register-{name}",
+            "instruction": _default_instruction(label),
+            "difficulty": "hard",
+            "instruction_source": "curated",
+        },
+        {
+            "id": f"reset-{name}",
+            "instruction": _reset_instruction(label),
+            "difficulty": "hard",
+            "instruction_source": "curated",
+        },
     ]
     site_dir = Path("trajectories") / f"site_{name}"
     registry = RepoRegistry("pipeline_data/registry.db")
@@ -135,12 +154,21 @@ async def capture_register_then_reset(name: str, signup_url: str) -> dict:
         logger.info(f"[{name}] mailbox={mailbox['address']} — register then reset")
         for task in tasks:
             states[task["id"]] = await run_teacher_task(
-                client, task, signup_url, registry=registry, full_name=f"site:{name}",
-                autonomy="autonomous", auth_mode="login", secrets=secrets,
-                webmail_url=mailtm.WEBMAIL_URL, webmail_preauthed=False,
+                client,
+                task,
+                signup_url,
+                registry=registry,
+                full_name=f"site:{name}",
+                autonomy="autonomous",
+                auth_mode="login",
+                secrets=secrets,
+                webmail_url=mailtm.WEBMAIL_URL,
+                webmail_preauthed=False,
             )
-            logger.info(f"[{name}] task '{task['id']}': {states[task['id']]['actions']} actions, "
-                        f"outcome={states[task['id']]['agent_outcome']}")
+            logger.info(
+                f"[{name}] task '{task['id']}': {states[task['id']]['actions']} actions, "
+                f"outcome={states[task['id']]['agent_outcome']}"
+            )
             site_dir.mkdir(parents=True, exist_ok=True)
             await _run(sandbox.copy_out, RESULTS_DIR, str(site_dir))
     finally:
@@ -154,10 +182,11 @@ async def capture_register_then_reset(name: str, signup_url: str) -> dict:
             continue
         verdict = await _verify_and_finalize(traj_dir, site, task, states[task["id"]], registry)
         leaked = any(v in (traj_dir / "trajectory.json").read_text() for v in secrets.values())
-        results[task["id"]] = {"captured": True, "verified": verdict.get("final_success"),
-                               "password_leaked": leaked}
-        logger.info(f"[{name}] {task['id']}: verified={verdict.get('final_success')} "
-                    f"({verdict.get('efficiency')}) leaked={leaked}")
+        results[task["id"]] = {"captured": True, "verified": verdict.get("final_success"), "password_leaked": leaked}
+        logger.info(
+            f"[{name}] {task['id']}: verified={verdict.get('final_success')} "
+            f"({verdict.get('efficiency')}) leaked={leaked}"
+        )
     registry.close()
     return {"name": name, "tasks": results}
 

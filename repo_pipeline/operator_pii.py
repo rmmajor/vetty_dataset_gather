@@ -1,12 +1,14 @@
 """Who the operator is — so no capture types their identity and no dataset ships it — configured, never hardcoded."""
+
 import os
 import re
 import subprocess
 from pathlib import Path
 
 # Sources, merged in order: inline $OPERATOR_PII, $OPERATOR_PII_FILE, then the machine's git user.email.
-PII_FILE = Path(os.environ.get("OPERATOR_PII_FILE")
-                or Path(__file__).resolve().parent.parent / "credentials" / "operator_pii.txt")
+PII_FILE = Path(
+    os.environ.get("OPERATOR_PII_FILE") or Path(__file__).resolve().parent.parent / "credentials" / "operator_pii.txt"
+)
 
 _PATTERNS = None
 
@@ -17,8 +19,9 @@ def configured_identities() -> list[str]:
     if PII_FILE.exists():
         blobs.append(PII_FILE.read_text())
     try:
-        blobs.append(subprocess.run(["git", "config", "--get", "user.email"], capture_output=True,
-                                    text=True, timeout=10).stdout)
+        blobs.append(
+            subprocess.run(["git", "config", "--get", "user.email"], capture_output=True, text=True, timeout=10).stdout
+        )
     except (OSError, subprocess.SubprocessError):
         pass
     values = []
@@ -45,8 +48,7 @@ def patterns() -> list[tuple[str, re.Pattern]]:
         _PATTERNS = []
         for value in configured_identities():
             local, at, domain = value.partition("@")
-            expr = (re.escape(local) + r"(\+[^@\s]*)?@" + re.escape(domain)) if at \
-                else r"\b" + re.escape(value) + r"\b"
+            expr = (re.escape(local) + r"(\+[^@\s]*)?@" + re.escape(domain)) if at else r"\b" + re.escape(value) + r"\b"
             _PATTERNS.append((f"operator_pii({mask(value)})", re.compile(expr, re.IGNORECASE)))
     return _PATTERNS
 

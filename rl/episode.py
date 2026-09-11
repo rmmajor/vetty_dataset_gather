@@ -1,4 +1,5 @@
 """One rollout episode over a driver slot: observe → decode → execute → record → reward."""
+
 import json
 import logging
 import time
@@ -62,8 +63,9 @@ class Episode:
         self.host_dir = Path(run_ctx.out_root) / f"iter_{run_ctx.iteration:03d}" / task["task_id"] / f"k{sample_k:02d}"
         self.traj_dir = self.host_dir / f"task_{self.safe_id}"
         # Compared by registrable domain, so www./m./checkout. subdomain hops are not refused.
-        self.allowed_domains = {registrable_domain(h)
-                                for h in {urlparse(task["start_url"]).netloc, *task.get("allowed_hosts", [])}}
+        self.allowed_domains = {
+            registrable_domain(h) for h in {urlparse(task["start_url"]).netloc, *task.get("allowed_hosts", [])}
+        }
         self.history, self.turns = [], []
         self.step_index = self.consecutive_parse_failures = self.navigate_blocked = 0
         self.blocked = self.oracle_error = None
@@ -77,13 +79,26 @@ class Episode:
             raise RuntimeError("preconditions_unavailable")
         backend.pre_episode(self.worker.sandbox, self.task)
         task_meta = {
-            "difficulty": self.task.get("difficulty"), "expected_actions": self.task.get("expected_actions"),
-            "autonomy": self.task.get("lane", "autonomous"), "auth_mode": self.task.get("auth_mode", "none"),
+            "difficulty": self.task.get("difficulty"),
+            "expected_actions": self.task.get("expected_actions"),
+            "autonomy": self.task.get("lane", "autonomous"),
+            "auth_mode": self.task.get("auth_mode", "none"),
             "env": self.task.get("env", "live"),
-            "rl": {"run_id": self.ctx.run_id, "iter": self.ctx.iteration, "k": self.k, "policy_tag": self.ctx.policy_tag},
+            "rl": {
+                "run_id": self.ctx.run_id,
+                "iter": self.ctx.iteration,
+                "k": self.k,
+                "policy_tag": self.ctx.policy_tag,
+            },
         }
-        self.client.session(self.episode_id, backend.start_url(self.task), instruction=self.task["instruction"],
-                            task_meta=task_meta, type_mode=self.cfg.type_mode, **kwargs)
+        self.client.session(
+            self.episode_id,
+            backend.start_url(self.task),
+            instruction=self.task["instruction"],
+            task_meta=task_meta,
+            type_mode=self.cfg.type_mode,
+            **kwargs,
+        )
         return self._observe()
 
     def _observe(self):
@@ -103,8 +118,13 @@ class Episode:
             raise RuntimeError("episode is closed")
         decoded = decode_step(response_text)
         problems = validate_actions(decoded.actions)
-        turn = {"step_index": self.step_index, "raw": response_text, "errors": decoded.errors + problems,
-                "clean": decoded.ok and not decoded.errors and not problems, "executed": 0}
+        turn = {
+            "step_index": self.step_index,
+            "raw": response_text,
+            "errors": decoded.errors + problems,
+            "clean": decoded.ok and not decoded.errors and not problems,
+            "executed": 0,
+        }
         self.turns.append(turn)
         info = {"step_index": self.step_index, "parse_errors": turn["errors"]}
         if not decoded.actions or problems:
@@ -115,8 +135,11 @@ class Episode:
             return self._observe(), None, False, info
         self.consecutive_parse_failures = 0
         info["parse"] = "ok"
-        blocked = [a for a in decoded.actions if a["type"] == "navigate"
-                   and registrable_domain(urlparse(a["url"]).netloc) not in self.allowed_domains]
+        blocked = [
+            a
+            for a in decoded.actions
+            if a["type"] == "navigate" and registrable_domain(urlparse(a["url"]).netloc) not in self.allowed_domains
+        ]
         if blocked:
             self.navigate_blocked += 1
             info["refusal"] = "navigate_blocked"
@@ -141,7 +164,9 @@ class Episode:
             info["exec_error"] = result["error"]
         control = control_index(payload["actions"])
         if control is not None:
-            return self._terminate("done" if payload["actions"][control]["type"] == "done" else "control_unexpected", info)
+            return self._terminate(
+                "done" if payload["actions"][control]["type"] == "done" else "control_unexpected", info
+            )
         if self.step_index >= self.cfg.max_steps:
             return self._terminate("step_cap", info)
         return self._observe(), None, False, info
@@ -199,15 +224,25 @@ class Episode:
             # A CAPTCHA/WAF wall is the environment refusing, not the policy failing, so the analysis drops these samples.
             self.blocked = detect_block(snapshot.get("url", ""), f"{snapshot.get('snapshot', '')}\n{page_text}")
             if self.blocked:
-                logger.warning(f"{self.episode_id}: site blocked ({self.blocked}) — episode is not a measurement of the policy")
-            ctx = checks.build_context(snapshot, self.client.storage_state, {"terminal_reason": self.terminal_reason}, page_text)
+                logger.warning(
+                    f"{self.episode_id}: site blocked ({self.blocked}) — episode is not a measurement of the policy"
+                )
+            ctx = checks.build_context(
+                snapshot, self.client.storage_state, {"terminal_reason": self.terminal_reason}, page_text
+            )
         except Exception as e:
             self.oracle_error = f"snapshot: {str(e)[:120]}"
-            logger.error(f"{self.episode_id}: oracle snapshot failed — scoring this episode as a failure is NOT a measurement: {e}")
-            return ({"passed": False, "results": {"error": str(e)[:200]}} if spec else None,
-                    {m.get("name", ""): False for m in milestone_specs} or None)
+            logger.error(
+                f"{self.episode_id}: oracle snapshot failed — scoring this episode as a failure is NOT a measurement: {e}"
+            )
+            return (
+                {"passed": False, "results": {"error": str(e)[:200]}} if spec else None,
+                {m.get("name", ""): False for m in milestone_specs} or None,
+            )
         check_result = checks.evaluate(spec, ctx) if spec else None
-        milestones = {m.get("name", ""): checks.evaluate(m.get("check") or {}, ctx)["passed"] for m in milestone_specs} or None
+        milestones = {
+            m.get("name", ""): checks.evaluate(m.get("check") or {}, ctx)["passed"] for m in milestone_specs
+        } or None
         return check_result, milestones
 
     def _write_metadata(self, check_result, milestones=None):
@@ -224,15 +259,31 @@ class Episode:
         capture_meta["excluded_reason"] = "rl_rollout"
         meta_file.write_text(json.dumps(capture_meta, indent=2))
         metadata = {
-            "task_id": traj["task_id"], "instruction": traj["instruction"], "start_url": traj["start_url"],
-            "total_steps": traj["total_steps"], "success": traj["success"],
-            "website": urlparse(self.task["start_url"]).netloc, "domain": self.task.get("domain", "public_web"),
-            "framework": "agent", "capture_source": "agent", "instruction_source": "curated", "thought_source": "student",
-            "task_type": "other", "difficulty": self.task.get("difficulty", "medium"),
-            "viewport": {"width": 1280, "height": 720}, "source_repo": f"rl:{self.task['task_id']}",
-            "autonomy": self.task.get("lane", "autonomous"), "auth_mode": self.task.get("auth_mode", "none"),
-            "preconditions": self.task.get("preconditions", {}), "excluded_reason": "rl_rollout",
-            "rl": {"run_id": self.ctx.run_id, "iter": self.ctx.iteration, "k": self.k, "terminal_reason": self.terminal_reason},
+            "task_id": traj["task_id"],
+            "instruction": traj["instruction"],
+            "start_url": traj["start_url"],
+            "total_steps": traj["total_steps"],
+            "success": traj["success"],
+            "website": urlparse(self.task["start_url"]).netloc,
+            "domain": self.task.get("domain", "public_web"),
+            "framework": "agent",
+            "capture_source": "agent",
+            "instruction_source": "curated",
+            "thought_source": "student",
+            "task_type": "other",
+            "difficulty": self.task.get("difficulty", "medium"),
+            "viewport": {"width": 1280, "height": 720},
+            "source_repo": f"rl:{self.task['task_id']}",
+            "autonomy": self.task.get("lane", "autonomous"),
+            "auth_mode": self.task.get("auth_mode", "none"),
+            "preconditions": self.task.get("preconditions", {}),
+            "excluded_reason": "rl_rollout",
+            "rl": {
+                "run_id": self.ctx.run_id,
+                "iter": self.ctx.iteration,
+                "k": self.k,
+                "terminal_reason": self.terminal_reason,
+            },
         }
         (self.traj_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
@@ -244,19 +295,49 @@ class Episode:
         return sum(1 for s in steps if s.get("actions") and s["actions"][0].get("type") != "done")
 
     def _build_record(self, check_result, milestones=None):
-        success, source, status = judge_success(self.traj_dir, self.task, check_result, self.cfg.verifier_mode, self.ctx.bridge)
+        success, source, status = judge_success(
+            self.traj_dir, self.task, check_result, self.cfg.verifier_mode, self.ctx.bridge
+        )
         verdict = (cached_verdict(self.traj_dir) or {}) if self.traj_dir.exists() else {}
         record = {
-            "episode_id": self.episode_id, "task_id": self.task["task_id"], "site": self.task.get("site"), "split": self.task.get("split"),
-            "k": self.k, "iter": self.ctx.iteration, "traj_dir": str(self.traj_dir), "terminal_reason": self.terminal_reason,
-            "steps": self.step_index, "ui_steps": self._ui_steps(), "turns": self.turns, "success": success,
-            "efficiency_grade": verdict.get("efficiency"), "verdict_contradiction": bool(verdict.get("contradiction")),
-            "success_source": source, "reward_status": status, "navigate_blocked": self.navigate_blocked,
-            "duration_s": round(time.time() - self.started, 1), "check": check_result, "milestones": milestones,
-            "blocked": self.blocked, "oracle_error": self.oracle_error,
+            "episode_id": self.episode_id,
+            "task_id": self.task["task_id"],
+            "site": self.task.get("site"),
+            "split": self.task.get("split"),
+            "k": self.k,
+            "iter": self.ctx.iteration,
+            "traj_dir": str(self.traj_dir),
+            "terminal_reason": self.terminal_reason,
+            "steps": self.step_index,
+            "ui_steps": self._ui_steps(),
+            "turns": self.turns,
+            "success": success,
+            "efficiency_grade": verdict.get("efficiency"),
+            "verdict_contradiction": bool(verdict.get("contradiction")),
+            "success_source": source,
+            "reward_status": status,
+            "navigate_blocked": self.navigate_blocked,
+            "duration_s": round(time.time() - self.started, 1),
+            "check": check_result,
+            "milestones": milestones,
+            "blocked": self.blocked,
+            "oracle_error": self.oracle_error,
         }
-        reward, breakdown = (compute_reward(record, self.task, self.ctx.reward_config) if status == "final" else (None, {}))
-        record.update({"reward": reward, "breakdown": breakdown,
-                       "info": {"reward_status": status, "success": success, "success_source": source, "episode_dir": str(self.traj_dir),
-                                "blocked": self.blocked, "oracle_error": self.oracle_error}})
+        reward, breakdown = (
+            compute_reward(record, self.task, self.ctx.reward_config) if status == "final" else (None, {})
+        )
+        record.update(
+            {
+                "reward": reward,
+                "breakdown": breakdown,
+                "info": {
+                    "reward_status": status,
+                    "success": success,
+                    "success_source": source,
+                    "episode_dir": str(self.traj_dir),
+                    "blocked": self.blocked,
+                    "oracle_error": self.oracle_error,
+                },
+            }
+        )
         return record

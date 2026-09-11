@@ -34,7 +34,7 @@ Success is over the SCORED episodes (4 verified of 34); site-blocked / unreachab
 
 ```json
 {
-  "tasks_file": "/private/tmp/claude-501/-Users-rmajor-unik-maga-dataset-gather/e17b455f-c19b-4ab5-b159-8ba497af78ae/scratchpad/omw_sft_v1_tasks.jsonl",
+  "tasks_file": "omw_sft_v1_tasks.jsonl",
   "rows_available": 50
 }
 ```

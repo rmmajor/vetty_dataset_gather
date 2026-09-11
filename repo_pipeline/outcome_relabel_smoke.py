@@ -1,4 +1,5 @@
 """Scripted (no-LLM, no-network) check of the outcome relabel pass: windows, fallback, apply writes, resume skip, prompt content."""
+
 import asyncio
 import base64
 import json
@@ -36,16 +37,30 @@ def make_trajectory_dir(work_dir: Path, name: str, n_steps: int, success: bool =
     steps = []
     meta_steps = {}
     for i in range(1, n_steps + 1):
-        actions = [{"type": "done"}] if i == n_steps else [{"type": "click", "x": 100 + i * 9, "y": 200 + i * 5, "button": "left"}]
+        actions = (
+            [{"type": "done"}]
+            if i == n_steps
+            else [{"type": "click", "x": 100 + i * 9, "y": 200 + i * 5, "button": "left"}]
+        )
         steps.append(_step(i, f"old thought {i}", actions))
         color = (255, 255, 255) if i % 2 == 0 or i == 3 else (0, 0, 0)
         (traj_dir / steps[-1]["screenshot"]).write_bytes(_png(color))
         meta_steps[str(i)] = {"url": START_URL if i == 1 else START_URL + "settings"}
-    trajectory = {"task_id": name, "instruction": "Turn on dark mode in settings", "start_url": START_URL,
-                  "steps": steps, "total_steps": n_steps, "success": success}
+    trajectory = {
+        "task_id": name,
+        "instruction": "Turn on dark mode in settings",
+        "start_url": START_URL,
+        "steps": steps,
+        "total_steps": n_steps,
+        "success": success,
+    }
     (traj_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
-    (traj_dir / "metadata.json").write_text(json.dumps({"capture_source": "agent", "thought_source": "teacher"}, indent=2))
-    (traj_dir / "capture_meta.json").write_text(json.dumps({"recorder": "browser_driver", "steps": meta_steps}, indent=2))
+    (traj_dir / "metadata.json").write_text(
+        json.dumps({"capture_source": "agent", "thought_source": "teacher"}, indent=2)
+    )
+    (traj_dir / "capture_meta.json").write_text(
+        json.dumps({"recorder": "browser_driver", "steps": meta_steps}, indent=2)
+    )
     return traj_dir
 
 
@@ -54,8 +69,11 @@ def _prompt_text(blocks: list[dict]) -> str:
 
 
 def _target_numbers(blocks: list[dict]) -> list[int]:
-    return [int(line.split()[1]) for line in _prompt_text(blocks).splitlines()
-            if line.startswith("Step ") and "CONTEXT ONLY" not in line]
+    return [
+        int(line.split()[1])
+        for line in _prompt_text(blocks).splitlines()
+        if line.startswith("Step ") and "CONTEXT ONLY" not in line
+    ]
 
 
 class FakeLLM:
@@ -96,7 +114,9 @@ def check_windows_and_context(work_dir: Path) -> list[str]:
     if len(rewritten) != 14 or rewritten != [f"NEW {k}" for k in range(1, 15)]:
         failures.append(f"expected all 14 thoughts rewritten exactly once, got {rewritten}")
     if result["windows"] != 2 or result["unchanged_windows"] != 0 or result["status"] != "relabeled":
-        failures.append(f"unexpected result summary {result['status']} {result['windows']} {result['unchanged_windows']}")
+        failures.append(
+            f"unexpected result summary {result['status']} {result['windows']} {result['unchanged_windows']}"
+        )
     return failures
 
 
@@ -180,8 +200,15 @@ def check_prompt_content(work_dir: Path) -> list[str]:
     for note in (path_note, no_change_note):
         if note not in text:
             failures.append(f"prompt must show the harness annotation {note!r}")
-    for needle in ("Turn on dark mode in settings", START_URL, "old thought 1", "old thought 4", "done", "Step 1 ",
-                   "Output ONLY a JSON array of 4 strings"):
+    for needle in (
+        "Turn on dark mode in settings",
+        START_URL,
+        "old thought 1",
+        "old thought 4",
+        "done",
+        "Step 1 ",
+        "Output ONLY a JSON array of 4 strings",
+    ):
         if needle not in text:
             failures.append(f"prompt missing {needle!r}")
     if outcome_relabel.NO_PREVIOUS_ACTION not in text:
@@ -232,14 +259,25 @@ class RaisingLLM(FakeLLM):
 def check_window_errors(work_dir: Path) -> list[str]:
     failures = []
     traj_dir = make_trajectory_dir(work_dir, "task_sdk_error", 14)
-    result = asyncio.run(outcome_relabel.relabel_trajectory(
-        traj_dir, call_llm=RaisingLLM(RuntimeError("Claude Code returned an error result"), on_call=2), apply=True))
+    result = asyncio.run(
+        outcome_relabel.relabel_trajectory(
+            traj_dir, call_llm=RaisingLLM(RuntimeError("Claude Code returned an error result"), on_call=2), apply=True
+        )
+    )
     thoughts = [s["thought"] for s in json.loads((traj_dir / "trajectory.json").read_text())["steps"]]
-    if result["status"] != "relabeled" or result["unchanged_windows"] != 1 or thoughts[12:] != ["old thought 13", "old thought 14"]:
-        failures.append(f"an SDK error on one window must leave only that window unchanged: {result['status']} {thoughts}")
+    if (
+        result["status"] != "relabeled"
+        or result["unchanged_windows"] != 1
+        or thoughts[12:] != ["old thought 13", "old thought 14"]
+    ):
+        failures.append(
+            f"an SDK error on one window must leave only that window unchanged: {result['status']} {thoughts}"
+        )
     limit_dir = make_trajectory_dir(work_dir, "task_limit", 3)
     try:
-        asyncio.run(outcome_relabel.relabel_trajectory(limit_dir, call_llm=RaisingLLM(UsageLimitReached("429"), on_call=1)))
+        asyncio.run(
+            outcome_relabel.relabel_trajectory(limit_dir, call_llm=RaisingLLM(UsageLimitReached("429"), on_call=1))
+        )
         failures.append("UsageLimitReached must propagate so the pass stops and resumes later")
     except UsageLimitReached:
         pass
@@ -269,8 +307,15 @@ def check_default_call_options(work_dir: Path) -> list[str]:
     if options.permission_mode != "bypassPermissions" or options.max_budget_usd != outcome_relabel.OUTCOME_BUDGET_USD:
         failures.append(f"unexpected permission/budget options: {options}")
     content = seen["messages"][0]["message"]["content"]
-    if len(seen["messages"]) != 1 or content[0]["type"] != "text" or content[1]["type"] != "image" or content[-1]["type"] != "text":
-        failures.append("the prompt stream must be one user message of labelled image blocks followed by the prompt text")
+    if (
+        len(seen["messages"]) != 1
+        or content[0]["type"] != "text"
+        or content[1]["type"] != "image"
+        or content[-1]["type"] != "text"
+    ):
+        failures.append(
+            "the prompt stream must be one user message of labelled image blocks followed by the prompt text"
+        )
     if seen["kwargs"].get("purpose") != "outcome_relabel" or seen["kwargs"].get("raise_on_error") is not False:
         failures.append(f"unexpected run_agent telemetry kwargs {seen['kwargs']}")
     if [new for _, _, new in result["changes"]] != ["NEW 1", "NEW 2", "NEW 3"]:
@@ -278,8 +323,15 @@ def check_default_call_options(work_dir: Path) -> list[str]:
     return failures
 
 
-CHECKS = [check_windows_and_context, check_length_mismatch_fallback, check_apply_and_resume,
-          check_prompt_content, check_parse_and_estimate, check_window_errors, check_default_call_options]
+CHECKS = [
+    check_windows_and_context,
+    check_length_mismatch_fallback,
+    check_apply_and_resume,
+    check_prompt_content,
+    check_parse_and_estimate,
+    check_window_errors,
+    check_default_call_options,
+]
 
 
 def run_smoke() -> bool:

@@ -6,11 +6,12 @@ exec that reports training DONE, and a download that drops a fake adapter. Recor
 `destroy` so the self-test can assert teardown ran in every exit path. Mirrors
 `eval_screenspot.py`'s MockPredictor.
 """
+
 import json
 import logging
 from pathlib import Path
 
-from remote_train.base import ComputeProvider, Instance, Offer, PROVIDERS, select_cheapest_allowed
+from remote_train.base import PROVIDERS, ComputeProvider, Instance, Offer, select_cheapest_allowed
 from remote_train.tunnel import NullTunnel
 
 logger = logging.getLogger(__name__)
@@ -74,10 +75,22 @@ class MockProvider(ComputeProvider):
             return
         out.mkdir(parents=True, exist_ok=True)
         (out / "adapter_config.json").write_text("{}")
-        (out / "comparison.json").write_text(json.dumps({"summaries": {"mock": {
-            "total": 2, "hits": 1, "accuracy": 0.5, "parse_rate": 1.0,
-            "by_data_type": {}, "by_data_source": {},
-        }}}))
+        (out / "comparison.json").write_text(
+            json.dumps(
+                {
+                    "summaries": {
+                        "mock": {
+                            "total": 2,
+                            "hits": 1,
+                            "accuracy": 0.5,
+                            "parse_rate": 1.0,
+                            "by_data_type": {},
+                            "by_data_source": {},
+                        }
+                    }
+                }
+            )
+        )
 
     def destroy(self, instance) -> bool:
         self.destroyed.append(instance.id)

@@ -9,6 +9,7 @@ goals (never QA assertions), skew long-horizon (most need 8+ actions), and mix a
 (typing/forms mandatory, scroll/drag where the UI affords them). The teacher agent in
 agent_capture.py then pursues each task in the live app.
 """
+
 import json
 import logging
 import os
@@ -185,19 +186,19 @@ email-INVITATION tasks, or anything else that needs to read an email — there i
 # signal is a new entry here (and a counter in the driver's /affordances), not new prompt code.
 _AFFORDANCE_QUOTAS = {
     "draggables": "- The page has {n} draggable elements: at least 1 task MUST require dragging "
-                  "(reorder, move between columns, drop onto a target).\n",
+    "(reorder, move between columns, drop onto a target).\n",
     "sliders": "- The page has {n} sliders: at least 1 task MUST involve setting a slider to a "
-               "specific value by dragging it.\n",
+    "specific value by dragging it.\n",
     "rich_text_editors": "- The page has {n} rich-text editors: at least 1 task MUST involve "
-                         "composing or formatting multi-line content in one.\n",
+    "composing or formatting multi-line content in one.\n",
     "date_inputs": "- The page has {n} date/time inputs: at least 1 task MUST involve picking "
-                   "specific dates or times.\n",
+    "specific dates or times.\n",
     "canvases": "- The page has {n} canvas surfaces: at least 1 task MUST involve drawing or "
-                "direct manipulation on the canvas.\n",
+    "direct manipulation on the canvas.\n",
     "autocompletes": "- The page has {n} autocomplete fields: at least 1 task MUST involve "
-                     "typing a partial value and selecting a suggestion.\n",
+    "typing a partial value and selecting a suggestion.\n",
     "multi_selects": "- The page has {n} multi-select inputs: at least 1 task MUST involve "
-                     "selecting several options in one.\n",
+    "selecting several options in one.\n",
 }
 
 
@@ -209,8 +210,10 @@ def render_avoid(avoid_instructions: list[str] | None) -> str:
     lines = "\n".join(f"- {a.strip()}" for a in avoid_instructions[:40] if a and a.strip())
     if not lines:
         return ""
-    return ("\nALREADY-COVERED for this app — do NOT propose these or trivial rephrasings of them; "
-            f"choose DIFFERENT features, flows, and parts of the app:\n{lines}\n")
+    return (
+        "\nALREADY-COVERED for this app — do NOT propose these or trivial rephrasings of them; "
+        f"choose DIFFERENT features, flows, and parts of the app:\n{lines}\n"
+    )
 
 
 def render_affordances(affordances: dict | None) -> tuple[str, str]:
@@ -219,9 +222,7 @@ def render_affordances(affordances: dict | None) -> tuple[str, str]:
         return "(not measured)", ""
     present = {k: v for k, v in affordances.items() if v}
     block = ", ".join(f"{k}={v}" for k, v in present.items()) or "(none beyond basic click/type targets)"
-    quotas = "".join(
-        template.format(n=present[key]) for key, template in _AFFORDANCE_QUOTAS.items() if key in present
-    )
+    quotas = "".join(template.format(n=present[key]) for key, template in _AFFORDANCE_QUOTAS.items() if key in present)
     return block, quotas
 
 
@@ -254,12 +255,15 @@ def parse_proposal(text: str) -> dict | None:
     raw = None
     if obj_start != -1 and (arr_start == -1 or obj_start < arr_start):
         try:
-            raw = json.loads(text[obj_start:text.rfind("}") + 1])
+            raw = json.loads(text[obj_start : text.rfind("}") + 1])
         except json.JSONDecodeError:
             raw = None
     if raw is None and arr_start != -1:
         try:
-            raw = {"app_health": {"usable": True, "notes": ""}, "tasks": json.loads(text[arr_start:text.rfind("]") + 1])}
+            raw = {
+                "app_health": {"usable": True, "notes": ""},
+                "tasks": json.loads(text[arr_start : text.rfind("]") + 1]),
+            }
         except json.JSONDecodeError:
             return None
     if not isinstance(raw, dict):
@@ -273,14 +277,16 @@ def parse_proposal(text: str) -> dict | None:
         auth = (item.get("auth") or "none").strip().lower()
         if auth not in _AUTH_VALUES:
             auth = "none"
-        tasks.append({
-            "id": slug,
-            "instruction": item["instruction"].strip(),
-            "difficulty": item.get("difficulty", "medium"),
-            "expected_actions": int(item.get("expected_actions", 8) or 8),
-            "action_kinds": item.get("action_kinds", []),
-            "auth": auth,
-        })
+        tasks.append(
+            {
+                "id": slug,
+                "instruction": item["instruction"].strip(),
+                "difficulty": item.get("difficulty", "medium"),
+                "expected_actions": int(item.get("expected_actions", 8) or 8),
+                "action_kinds": item.get("action_kinds", []),
+                "auth": auth,
+            }
+        )
     # register/login tasks must run FIRST: they MINT the account whose captured session the later
     # "account" tasks reuse (auth_mode=pre_session). Stable sort preserves the proposer's order
     # within each bucket.

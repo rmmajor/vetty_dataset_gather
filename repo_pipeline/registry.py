@@ -1,14 +1,11 @@
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from repo_pipeline.schemas import (
-    MAX_RETRIES,
-    RETRYABLE_CATEGORIES,
     STAGE_TO_INPUT_STATUS,
-    STAGE_TO_PASSED_STATUS,
     STAGE_TO_REJECTED_STATUS,
     FailureCategory,
     RepoStatus,
@@ -106,10 +103,7 @@ class RepoRegistry:
     ]
 
     def _migrate(self):
-        columns = {
-            row[1]
-            for row in self.conn.execute("PRAGMA table_info(repos)").fetchall()
-        }
+        columns = {row[1] for row in self.conn.execute("PRAGMA table_info(repos)").fetchall()}
         if "parent_repo" not in columns:
             self.conn.execute("ALTER TABLE repos ADD COLUMN parent_repo TEXT")
         if "is_demo" not in columns:
@@ -123,10 +117,7 @@ class RepoRegistry:
         if "retry_count" not in columns:
             self.conn.execute("ALTER TABLE repos ADD COLUMN retry_count INTEGER DEFAULT 0")
 
-        call_columns = {
-            row[1]
-            for row in self.conn.execute("PRAGMA table_info(agent_calls)").fetchall()
-        }
+        call_columns = {row[1] for row in self.conn.execute("PRAGMA table_info(agent_calls)").fetchall()}
         if "cache_read_tokens" not in call_columns:
             self.conn.execute("ALTER TABLE agent_calls ADD COLUMN cache_read_tokens INTEGER")
         if "cache_creation_tokens" not in call_columns:
@@ -172,7 +163,7 @@ class RepoRegistry:
         self.conn.close()
 
     def add_candidate(self, repo_data: dict) -> bool:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         topics = repo_data.get("topics", [])
         if isinstance(topics, list):
             topics = json.dumps(topics)
@@ -301,7 +292,7 @@ class RepoRegistry:
         return selected
 
     def update_status(self, full_name: str, status: str, stage: int, **extra_fields):
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         set_parts = ["status = ?", "current_stage = ?", "updated_at = ?"]
         params = [status, stage, now]
@@ -364,9 +355,19 @@ class RepoRegistry:
             retry_count=attempt,
         )
 
-    def record_agent_call(self, full_name: str, stage: int, purpose: str, model: str,
-                          num_turns: int, cost_usd, usage, subtype: str, is_error: bool,
-                          duration_ms: int):
+    def record_agent_call(
+        self,
+        full_name: str,
+        stage: int,
+        purpose: str,
+        model: str,
+        num_turns: int,
+        cost_usd,
+        usage,
+        subtype: str,
+        is_error: bool,
+        duration_ms: int,
+    ):
         usage = usage or {}
         self.conn.execute(
             """INSERT INTO agent_calls
@@ -375,20 +376,26 @@ class RepoRegistry:
                 duration_ms, ts)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                full_name, stage, purpose, model, num_turns, cost_usd,
-                usage.get("input_tokens", 0), usage.get("output_tokens", 0),
+                full_name,
+                stage,
+                purpose,
+                model,
+                num_turns,
+                cost_usd,
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
                 usage.get("cache_read_input_tokens", 0),
                 usage.get("cache_creation_input_tokens", 0),
-                subtype, is_error, duration_ms,
-                datetime.now(timezone.utc).isoformat(),
+                subtype,
+                is_error,
+                duration_ms,
+                datetime.now(UTC).isoformat(),
             ),
         )
         self.conn.commit()
 
     def get_repo(self, full_name: str) -> dict | None:
-        row = self.conn.execute(
-            "SELECT * FROM repos WHERE full_name = ?", (full_name,)
-        ).fetchone()
+        row = self.conn.execute("SELECT * FROM repos WHERE full_name = ?", (full_name,)).fetchone()
         if row:
             return dict(row)
         return None
@@ -400,15 +407,11 @@ class RepoRegistry:
         if not statuses:
             return []
         placeholders = ",".join("?" * len(statuses))
-        rows = self.conn.execute(
-            f"SELECT * FROM repos WHERE status IN ({placeholders})", statuses
-        ).fetchall()
+        rows = self.conn.execute(f"SELECT * FROM repos WHERE status IN ({placeholders})", statuses).fetchall()
         return [dict(row) for row in rows]
 
     def get_stats(self) -> dict:
-        rows = self.conn.execute(
-            "SELECT status, COUNT(*) as count FROM repos GROUP BY status"
-        ).fetchall()
+        rows = self.conn.execute("SELECT status, COUNT(*) as count FROM repos GROUP BY status").fetchall()
         return {row["status"]: row["count"] for row in rows}
 
     def get_domain_distribution(self) -> dict:
@@ -461,8 +464,9 @@ class RepoRegistry:
     # lowered threshold would now accept (e.g. reset stage-4 rejects with deep_score >= 4).
     STAGE_SCORE_COLUMN = {3: "shallow_total", 4: "deep_score", 5: "trial_score"}
 
-    def reset_rejected(self, stage: int = None, before: str = None, category_in=None,
-                       min_score: float = None, dry_run: bool = False) -> int:
+    def reset_rejected(
+        self, stage: int = None, before: str = None, category_in=None, min_score: float = None, dry_run: bool = False
+    ) -> int:
         """Re-queue rejected repos back to a stage's input status so the (now-fixed) stage retries
         them. Returns the number of repos affected.
 
@@ -504,9 +508,7 @@ class RepoRegistry:
             clause = " AND ".join(where)
 
             if dry_run:
-                row = self.conn.execute(
-                    f"SELECT COUNT(*) AS c FROM repos WHERE {clause}", params
-                ).fetchone()
+                row = self.conn.execute(f"SELECT COUNT(*) AS c FROM repos WHERE {clause}", params).fetchone()
                 total += row["c"]
                 continue
 
@@ -521,9 +523,7 @@ class RepoRegistry:
         return total
 
     def has_repo(self, full_name: str) -> bool:
-        row = self.conn.execute(
-            "SELECT 1 FROM repos WHERE full_name = ?", (full_name,)
-        ).fetchone()
+        row = self.conn.execute("SELECT 1 FROM repos WHERE full_name = ?", (full_name,)).fetchone()
         return row is not None
 
     def get_duplicate_descriptions(self) -> dict[str, list[str]]:
@@ -536,10 +536,7 @@ class RepoRegistry:
                HAVING cnt > 1
                ORDER BY cnt DESC"""
         ).fetchall()
-        return {
-            row["description"]: row["repos"].split(",")
-            for row in rows
-        }
+        return {row["description"]: row["repos"].split(",") for row in rows}
 
     def count_total_trajectories(self, status: str = None) -> int:
         """Sum trajectory_count over repos in a status (default: completed = finalized/trainable).

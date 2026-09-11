@@ -12,6 +12,7 @@ Offer selection (`select_cheapest_allowed`) and the country deny-list (`is_exclu
 live here as pure functions so every provider shares one policy and the self-test can
 exercise them without renting anything.
 """
+
 from dataclasses import dataclass, field
 
 from remote_train import state
@@ -25,6 +26,7 @@ class ProviderError(RuntimeError):
 @dataclass(frozen=True)
 class Offer:
     """One rentable GPU offer, normalized across providers. `raw` keeps the native record."""
+
     id: str
     price_per_hour: float
     gpu_name: str
@@ -39,6 +41,7 @@ class Offer:
 @dataclass
 class Instance:
     """A provisioned instance. `ssh_host`/`ssh_port` are filled once `wait_ready` succeeds."""
+
     id: str
     provider: str
     label: str
@@ -54,6 +57,7 @@ class ComputeProvider:
     Implement these eight methods and append a factory to `PROVIDERS`; nothing else in the
     codebase needs to change to support a new provider.
     """
+
     name: str = "base"
 
     def search_offer(self, cfg) -> Offer:
@@ -144,7 +148,8 @@ def select_cheapest_allowed(offers: list, cfg) -> Offer:
     """
     blocked = state.bad_offer_ids()
     allowed = [
-        o for o in offers
+        o
+        for o in offers
         if str(o.id) not in blocked
         and not is_excluded_country(o.country, cfg.exclude_countries)
         and o.price_per_hour <= cfg.max_price_per_hour

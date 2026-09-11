@@ -1,0 +1,9 @@
+Convert trajectories and train Qwen 3.5-9B
+
+positional arguments:
+  {convert,train}
+    convert        Convert trajectories to ms-swift SFT format
+    train          Launch ms-swift SFT training
+
+options:
+  -h, --help       show this help message and exit

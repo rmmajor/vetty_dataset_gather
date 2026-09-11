@@ -1,0 +1,15 @@
+RL task suite: build | build-candidates | check | list
+
+positional arguments:
+  {build,build-candidates,check,list}
+
+options:
+  -h, --help            show this help message and exit
+  --out OUT
+  --trajectories TRAJECTORIES
+  --seen-config SEEN_CONFIG
+  --unseen-site-pct UNSEEN_SITE_PCT
+  --split SPLIT
+  --frontier FRONTIER
+  --base-suite BASE_SUITE
+  --max-expected MAX_EXPECTED

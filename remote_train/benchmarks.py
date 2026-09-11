@@ -10,12 +10,13 @@ to `BENCHMARKS`; `jobs.py`, `lifecycle.py`, and the CLI never change (same regis
 lives on the PR #12 branch until it merges, so the benchmark stays runnable without vendoring
 a copy of the file here.
 """
+
 import json
 import logging
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +24,14 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class Benchmark:
     name: str
-    files: tuple           # harness files that must exist on the box (incl. the requirements file)
-    requirements: str      # pip requirements file to install on the box
-    results_dir: str       # dir (relative to remote workdir) the harness writes results into
-    command: str           # template; gets {models_yaml} {results_dir}
-    dataset: str = ""      # default HF dataset for this benchmark (cfg.eval_dataset overrides)
+    files: tuple  # harness files that must exist on the box (incl. the requirements file)
+    requirements: str  # pip requirements file to install on the box
+    results_dir: str  # dir (relative to remote workdir) the harness writes results into
+    command: str  # template; gets {models_yaml} {results_dir}
+    dataset: str = ""  # default HF dataset for this benchmark (cfg.eval_dataset overrides)
     split: str = ""
-    extra_args: tuple = () # benchmark-specific flags the harness needs to score correctly
-    source_ref: str = ""   # git ref to fetch missing files from
+    extra_args: tuple = ()  # benchmark-specific flags the harness needs to score correctly
+    source_ref: str = ""  # git ref to fetch missing files from
     summarize: Callable = None  # (local_results_dir: Path) -> str
 
     def build_command(self, cfg, models_yaml: str) -> str:
@@ -68,9 +69,7 @@ def _summarize_screenspot(results_dir: Path) -> str:
             f"parse-rate {s['parse_rate'] * 100:5.1f}%   n={s['total']}"
         )
         for data_type, g in sorted((s.get("by_data_type") or {}).items()):
-            lines.append(
-                f"      type:{data_type:<12s} {g['accuracy'] * 100:5.1f}% ({g['hits']}/{g['total']})"
-            )
+            lines.append(f"      type:{data_type:<12s} {g['accuracy'] * 100:5.1f}% ({g['hits']}/{g['total']})")
     return "\n".join(lines) if lines else "(comparison.json contained no summaries)"
 
 
@@ -138,7 +137,9 @@ def materialize(benchmark: Benchmark, staging: Path) -> list:
             )
         result = subprocess.run(
             ["git", "show", f"{benchmark.source_ref}:{name}"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         if result.returncode != 0:
             raise FileNotFoundError(

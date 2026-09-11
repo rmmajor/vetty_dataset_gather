@@ -6,6 +6,7 @@ Default: DRY-RUN over a sample, projecting the accept/reject split + LLM dollars
 Apply for real (probes every backlog repo, rejects non-bootable -> NOT_BOOTABLE):
   python regate_backlog.py --apply
 """
+
 import concurrent.futures
 import random
 import sqlite3
@@ -52,10 +53,12 @@ def sweep(names, label, workers=8):
     hard = [r for r in rej if is_hard_reject(r[2]) or AGGRESSIVE]
     soft = [r for r in rej if not (is_hard_reject(r[2]) or AGGRESSIVE)]
     graded = len(acc) + len(rej)
-    rate = len(hard) / graded if graded else 0   # only HARD rejects are dropped
+    rate = len(hard) / graded if graded else 0  # only HARD rejects are dropped
     print(f"\n=== {label}: {len(names)} probed ===")
-    print(f"  KEEP={len(acc) + len(soft)} (accept {len(acc)} + soft-defer {len(soft)})  "
-          f"HARD-REJECT={len(hard)}  probe_error={len(err)}  -> drop rate {rate:.0%}")
+    print(
+        f"  KEEP={len(acc) + len(soft)} (accept {len(acc)} + soft-defer {len(soft)})  "
+        f"HARD-REJECT={len(hard)}  probe_error={len(err)}  -> drop rate {rate:.0%}"
+    )
     for reason, n in Counter(r[2] for r in rej).most_common(6):
         tag = "DROP" if (is_hard_reject(reason) or AGGRESSIVE) else "keep"
         print(f"     {n:>4}  [{tag}] {reason}")
@@ -66,15 +69,15 @@ if not APPLY:
     random.seed(1781409272)
     f_s = random.sample(filtered, min(SAMPLE, len(filtered)))
     s_s = random.sample(scored, min(SAMPLE, len(scored)))
-    _, f_rate = sweep(f_s, f"FILTERED sample (pending stage 3)")
-    _, s_rate = sweep(s_s, f"SCORED sample (pending stage 4)")
+    _, f_rate = sweep(f_s, "FILTERED sample (pending stage 3)")
+    _, s_rate = sweep(s_s, "SCORED sample (pending stage 4)")
     print("\n=== PROJECTED BACKLOG SAVINGS (full apply) ===")
     f_saved = f_rate * len(filtered) * SCORE_COST
     s_saved = s_rate * len(scored) * ANALYZE_COST
     print(f"  filtered: ~{f_rate:.0%} of {len(filtered):,} pre-rejected -> ~${f_saved:,.0f} shallow_score avoided")
     print(f"  scored:   ~{s_rate:.0%} of {len(scored):,} pre-rejected -> ~${s_saved:,.0f} deep_analyze avoided")
     print(f"  total projected LLM $ avoided on existing backlog: ~${f_saved + s_saved:,.0f}")
-    print(f"\n  DRY RUN — re-run with --apply to reject the non-bootable backlog for real.")
+    print("\n  DRY RUN — re-run with --apply to reject the non-bootable backlog for real.")
     sys.exit(0)
 
 # Apply: probe every backlog repo (budget-aware), reject the non-bootable ones.
@@ -87,9 +90,12 @@ APPLY_WORKERS = 4
 
 def graphql_budget():
     try:
-        out = subprocess.run(["gh", "api", "rate_limit", "--jq",
-                              ".resources.graphql.remaining,.resources.graphql.reset"],
-                             capture_output=True, text=True, timeout=30)
+        out = subprocess.run(
+            ["gh", "api", "rate_limit", "--jq", ".resources.graphql.remaining,.resources.graphql.reset"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         rem, reset = out.stdout.split()
         return int(rem), int(reset)
     except Exception:
@@ -109,17 +115,24 @@ total_rej = total_err = 0
 for bucket_names, stage in ((filtered, 2), (scored, 3)):
     print(f"\n=== APPLY stage-{stage}: {len(bucket_names)} repos (chunks of {CHUNK}) ===", flush=True)
     for i in range(0, len(bucket_names), CHUNK):
-        chunk = bucket_names[i:i + CHUNK]
+        chunk = bucket_names[i : i + CHUNK]
         wait_for_budget(len(chunk) + 50)
         with concurrent.futures.ThreadPoolExecutor(max_workers=APPLY_WORKERS) as ex:
             results = list(ex.map(probe, chunk))
         for name, accept, reason in results:
             if accept is False and (is_hard_reject(reason) or AGGRESSIVE):
-                registry.reject(name, stage=stage, reason=f"not a bootable app (re-gate): {reason}",
-                                category=FailureCategory.NOT_BOOTABLE)
+                registry.reject(
+                    name,
+                    stage=stage,
+                    reason=f"not a bootable app (re-gate): {reason}",
+                    category=FailureCategory.NOT_BOOTABLE,
+                )
                 total_rej += 1
             elif accept is None:
                 total_err += 1
-        print(f"  stage-{stage}: {min(i + CHUNK, len(bucket_names))}/{len(bucket_names)} probed; "
-              f"{total_rej} rejected, {total_err} probe-errors", flush=True)
+        print(
+            f"  stage-{stage}: {min(i + CHUNK, len(bucket_names))}/{len(bucket_names)} probed; "
+            f"{total_rej} rejected, {total_err} probe-errors",
+            flush=True,
+        )
 print(f"\nAPPLIED: {total_rej} repos rejected NOT_BOOTABLE, {total_err} probe errors left in place.", flush=True)

@@ -7,6 +7,7 @@ window carries the previous window's last step as context only). Resumable: meta
   python -m repo_pipeline.outcome_relabel trajectories/ [--dry-run|--apply] [--limit N] [--workers 3] [--sample N]
                                           [--max-steps N] [--show N] [--report-path FILE] [--estimate]
 """
+
 import argparse
 import asyncio
 import base64
@@ -15,7 +16,7 @@ import logging
 import os
 import random
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions
@@ -24,7 +25,14 @@ from repo_pipeline.agent_runner import run_agent
 from repo_pipeline.corpus_audit import is_trainable
 from repo_pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
 from repo_pipeline.sdk_runner import UsageLimitReached
-from train_qwen import PREV_IMAGE_SIZE, downscale_prev, format_action_summary, history_entries_for_step, step_effects, to_model_action
+from train_qwen import (
+    PREV_IMAGE_SIZE,
+    downscale_prev,
+    format_action_summary,
+    history_entries_for_step,
+    step_effects,
+    to_model_action,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +135,10 @@ def render_steps_block(steps: list[dict], effects: list, context_index: int | No
     lines = []
     for index in ([context_index] if context_index is not None else []) + target_indices:
         step = steps[index]
-        previous = ", ".join(history_entries_for_step(steps[index - 1], effects[index - 1])) if index else NO_PREVIOUS_ACTION
-        header = f"Step {step['step']} (see \"Screen at step {step['step']}\")"
+        previous = (
+            ", ".join(history_entries_for_step(steps[index - 1], effects[index - 1])) if index else NO_PREVIOUS_ACTION
+        )
+        header = f'Step {step["step"]} (see "Screen at step {step["step"]}")'
         if index == context_index:
             header += " — CONTEXT ONLY, thought already final, do not output it"
         lines.append(header)
@@ -139,8 +149,9 @@ def render_steps_block(steps: list[dict], effects: list, context_index: int | No
     return "\n".join(lines).rstrip()
 
 
-def build_window_blocks(traj_dir: Path, trajectory: dict, effects: list, context_index: int | None,
-                        target_indices: list[int]) -> list[dict]:
+def build_window_blocks(
+    traj_dir: Path, trajectory: dict, effects: list, context_index: int | None, target_indices: list[int]
+) -> list[dict]:
     """Content blocks for one window: labelled downscaled screens, then the prompt with the steps block."""
     steps = trajectory["steps"]
     blocks = []
@@ -148,13 +159,23 @@ def build_window_blocks(traj_dir: Path, trajectory: dict, effects: list, context
         step = steps[index]
         png = downscale_prev((traj_dir / step["screenshot"]).read_bytes(), IMAGE_SIZE)
         blocks.append({"type": "text", "text": f"Screen at step {step['step']}"})
-        blocks.append({"type": "image", "source": {"type": "base64", "media_type": "image/png",
-                                                   "data": base64.b64encode(png).decode("utf-8")}})
-    blocks.append({"type": "text", "text": OUTCOME_PROMPT.format(
-        goal=(trajectory.get("instruction") or "(goal not recorded)").strip(),
-        start_url=trajectory.get("start_url") or "(not recorded)",
-        steps_block=render_steps_block(steps, effects, context_index, target_indices),
-        n=len(target_indices))})
+        blocks.append(
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(png).decode("utf-8")},
+            }
+        )
+    blocks.append(
+        {
+            "type": "text",
+            "text": OUTCOME_PROMPT.format(
+                goal=(trajectory.get("instruction") or "(goal not recorded)").strip(),
+                start_url=trajectory.get("start_url") or "(not recorded)",
+                steps_block=render_steps_block(steps, effects, context_index, target_indices),
+                n=len(target_indices),
+            ),
+        }
+    )
     return blocks
 
 
@@ -174,13 +195,23 @@ def parse_thought_array(text: str, n: int) -> list[str] | None:
 
 async def llm_call(blocks: list[dict], full_name: str) -> str:
     async def prompt_stream():
-        yield {"type": "user", "message": {"role": "user", "content": blocks}, "parent_tool_use_id": None, "session_id": ""}
+        yield {
+            "type": "user",
+            "message": {"role": "user", "content": blocks},
+            "parent_tool_use_id": None,
+            "session_id": "",
+        }
 
     return await run_agent(
         prompt_stream(),
         # tools=[] removes every built-in tool: a tool call would consume the single turn and the SDK raises error_max_turns.
-        ClaudeAgentOptions(model=MODEL_FOR_GROUNDED_GENERATION, max_turns=1, max_budget_usd=OUTCOME_BUDGET_USD,
-                           permission_mode="bypassPermissions", tools=[]),
+        ClaudeAgentOptions(
+            model=MODEL_FOR_GROUNDED_GENERATION,
+            max_turns=1,
+            max_budget_usd=OUTCOME_BUDGET_USD,
+            permission_mode="bypassPermissions",
+            tools=[],
+        ),
         full_name=full_name,
         stage=7,
         purpose="outcome_relabel",
@@ -188,7 +219,9 @@ async def llm_call(blocks: list[dict], full_name: str) -> str:
     )
 
 
-def write_relabel(traj_dir: Path, trajectory: dict, original_bytes: bytes, windows: int, unchanged_windows: int) -> None:
+def write_relabel(
+    traj_dir: Path, trajectory: dict, original_bytes: bytes, windows: int, unchanged_windows: int
+) -> None:
     """Back up the original once, replace the thoughts where convert reads them, and record provenance."""
     backup = traj_dir / BACKUP_NAME
     if not backup.exists():
@@ -197,9 +230,12 @@ def write_relabel(traj_dir: Path, trajectory: dict, original_bytes: bytes, windo
     metadata_path = traj_dir / "metadata.json"
     metadata = _load(metadata_path)
     metadata["thought_source"] = THOUGHT_SOURCE
-    metadata["outcome_relabel"] = {"date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                                   "model": MODEL_FOR_GROUNDED_GENERATION, "windows": windows,
-                                   "unchanged_windows": unchanged_windows}
+    metadata["outcome_relabel"] = {
+        "date": datetime.now(UTC).isoformat(timespec="seconds"),
+        "model": MODEL_FOR_GROUNDED_GENERATION,
+        "windows": windows,
+        "unchanged_windows": unchanged_windows,
+    }
     metadata_path.write_text(json.dumps(metadata, indent=2))
 
 
@@ -223,20 +259,31 @@ async def relabel_trajectory(traj_dir: Path, call_llm=llm_call, apply: bool = Fa
         except UsageLimitReached:
             raise
         except Exception as e:
-            logger.warning(f"  {traj_dir.name}: window {number}/{len(windows)} call failed ({e}); leaving its thoughts unchanged")
+            logger.warning(
+                f"  {traj_dir.name}: window {number}/{len(windows)} call failed ({e}); leaving its thoughts unchanged"
+            )
             text = ""
         rewritten = parse_thought_array(text or "", len(target_indices))
         if rewritten is None:
-            logger.warning(f"  {traj_dir.name}: window {number}/{len(windows)} returned no usable "
-                           f"{len(target_indices)}-thought array; leaving its thoughts unchanged")
+            logger.warning(
+                f"  {traj_dir.name}: window {number}/{len(windows)} returned no usable "
+                f"{len(target_indices)}-thought array; leaving its thoughts unchanged"
+            )
             unchanged_windows += 1
-            changes.extend((steps[i]["step"], steps[i].get("thought", ""), steps[i].get("thought", "")) for i in target_indices)
+            changes.extend(
+                (steps[i]["step"], steps[i].get("thought", ""), steps[i].get("thought", "")) for i in target_indices
+            )
             continue
-        for index, thought in zip(target_indices, rewritten):
+        for index, thought in zip(target_indices, rewritten, strict=False):
             changes.append((steps[index]["step"], steps[index].get("thought", ""), thought))
             steps[index]["thought"] = thought
     if unchanged_windows == len(windows):
-        return {"status": "unchanged", "windows": len(windows), "unchanged_windows": unchanged_windows, "changes": changes}
+        return {
+            "status": "unchanged",
+            "windows": len(windows),
+            "unchanged_windows": unchanged_windows,
+            "changes": changes,
+        }
     if apply:
         write_relabel(traj_dir, trajectory, original_bytes, len(windows), unchanged_windows)
     return {"status": "relabeled", "windows": len(windows), "unchanged_windows": unchanged_windows, "changes": changes}
@@ -257,20 +304,34 @@ def estimate_cost(targets: list[Path]) -> dict:
     input_tokens = images * IMAGE_TOKENS + steps * TEXT_TOKENS_PER_STEP + windows * PROMPT_TOKENS
     output_tokens = steps * OUTPUT_TOKENS_PER_STEP
     usd = input_tokens / 1e6 * PRICE_IN_PER_M + output_tokens / 1e6 * PRICE_OUT_PER_M + windows * CALL_OVERHEAD_USD
-    return {"trajectories": trajectories, "steps": steps, "windows": windows, "images": images,
-            "image_tokens": images * IMAGE_TOKENS, "input_tokens": input_tokens, "output_tokens": output_tokens, "usd": usd}
+    return {
+        "trajectories": trajectories,
+        "steps": steps,
+        "windows": windows,
+        "images": images,
+        "image_tokens": images * IMAGE_TOKENS,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "usd": usd,
+    }
 
 
 def print_changes(corpus_dir: Path, traj_dir: Path, result: dict, show: int) -> None:
-    print(f"\n{traj_dir.relative_to(corpus_dir)} [{result['status']}] "
-          f"{len(result['changes'])} steps, {result['windows']} windows, {result['unchanged_windows']} unchanged")
+    print(
+        f"\n{traj_dir.relative_to(corpus_dir)} [{result['status']}] "
+        f"{len(result['changes'])} steps, {result['windows']} windows, {result['unchanged_windows']} unchanged"
+    )
     for step_number, old, new in result["changes"][:show]:
         print(f"step {step_number}: {old}\n     → {new}")
 
 
 def render_report(corpus_dir: Path, rows: list, apply: bool) -> str:
-    lines = [f"# Outcome relabel report ({'applied' if apply else 'dry run'})", "",
-             "| trajectory | step | old | new |", "| --- | --- | --- | --- |"]
+    lines = [
+        f"# Outcome relabel report ({'applied' if apply else 'dry run'})",
+        "",
+        "| trajectory | step | old | new |",
+        "| --- | --- | --- | --- |",
+    ]
     for traj_dir, result in sorted(rows, key=lambda r: str(r[0])):
         for step_number, old, new in result["changes"]:
             old, new = (s.replace("|", "/").replace("\n", " ") for s in (old, new))
@@ -294,7 +355,9 @@ async def run_pass(corpus_dir: Path, targets: list[Path], workers: int, apply: b
                 result = {"status": "failed", "windows": 0, "unchanged_windows": 0, "changes": []}
         outcomes[result["status"]] = outcomes.get(result["status"], 0) + 1
         rows.append((traj_dir, result))
-        logger.info(f"  {traj_dir.name}: {result['status']} ({result['unchanged_windows']}/{result['windows']} windows unchanged)")
+        logger.info(
+            f"  {traj_dir.name}: {result['status']} ({result['unchanged_windows']}/{result['windows']} windows unchanged)"
+        )
         print_changes(corpus_dir, traj_dir, result, show)
 
     try:
@@ -309,7 +372,7 @@ def select_targets(args: argparse.Namespace) -> list[Path]:
     if args.sample:
         targets = sorted(random.Random(args.seed).sample(targets, min(args.sample, len(targets))))
     if args.limit:
-        targets = targets[:args.limit]
+        targets = targets[: args.limit]
     return targets
 
 
@@ -334,12 +397,18 @@ def main():
     targets = select_targets(args)
     if args.estimate:
         estimate = estimate_cost(targets)
-        print(f"targets: {estimate['trajectories']} trajectories, {estimate['steps']} steps, {estimate['windows']} windows "
-              f"({WINDOW_STEPS} steps each), {estimate['images']} images")
-        print(f"tokens: ~{estimate['input_tokens']:,} in ({estimate['image_tokens']:,} image @ {IMAGE_TOKENS}/image) "
-              f"+ ~{estimate['output_tokens']:,} out")
-        print(f"estimate: ~${estimate['usd']:.2f} at ${PRICE_IN_PER_M}/M in, ${PRICE_OUT_PER_M}/M out, "
-              f"${CALL_OVERHEAD_USD} SDK floor per call ({estimate['windows']} calls)")
+        print(
+            f"targets: {estimate['trajectories']} trajectories, {estimate['steps']} steps, {estimate['windows']} windows "
+            f"({WINDOW_STEPS} steps each), {estimate['images']} images"
+        )
+        print(
+            f"tokens: ~{estimate['input_tokens']:,} in ({estimate['image_tokens']:,} image @ {IMAGE_TOKENS}/image) "
+            f"+ ~{estimate['output_tokens']:,} out"
+        )
+        print(
+            f"estimate: ~${estimate['usd']:.2f} at ${PRICE_IN_PER_M}/M in, ${PRICE_OUT_PER_M}/M out, "
+            f"${CALL_OVERHEAD_USD} SDK floor per call ({estimate['windows']} calls)"
+        )
         return
 
     logger.info(f"{len(targets)} trajectories to relabel under {args.corpus} ({'apply' if args.apply else 'dry run'})")

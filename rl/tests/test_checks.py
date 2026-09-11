@@ -1,7 +1,10 @@
 from rl.checks import CHECKS, build_context, evaluate
 
-SNAPSHOT = {"url": "https://example.com/cart?id=7", "title": "Your Cart — Example",
-            "snapshot": '## Page text\nOrder confirmed. Thanks!\n## Interactive elements (in viewport)\n[1] button "Checkout"\n[2] textbox "Coupon" value="SAVE10"\n[3] checkbox "Gift wrap" (checked)\n'}
+SNAPSHOT = {
+    "url": "https://example.com/cart?id=7",
+    "title": "Your Cart — Example",
+    "snapshot": '## Page text\nOrder confirmed. Thanks!\n## Interactive elements (in viewport)\n[1] button "Checkout"\n[2] textbox "Coupon" value="SAVE10"\n[3] checkbox "Gift wrap" (checked)\n',
+}
 
 
 def _ctx(terminal="done"):
@@ -24,7 +27,10 @@ def test_each_check():
     assert evaluate({"element_absent": {"name_regex": "Delete"}}, ctx)["passed"]
     assert evaluate({"element_value": {"name_regex": "Coupon", "equals": "SAVE10"}}, ctx)["passed"]
     assert evaluate({"cookie_present": "^session"}, ctx)["passed"]
-    assert evaluate({"done_emitted": True}, ctx)["passed"] and not evaluate({"done_emitted": True}, _ctx("step_cap"))["passed"]
+    assert (
+        evaluate({"done_emitted": True}, ctx)["passed"]
+        and not evaluate({"done_emitted": True}, _ctx("step_cap"))["passed"]
+    )
     assert evaluate({"terminal_reason_in": ["done", "handoff"]}, ctx)["passed"]
 
 
@@ -42,11 +48,20 @@ def test_page_text_is_searchable_by_text_visible():
     snapshot_only = build_context(SNAPSHOT, lambda: {}, {"terminal_reason": "done"})
     assert not CHECKS["text_visible"]("22.9", snapshot_only)
 
+
 def test_page_text_visible_cannot_be_satisfied_by_typing_the_answer():
-    typed = build_context({"snapshot": '[1] textbox "Search" value="Quoth the Raven"', "url": "https://x/search", "title": "Search"},
-                          lambda: {}, {"terminal_reason": "done"}, "Search results for your query")
+    typed = build_context(
+        {"snapshot": '[1] textbox "Search" value="Quoth the Raven"', "url": "https://x/search", "title": "Search"},
+        lambda: {},
+        {"terminal_reason": "done"},
+        "Search results for your query",
+    )
     assert CHECKS["text_visible"]("Quoth the Raven", typed)
     assert not CHECKS["page_text_visible"]("Quoth the Raven", typed)
-    rendered = build_context({"snapshot": '[1] link "Home"', "url": "https://x/poem", "title": "The Raven"},
-                             lambda: {}, {"terminal_reason": "done"}, "Quoth the Raven, Nevermore")
+    rendered = build_context(
+        {"snapshot": '[1] link "Home"', "url": "https://x/poem", "title": "The Raven"},
+        lambda: {},
+        {"terminal_reason": "done"},
+        "Quoth the Raven, Nevermore",
+    )
     assert CHECKS["page_text_visible"]("Quoth the Raven", rendered)

@@ -1,4 +1,5 @@
 """Scripted (no-LLM, no-network) check of the instruction style pass: qa_verify selection, cap, idempotency and writes."""
+
 import asyncio
 import json
 import logging
@@ -20,9 +21,19 @@ def _step(index: int, thought: str, actions: list[dict]) -> dict:
 
 
 RECHECK_STEPS = [
-    _step(1, "I open the notification settings to find the Email toggle.", [{"type": "click", "x": 100, "y": 200, "button": "left"}]),
-    _step(2, "I uncheck Email notifications and save the form.", [{"type": "click", "x": 120, "y": 300, "button": "left"}]),
-    _step(3, "I'll reload the settings page to confirm the change persisted.", [{"type": "navigate", "url": "http://app.test/settings"}]),
+    _step(
+        1,
+        "I open the notification settings to find the Email toggle.",
+        [{"type": "click", "x": 100, "y": 200, "button": "left"}],
+    ),
+    _step(
+        2, "I uncheck Email notifications and save the form.", [{"type": "click", "x": 120, "y": 300, "button": "left"}]
+    ),
+    _step(
+        3,
+        "I'll reload the settings page to confirm the change persisted.",
+        [{"type": "navigate", "url": "http://app.test/settings"}],
+    ),
     _step(4, "The settings page now shows Email notifications unchecked, so the change persisted.", [{"type": "done"}]),
 ]
 PLAIN_STEPS = [
@@ -32,13 +43,14 @@ PLAIN_STEPS = [
 ]
 
 # Twelve trainable dirs: cap 25% -> 3, one already tagged -> budget 2 of the three untagged re-check candidates.
-CORPUS = (
-    [("task_recheck_a", RECHECK_STEPS, True, {}), ("task_recheck_b", RECHECK_STEPS, True, {}),
-     ("task_recheck_c", RECHECK_STEPS, True, {}), ("task_recheck_wall", RECHECK_STEPS, True, {"wall_demo": True}),
-     ("task_recheck_tagged", RECHECK_STEPS, True, {"instruction_style": "qa_verify"}),
-     ("task_recheck_unverified", RECHECK_STEPS, False, {})]
-    + [(f"task_plain_{i}", PLAIN_STEPS, True, {}) for i in range(7)]
-)
+CORPUS = [
+    ("task_recheck_a", RECHECK_STEPS, True, {}),
+    ("task_recheck_b", RECHECK_STEPS, True, {}),
+    ("task_recheck_c", RECHECK_STEPS, True, {}),
+    ("task_recheck_wall", RECHECK_STEPS, True, {"wall_demo": True}),
+    ("task_recheck_tagged", RECHECK_STEPS, True, {"instruction_style": "qa_verify"}),
+    ("task_recheck_unverified", RECHECK_STEPS, False, {}),
+] + [(f"task_plain_{i}", PLAIN_STEPS, True, {}) for i in range(7)]
 EXPECTED_SELECTION = ["task_recheck_a", "task_recheck_b"]
 ORIGINAL = "Turn off email notifications in the settings and make sure the change sticks."
 PROCEDURE = "Open the settings page, click Notifications, scroll to Email and then select off."
@@ -50,10 +62,18 @@ def _write_corpus(root: Path) -> None:
         traj_dir = root / "repo_smoke" / name
         traj_dir.mkdir(parents=True)
         instruction = PROCEDURE if name == "task_plain_0" else ORIGINAL
-        trajectory = {"task_id": name, "instruction": instruction, "start_url": "http://app.test/",
-                      "steps": steps, "total_steps": len(steps), "success": success}
+        trajectory = {
+            "task_id": name,
+            "instruction": instruction,
+            "start_url": "http://app.test/",
+            "steps": steps,
+            "total_steps": len(steps),
+            "success": success,
+        }
         (traj_dir / "trajectory.json").write_text(json.dumps(trajectory))
-        (traj_dir / "metadata.json").write_text(json.dumps({"capture_source": "agent", "instruction": instruction, **meta}))
+        (traj_dir / "metadata.json").write_text(
+            json.dumps({"capture_source": "agent", "instruction": instruction, **meta})
+        )
         for step in steps:
             (traj_dir / step["screenshot"]).write_bytes(b"")
 
@@ -62,6 +82,7 @@ def _stub_agent(prompts: list[str], reply: str):
     async def run_agent(prompt, options, **kwargs):
         prompts.append(prompt)
         return reply
+
     return run_agent
 
 
@@ -70,7 +91,10 @@ def _names(dirs: list[Path]) -> list[str]:
 
 
 def _read(traj_dir: Path) -> tuple[dict, dict]:
-    return (json.loads((traj_dir / "trajectory.json").read_text()), json.loads((traj_dir / "metadata.json").read_text()))
+    return (
+        json.loads((traj_dir / "trajectory.json").read_text()),
+        json.loads((traj_dir / "metadata.json").read_text()),
+    )
 
 
 def check_parse(failures: list[str]) -> None:
@@ -124,9 +148,12 @@ def check_apply(root: Path, failures: list[str]) -> None:
         failures.append(f"apply outcomes: expected 2 rewritten, got {outcomes}")
     for name in EXPECTED_SELECTION:
         trajectory, meta = _read(root / "repo_smoke" / name)
-        want = {"trajectory.instruction": (trajectory["instruction"], REWRITE), "metadata.instruction": (meta.get("instruction"), REWRITE),
-                "metadata.instruction_pre_qa_voice": (meta.get("instruction_pre_qa_voice"), ORIGINAL),
-                "metadata.instruction_style": (meta.get("instruction_style"), "qa_verify")}
+        want = {
+            "trajectory.instruction": (trajectory["instruction"], REWRITE),
+            "metadata.instruction": (meta.get("instruction"), REWRITE),
+            "metadata.instruction_pre_qa_voice": (meta.get("instruction_pre_qa_voice"), ORIGINAL),
+            "metadata.instruction_style": (meta.get("instruction_style"), "qa_verify"),
+        }
         for field, (got, expected) in want.items():
             if got != expected:
                 failures.append(f"{name} {field}: expected {expected!r}, got {got!r}")

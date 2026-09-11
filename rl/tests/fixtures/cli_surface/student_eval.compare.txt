@@ -1,0 +1,7 @@
+positional arguments:
+  runs             two or more eval_runs/<id> directories
+
+options:
+  -h, --help       show this help message and exit
+  --output OUTPUT  write the table here (default: print, plus comparison.md
+                   next to the first run)

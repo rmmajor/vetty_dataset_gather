@@ -1,4 +1,5 @@
 """Grounding slice of `train_qwen.py convert`: element-description -> click examples mined from recorded click steps."""
+
 import io
 import itertools
 import json
@@ -8,9 +9,20 @@ from pathlib import Path
 
 from PIL import Image
 
-from train_qwen import (GROUNDING_PER_GROUP_CAP, GROUNDING_ROLE_NOUNS, GROUNDING_SMALL_OVERSAMPLE, GROUNDING_SYSTEM_PROMPT,
-                        GROUNDING_TEMPLATES, build_grounding_observation, build_step_observation, convert_trajectories,
-                        grounding_description, grounding_example, grounding_targets, select_grounding_examples)
+from train_qwen import (
+    GROUNDING_PER_GROUP_CAP,
+    GROUNDING_ROLE_NOUNS,
+    GROUNDING_SMALL_OVERSAMPLE,
+    GROUNDING_SYSTEM_PROMPT,
+    GROUNDING_TEMPLATES,
+    build_grounding_observation,
+    build_step_observation,
+    convert_trajectories,
+    grounding_description,
+    grounding_example,
+    grounding_targets,
+    select_grounding_examples,
+)
 
 SAVE_BBOX = {"x": 600, "y": 340, "width": 80, "height": 40}
 ICON_BBOX = {"x": 1000, "y": 20, "width": 24, "height": 24}
@@ -57,18 +69,40 @@ def _target(name="Save", noun="button", x=640, y=360, small=False, screenshot="/
 
 def test_grounding_observation_is_a_one_image_first_step_layout():
     obs = build_grounding_observation('the "Save" button', "/cur.png")
-    assert obs["content"] == [{"type": "text", "text": "Current screenshot:\n"}, {"type": "image", "image": "/cur.png"},
-                              {"type": "text", "text": '\nTask: Click the "Save" button.\nWhat action should you take?'}]
+    assert obs["content"] == [
+        {"type": "text", "text": "Current screenshot:\n"},
+        {"type": "image", "image": "/cur.png"},
+        {"type": "text", "text": '\nTask: Click the "Save" button.\nWhat action should you take?'},
+    ]
     assert obs["images"] == ["/cur.png"] and obs["text"].count("<image>") == 1
     assert obs == build_step_observation('Click the "Save" button.', [], "/cur.png")
 
 
 def test_role_registry_maps_and_skips():
-    expected = {"button": "button", "a": "link", "link": "link", "input": "text field", "textbox": "text field",
-                "searchbox": "text field", "textarea": "text area", "select": "dropdown", "combobox": "dropdown",
-                "option": "option", "menuitem": "menu item", "tab": "tab", "checkbox": "checkbox", "radio": "radio button",
-                "spinbutton": "number field", "treeitem": "item", "listitem": "item", "li": "item", "gridcell": "item",
-                "summary": "item", "switch": "toggle", "img": "image"}
+    expected = {
+        "button": "button",
+        "a": "link",
+        "link": "link",
+        "input": "text field",
+        "textbox": "text field",
+        "searchbox": "text field",
+        "textarea": "text area",
+        "select": "dropdown",
+        "combobox": "dropdown",
+        "option": "option",
+        "menuitem": "menu item",
+        "tab": "tab",
+        "checkbox": "checkbox",
+        "radio": "radio button",
+        "spinbutton": "number field",
+        "treeitem": "item",
+        "listitem": "item",
+        "li": "item",
+        "gridcell": "item",
+        "summary": "item",
+        "switch": "toggle",
+        "img": "image",
+    }
     assert GROUNDING_ROLE_NOUNS == expected
     with tempfile.TemporaryDirectory() as tmp:
         for role in ("div", "span", "main", "presentation", "list", "code", "pre", None):
@@ -85,9 +119,18 @@ def test_only_leading_click_actions_with_centre_hits_qualify():
         assert _targets_for(tmp, "button", "Save2", SAVE_BBOX, click=(cx + 3, cy)) == []
         assert _targets_for(tmp, "button", "Save3", SAVE_BBOX, click=(cx, cy - 3)) == []
         d = _trajectory_dir(tmp, step_count=2)
-        scroll = {"step": 1, "screenshot": "step_001_screenshot.png", "actions": [{"type": "scroll", "x": cx, "y": cy, "scroll_x": 0, "scroll_y": 500}]}
+        scroll = {
+            "step": 1,
+            "screenshot": "step_001_screenshot.png",
+            "actions": [{"type": "scroll", "x": cx, "y": cy, "scroll_x": 0, "scroll_y": 500}],
+        }
         trajectory = {"instruction": "i", "steps": [scroll, _click_step(2, cx, cy)]}
-        meta = {"steps": {"1": {"role": "button", "name": "Save", "bbox": SAVE_BBOX}, "2": {"role": "button", "name": "Save", "bbox": SAVE_BBOX}}}
+        meta = {
+            "steps": {
+                "1": {"role": "button", "name": "Save", "bbox": SAVE_BBOX},
+                "2": {"role": "button", "name": "Save", "bbox": SAVE_BBOX},
+            }
+        }
         targets, skipped = grounding_targets(trajectory, d, meta)
         assert [t["name"] for t in targets] == ["Save"] and skipped["not_click"] == 1
 
@@ -108,8 +151,11 @@ def test_name_secret_password_and_geometry_filters():
         assert _targets_for(tmp, "button", "Flat", {"x": 5, "y": 10, "width": 0, "height": 20}) == []
         assert _targets_for(tmp, "button", "NoBox", None, click=(640, 360)) == []
         d = _trajectory_dir(tmp, step_count=0)
-        targets, skipped = grounding_targets({"instruction": "i", "steps": [_click_step(1, 640, 360)]}, d,
-                                             {"steps": {"1": {"role": "button", "name": "Save", "bbox": SAVE_BBOX}}})
+        targets, skipped = grounding_targets(
+            {"instruction": "i", "steps": [_click_step(1, 640, 360)]},
+            d,
+            {"steps": {"1": {"role": "button", "name": "Save", "bbox": SAVE_BBOX}}},
+        )
         assert targets == [] and skipped["no_screenshot"] == 1
 
 
@@ -129,7 +175,10 @@ def test_grounding_example_has_no_think_and_model_space_coords():
     assert user["content"] == build_grounding_observation('the "Save" button', "/s.png")["content"]
     assert assistant == {"role": "assistant", "content": "action: click(<ref>(999, 999)</ref>, button=left)"}
     assert "<think>" not in assistant["content"]
-    assert grounding_example(_target(x=0, y=0), 1)["messages"][2]["content"] == "action: click(<ref>(0, 0)</ref>, button=left)"
+    assert (
+        grounding_example(_target(x=0, y=0), 1)["messages"][2]["content"]
+        == "action: click(<ref>(0, 0)</ref>, button=left)"
+    )
 
 
 def _user_text(example):
@@ -158,8 +207,10 @@ def test_per_group_cap_and_share_ceiling_drop_small_targets_last():
     large = [_target(name=f"L{i}", x=10 + i * 20, y=100) for i in range(60)]
     by_group, stats = select_grounding_examples({"site_a": large}, budget=1000, rng=random.Random(0))
     assert len(by_group["site_a"]) == GROUNDING_PER_GROUP_CAP == 40 and stats["grounding_capped"] == 20
-    mixed = {"site_a": [_target(name=f"L{i}", x=10 + i * 20, y=100) for i in range(30)],
-             "site_b": [_target(name=f"S{i}", x=10 + i * 20, y=300, small=True) for i in range(4)]}
+    mixed = {
+        "site_a": [_target(name=f"L{i}", x=10 + i * 20, y=100) for i in range(30)],
+        "site_b": [_target(name=f"S{i}", x=10 + i * 20, y=300, small=True) for i in range(4)],
+    }
     by_group, stats = select_grounding_examples(mixed, budget=10, rng=random.Random(0))
     assert stats["grounding_examples"] == 10 and stats["grounding_ceiling_dropped"] == 32
     assert len(by_group["site_b"]) == 10
@@ -171,9 +222,16 @@ def test_per_group_cap_and_share_ceiling_drop_small_targets_last():
 
 
 def _write_corpus(root):
-    steps = [_click_step(1, *_centre(SAVE_BBOX)),
-             {"step": 2, "screenshot": "step_002_screenshot.png", "thought": "b", "actions": [{"type": "type", "text": "hi"}]},
-             {"step": 3, "screenshot": "step_003_screenshot.png", "thought": "c", "actions": [{"type": "done"}]}]
+    steps = [
+        _click_step(1, *_centre(SAVE_BBOX)),
+        {
+            "step": 2,
+            "screenshot": "step_002_screenshot.png",
+            "thought": "b",
+            "actions": [{"type": "type", "text": "hi"}],
+        },
+        {"step": 3, "screenshot": "step_003_screenshot.png", "thought": "c", "actions": [{"type": "done"}]},
+    ]
     for site, icon in (("site_a", False), ("site_b", True)):
         d = root / site / "task_1"
         d.mkdir(parents=True)
@@ -183,7 +241,9 @@ def _write_corpus(root):
         steps[0]["actions"][0]["x"], steps[0]["actions"][0]["y"] = _centre(bbox)
         (d / "trajectory.json").write_text(json.dumps({"instruction": "Save it", "steps": steps, "success": True}))
         (d / "metadata.json").write_text(json.dumps({"capture_source": "agent", "thought_source": "teacher"}))
-        (d / "capture_meta.json").write_text(json.dumps({"steps": {"1": {"role": "button", "name": "Save", "bbox": bbox}}}))
+        (d / "capture_meta.json").write_text(
+            json.dumps({"steps": {"1": {"role": "button", "name": "Save", "bbox": bbox}}})
+        )
 
 
 def test_convert_action_share_ignores_grounding_and_rows_carry_no_extra_keys():

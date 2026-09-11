@@ -15,6 +15,7 @@ not a defect — reported as a [warn] and excludable from training via `convert 
 Exit code 1 when any trainable trajectory fails or a corpus_health.json gate is violated — wire into CI / run before every training
 export: `python -m repo_pipeline.corpus_audit trajectories/` (or `make audit-corpus`).
 """
+
 # Stdlib-only on purpose: remote_train ships this file alone, so verify_pattern_scan imports the predicates from here.
 import argparse
 import json
@@ -30,12 +31,16 @@ OUTCOME_RELABEL_SOURCE = "teacher_outcome"
 
 VERIFY_TEXT = re.compile(
     r"\b(verif|confirm(ing|ed)?|double.?check|re-?open|reopen|reload|refresh|check(ing)? (that|it|the)|"
-    r"make sure|ensure it|persisted|saved correctly|still there|appears in the list)\b", re.I)
+    r"make sure|ensure it|persisted|saved correctly|still there|appears in the list)\b",
+    re.I,
+)
 SAVE_TEXT = re.compile(r"\b(save|saved|saving|submit|apply|confirm)\b", re.I)
 # Generous on purpose: a done thought that names anything observed on screen counts as evidence.
 DONE_EVIDENCE = re.compile(
     r"\b(shows?|showing|visible|display(s|ing|ed)?|lists?|reads|now (has|contains|includes|in)|I can see|can see|"
-    r"confirm(s|ing|ed)?|appears|is present|remains?|still (there|listed|checked|unchecked)|matches)\b", re.I)
+    r"confirm(s|ing|ed)?|appears|is present|remains?|still (there|listed|checked|unchecked)|matches)\b",
+    re.I,
+)
 
 # Guarded-mode control/observation actions are deliberate decisions, not page manipulation; they
 # must never be read as a stuck loop. A step that is ONLY these yields an empty signature, which the
@@ -49,8 +54,13 @@ def _action_signature(step: dict) -> tuple:
     (confirm/handoff/approval_event) are excluded so repeated pauses never count as a loop."""
     return tuple(
         (
-            a.get("type"), a.get("x"), a.get("y"), a.get("text"), tuple(a.get("keys") or []),
-            a.get("scroll_x"), a.get("scroll_y"),
+            a.get("type"),
+            a.get("x"),
+            a.get("y"),
+            a.get("text"),
+            tuple(a.get("keys") or []),
+            a.get("scroll_x"),
+            a.get("scroll_y"),
             json.dumps(a.get("path")) if a.get("path") else None,
             a.get("url"),
         )
@@ -101,7 +111,7 @@ def navigate_after_save(steps) -> bool:
     save_at = next((i for i, thought in enumerate(thoughts) if SAVE_TEXT.search(thought)), None)
     if save_at is None:
         return False
-    return any(_has_action(step, "navigate") for step in steps[save_at + 1:])
+    return any(_has_action(step, "navigate") for step in steps[save_at + 1 :])
 
 
 def demonstrates_recheck(steps) -> bool:
@@ -135,24 +145,64 @@ def trainability(trajectory, metadata, capture_meta, dir_name, include_replay=Fa
 
 # (threshold key, stat key, breach test, message) — a check runs only when the caller supplied its stat.
 _HEALTH_CHECKS = (
-    ("min_trainable_trajectories", "trainable", lambda actual, limit: actual < limit,
-     lambda stats, actual, limit: f"trainable trajectories {actual} < {limit}"),
-    ("min_done_coverage", "done_coverage", lambda actual, limit: actual < limit,
-     lambda stats, actual, limit: f"done() coverage {actual:.1%} < {limit:.0%} of trainable trajectories"),
-    ("max_teacher_raw_trajectories", "teacher_raw", lambda actual, limit: actual > limit,
-     lambda stats, actual, limit: f"{actual} trajectories still thought_source=teacher_raw (max {limit}) — run the stage-7 polish"),
-    ("max_meandering_example_share", "meandering_example_share", lambda actual, limit: actual > limit,
-     lambda stats, actual, limit: f"meandering trajectories supervise {actual:.1%} of examples (max {limit:.0%})"),
-    ("max_group_example_share", "max_group_example_share", lambda actual, limit: actual > limit,
-     lambda stats, actual, limit: f"group {stats.get('max_group')!r} holds {actual:.1%} of examples (max {limit:.0%})"),
-    ("min_done_evidence_share", "done_evidence_share", lambda actual, limit: actual < limit,
-     lambda stats, actual, limit: f"done thoughts citing on-screen evidence {actual:.1%} < {limit:.0%} — expected on an "
-                                  f"unrelabeled corpus; run the outcome-relabel pass so done() states what the screen shows"),
-    ("max_grounding_example_share", "grounding_example_share", lambda actual, limit: actual > limit,
-     lambda stats, actual, limit: f"grounding examples are {actual:.1%} of the dataset (max {limit:.0%})"),
-    ("min_outcome_relabeled_share", "outcome_relabeled_share", lambda actual, limit: actual < limit,
-     lambda stats, actual, limit: f"only {actual:.1%} of trainable trajectories carry thought_source={OUTCOME_RELABEL_SOURCE} "
-                                  f"(min {limit:.0%}) — run `make outcome-relabel APPLY=1`"),
+    (
+        "min_trainable_trajectories",
+        "trainable",
+        lambda actual, limit: actual < limit,
+        lambda stats, actual, limit: f"trainable trajectories {actual} < {limit}",
+    ),
+    (
+        "min_done_coverage",
+        "done_coverage",
+        lambda actual, limit: actual < limit,
+        lambda stats, actual, limit: f"done() coverage {actual:.1%} < {limit:.0%} of trainable trajectories",
+    ),
+    (
+        "max_teacher_raw_trajectories",
+        "teacher_raw",
+        lambda actual, limit: actual > limit,
+        lambda stats, actual, limit: (
+            f"{actual} trajectories still thought_source=teacher_raw (max {limit}) — run the stage-7 polish"
+        ),
+    ),
+    (
+        "max_meandering_example_share",
+        "meandering_example_share",
+        lambda actual, limit: actual > limit,
+        lambda stats, actual, limit: f"meandering trajectories supervise {actual:.1%} of examples (max {limit:.0%})",
+    ),
+    (
+        "max_group_example_share",
+        "max_group_example_share",
+        lambda actual, limit: actual > limit,
+        lambda stats, actual, limit: (
+            f"group {stats.get('max_group')!r} holds {actual:.1%} of examples (max {limit:.0%})"
+        ),
+    ),
+    (
+        "min_done_evidence_share",
+        "done_evidence_share",
+        lambda actual, limit: actual < limit,
+        lambda stats, actual, limit: (
+            f"done thoughts citing on-screen evidence {actual:.1%} < {limit:.0%} — expected on an "
+            f"unrelabeled corpus; run the outcome-relabel pass so done() states what the screen shows"
+        ),
+    ),
+    (
+        "max_grounding_example_share",
+        "grounding_example_share",
+        lambda actual, limit: actual > limit,
+        lambda stats, actual, limit: f"grounding examples are {actual:.1%} of the dataset (max {limit:.0%})",
+    ),
+    (
+        "min_outcome_relabeled_share",
+        "outcome_relabeled_share",
+        lambda actual, limit: actual < limit,
+        lambda stats, actual, limit: (
+            f"only {actual:.1%} of trainable trajectories carry thought_source={OUTCOME_RELABEL_SOURCE} "
+            f"(min {limit:.0%}) — run `make outcome-relabel APPLY=1`"
+        ),
+    ),
 )
 
 
@@ -175,8 +225,14 @@ def corpus_health_violations(stats: dict, thresholds: dict) -> list[str]:
 
 def corpus_metrics(trajectory_dirs) -> dict:
     """Outcome metrics over trainable trajectory dirs: does done() follow a re-check and cite evidence?"""
-    counts = {"trainable_trajectories": 0, "done_steps": 0, "done_with_evidence": 0, "done_after_recheck": 0,
-              "qa_verify_trajectories": 0, "outcome_relabeled": 0}
+    counts = {
+        "trainable_trajectories": 0,
+        "done_steps": 0,
+        "done_with_evidence": 0,
+        "done_after_recheck": 0,
+        "qa_verify_trajectories": 0,
+        "outcome_relabeled": 0,
+    }
     for traj_dir in trajectory_dirs:
         steps = _load_json(traj_dir / "trajectory.json").get("steps", [])
         metadata = _load_json(traj_dir / "metadata.json")
@@ -190,9 +246,12 @@ def corpus_metrics(trajectory_dirs) -> dict:
         counts["done_after_recheck"] += done_after_verify(steps)
     done_steps = counts["done_steps"] or 1
     trainable = counts["trainable_trajectories"] or 1
-    return {**counts, "done_evidence_share": counts["done_with_evidence"] / done_steps,
-            "done_after_recheck_share": counts["done_after_recheck"] / done_steps,
-            "outcome_relabeled_share": counts["outcome_relabeled"] / trainable}
+    return {
+        **counts,
+        "done_evidence_share": counts["done_with_evidence"] / done_steps,
+        "done_after_recheck_share": counts["done_after_recheck"] / done_steps,
+        "outcome_relabeled_share": counts["outcome_relabeled"] / trainable,
+    }
 
 
 def audit_trajectory(traj_dir: Path) -> list[str]:
@@ -274,21 +333,27 @@ def run_audit(corpus_dir: Path, health_config: Path | None = None, skip_health_g
             trainable_failures += 1
 
     trainable = len(trainable_dirs)
-    print(f"\naudit: {trainable} trainable trajectories, {trainable_failures} failing, {skipped} not trainable (excluded/replay/unverified)")
+    print(
+        f"\naudit: {trainable} trainable trajectories, {trainable_failures} failing, {skipped} not trainable (excluded/replay/unverified)"
+    )
     metrics = corpus_metrics(trainable_dirs)
-    print(f"outcome: done thoughts citing on-screen evidence {metrics['done_with_evidence']}/{metrics['done_steps']} "
-          f"({metrics['done_evidence_share']:.1%}); done after a re-check {metrics['done_after_recheck']}/{metrics['done_steps']} "
-          f"({metrics['done_after_recheck_share']:.1%}); qa_verify-voice trajectories {metrics['qa_verify_trajectories']}; "
-          f"outcome-relabeled (thought_source={OUTCOME_RELABEL_SOURCE}) {metrics['outcome_relabeled']}/{trainable} "
-          f"({metrics['outcome_relabeled_share']:.1%})")
+    print(
+        f"outcome: done thoughts citing on-screen evidence {metrics['done_with_evidence']}/{metrics['done_steps']} "
+        f"({metrics['done_evidence_share']:.1%}); done after a re-check {metrics['done_after_recheck']}/{metrics['done_steps']} "
+        f"({metrics['done_after_recheck_share']:.1%}); qa_verify-voice trajectories {metrics['qa_verify_trajectories']}; "
+        f"outcome-relabeled (thought_source={OUTCOME_RELABEL_SOURCE}) {metrics['outcome_relabeled']}/{trainable} "
+        f"({metrics['outcome_relabeled_share']:.1%})"
+    )
 
     health_path = health_config or default_health_config()
     violations = corpus_health_violations(metrics, _load_json(health_path)) if health_path.is_file() else []
     if not health_path.is_file():
         print(f"corpus health gate: SKIPPED — no thresholds file at {health_path}")
     elif violations:
-        print(f"CORPUS HEALTH GATE {'(bypassed with --skip-health-gate)' if skip_health_gate else 'FAILED'} "
-              f"— {len(violations)} violation(s) against {health_path}:")
+        print(
+            f"CORPUS HEALTH GATE {'(bypassed with --skip-health-gate)' if skip_health_gate else 'FAILED'} "
+            f"— {len(violations)} violation(s) against {health_path}:"
+        )
         for violation in violations:
             print(f"  - {violation}")
     else:
@@ -299,10 +364,15 @@ def run_audit(corpus_dir: Path, health_config: Path | None = None, skip_health_g
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("corpus", type=Path, nargs="?", default=Path("trajectories/"))
-    parser.add_argument("--health-config", type=Path, default=None,
-                        help=f"Thresholds JSON (default: ./{HEALTH_CONFIG_NAME}, else the repo root's; missing file skips the gate)")
-    parser.add_argument("--skip-health-gate", action="store_true",
-                        help="Report health violations but exit 0 on them (experiments only)")
+    parser.add_argument(
+        "--health-config",
+        type=Path,
+        default=None,
+        help=f"Thresholds JSON (default: ./{HEALTH_CONFIG_NAME}, else the repo root's; missing file skips the gate)",
+    )
+    parser.add_argument(
+        "--skip-health-gate", action="store_true", help="Report health violations but exit 0 on them (experiments only)"
+    )
     args = parser.parse_args(argv)
     return run_audit(args.corpus, args.health_config, args.skip_health_gate)
 

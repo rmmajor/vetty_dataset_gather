@@ -1,4 +1,5 @@
 """E3 eval: run the student on held-out tasks (temperature 0, k=1) and report per-split metrics with baseline deltas."""
+
 import argparse
 import json
 import logging
@@ -15,7 +16,15 @@ from rl.rollout import add_common_args, build_pool, policy_spec, selected_tasks
 from rl.runner import make_run_context, run_batch, write_rollouts
 
 logger = logging.getLogger(__name__)
-METRIC_KEYS = ("verified_success", "check_pass_rate", "parse_failure_rate", "parse_abort_rate", "done_rate", "mean_steps_success", "loop_guard_rate")
+METRIC_KEYS = (
+    "verified_success",
+    "check_pass_rate",
+    "parse_failure_rate",
+    "parse_abort_rate",
+    "done_rate",
+    "mean_steps_success",
+    "loop_guard_rate",
+)
 
 
 def _rate(items, predicate):
@@ -86,15 +95,31 @@ def main():
     suite, tasks = selected_tasks(args)
     spec = policy_spec(args)
     probe = make_policy(spec)
-    header = {"run_id": run_id, "model": getattr(probe, "served_model_id", lambda: args.model)(), "checkpoint_sha": args.checkpoint_sha,
-              "git_head": git_head(), "suite_sha256": suite["suite_sha256"], "tasks": len(tasks), "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    header = {
+        "run_id": run_id,
+        "model": getattr(probe, "served_model_id", lambda: args.model)(),
+        "checkpoint_sha": args.checkpoint_sha,
+        "git_head": git_head(),
+        "suite_sha256": suite["suite_sha256"],
+        "tasks": len(tasks),
+        "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
     bridge, pool = AsyncBridge(), build_pool(args)
     cfg = EpisodeConfig(max_steps=args.max_steps, verifier_mode=args.verifier_mode)
     run_ctx = make_run_context(run_id, args.out, 0, policy_tag=args.model, bridge=bridge)
     try:
         pool.start()
-        records = run_batch(lambda: make_policy(spec), tasks, 1, pool, run_ctx, cfg,
-                            on_record=lambda r: logger.info(f"{r['episode_id']}: {r.get('terminal_reason')} success={r.get('success')}"))
+        records = run_batch(
+            lambda: make_policy(spec),
+            tasks,
+            1,
+            pool,
+            run_ctx,
+            cfg,
+            on_record=lambda r: logger.info(
+                f"{r['episode_id']}: {r.get('terminal_reason')} success={r.get('success')}"
+            ),
+        )
     finally:
         pool.stop()
         bridge.close()
@@ -102,7 +127,9 @@ def main():
     write_rollouts(records, out_dir / "rollouts.jsonl")
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
     metrics, domains = metrics_by_split(records), per_domain(records)
-    (out_dir / "report.json").write_text(json.dumps({"header": header, "metrics": metrics, "domains": domains}, indent=2))
+    (out_dir / "report.json").write_text(
+        json.dumps({"header": header, "metrics": metrics, "domains": domains}, indent=2)
+    )
     report = render_report(header, metrics, domains, baseline)
     (out_dir / "report.md").write_text(report)
     print(report)

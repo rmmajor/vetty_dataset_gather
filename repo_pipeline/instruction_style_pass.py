@@ -1,4 +1,5 @@
 """Rewrite trainable-corpus instructions into a registered target voice (STYLE_MODES: goal | qa_verify), resumable via metadata.instruction_style."""
+
 import argparse
 import asyncio
 import json
@@ -6,9 +7,9 @@ import logging
 import os
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from claude_agent_sdk import ClaudeAgentOptions
 
@@ -33,7 +34,9 @@ _STARTS_WITH_ROUTE = re.compile(r"^(open|go to|navigate|visit|click|scroll)\b", 
 # Route verbs mid-instruction; content specs ("a post with five items, each…") must NOT fire.
 _ROUTE_VERBS = re.compile(
     r"\b(click|clicking|navigate|navigating|scroll|scrolling|go to|open the|advancing through|"
-    r"proceed(ing)? (to|through)|then (type|select|press|choose))\b", re.IGNORECASE)
+    r"proceed(ing)? (to|through)|then (type|select|press|choose))\b",
+    re.IGNORECASE,
+)
 
 REWRITE_PROMPT = """Rewrite this browser-task instruction as the terse GOAL a real user would give.
 Keep EVERY concrete parameter (names, titles, values, filters, quantities, dates) and the same
@@ -107,7 +110,7 @@ def is_procedure_flavored(instruction: str) -> bool:
 
 def _trim(text: str, limit: int) -> str:
     text = " ".join((text or "").split())
-    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def _thought_lines(steps: list[dict]) -> str:
@@ -125,8 +128,9 @@ def _thought_lines(steps: list[dict]) -> str:
 def build_qa_verify_prompt(trajectory: dict) -> str:
     steps = trajectory.get("steps", [])
     final_thought = _trim(steps[-1].get("thought") or "", FINAL_THOUGHT_CHARS) if steps else ""
-    return QA_VERIFY_PROMPT.format(instruction=trajectory.get("instruction", ""),
-                                   thoughts=_thought_lines(steps), final_thought=final_thought)
+    return QA_VERIFY_PROMPT.format(
+        instruction=trajectory.get("instruction", ""), thoughts=_thought_lines(steps), final_thought=final_thought
+    )
 
 
 def parse_goal_reply(text: str) -> str | None:
@@ -155,7 +159,9 @@ def parse_json_instruction(text: str) -> str | None:
 
 STYLE_MODES: dict[str, StyleMode] = {
     "goal": StyleMode(
-        tag="goal_rewrite_v1", provenance_key="original_instruction", purpose="instruction_style",
+        tag="goal_rewrite_v1",
+        provenance_key="original_instruction",
+        purpose="instruction_style",
         report_name="instruction_style_report.md",
         selects=lambda trajectory, meta: is_procedure_flavored(trajectory.get("instruction", "")),
         already_styled=lambda meta: meta.get("instruction_style") == "goal_rewrite_v1",
@@ -163,9 +169,13 @@ STYLE_MODES: dict[str, StyleMode] = {
         parse_reply=parse_goal_reply,
     ),
     "qa_verify": StyleMode(
-        tag=QA_VERIFY_STYLE, provenance_key="instruction_pre_qa_voice", purpose="instruction_qa_voice",
+        tag=QA_VERIFY_STYLE,
+        provenance_key="instruction_pre_qa_voice",
+        purpose="instruction_qa_voice",
         report_name="instruction_qa_voice_report.md",
-        selects=lambda trajectory, meta: not meta.get("wall_demo") and demonstrates_recheck(trajectory.get("steps", [])),
+        selects=lambda trajectory, meta: (
+            not meta.get("wall_demo") and demonstrates_recheck(trajectory.get("steps", []))
+        ),
         already_styled=in_qa_verify_voice,
         build_prompt=build_qa_verify_prompt,
         parse_reply=parse_json_instruction,
@@ -178,7 +188,9 @@ STYLE_MODES: dict[str, StyleMode] = {
 
 def find_targets(corpus_dir: Path, mode: StyleMode) -> list[Path]:
     """Trainable dirs the mode selects, in sorted order; already-styled dirs count against the mode's cap."""
-    trainable = [d for d in sorted(corpus_dir.glob("**/task_*")) if (d / "trajectory.json").exists() and is_trainable(d)]
+    trainable = [
+        d for d in sorted(corpus_dir.glob("**/task_*")) if (d / "trajectory.json").exists() and is_trainable(d)
+    ]
     styled = 0
     targets = []
     for traj_dir in trainable:
@@ -188,7 +200,7 @@ def find_targets(corpus_dir: Path, mode: StyleMode) -> list[Path]:
         elif mode.selects(_load(traj_dir / "trajectory.json"), meta):
             targets.append(traj_dir)
     if mode.max_share is not None:
-        targets = targets[:max(int(mode.max_share * len(trainable)) - styled, 0)]
+        targets = targets[: max(int(mode.max_share * len(trainable)) - styled, 0)]
     return targets
 
 
@@ -200,7 +212,9 @@ def write_rewrite(traj_dir: Path, mode: StyleMode, old: str, new: str) -> None:
     traj_file.write_text(json.dumps(traj, indent=2))
     meta_file = traj_dir / "metadata.json"
     meta = _load(meta_file)
-    meta.update({"instruction": new, mode.provenance_key: meta.get(mode.provenance_key) or old, "instruction_style": mode.tag})
+    meta.update(
+        {"instruction": new, mode.provenance_key: meta.get(mode.provenance_key) or old, "instruction_style": mode.tag}
+    )
     meta_file.write_text(json.dumps(meta, indent=2))
 
 
@@ -210,8 +224,12 @@ async def rewrite_one(traj_dir: Path, mode: StyleMode, apply: bool) -> tuple[str
     old = traj.get("instruction", "")
     text = await run_agent(
         mode.build_prompt(traj),
-        ClaudeAgentOptions(model=MODEL_FOR_GROUNDED_GENERATION, max_turns=1,
-                           max_budget_usd=mode.budget_usd, permission_mode="bypassPermissions"),
+        ClaudeAgentOptions(
+            model=MODEL_FOR_GROUNDED_GENERATION,
+            max_turns=1,
+            max_budget_usd=mode.budget_usd,
+            permission_mode="bypassPermissions",
+        ),
         full_name=f"{mode.tag}:{traj_dir.name}",
         stage=7,
         purpose=mode.purpose,
@@ -230,8 +248,12 @@ async def rewrite_one(traj_dir: Path, mode: StyleMode, apply: bool) -> tuple[str
 
 
 def _write_report(corpus_dir: Path, mode: StyleMode, rows: list, apply: bool, report_dir: Path) -> None:
-    lines = [f"# Instruction rewrite report — mode {mode.tag} ({'applied' if apply else 'dry run'})", "",
-             "| trajectory | status | old | new |", "| --- | --- | --- | --- |"]
+    lines = [
+        f"# Instruction rewrite report — mode {mode.tag} ({'applied' if apply else 'dry run'})",
+        "",
+        "| trajectory | status | old | new |",
+        "| --- | --- | --- | --- |",
+    ]
     for traj_dir, status, old, new in sorted(rows, key=lambda r: str(r[0])):
         old, new = (s.replace("|", "/").replace("\n", " ")[:300] for s in (old, new))
         lines.append(f"| {traj_dir.relative_to(corpus_dir)} | {status} | {old} | {new} |")
@@ -240,8 +262,9 @@ def _write_report(corpus_dir: Path, mode: StyleMode, rows: list, apply: bool, re
     logger.info(f"report: {report} ({len(rows)} rows)")
 
 
-async def run_pass(corpus_dir: Path, mode: StyleMode, workers: int, limit: int | None, apply: bool,
-                   report_dir: Path = Path(".")) -> dict:
+async def run_pass(
+    corpus_dir: Path, mode: StyleMode, workers: int, limit: int | None, apply: bool, report_dir: Path = Path(".")
+) -> dict:
     targets = find_targets(corpus_dir, mode)
     if limit:
         targets = targets[:limit]
@@ -273,8 +296,11 @@ def main():
     parser.add_argument("corpus", type=Path, nargs="?", default=Path("trajectories/"))
     parser.add_argument("--mode", choices=sorted(STYLE_MODES), default="goal")
     parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="List the selection and exit (default); qa_verify also previews old -> new without writing")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List the selection and exit (default); qa_verify also previews old -> new without writing",
+    )
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()

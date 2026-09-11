@@ -1,11 +1,12 @@
 """Eval task-source registry — adding an eval task set is a DATA entry, not a code change."""
+
 import json
 import logging
 import os
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 from urllib.parse import urlparse
 
 from repo_pipeline.stage6_generate import _safe_task_id
@@ -30,8 +31,8 @@ class EvalTask:
     start_url: str
     website: str = ""
     domain: str = ""
-    reference_length: int = 0     # the benchmark's own human step count; the efficiency denominator
-    level: str = ""               # easy | medium | hard, when the source grades difficulty
+    reference_length: int = 0  # the benchmark's own human step count; the efficiency denominator
+    level: str = ""  # easy | medium | hard, when the source grades difficulty
     split_tag: str = ""
     source: str = ""
 
@@ -44,20 +45,20 @@ class TaskLoadConfig:
     trajectories_dir: Path = Path("trajectories")
     sites_config: Path = PUBLIC_SITES_CONFIG
     tasks_file: Path | None = None
-    stratify: bool = False        # with --limit, keep the level mix instead of taking the head
+    stratify: bool = False  # with --limit, keep the level mix instead of taking the head
 
 
 @dataclass(frozen=True)
 class TaskSource:
     name: str
     description: str
-    loader: Callable                # (TaskSource, TaskLoadConfig) -> (list[EvalTask], provenance)
+    loader: Callable  # (TaskSource, TaskLoadConfig) -> (list[EvalTask], provenance)
     default_step_cap: int
-    live_web: bool = False          # third-party sites: expect bot-blocking as a real outcome
+    live_web: bool = False  # third-party sites: expect bot-blocking as a real outcome
     hf_dataset: str = ""
     hf_file: str = ""
     hf_split: str = ""
-    columns: dict = field(default_factory=dict)   # EvalTask field -> dataset column
+    columns: dict = field(default_factory=dict)  # EvalTask field -> dataset column
     access_url: str = ""
     citation: str = ""
 
@@ -74,8 +75,9 @@ def _env_file_candidates() -> list[Path]:
     candidates = [Path(os.environ["EVAL_ENV_FILE"])] if os.environ.get("EVAL_ENV_FILE") else []
     candidates.append(Path.cwd() / ".env")
     try:
-        common = subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True,
-                                text=True, check=True).stdout.strip()
+        common = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True, check=True
+        ).stdout.strip()
         candidates.append(Path(common).resolve().parent / ".env")
     except (subprocess.CalledProcessError, FileNotFoundError, OSError):
         pass
@@ -187,8 +189,11 @@ def load_hf_json_tasks(source: TaskSource, cfg: TaskLoadConfig) -> tuple[list[Ev
     rows = _rows_from_json(path)
     columns = source.columns
 
-    missing = [c for c in (columns.get("task_id"), columns.get("instruction"), columns.get("start_url"))
-               if c and rows and c not in rows[0]]
+    missing = [
+        c
+        for c in (columns.get("task_id"), columns.get("instruction"), columns.get("start_url"))
+        if c and rows and c not in rows[0]
+    ]
     if missing:
         raise TaskSourceUnavailable(
             f"{source.name}: dataset columns {missing} are absent from the downloaded rows "
@@ -200,17 +205,19 @@ def load_hf_json_tasks(source: TaskSource, cfg: TaskLoadConfig) -> tuple[list[Ev
         start_url = _normalize_url(str(row.get(columns["start_url"], "")))
         if not start_url:
             continue
-        tasks.append(EvalTask(
-            task_id=str(row[columns["task_id"]]),
-            instruction=str(row[columns["instruction"]]),
-            start_url=start_url,
-            website=urlparse(start_url).netloc,
-            domain=urlparse(start_url).netloc,
-            reference_length=int(row.get(columns.get("reference_length", ""), 0) or 0),
-            level=str(row.get(columns.get("level", ""), "") or ""),
-            split_tag="live_web",
-            source=source.name,
-        ))
+        tasks.append(
+            EvalTask(
+                task_id=str(row[columns["task_id"]]),
+                instruction=str(row[columns["instruction"]]),
+                start_url=start_url,
+                website=urlparse(start_url).netloc,
+                domain=urlparse(start_url).netloc,
+                reference_length=int(row.get(columns.get("reference_length", ""), 0) or 0),
+                level=str(row.get(columns.get("level", ""), "") or ""),
+                split_tag="live_web",
+                source=source.name,
+            )
+        )
 
     provenance = {
         "dataset": source.hf_dataset,
@@ -241,7 +248,7 @@ def apply_limit(tasks: list[EvalTask], cfg: TaskLoadConfig) -> list[EvalTask]:
     if not cfg.limit or cfg.limit >= len(tasks):
         return tasks
     if not cfg.stratify:
-        return tasks[:cfg.limit]
+        return tasks[: cfg.limit]
     by_level: dict = {}
     for task in sorted(tasks, key=lambda t: t.task_id):
         by_level.setdefault(task.level or "ungraded", []).append(task)
@@ -274,7 +281,7 @@ def load_held_out_tasks(source: TaskSource, cfg: TaskLoadConfig) -> tuple[list[E
     skipped_repo_groups = 0
 
     candidates: list[tuple[dict, dict, str]] = []
-    for name, site in sites.items():
+    for _name, site in sites.items():
         for task in site.get("tasks", []):
             candidates.append((site, task, "curated"))
 
@@ -284,7 +291,7 @@ def load_held_out_tasks(source: TaskSource, cfg: TaskLoadConfig) -> tuple[list[E
             if not group.startswith("site_"):
                 skipped_repo_groups += 1
                 continue
-            site = sites.get(group[len("site_"):])
+            site = sites.get(group[len("site_") :])
             if site is None:
                 continue
             try:
@@ -307,17 +314,19 @@ def load_held_out_tasks(source: TaskSource, cfg: TaskLoadConfig) -> tuple[list[E
             captured += 1
             continue
         start_url = _normalize_url(site["start_url"])
-        tasks.append(EvalTask(
-            task_id=unique_id,
-            instruction=instruction,
-            start_url=start_url,
-            website=urlparse(start_url).netloc,
-            domain=site.get("domain", "public_web"),
-            reference_length=int(task.get("expected_actions") or 0),
-            level=str(task.get("difficulty") or ""),
-            split_tag=f"unseen_task_seen_site:{origin}",
-            source=source.name,
-        ))
+        tasks.append(
+            EvalTask(
+                task_id=unique_id,
+                instruction=instruction,
+                start_url=start_url,
+                website=urlparse(start_url).netloc,
+                domain=site.get("domain", "public_web"),
+                reference_length=int(task.get("expected_actions") or 0),
+                level=str(task.get("difficulty") or ""),
+                split_tag=f"unseen_task_seen_site:{origin}",
+                source=source.name,
+            )
+        )
 
     if not tasks:
         raise TaskSourceUnavailable(
@@ -370,9 +379,7 @@ TASK_SOURCES: dict[str, TaskSource] = {
 
 def load_tasks(source_name: str, cfg: TaskLoadConfig) -> tuple[TaskSource, list[EvalTask], dict]:
     if source_name not in TASK_SOURCES:
-        raise TaskSourceUnavailable(
-            f"Unknown task source {source_name!r}. Available: {sorted(TASK_SOURCES)}"
-        )
+        raise TaskSourceUnavailable(f"Unknown task source {source_name!r}. Available: {sorted(TASK_SOURCES)}")
     source = TASK_SOURCES[source_name]
     tasks, provenance = source.loader(source, cfg)
     return source, tasks, provenance
@@ -384,17 +391,19 @@ def load_tasks_from_file(path: Path, limit: int | None = None) -> list[EvalTask]
     tasks = []
     for row in rows:
         start_url = _normalize_url(row["start_url"])
-        tasks.append(EvalTask(
-            task_id=str(row["task_id"]),
-            instruction=row["instruction"],
-            start_url=start_url,
-            website=row.get("website") or urlparse(start_url).netloc,
-            domain=row.get("domain") or urlparse(start_url).netloc,
-            reference_length=int(row.get("reference_length") or 0),
-            level=row.get("level", ""),
-            split_tag=row.get("split_tag", "file"),
-            source=row.get("source", str(path)),
-        ))
+        tasks.append(
+            EvalTask(
+                task_id=str(row["task_id"]),
+                instruction=row["instruction"],
+                start_url=start_url,
+                website=row.get("website") or urlparse(start_url).netloc,
+                domain=row.get("domain") or urlparse(start_url).netloc,
+                reference_length=int(row.get("reference_length") or 0),
+                level=row.get("level", ""),
+                split_tag=row.get("split_tag", "file"),
+                source=row.get("source", str(path)),
+            )
+        )
         if limit and len(tasks) >= limit:
             break
     return tasks

@@ -14,6 +14,7 @@ benefit from the test-source-based prompt. They still get new thoughts.
 Run from the repo root:
   .venv-pipeline/bin/python -m repo_pipeline.regenerate_supervision --dry-run --sample 5
 """
+
 import argparse
 import asyncio
 import json
@@ -135,7 +136,10 @@ async def regenerate_one(
     if do_instructions and path_b:
         repo = repo_dict_from_metadata(metadata)
         new_instruction = await generate_instruction(
-            new_trajectory, capture_meta, repo=repo, test_source=test_source,
+            new_trajectory,
+            capture_meta,
+            repo=repo,
+            test_source=test_source,
         )
         new_trajectory["instruction"] = new_instruction
         summary["new_instruction"] = new_instruction
@@ -204,7 +208,7 @@ def render_report(summaries: list[dict]) -> str:
     """Build a Markdown old-vs-new report for stdout (and optionally a file). One section
     per trajectory: instruction diff at the top, then a per-step table of old vs new thought."""
     lines: list[str] = []
-    lines.append(f"# Supervision regeneration smoke report")
+    lines.append("# Supervision regeneration smoke report")
     lines.append("")
     lines.append(f"Trajectories sampled: **{len(summaries)}**")
     lines.append("")
@@ -297,10 +301,19 @@ async def amain(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path", nargs="?", default="trajectories", help="trajectories root (default: trajectories/)")
-    parser.add_argument("--dry-run", action="store_true", help="generate in memory and print Markdown report, no writes")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="generate in memory and print Markdown report, no writes"
+    )
     parser.add_argument("--sample", type=int, default=0, help="limit to N sampled trajectories (0 = all)")
-    parser.add_argument("--instructions", dest="do_instructions", action="store_true", help="regenerate the trajectory.instruction field")
-    parser.add_argument("--thoughts", dest="do_thoughts", action="store_true", help="regenerate every steps[].thought field")
+    parser.add_argument(
+        "--instructions",
+        dest="do_instructions",
+        action="store_true",
+        help="regenerate the trajectory.instruction field",
+    )
+    parser.add_argument(
+        "--thoughts", dest="do_thoughts", action="store_true", help="regenerate every steps[].thought field"
+    )
     parser.add_argument("--report-path", default="", help="also write the Markdown report to this file")
     parser.add_argument("--verbose", action="store_true", help="enable INFO logging")
     args = parser.parse_args()

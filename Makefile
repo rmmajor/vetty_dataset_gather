@@ -1,12 +1,10 @@
-.PHONY: help setup install-training install-all load-tasks record convert train all clean clean-trajectories clean-training \
-       setup-pipeline build-sandbox pipeline-discover pipeline-filter pipeline-score pipeline-overnight pipeline-until-limit pipeline-think pipeline-status dashboard \
-       capture-public provision-human capture-human capture-search capture-qa-verify \
-       polish-pass relabel-recoverable wall-demos instruction-style audit-corpus \
-       install-eval eval-screenspot test-eval \
-       install-remote remote-train remote-eval remote-train-dry remote-train-cleanup test-remote \
-       eval-online-mind2web eval-held-out eval-compare eval-sources test-student-eval test-verify-gate test-qa-verify \
-       test-rl-unit test-rl rl-tasks rl-serve rl-rollout rl-eval remote-grpo remote-serve test-grpo grpo-dataset \
-       rl-expose modal-grpo-smoke modal-grpo
+# Every target is phony except the $(TASKS_FILE) file rule, whose `$(...)` name this pattern cannot match.
+.PHONY: $(shell grep -oE '^[A-Za-z0-9_-]+:' $(lastword $(MAKEFILE_LIST)) | tr -d ':' | sort -u)
+
+# $(call require,VAR[,message]) tests the shell's $VAR, never the expanded value, so `make -n` never prints a secret.
+define require
+@test -n "$$$(1)" || (echo 'ERROR: $(if $(2),$(2),$(1) not set)' && exit 1)
+endef
 
 # Configurable variables
 TASKS_FILE    ?= tasks.jsonl
@@ -56,9 +54,7 @@ setup: ## Install dependencies and Playwright chromium
 install-training: ## Install ms-swift for training (GPU machine)
 	pip install "ms-swift[llm]"
 
-install-all: ## Install everything for a fresh GPU instance
-	pip install -r requirements.txt
-	pip install "ms-swift[llm]"
+install-all: setup install-training ## Install everything for a fresh GPU instance
 
 # ---------- Pipeline steps ----------
 
@@ -67,7 +63,7 @@ $(TASKS_FILE):
 	python load_tasks.py --output $(TASKS_FILE) $(if $(TASK_LIMIT),--limit $(TASK_LIMIT))
 
 record: $(TASKS_FILE) ## Record trajectories via GPT-5.4 CUA
-	@test -n "$$OPENAI_API_KEY" || (echo "ERROR: OPENAI_API_KEY not set" && exit 1)
+	$(call require,OPENAI_API_KEY)
 	python record_trajectories_from_gpt_api.py \
 		--tasks $(TASKS_FILE) \
 		--output $(TRAJ_DIR)/ \
@@ -83,7 +79,7 @@ convert: ## Convert trajectories to ms-swift SFT format (waste clicks dropped, m
 		--exclude-waste-steps \
 		--meandering-mode subsample
 
-train: $(TRAIN_DIR)/sft_dataset.jsonl ## Launch ms-swift LoRA fine-tuning
+train: convert ## Launch ms-swift LoRA fine-tuning
 	python train_qwen.py train \
 		--config $(CONFIG) \
 		--dataset $(TRAIN_DIR)/sft_dataset.jsonl \
@@ -131,6 +127,24 @@ test-qa-verify: ## Scripted (no-LLM/Docker/network) check that the qa_verify sty
 test-rl-unit: ## Unit tests for the RL rollout harness (no Docker, no LLM)
 	python -m rl.tests
 
+test-corpus-audit: ## Scripted (no-LLM/Docker/network) check of the shared trainability gate and audit checks
+	python -m repo_pipeline.corpus_audit_smoke
+
+test-instruction-style: ## Scripted (no-LLM/Docker/network) check of the instruction-style pass
+	python -m repo_pipeline.instruction_style_smoke
+
+test-outcome-relabel: ## Scripted (no-LLM/Docker/network) check of the outcome-relabel pass
+	python -m repo_pipeline.outcome_relabel_smoke
+
+fixtures-build: ## Rewrite the behaviour-regression fixtures under rl/tests/fixtures/
+	python -m rl.tests.regression_fixtures build
+
+fixtures-check: ## Fail if today's behaviour differs from the stored regression fixtures
+	python -m rl.tests.regression_fixtures check
+
+check: test-rl-unit test-eval test-verify-gate test-qa-verify test-remote test-corpus-audit test-instruction-style test-outcome-relabel registry-check fixtures-check lint ## Tier-1 gate: every no-LLM, no-network self-test plus the regression fixtures
+	$(MAKE) test-student-eval EVAL_ARGS=--no-judge
+
 test-rl: ## Docker-only end-to-end smoke of the RL harness (static page + scripted policy, no LLM)
 	python -m rl.smoke
 
@@ -159,7 +173,7 @@ capture-public: ## Teacher capture on curated public sites (real-web diversity l
 	python -m repo_pipeline.public_capture $(if $(PUBLIC_SITES),--sites $(PUBLIC_SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
 
 provision-human: ## Human-in-the-loop: headed browser to sign a burner into one login-gated SITE (SITE=name)
-	@test -n "$(SITE)" || (echo "ERROR: set SITE=<site-name> (a site from the indie/logingated config)" && exit 1)
+	$(call require,SITE,set SITE=<site-name> (a site from the indie/logingated config))
 	python -m playwright install chromium
 	python -m repo_pipeline.provision_human $(SITE) $(if $(SRC_CONFIG),--config $(SRC_CONFIG))
 
@@ -191,7 +205,7 @@ instruction-qa-voice: ## Restate re-checking trajectories' instructions as QA te
 	python -m repo_pipeline.instruction_style_pass trajectories/ --mode qa_verify $(if $(APPLY),--apply,--dry-run)
 
 pipeline-discover: ## Stage 1: Discover QA repos on GitHub
-	@test -n "$$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN not set" && exit 1)
+	$(call require,GITHUB_TOKEN)
 	python -m repo_pipeline.orchestrator --stage 1
 
 pipeline-filter: ## Stage 2: Filter repos by metadata
@@ -229,33 +243,29 @@ test-notifier: ## Test Telegram bot notification
 
 # ---------- Student eval (before/after a training run) ----------
 
+# $(call eval-student-recipe,task-source,endpoint-hint[,limit-extra-flags]) — the one student-eval body both lanes run.
+define eval-student-recipe
+$(call require,EVAL_ENDPOINT,$(2))
+python -m repo_pipeline.student_eval run \
+	--task-source $(1) \
+	--endpoint $(EVAL_ENDPOINT) \
+	$(if $(EVAL_MODEL),--model $(EVAL_MODEL)) \
+	$(if $(EVAL_ADAPTER),--adapter $(EVAL_ADAPTER)) \
+	$(if $(EVAL_API_KEY),--api-key $(EVAL_API_KEY)) \
+	--label $(EVAL_LABEL) \
+	$(if $(EVAL_COORD_SPACE),--coord-space $(EVAL_COORD_SPACE)) \
+	$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT) $(3)) \
+	$(EVAL_ARGS)
+endef
+
 eval-online-mind2web: ## Run Online-Mind2Web against a served model (EVAL_ENDPOINT=, EVAL_MODEL=, EVAL_LABEL=before|after)
-	@test -n "$(EVAL_ENDPOINT)" || (echo "ERROR: set EVAL_ENDPOINT=http://<host>:8000/v1 (the served model; the browser runs locally)" && exit 1)
-	python -m repo_pipeline.student_eval run \
-		--task-source online_mind2web \
-		--endpoint $(EVAL_ENDPOINT) \
-		$(if $(EVAL_MODEL),--model $(EVAL_MODEL)) \
-		$(if $(EVAL_ADAPTER),--adapter $(EVAL_ADAPTER)) \
-		$(if $(EVAL_API_KEY),--api-key $(EVAL_API_KEY)) \
-		--label $(EVAL_LABEL) \
-		$(if $(EVAL_COORD_SPACE),--coord-space $(EVAL_COORD_SPACE)) \
-		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT) --stratify) \
-		$(EVAL_ARGS)
+	$(call eval-student-recipe,online_mind2web,set EVAL_ENDPOINT=http://<host>:8000/v1 (the served model; the browser runs locally),--stratify)
 
 eval-held-out: ## Same harness over our own never-captured public-site tasks
-	@test -n "$(EVAL_ENDPOINT)" || (echo "ERROR: set EVAL_ENDPOINT=http://<host>:8000/v1" && exit 1)
-	python -m repo_pipeline.student_eval run \
-		--task-source held_out \
-		--endpoint $(EVAL_ENDPOINT) \
-		$(if $(EVAL_MODEL),--model $(EVAL_MODEL)) \
-		$(if $(EVAL_ADAPTER),--adapter $(EVAL_ADAPTER)) \
-		--label $(EVAL_LABEL) \
-		$(if $(EVAL_COORD_SPACE),--coord-space $(EVAL_COORD_SPACE)) \
-		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT)) \
-		$(EVAL_ARGS)
+	$(call eval-student-recipe,held_out,set EVAL_ENDPOINT=http://<host>:8000/v1)
 
 eval-compare: ## Before/after table from two or more runs (EVAL_RUNS="eval_runs/before_... eval_runs/after_...")
-	@test -n "$(EVAL_RUNS)" || (echo 'ERROR: set EVAL_RUNS="eval_runs/<before_id> eval_runs/<after_id>"' && exit 1)
+	$(call require,EVAL_RUNS,set EVAL_RUNS="eval_runs/<before_id> eval_runs/<after_id>")
 	python -m repo_pipeline.student_eval compare $(EVAL_RUNS)
 
 eval-sources: ## List the registered eval task sources
@@ -294,22 +304,22 @@ install-remote: ## Install the vastai CLI (local controller deps)
 	pip install vastai
 
 remote-train: ## Rent a GPU, train, pull adapter, and ALWAYS destroy the instance (needs VAST_API_KEY)
-	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	$(call require,VAST_API_KEY)
 	python -m remote_train train $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
 
 remote-eval: ## Benchmark model(s) on a rented GPU, no training (EVAL_MODEL=... EVAL_LIMIT=...)
-	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	$(call require,VAST_API_KEY)
 	python -m remote_train eval \
 		$(foreach m,$(EVAL_MODEL),--model $(m)) \
 		$(if $(EVAL_LIMIT),--limit $(EVAL_LIMIT)) \
 		$(if $(REMOTE_ARGS),$(REMOTE_ARGS))
 
 remote-train-dry: ## Dry run: print the cheapest geo-allowed offer, provision nothing
-	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	$(call require,VAST_API_KEY)
 	python -m remote_train search
 
 remote-train-cleanup: ## Destroy instances abandoned by dead runs (live sibling runs are spared; --all forces)
-	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	$(call require,VAST_API_KEY)
 	python -m remote_train cleanup
 
 test-remote: ## No-cost self-test of the remote-train lifecycle (mock provider; asserts teardown)
@@ -318,15 +328,14 @@ test-remote: ## No-cost self-test of the remote-train lifecycle (mock provider; 
 # ---------- GRPO (RL) on the rented GPU ----------
 
 remote-grpo: ## Rent a GPU, run GRPO against the local env service (make rl-serve first), pull adapters, ALWAYS destroy
-	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	$(call require,VAST_API_KEY)
 	python -m remote_train grpo $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
 
 remote-serve: ## Rent a GPU and serve the student on 127.0.0.1:8001 through a tunnel (SERVE_ADAPTER=output, SERVE_SECONDS=0)
-	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
+	$(call require,VAST_API_KEY)
 	python -m remote_train serve $(if $(SERVE_ADAPTER),--adapter $(SERVE_ADAPTER)) $(if $(SERVE_SECONDS),--for-seconds $(SERVE_SECONDS)) $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
 
-test-grpo: ## No-cost GRPO self-test: mock provider + mock env (teardown, tunnel, phase handshake) + command builders + unit tests
-	python -m remote_train run --smoke
+test-grpo: test-remote ## No-cost GRPO self-test: mock provider + mock env (teardown, tunnel, phase handshake) + command builders + unit tests
 	python rl_train.py print-commands --config rl_config.yaml
 	python -m rl.tests test_trainer_core test_rl_train test_tunnel
 
@@ -334,15 +343,15 @@ grpo-dataset: ## Write rl_tasks.jsonl (train split) for the GRPO trainer
 	python rl_train.py make-dataset --tasks rl/rl_tasks.json --out rl_tasks.jsonl
 
 rl-expose: ## Expose the local env service (127.0.0.1:8900) to Modal through a public ingress (RL_INGRESS_CMD overrides ngrok)
-	@test -n "$$RL_ENV_TOKEN" || (echo "ERROR: set RL_ENV_TOKEN (the same value `make rl-serve` runs with)" && exit 1)
+	$(call require,RL_ENV_TOKEN,set RL_ENV_TOKEN (the same value `make rl-serve` runs with))
 	$(or $(RL_INGRESS_CMD),ngrok http 127.0.0.1:8900)
 
 modal-grpo-smoke: ## Modal: merge + one GRPO step against the in-container mock env (validates pins, plugin, weight sync; ~$$2)
 	modal run modal_grpo.py --smoke --run-name $(or $(GRPO_RUN),grpo-smoke)
 
 modal-grpo: ## Modal: full GRPO run against the exposed env service (RL_ENV_URL=https://... from rl-expose, RL_ENV_TOKEN)
-	@test -n "$(RL_ENV_URL)" || (echo "ERROR: set RL_ENV_URL=https://<ingress-host> (from make rl-expose)" && exit 1)
-	@test -n "$$RL_ENV_TOKEN" || (echo "ERROR: set RL_ENV_TOKEN" && exit 1)
+	$(call require,RL_ENV_URL,set RL_ENV_URL=https://<ingress-host> (from make rl-expose))
+	$(call require,RL_ENV_TOKEN,set RL_ENV_TOKEN)
 	modal run modal_grpo.py --run-name $(or $(GRPO_RUN),grpo-v1) --env-url $(RL_ENV_URL) $(if $(GRPO_MAX_STEPS),--max-steps $(GRPO_MAX_STEPS))
 
 # ---------- Experiment registry ----------
@@ -353,3 +362,19 @@ registry: ## Re-render experiments/*.csv into the README registry block
 
 registry-check: ## Fail if the README registry block is out of date
 	python experiments/render_registry.py --check
+
+# ---------- Lint / format ----------
+
+LINT_PATHS     ?= .
+ENV_READ_ALLOW ?=
+
+lint: ## Ruff plus the repo's own comment/env/import conventions (the three convention scripts only report, for now)
+	ruff check .
+	ruff format --check .
+	python scripts/check_comments.py $(LINT_PATHS)
+	python scripts/check_env_reads.py $(LINT_PATHS) --report-only $(if $(ENV_READ_ALLOW),--allow $(ENV_READ_ALLOW))
+	python scripts/check_nested_imports.py $(LINT_PATHS) --report-only
+
+fmt: ## Apply ruff formatting plus the safe import/upgrade autofixes
+	ruff format .
+	ruff check --fix .

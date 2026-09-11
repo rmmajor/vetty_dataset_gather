@@ -1,0 +1,15 @@
+Autonomous login-gated capture (self-register burner)
+
+options:
+  -h, --help            show this help message and exit
+  --sites SITES         Comma-separated site names (overrides --provisioning
+                        filter)
+  --provisioning PROVISIONING
+                        Comma-separated provisioning classes to attempt
+  --max-tasks-per-site MAX_TASKS_PER_SITE
+  --max-sites MAX_SITES
+  --parallel PARALLEL
+  --traj-dir TRAJ_DIR
+  --config CONFIG
+  --retry-blocked       Re-attempt sites already marked needs_human (default:
+                        skip them)

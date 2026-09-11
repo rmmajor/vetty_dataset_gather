@@ -1,15 +1,22 @@
 """Every config key reaches swift sft: mapped keys through the flag map, the rest forwarded verbatim."""
+
 from train_qwen import build_sft_command
 
 
 def _pair(cmd, flag):
     index = cmd.index(flag)
-    return cmd[index:index + 2]
+    return cmd[index : index + 2]
 
 
 def test_unmapped_config_keys_are_forwarded_as_flags():
-    config = {"model": "Qwen/Qwen3.5-9B", "num_train_epochs": 2, "save_strategy": "epoch", "save_total_limit": 2,
-              "max_pixels": 1003520, "freeze_vit": True}
+    config = {
+        "model": "Qwen/Qwen3.5-9B",
+        "num_train_epochs": 2,
+        "save_strategy": "epoch",
+        "save_total_limit": 2,
+        "max_pixels": 1003520,
+        "freeze_vit": True,
+    }
     cmd = build_sft_command(config, "ds.jsonl", None, [])
     assert cmd[:2] == ["swift", "sft"]
     assert _pair(cmd, "--model") == ["--model", "Qwen/Qwen3.5-9B"]

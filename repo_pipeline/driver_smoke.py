@@ -7,6 +7,7 @@ disk, bbox-center coordinates inside the 1280x720 viewport, thoughts recorded pe
 
 Run: python -m repo_pipeline.driver_smoke   (or `make test-driver`)
 """
+
 import base64
 import json
 import logging
@@ -68,7 +69,9 @@ def run_smoke() -> bool:
         # Session-scoped burner secret + a (here empty, but valid) pre_session storage_state exercise
         # the login-gated plumbing: masked typing and storageState injection.
         session = client.session(
-            "smoke_test", "http://127.0.0.1:3000/", instruction="Greet yourself by name",
+            "smoke_test",
+            "http://127.0.0.1:3000/",
+            instruction="Greet yourself by name",
             secrets={"smoke_secret": "RealSecretValue"},
             auth_config={"auth_mode": "pre_session", "storage_state": {"cookies": [], "origins": []}},
         )
@@ -80,24 +83,34 @@ def run_smoke() -> bool:
         def ref_for(needle: str) -> int:
             for line in snapshot.splitlines():
                 if needle in line and line.startswith("["):
-                    return int(line[1:line.index("]")])
+                    return int(line[1 : line.index("]")])
             raise AssertionError(f"no element matching {needle!r} in snapshot")
 
-        result = client.act({
-            "kind": "type", "ref": ref_for("Your name"), "text": "Smokey",
-            "thought": "I need to introduce myself, so I'm typing my name into the name field.",
-        })
+        result = client.act(
+            {
+                "kind": "type",
+                "ref": ref_for("Your name"),
+                "text": "Smokey",
+                "thought": "I need to introduce myself, so I'm typing my name into the name field.",
+            }
+        )
         snapshot = result["snapshot"]
-        result = client.act({
-            "kind": "click", "ref": ref_for("Greet"),
-            "thought": "With my name entered, clicking Greet should produce the greeting.",
-        })
+        result = client.act(
+            {
+                "kind": "click",
+                "ref": ref_for("Greet"),
+                "thought": "With my name entered, clicking Greet should produce the greeting.",
+            }
+        )
         assert "hello Smokey" in result["snapshot"], f"greeting missing from snapshot: {result['snapshot'][:400]}"
         snapshot = result["snapshot"]
-        result = client.act({
-            "kind": "scroll", "dy": 800,
-            "thought": "The bottom link is below the fold, scrolling down to reach it.",
-        })
+        result = client.act(
+            {
+                "kind": "scroll",
+                "dy": 800,
+                "thought": "The bottom link is below the fold, scrolling down to reach it.",
+            }
+        )
         client.act({"kind": "scroll", "dy": -800, "thought": "Scrolling back up to the controls."})
 
         affordances = client.affordances()
@@ -107,61 +120,101 @@ def run_smoke() -> bool:
 
         # Hover reveals the CSS-hidden menu item and records a `move` action.
         snapshot = client.snapshot()["snapshot"]
-        result = client.act({
-            "kind": "hover", "ref": ref_for("Open menu"),
-            "thought": "The menu may hide more options; hovering to reveal them.",
-        })
+        result = client.act(
+            {
+                "kind": "hover",
+                "ref": ref_for("Open menu"),
+                "thought": "The menu may hide more options; hovering to reveal them.",
+            }
+        )
         assert "Hidden action" in result["snapshot"], f"hover did not reveal menu: {result['snapshot'][:300]}"
 
         # HTML5 drag-and-drop: raw mouse drag does nothing here, the DragEvent fallback must fire.
         snapshot = result["snapshot"]
-        result = client.act({
-            "kind": "drag", "ref": ref_for("Alpha"), "to_ref": ref_for("Beta"),
-            "thought": "Reordering the list by dragging Alpha below Beta.",
-        })
+        result = client.act(
+            {
+                "kind": "drag",
+                "ref": ref_for("Alpha"),
+                "to_ref": ref_for("Beta"),
+                "thought": "Reordering the list by dragging Alpha below Beta.",
+            }
+        )
         assert "reordered" in result["snapshot"], f"drag (html5 fallback) had no effect: {result['snapshot'][:300]}"
 
         # Cross-iframe resolution: an element inside a same-origin iframe must be snapshot-visible
         # and clickable by ref (the path that lets the agent click a verification/reset link inside
         # a webmail message body).
         snapshot = client.snapshot()["snapshot"]
-        result = client.act({
-            "kind": "click", "ref": ref_for("Inside-frame button"),
-            "thought": "Clicking the button inside the embedded frame to test iframe interaction.",
-        })
-        assert "iframe action done" in result["snapshot"], \
+        result = client.act(
+            {
+                "kind": "click",
+                "ref": ref_for("Inside-frame button"),
+                "thought": "Clicking the button inside the embedded frame to test iframe interaction.",
+            }
+        )
+        assert "iframe action done" in result["snapshot"], (
             f"iframe element was not reachable/clickable: {result['snapshot'][:300]}"
+        )
 
         # Coordinate tools for canvas surfaces + a recorded wait.
-        client.act({"kind": "click_xy", "x": 200, "y": 400,
-                    "thought": "Clicking directly on the canvas area."})
-        client.act({"kind": "drag_path", "path": [{"x": 180, "y": 380}, {"x": 260, "y": 420}],
-                    "thought": "Drawing a stroke across the canvas."})
-        client.act({"kind": "wait", "seconds": 0.5,
-                    "thought": "Letting the page settle before continuing."})
+        client.act({"kind": "click_xy", "x": 200, "y": 400, "thought": "Clicking directly on the canvas area."})
+        client.act(
+            {
+                "kind": "drag_path",
+                "path": [{"x": 180, "y": 380}, {"x": 260, "y": 420}],
+                "thought": "Drawing a stroke across the canvas.",
+            }
+        )
+        client.act({"kind": "wait", "seconds": 0.5, "thought": "Letting the page settle before continuing."})
 
         # Masked credential: the recorded action keeps the <secret:...> placeholder; the page
         # receives the real value (proving driver-side substitution + leak-free recording).
-        client.act({
-            "kind": "type", "ref": ref_for("Your name"), "text": "<secret:smoke_secret>",
-            "thought": "Entering the provided test username into the name field.",
-        })
-        result = client.act({
-            "kind": "click", "ref": ref_for("Greet"),
-            "thought": "Submitting to confirm the entered value took effect.",
-        })
-        assert "hello RealSecretValue" in result["snapshot"], \
+        client.act(
+            {
+                "kind": "type",
+                "ref": ref_for("Your name"),
+                "text": "<secret:smoke_secret>",
+                "thought": "Entering the provided test username into the name field.",
+            }
+        )
+        result = client.act(
+            {
+                "kind": "click",
+                "ref": ref_for("Greet"),
+                "thought": "Submitting to confirm the entered value took effect.",
+            }
+        )
+        assert "hello RealSecretValue" in result["snapshot"], (
             f"masked secret was not typed as the real value: {result['snapshot'][:300]}"
+        )
 
         # Guarded-mode driver actions: handoff, confirm, and the watchdog approval_event observation.
-        client.act({"kind": "handoff", "reason": "login",
-                    "thought": "The next step needs a login I should not perform myself; handing off."})
-        client.act({"kind": "confirm", "risk_category": "publish",
-                    "proposed_action": {"type": "click", "ref": ref_for("Greet")},
-                    "thought": "About to publish, so I pause and ask for confirmation first."})
-        client.act({"kind": "approval_event",
-                    "event": {"kind": "approval", "decision": "deny",
-                              "rationale": "publishing on a live site is irreversible", "by": "watchdog"}})
+        client.act(
+            {
+                "kind": "handoff",
+                "reason": "login",
+                "thought": "The next step needs a login I should not perform myself; handing off.",
+            }
+        )
+        client.act(
+            {
+                "kind": "confirm",
+                "risk_category": "publish",
+                "proposed_action": {"type": "click", "ref": ref_for("Greet")},
+                "thought": "About to publish, so I pause and ask for confirmation first.",
+            }
+        )
+        client.act(
+            {
+                "kind": "approval_event",
+                "event": {
+                    "kind": "approval",
+                    "decision": "deny",
+                    "rationale": "publishing on a live site is irreversible",
+                    "by": "watchdog",
+                },
+            }
+        )
 
         # RL path: /observe's PNG becomes the next recorded step; `sequence` records ONE step of contract dicts and executes them.
         recorded = json.loads(sandbox.read_file(f"{RESULTS_DIR}/task_smoke_test/trajectory.json"))
@@ -169,11 +222,14 @@ def run_smoke() -> bool:
         greet_click = recorded["steps"][1]["actions"][0]
         observed = client.observe()
         assert observed["mime"] == "image/png" and observed["step_next"] == len(recorded["steps"]) + 1
-        seq = client.act_sequence("Retyping my name through the coordinate path and submitting.", [
-            {"type": "click", "x": name_click["x"], "y": name_click["y"], "button": "left"},
-            {"type": "type", "text": "Sequence"},
-            {"type": "click", "x": greet_click["x"], "y": greet_click["y"], "button": "left"},
-        ])
+        seq = client.act_sequence(
+            "Retyping my name through the coordinate path and submitting.",
+            [
+                {"type": "click", "x": name_click["x"], "y": name_click["y"], "button": "left"},
+                {"type": "type", "text": "Sequence"},
+                {"type": "click", "x": greet_click["x"], "y": greet_click["y"], "button": "left"},
+            ],
+        )
         assert seq["executed"] == 3 and seq["error"] is None and seq["terminal"] is False, seq
         assert "hello Sequence" in client.snapshot()["snapshot"], "sequence actions did not take effect"
         observed_png = observed["b64"]
@@ -190,10 +246,12 @@ def run_smoke() -> bool:
                 break
         assert guard_tripped, "loop guard did not trip after repeated identical clicks"
 
-        result = client.act({
-            "kind": "done",
-            "thought": "The page now greets me as Smokey, which is exactly what the task required.",
-        })
+        result = client.act(
+            {
+                "kind": "done",
+                "thought": "The page now greets me as Smokey, which is exactly what the task required.",
+            }
+        )
         assert result["step"] >= 5, "done step was not recorded"
 
         finish = client.finish("completed", "Typed a name, clicked greet, saw the greeting.")
@@ -234,28 +292,35 @@ def run_smoke() -> bool:
             # Masked credential: the placeholder is recorded; the resolved value never appears.
             blob = json.dumps(traj)
             assert "RealSecretValue" not in blob, "SECRET LEAK: resolved credential found in trajectory"
-            masked = [a for s in traj["steps"] for a in s["actions"]
-                      if a.get("type") == "type" and a.get("text") == "<secret:smoke_secret>"]
+            masked = [
+                a
+                for s in traj["steps"]
+                for a in s["actions"]
+                if a.get("type") == "type" and a.get("text") == "<secret:smoke_secret>"
+            ]
             assert masked, "masked type action did not record the <secret:smoke_secret> placeholder"
 
             # handoff + confirm recorded as student-target actions.
             handoffs = [a for s in traj["steps"] for a in s["actions"] if a.get("type") == "handoff"]
             assert handoffs and handoffs[0].get("reason") == "login", f"handoff not recorded: {handoffs}"
             confirms = [a for s in traj["steps"] for a in s["actions"] if a.get("type") == "confirm"]
-            assert confirms and confirms[0].get("risk_category") == "publish" and confirms[0].get("proposed_action"), \
+            assert confirms and confirms[0].get("risk_category") == "publish" and confirms[0].get("proposed_action"), (
                 f"confirm not recorded correctly: {confirms}"
+            )
 
             # approval_event: an observation step with the watchdog verdict and EMPTY actions.
             event_steps = [s for s in traj["steps"] if s.get("event")]
             assert event_steps, "no watchdog approval event step recorded"
             ev = event_steps[0]
-            assert ev["actions"] == [] and ev["event"].get("decision") == "deny", \
+            assert ev["actions"] == [] and ev["event"].get("decision") == "deny", (
                 f"approval event malformed (must be observation-only): {ev}"
+            )
 
             seq_step = [s for s in traj["steps"] if s["thought"].startswith("Retyping my name")][0]
             assert [a["type"] for a in seq_step["actions"]] == ["click", "type", "click"], seq_step["actions"]
-            assert (traj_dir / seq_step["screenshot"]).read_bytes() == base64.b64decode(observed_png), \
+            assert (traj_dir / seq_step["screenshot"]).read_bytes() == base64.b64decode(observed_png), (
                 "observation PNG must be byte-identical to the recorded step screenshot"
+            )
 
         logger.info("Driver smoke test PASSED")
         return True

@@ -1,4 +1,5 @@
 """HTTP env service for the GPU-side trainer plugin: reset/step/close over the worker pool (loopback, token-guarded)."""
+
 import argparse
 import gzip
 import json
@@ -34,7 +35,9 @@ def _terminal_payload(record):
 
 
 class EnvService:
-    def __init__(self, pool, tasks_by_id, run_ctx_factory, cfg, episode_cls=Episode, reset_timeout_s=RL_RESET_TIMEOUT_S):
+    def __init__(
+        self, pool, tasks_by_id, run_ctx_factory, cfg, episode_cls=Episode, reset_timeout_s=RL_RESET_TIMEOUT_S
+    ):
         self.pool, self.tasks, self.run_ctx_factory, self.cfg = pool, tasks_by_id, run_ctx_factory, cfg
         self.episode_cls, self.reset_timeout_s = episode_cls, reset_timeout_s
         self.episodes = {}
@@ -44,7 +47,12 @@ class EnvService:
         self.lock = threading.Lock()
 
     def health(self):
-        return {"ok": True, "free_slots": self.pool.free.qsize(), "live_episodes": len(self.episodes), "tasks": len(self.tasks)}
+        return {
+            "ok": True,
+            "free_slots": self.pool.free.qsize(),
+            "live_episodes": len(self.episodes),
+            "tasks": len(self.tasks),
+        }
 
     def reset(self, body):
         request_id = body.get("request_id")
@@ -55,7 +63,9 @@ class EnvService:
         worker, slot = self.pool.acquire(timeout=self.reset_timeout_s)
         run_id, iteration = body.get("run_id", "service"), int(body.get("iter", 0))
         run_ctx = self.run_ctx_factory(run_id, iteration, body.get("policy_tag", ""))
-        episode = self.episode_cls(task, worker, slot, self._next_k(run_id, iteration, task["task_id"]), run_ctx, self.cfg)
+        episode = self.episode_cls(
+            task, worker, slot, self._next_k(run_id, iteration, task["task_id"]), run_ctx, self.cfg
+        )
         try:
             observation = episode.reset()
         except Exception:
@@ -63,8 +73,15 @@ class EnvService:
             raise
         episode_id = uuid.uuid4().hex
         with self.lock:
-            self.episodes[episode_id] = {"episode": episode, "lock": threading.Lock(), "worker": worker, "slot": slot, "last": time.time(),
-                                         "observation0": observation, "responses": {}}
+            self.episodes[episode_id] = {
+                "episode": episode,
+                "lock": threading.Lock(),
+                "worker": worker,
+                "slot": slot,
+                "last": time.time(),
+                "observation0": observation,
+                "responses": {},
+            }
             if request_id:
                 self.reset_ids[request_id] = episode_id
         return {"episode_id": episode_id, "observation": observation}
@@ -114,7 +131,12 @@ class EnvService:
                 # A step that raised after acting must end the episode here: a retried request would otherwise execute the action again.
                 logger.exception(f"{episode_id}: step failed — closing the episode")
                 record = entry["episode"].close("step_error")
-                observation, reward, done, info = None, record.get("reward"), True, {**record.get("info", {}), "error": str(e)[:200]}
+                observation, reward, done, info = (
+                    None,
+                    record.get("reward"),
+                    True,
+                    {**record.get("info", {}), "error": str(e)[:200]},
+                )
             response = {"observation": observation, "reward": reward, "done": done, "info": info}
             if seq is not None:
                 entry["responses"] = {seq: response}
@@ -138,7 +160,12 @@ class EnvService:
     def episode(self, episode_id):
         record = self.finished.get(episode_id)
         if record is not None:
-            return {"status": "finished", "reward": record.get("reward"), "breakdown": record.get("breakdown"), "episode_dir": record.get("traj_dir")}
+            return {
+                "status": "finished",
+                "reward": record.get("reward"),
+                "breakdown": record.get("breakdown"),
+                "episode_dir": record.get("traj_dir"),
+            }
         self._entry(episode_id)
         return {"status": "live"}
 
@@ -177,9 +204,11 @@ def make_handler(service, token):
                     return self._send(200, service.health())
                 if method == "GET" and path == "/tasks":
                     split = dict(p.split("=", 1) for p in query.split("&") if "=" in p).get("split")
-                    return self._send(200, {"tasks": [t for t in service.tasks.values() if not split or t.get("split") == split]})
+                    return self._send(
+                        200, {"tasks": [t for t in service.tasks.values() if not split or t.get("split") == split]}
+                    )
                 if method == "GET" and path.startswith("/episode/"):
-                    return self._send(200, service.episode(path[len("/episode/"):]))
+                    return self._send(200, service.episode(path[len("/episode/") :]))
                 if method == "POST" and path == "/reset":
                     return self._send(200, service.reset(body))
                 if method == "POST" and path == "/step":
@@ -253,8 +282,10 @@ def main():
     try:
         pool.start()
         threading.Thread(target=_reap_forever, args=(service,), daemon=True).start()
-        logger.info(f"env service on {args.host}:{args.port} with {pool.slot_count} slot(s), {len(tasks)} tasks (suite {suite['suite_sha256'][:12]}), "
-                    f"driver loop guard at {pool.loop_guard_repeats} repeats")
+        logger.info(
+            f"env service on {args.host}:{args.port} with {pool.slot_count} slot(s), {len(tasks)} tasks (suite {suite['suite_sha256'][:12]}), "
+            f"driver loop guard at {pool.loop_guard_repeats} repeats"
+        )
         server.serve_forever()
     finally:
         server.shutdown()

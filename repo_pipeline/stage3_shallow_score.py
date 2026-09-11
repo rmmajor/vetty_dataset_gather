@@ -118,25 +118,13 @@ def _run_gh(args: list[str], timeout: int = 30) -> str:
         return ""
 
 
-def _fetch_file_tree(repo_name: str, default_branch: str) -> str:
-    raw = _run_gh(["api", f"repos/{repo_name}/git/trees/{default_branch}?recursive=1"])
-    if not raw:
-        return "(not available)"
-    try:
-        tree_data = json.loads(raw)
-        paths = [item["path"] for item in tree_data.get("tree", [])]
-        top_level_paths = [p for p in paths if p.count("/") <= 1]
-        return "\n".join(top_level_paths[:100])
-    except (json.JSONDecodeError, KeyError):
-        return raw[:2000]
-
-
 def _fetch_file_content(repo_name: str, file_path: str) -> str:
     raw = _run_gh(["api", f"repos/{repo_name}/contents/{file_path}", "--jq", ".content"])
     if not raw:
         return "(not available)"
     try:
         import base64
+
         return base64.b64decode(raw).decode("utf-8", errors="replace")
     except Exception:
         return raw[:2000]

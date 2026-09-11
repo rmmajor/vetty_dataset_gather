@@ -5,7 +5,7 @@
   "finished_at": "2026-08-27T22:05:49.810686+00:00",
   "config": {
     "task_source": "online_mind2web",
-    "tasks_file": "/private/tmp/claude-501/-Users-rmajor-unik-maga-dataset-gather/e17b455f-c19b-4ab5-b159-8ba497af78ae/scratchpad/omw_sft_v1_tasks.jsonl",
+    "tasks_file": "omw_sft_v1_tasks.jsonl",
     "limit": null,
     "label": "sft-v1-judge2",
     "run_id": "sft-v1-judge2_online_mind2web_20260827T213815Z",
@@ -64,7 +64,7 @@
     "git_commit": "076ef7ca96d6-dirty"
   },
   "task_provenance": {
-    "tasks_file": "/private/tmp/claude-501/-Users-rmajor-unik-maga-dataset-gather/e17b455f-c19b-4ab5-b159-8ba497af78ae/scratchpad/omw_sft_v1_tasks.jsonl",
+    "tasks_file": "omw_sft_v1_tasks.jsonl",
     "rows_available": 50
   },
   "aborted_reason": "",

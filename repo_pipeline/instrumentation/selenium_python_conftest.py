@@ -22,6 +22,7 @@ Environment variables:
     TEST_NAME_PREFIX — prefix for task IDs (default: repo)
     FRAMEWORK / FRAMEWORK_LANGUAGE — recorded into capture_meta.json
 """
+
 import hashlib
 import inspect
 import json
@@ -126,12 +127,14 @@ class StepRecorder:
             action["scroll_x"] = 0
             action["scroll_y"] = int(value) if value else 0
 
-        self.steps.append({
-            "step": self.step_counter,
-            "screenshot": screenshot_filename,
-            "thought": "",
-            "actions": [action],
-        })
+        self.steps.append(
+            {
+                "step": self.step_counter,
+                "screenshot": screenshot_filename,
+                "thought": "",
+                "actions": [action],
+            }
+        )
 
         m = dict(meta) if meta else {}
         sha = hashlib.sha256(screenshot_bytes).hexdigest()
@@ -155,15 +158,17 @@ class StepRecorder:
         clean_steps = []
         for step in self.steps:
             m = self.meta_by_step.get(step["step"], {})
-            clean_steps.append({
-                "step": step["step"],
-                "screenshot": step["screenshot"],
-                "thought": step["thought"],
-                "actions": step["actions"],
-                "bbox": m.get("bbox"),
-                "role": m.get("role"),
-                "name": m.get("name"),
-            })
+            clean_steps.append(
+                {
+                    "step": step["step"],
+                    "screenshot": step["screenshot"],
+                    "thought": step["thought"],
+                    "actions": step["actions"],
+                    "bbox": m.get("bbox"),
+                    "role": m.get("role"),
+                    "name": m.get("name"),
+                }
+            )
 
         trajectory = {
             "task_id": self.test_name or "unknown",
@@ -315,8 +320,9 @@ def _commit(pending, driver, action_type, err, value="", button="left"):
     meta = pending["meta"]
     _finalize_outcome(meta, driver, err)
     try:
-        _recorder.record(action_type, pending["cx"], pending["cy"], pending["shot"],
-                         value=value, button=button, meta=meta)
+        _recorder.record(
+            action_type, pending["cx"], pending["cy"], pending["shot"], value=value, button=button, meta=meta
+        )
     except Exception:
         pass
 
@@ -350,18 +356,15 @@ def _patch_selenium():
     original (recording its outcome), and never raise (instrumentation must not break a
     test). Returns False if Selenium is not importable (instrumentation no-ops)."""
     try:
-        from selenium.webdriver.remote.webelement import WebElement
-        from selenium.webdriver.remote.webdriver import WebDriver
-        from selenium.webdriver.support.select import Select
         from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.remote.webdriver import WebDriver
+        from selenium.webdriver.remote.webelement import WebElement
+        from selenium.webdriver.support.select import Select
     except Exception:
         return False
 
     global _KEYS_BY_VALUE
-    _KEYS_BY_VALUE = {
-        v: k for k, v in vars(Keys).items()
-        if isinstance(v, str) and not k.startswith("_")
-    }
+    _KEYS_BY_VALUE = {v: k for k, v in vars(Keys).items() if isinstance(v, str) and not k.startswith("_")}
 
     original_click = WebElement.click
     original_send_keys = WebElement.send_keys
@@ -443,6 +446,7 @@ def _patch_selenium():
                 raise
             finally:
                 _commit(pending, driver, "click", err)
+
         return wrapper
 
     Select.select_by_value = _wrap_select(Select.select_by_value)

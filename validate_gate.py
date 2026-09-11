@@ -4,17 +4,19 @@
      junk the gate would have killed at stage 2, before any LLM spend,
 then projects the saved shallow_score/deep_analyze dollars.
 """
+
 import concurrent.futures
 import glob
 import json
 import random
 import sqlite3
 import sys
+from collections import Counter
 
 from repo_pipeline.bootable_gate import ProbeError, gate_repo
 
 SAMPLE = int(sys.argv[1]) if len(sys.argv) > 1 else 150
-SCORE_COST = 184.19 / 4181   # $/repo measured from the agent_calls ledger
+SCORE_COST = 184.19 / 4181  # $/repo measured from the agent_calls ledger
 ANALYZE_COST = 91.50 / 525
 
 con = sqlite3.connect("pipeline_data/registry.db")
@@ -31,20 +33,25 @@ def capture_source(full_name):
     return None
 
 
-completed = [r["full_name"] for r in con.execute(
-    "SELECT full_name FROM repos WHERE status='completed' AND trajectory_count>0").fetchall()]
+completed = [
+    r["full_name"]
+    for r in con.execute("SELECT full_name FROM repos WHERE status='completed' AND trajectory_count>0").fetchall()
+]
 # The gate is an AGENT-mode intake filter: agent-captured repos MUST pass it; legacy replay test
 # suites (no capture_source) are exactly what the agent-mode pivot stops admitting.
 proven = [c for c in completed if capture_source(c) == "agent"]
 legacy = [c for c in completed if capture_source(c) != "agent"]
-rej_score = [r["full_name"] for r in con.execute(
-    "SELECT full_name FROM repos WHERE status='rejected_score'").fetchall()]
-rej_analyze = [r["full_name"] for r in con.execute(
-    "SELECT full_name FROM repos WHERE status='rejected_analyze'").fetchall()]
+rej_score = [
+    r["full_name"] for r in con.execute("SELECT full_name FROM repos WHERE status='rejected_score'").fetchall()
+]
+rej_analyze = [
+    r["full_name"] for r in con.execute("SELECT full_name FROM repos WHERE status='rejected_analyze'").fetchall()
+]
 
 random.seed(1781409272)
-rej_sample = random.sample(rej_score, min(SAMPLE, len(rej_score))) + \
-             random.sample(rej_analyze, min(SAMPLE // 3, len(rej_analyze)))
+rej_sample = random.sample(rej_score, min(SAMPLE, len(rej_score))) + random.sample(
+    rej_analyze, min(SAMPLE // 3, len(rej_analyze))
+)
 
 
 def run(name):
@@ -90,7 +97,6 @@ graded = [r for r in bk_results if r[1] is not None]
 reject_rate = len(bk_rej) / len(graded) if graded else 0
 print(f"  gate REJECT rate on junk: {reject_rate:.0%}  ({len(bk_rej)}/{len(graded)} gradable)")
 print("  sample reject reasons:")
-from collections import Counter
 for reason, n in Counter(r[2] for r in bk_rej).most_common(6):
     print(f"     {n:>3}  {reason}")
 print("  sample of what the gate would still ACCEPT (passes to LLM):")
@@ -100,8 +106,10 @@ for name, _, reason, _ in bk_ok[:8]:
 # 3. Projected savings
 print("\n=== PROJECTED SAVINGS (applying gate before LLM stages) ===")
 saved_score = reject_rate * len(rej_score) * SCORE_COST
-print(f"  Of {len(rej_score):,} rejected_score repos, gate would pre-reject ~{reject_rate:.0%} "
-      f"= ~{int(reject_rate*len(rej_score)):,} repos")
+print(
+    f"  Of {len(rej_score):,} rejected_score repos, gate would pre-reject ~{reject_rate:.0%} "
+    f"= ~{int(reject_rate * len(rej_score)):,} repos"
+)
 print(f"  shallow_score $ avoided on those: ~${saved_score:,.0f}  (@ ${SCORE_COST:.3f}/repo)")
-print(f"  + every future discovery batch is pre-filtered, so the flood never reaches the LLM again.")
-print(f"  gate cost: ~$0 (no LLM; 1 gh API call/repo, ~0.5s)")
+print("  + every future discovery batch is pre-filtered, so the flood never reaches the LLM again.")
+print("  gate cost: ~$0 (no LLM; 1 gh API call/repo, ~0.5s)")

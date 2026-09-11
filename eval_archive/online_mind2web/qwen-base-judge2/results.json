@@ -5,7 +5,7 @@
   "finished_at": "2026-08-27T23:55:39.948655+00:00",
   "config": {
     "task_source": "online_mind2web",
-    "tasks_file": "/private/tmp/claude-501/-Users-rmajor-unik-maga-dataset-gather/e17b455f-c19b-4ab5-b159-8ba497af78ae/scratchpad/omw_sft_v1_tasks.jsonl",
+    "tasks_file": "omw_sft_v1_tasks.jsonl",
     "limit": null,
     "label": "qwen-base-judge2",
     "run_id": "",
@@ -64,7 +64,7 @@
     "git_commit": "02526c20082e-dirty"
   },
   "task_provenance": {
-    "tasks_file": "/private/tmp/claude-501/-Users-rmajor-unik-maga-dataset-gather/e17b455f-c19b-4ab5-b159-8ba497af78ae/scratchpad/omw_sft_v1_tasks.jsonl",
+    "tasks_file": "omw_sft_v1_tasks.jsonl",
     "rows_available": 50
   },
   "aborted_reason": "",

@@ -1,4 +1,5 @@
 """Programmatic success checks evaluated against the live page at episode end (registry keyed by check name)."""
+
 import re
 
 _ELEMENT_RE = re.compile(r'^\[(\d+)\] (\S+) "([^"]*)"[ \t]*(.*)$', re.MULTILINE)
@@ -6,14 +7,21 @@ _ELEMENT_RE = re.compile(r'^\[(\d+)\] (\S+) "([^"]*)"[ \t]*(.*)$', re.MULTILINE)
 
 def build_context(snapshot, storage_state_loader, record, page_text=""):
     snapshot_text = snapshot.get("snapshot", "")
-    elements = [{"ref": int(m.group(1)), "role": m.group(2), "name": m.group(3), "extra": m.group(4).strip()}
-                for m in _ELEMENT_RE.finditer(snapshot_text)]
+    elements = [
+        {"ref": int(m.group(1)), "role": m.group(2), "name": m.group(3), "extra": m.group(4).strip()}
+        for m in _ELEMENT_RE.finditer(snapshot_text)
+    ]
     # text_visible must see a computed answer wherever it rendered, so it searches the page's own text too.
-    return {"url": snapshot.get("url", ""), "title": snapshot.get("title", ""),
-            "text": f"{snapshot_text}\n{page_text}" if page_text else snapshot_text, "elements": elements,
-            # Rendered text only: ctx["text"] also carries element values, which an agent can satisfy by TYPING the answer.
-            "page_text": page_text,
-            "storage_state": storage_state_loader, "terminal_reason": record.get("terminal_reason", "")}
+    return {
+        "url": snapshot.get("url", ""),
+        "title": snapshot.get("title", ""),
+        "text": f"{snapshot_text}\n{page_text}" if page_text else snapshot_text,
+        "elements": elements,
+        # Rendered text only: ctx["text"] also carries element values, which an agent can satisfy by TYPING the answer.
+        "page_text": page_text,
+        "storage_state": storage_state_loader,
+        "terminal_reason": record.get("terminal_reason", ""),
+    }
 
 
 def _element_matches(element, spec):
@@ -36,7 +44,9 @@ CHECKS = {
     "text_absent": lambda spec, ctx: spec.lower() not in ctx["text"].lower(),
     "element_present": lambda spec, ctx: any(_element_matches(e, spec) for e in ctx["elements"]),
     "element_absent": lambda spec, ctx: not any(_element_matches(e, spec) for e in ctx["elements"]),
-    "element_value": lambda spec, ctx: any(_element_matches(e, spec) and f'value="{spec["equals"]}"' in e["extra"] for e in ctx["elements"]),
+    "element_value": lambda spec, ctx: any(
+        _element_matches(e, spec) and f'value="{spec["equals"]}"' in e["extra"] for e in ctx["elements"]
+    ),
     "cookie_present": _cookie_present,
     "done_emitted": lambda spec, ctx: (ctx["terminal_reason"] == "done") == bool(spec),
     "terminal_reason_in": lambda spec, ctx: ctx["terminal_reason"] in spec,

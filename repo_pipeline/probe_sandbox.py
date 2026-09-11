@@ -13,6 +13,7 @@ counts, and reports the sites worth capturing — seconds per site, no LLM.
 Run it when capture is NOT running: each probe holds a sandbox, and total sandbox memory is the
 host's binding constraint (see safe_parallel_sandboxes).
 """
+
 import argparse
 import json
 import logging
@@ -53,8 +54,12 @@ def probe_site(client, sandbox, name: str, start_url: str) -> dict:
     if blocked:
         return {"name": name, "ok": False, "reason": f"blocked in sandbox: {blocked}", "elements": elements}
     if len(snapshot.strip()) < 40 or elements < MIN_ELEMENTS:
-        return {"name": name, "ok": False,
-                "reason": f"renders empty in sandbox ({elements} interactive elements)", "elements": elements}
+        return {
+            "name": name,
+            "ok": False,
+            "reason": f"renders empty in sandbox ({elements} interactive elements)",
+            "elements": elements,
+        }
     return {"name": name, "ok": True, "reason": f"{elements} interactive elements", "elements": elements}
 
 

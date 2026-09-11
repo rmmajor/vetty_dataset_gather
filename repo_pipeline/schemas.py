@@ -1,7 +1,6 @@
 import os
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -28,8 +27,8 @@ STAGE_TO_PASSED_STATUS = {
     3: RepoStatus.SCORED,
     4: RepoStatus.ANALYZED,
     5: RepoStatus.VALIDATED,
-    6: RepoStatus.CAPTURED,    # stage 6 now only captures trajectories (no think blocks)
-    7: RepoStatus.COMPLETED,   # stage 7 fills think blocks, then completes
+    6: RepoStatus.CAPTURED,  # stage 6 now only captures trajectories (no think blocks)
+    7: RepoStatus.COMPLETED,  # stage 7 fills think blocks, then completes
 }
 
 STAGE_TO_REJECTED_STATUS = {
@@ -59,23 +58,23 @@ class FailureCategory(str, Enum):
     dashboard can split genuine rejections from recoverable infrastructure noise."""
 
     # Quality decisions — the funnel did its job; terminal.
-    QUALITY_GATE = "quality_gate"      # score / gate below threshold
-    NO_TESTS = "no_tests"              # no test files matched the framework globs
-    NO_CAPTURE = "no_capture"          # tests ran but produced no usable bbox/screenshot
-    NO_BOOT = "no_boot"                # boot gate: the repo's app never opened its port
-    NOT_BOOTABLE = "not_bootable"      # stage-2 gate: not a bootable interactive web app (test suite / non-app)
-    DEDUP = "dedup"                    # fork / duplicate-description clone
+    QUALITY_GATE = "quality_gate"  # score / gate below threshold
+    NO_TESTS = "no_tests"  # no test files matched the framework globs
+    NO_CAPTURE = "no_capture"  # tests ran but produced no usable bbox/screenshot
+    NO_BOOT = "no_boot"  # boot gate: the repo's app never opened its port
+    NOT_BOOTABLE = "not_bootable"  # stage-2 gate: not a bootable interactive web app (test suite / non-app)
+    DEDUP = "dedup"  # fork / duplicate-description clone
     EMPTY_REPO = "empty_repo"
     TOO_LARGE = "too_large"
 
     # Infrastructure / flakiness — recoverable; retried before becoming terminal.
     CLONE_FAILED = "clone_failed"
-    SDK_ERROR = "sdk_error"            # Claude returned a non-success result
+    SDK_ERROR = "sdk_error"  # Claude returned a non-success result
     RATE_LIMITED = "rate_limited"
     CONTROL_TIMEOUT = "control_timeout"
     EXEC_TIMEOUT = "exec_timeout"
     SANDBOX_ERROR = "sandbox_error"
-    PARSE_FAILED = "parse_failed"      # model output could not be parsed (LLM nondeterminism)
+    PARSE_FAILED = "parse_failed"  # model output could not be parsed (LLM nondeterminism)
 
     # Infra, but auto-retry cannot help (re-running hits the same wall) — surfaced, not retried.
     MAX_TURNS = "max_turns"
@@ -141,26 +140,12 @@ class QualityReject(PipelineFailure):
 class RetryableFailure(PipelineFailure):
     """An infrastructure / flaky failure — retried up to MAX_RETRIES before becoming terminal."""
 
+
 # Per-stage cutoff: rejections recorded before this instant were produced by superseded code and
 # should be re-queued (--requeue-stale). Extend when a stage's behavior changes again.
 STAGE_BEHAVIOR_CUTOFFS = {
     5: "2026-05-27T14:29:03+03:00",  # commit 31c698d replaced agent-driven stage 5 with code-driven
 }
-
-
-class RepoCandidate(BaseModel):
-    full_name: str
-    html_url: str
-    stars: int = 0
-    last_pushed: Optional[str] = None
-    size_kb: int = 0
-    language: Optional[str] = None
-    archived: bool = False
-    fork: bool = False
-    description: Optional[str] = None
-    topics: list[str] = Field(default_factory=list)
-    default_branch: str = "main"
-    source_query: Optional[str] = None
 
 
 class ShallowScores(BaseModel):
@@ -197,9 +182,9 @@ class DeepAnalysis(BaseModel):
     has_webserver_config: bool = False
     needs_external_backend: bool = False
     tests_public_url: bool = False
-    test_framework: Optional[str] = None
-    playwright_version: Optional[str] = None
-    framework_language: Optional[str] = None
+    test_framework: str | None = None
+    playwright_version: str | None = None
+    framework_language: str | None = None
     deps_install_success: bool = False
     estimated_trajectories: int = 0
     notes: str = ""
@@ -244,15 +229,15 @@ class TrajectoryStep(BaseModel):
     actions: list[dict] = Field(default_factory=list)
     # Inline, high-value capture fields (additive; train_qwen.py convert ignores unknown
     # step keys). The full diagnostic record lives in the sibling capture_meta.json.
-    bbox: Optional[dict] = None
-    role: Optional[str] = None
-    name: Optional[str] = None
+    bbox: dict | None = None
+    role: str | None = None
+    name: str | None = None
     # Watchdog verdict recorded after a `confirm` step (login-gated capture). An observation,
     # not an action the student emits: a step carrying `event` has empty `actions`, is excluded
     # from SFT targets, and is threaded into the next steps' action_history so the student learns
     # to execute only after approval. Shape: {kind:"approval", decision:"approve"|"deny",
     # rationale:str, by:"watchdog"}.
-    event: Optional[dict] = None
+    event: dict | None = None
 
 
 class Trajectory(BaseModel):
@@ -296,8 +281,8 @@ class TrajectoryMetadata(BaseModel):
     # provisioned; `risk_category` the terminal risk class (if any); `preconditions` the replay
     # manifest an eval/deploy harness reads to reconstruct the conditions (the SFT converter
     # ignores it). See docs/superpowers/specs/2026-06-28-login-gated-trajectories-design.md.
-    autonomy: str = "autonomous"          # "guarded" | "autonomous"
-    auth_mode: str = "none"               # "pre_session" | "handoff_login" | "none"
+    autonomy: str = "autonomous"  # "guarded" | "autonomous"
+    auth_mode: str = "none"  # "pre_session" | "handoff_login" | "none"
     risk_category: str = ""
     preconditions: dict = Field(default_factory=dict)
 
@@ -306,27 +291,28 @@ class StepCaptureMeta(BaseModel):
     """Full per-step diagnostic record. Written to capture_meta.json, keyed by step number.
     Element fields are best-effort and default gracefully when the DOM probe is unavailable
     (Path A, screenshot-only) or fails."""
+
     selector: str = ""
-    tag: Optional[str] = None
-    role: Optional[str] = None
-    name: Optional[str] = None
+    tag: str | None = None
+    role: str | None = None
+    name: str | None = None
     attrs: dict = Field(default_factory=dict)
-    bbox: Optional[dict] = None
-    is_visible: Optional[bool] = None
-    is_enabled: Optional[bool] = None
-    in_viewport: Optional[bool] = None
-    url_before: Optional[str] = None
-    url_after: Optional[str] = None
+    bbox: dict | None = None
+    is_visible: bool | None = None
+    is_enabled: bool | None = None
+    in_viewport: bool | None = None
+    url_before: str | None = None
+    url_after: str | None = None
     caused_navigation: bool = False
-    dom_changed: Optional[bool] = None
-    error: Optional[str] = None
+    dom_changed: bool | None = None
+    error: str | None = None
     console_errors: int = 0
     screenshot_sha: str = ""
     screenshot_width: int = 0
     screenshot_height: int = 0
     scroll_position: dict = Field(default_factory=lambda: {"x": 0, "y": 0})
     dt_ms: int = 0
-    wait_state: Optional[str] = None
+    wait_state: str | None = None
 
 
 class CaptureMeta(BaseModel):
@@ -335,14 +321,3 @@ class CaptureMeta(BaseModel):
     framework: str = ""
     framework_language: str = ""
     steps: dict[str, StepCaptureMeta] = Field(default_factory=dict)
-
-
-class CapturedAction(BaseModel):
-    action_type: str
-    x: int = 0
-    y: int = 0
-    selector: str = ""
-    value: str = ""
-    button: str = "left"
-    screenshot_before: str = ""
-    bounding_box: Optional[dict] = None

@@ -1,4 +1,5 @@
 """Run diagnostics: adapter LoRA norms (is the run alive?), rollout reward structure, frontier selection."""
+
 import argparse
 import collections
 import json
@@ -103,17 +104,27 @@ def rollout_report(records):
 def select_frontier(records, low, high, min_scored=2):
     """Tasks whose measured pass rate sits in the band; a task with too few scored samples is not measured."""
     tasks = per_task_stats(records)
-    return sorted(t for t, s in tasks.items()
-                  if s["pass_rate"] is not None and s["k"] >= min_scored and low <= s["pass_rate"] <= high)
+    return sorted(
+        t
+        for t, s in tasks.items()
+        if s["pass_rate"] is not None and s["k"] >= min_scored and low <= s["pass_rate"] <= high
+    )
 
 
 def _cmd_bnorm(args):
     norms = lora_norms(args.adapter)
-    out = {"adapter": args.adapter, "B_frobenius": round(norms["B"], 4), "A_frobenius": round(norms["A"], 2), "tensors": norms["tensors"]}
+    out = {
+        "adapter": args.adapter,
+        "B_frobenius": round(norms["B"], 4),
+        "A_frobenius": round(norms["A"], 2),
+        "tensors": norms["tensors"],
+    }
     if args.ref:
         ref = lora_norms(args.ref)
         ratio = norms["B"] / ref["B"] if ref["B"] else float("inf")
-        out.update({"ref_B_frobenius": round(ref["B"], 4), "B_ratio": round(ratio, 4), "dead_run": ratio < DEAD_RUN_B_RATIO})
+        out.update(
+            {"ref_B_frobenius": round(ref["B"], 4), "B_ratio": round(ratio, 4), "dead_run": ratio < DEAD_RUN_B_RATIO}
+        )
     print(json.dumps(out, indent=2))
     return 1 if out.get("dead_run") else 0
 
@@ -129,8 +140,12 @@ def _cmd_select(args):
     summary_path = Path(args.rollouts if Path(args.rollouts).is_dir() else Path(args.rollouts).parent) / "summary.json"
     summary = json.loads(summary_path.read_text()) if summary_path.exists() else {}
     payload = {
-        "selected": selected, "band": [args.min, args.max], "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "policy": summary.get("policy"), "suite_sha256": summary.get("suite_sha256"), "run_id": summary.get("run_id"),
+        "selected": selected,
+        "band": [args.min, args.max],
+        "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "policy": summary.get("policy"),
+        "suite_sha256": summary.get("suite_sha256"),
+        "run_id": summary.get("run_id"),
         "per_task": per_task_stats(records),
     }
     Path(args.out).write_text(json.dumps(payload, indent=2) + "\n")

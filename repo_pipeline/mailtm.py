@@ -11,6 +11,7 @@ The mailbox is a disposable burner (random address + generated password), consis
 the box and (out-of-band, for the harness) confirm a message arrived; the agent still reads the
 message visually in the browser, which is the skill being captured.
 """
+
 import json
 import logging
 import secrets
@@ -44,9 +45,10 @@ def _req(method: str, path: str, body: dict | None = None, token: str | None = N
             # 429/503; re-raise everything else (e.g. 422 address-taken, which create_mailbox handles).
             if e.code in (429, 503) and attempt < tries - 1:
                 retry_after = e.headers.get("Retry-After") if e.headers else None
-                delay = float(retry_after) if (retry_after and str(retry_after).isdigit()) else 5 * (2 ** attempt)
-                logger.warning(f"mail.tm {e.code} on {method} {path} — backing off {delay:.0f}s "
-                               f"(attempt {attempt + 1}/{tries})")
+                delay = float(retry_after) if (retry_after and str(retry_after).isdigit()) else 5 * (2**attempt)
+                logger.warning(
+                    f"mail.tm {e.code} on {method} {path} — backing off {delay:.0f}s (attempt {attempt + 1}/{tries})"
+                )
                 time.sleep(delay)
                 continue
             raise
@@ -56,9 +58,11 @@ def _req(method: str, path: str, body: dict | None = None, token: str | None = N
             # outage and burn the queue. HTTPError (a URLError subclass) is handled above; this is
             # the connection-level fallback. Back off and retry; give up only after `tries`.
             if attempt < tries - 1:
-                delay = 3 * (2 ** attempt)
-                logger.warning(f"mail.tm network error on {method} {path} ({e.reason}) — retry in "
-                               f"{delay:.0f}s (attempt {attempt + 1}/{tries})")
+                delay = 3 * (2**attempt)
+                logger.warning(
+                    f"mail.tm network error on {method} {path} ({e.reason}) — retry in "
+                    f"{delay:.0f}s (attempt {attempt + 1}/{tries})"
+                )
                 time.sleep(delay)
                 continue
             raise

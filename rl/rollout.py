@@ -1,4 +1,5 @@
 """Rollout CLI: run k samples per task with any policy, write rl_runs/<run_id>/iter_NNN/rollouts.jsonl."""
+
 import argparse
 import json
 import logging
@@ -39,7 +40,13 @@ def add_common_args(parser):
 
 def policy_spec(args):
     if args.policy == "openai":
-        return {"kind": "openai", "endpoint": args.endpoint, "model": args.model, "temperature": args.temperature, "max_tokens": args.max_tokens}
+        return {
+            "kind": "openai",
+            "endpoint": args.endpoint,
+            "model": args.model,
+            "temperature": args.temperature,
+            "max_tokens": args.max_tokens,
+        }
     if args.policy == "mock":
         return {"kind": "mock", "traj_dir": args.replay_dir}
     return {"kind": "scripted", "texts": ["action: done()"]}
@@ -78,8 +85,15 @@ def main():
     run_ctx = make_run_context(run_id, Path(args.out) / run_id, args.iter, policy_tag=args.model, bridge=bridge)
     try:
         pool.start()
-        records = run_batch(lambda: make_policy(spec), tasks, args.k, pool, run_ctx, cfg,
-                            on_record=lambda r: logger.info(f"{r['episode_id']}: {r.get('terminal_reason')} reward={r.get('reward')}"))
+        records = run_batch(
+            lambda: make_policy(spec),
+            tasks,
+            args.k,
+            pool,
+            run_ctx,
+            cfg,
+            on_record=lambda r: logger.info(f"{r['episode_id']}: {r.get('terminal_reason')} reward={r.get('reward')}"),
+        )
     finally:
         pool.stop()
         bridge.close()

@@ -1,4 +1,4 @@
-# Evaluation archive — SFT v1
+# Evaluation archive
 
 Raw artefacts behind every number quoted in the root `README.md` for the SFT v1 checkpoint.
 Committed deliberately: `eval_results/` and `eval_runs/` are gitignored, so without this directory

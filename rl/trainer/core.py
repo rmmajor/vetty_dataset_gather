@@ -1,4 +1,5 @@
 """ms-swift-free half of the GRPO plugin: env clients, message/record shaping, format reward — unit-tested on the Mac."""
+
 import base64
 import gzip
 import io
@@ -32,8 +33,18 @@ def _retry_after(error):
 class HttpEnvClient:
     """Talks to rl/service.py through the ingress; every 5xx (the service's 503 or the tunnel's own 502/524) is retried, 4xx is fatal."""
 
-    def __init__(self, base_url, token="", timeout_s=600, retries=6, backoff_s=5, reset_wait_s=RL_RESET_WAIT_S,
-                 step_wait_s=RL_STEP_WAIT_S, opener=urllib.request.urlopen, **_):
+    def __init__(
+        self,
+        base_url,
+        token="",
+        timeout_s=600,
+        retries=6,
+        backoff_s=5,
+        reset_wait_s=RL_RESET_WAIT_S,
+        step_wait_s=RL_STEP_WAIT_S,
+        opener=urllib.request.urlopen,
+        **_,
+    ):
         self.step_wait_s = step_wait_s
         # A comma-separated list is an ordered set of ingresses to the same service; attempts rotate through it so one dead tunnel does not end the run.
         self.base_urls = [u.strip().rstrip("/") for u in base_url.split(",") if u.strip()]
@@ -49,7 +60,9 @@ class HttpEnvClient:
         last, attempt = None, 0
         while True:
             try:
-                request = urllib.request.Request(f"{self.base_urls[attempt % len(self.base_urls)]}{path}", data=data, headers=headers, method=method)
+                request = urllib.request.Request(
+                    f"{self.base_urls[attempt % len(self.base_urls)]}{path}", data=data, headers=headers, method=method
+                )
                 with self.opener(request, timeout=self.timeout_s) as response:
                     raw = response.read()
                     if (getattr(response, "headers", None) or {}).get("Content-Encoding") == "gzip":
@@ -62,19 +75,32 @@ class HttpEnvClient:
             except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
                 last, delay = e, None
             attempt += 1
-            if (deadline is None and attempt >= self.retries) or (deadline is not None and time.monotonic() >= deadline):
+            if (deadline is None and attempt >= self.retries) or (
+                deadline is not None and time.monotonic() >= deadline
+            ):
                 break
             time.sleep(delay or self.backoff_s * min(attempt, 6))
         raise ConnectionError(f"env service unreachable after {attempt} attempts: {last}")
 
     def reset(self, task_id, sample_idx, run_id, iteration, policy_tag):
         # Queueing for a slot is the normal case at generation start, so a reset waits far longer than a step; request_id makes a cut-off retry land on the same episode.
-        body = {"task_id": task_id, "sample_k": sample_idx, "run_id": run_id, "iter": iteration, "policy_tag": policy_tag,
-                "request_id": uuid.uuid4().hex}
+        body = {
+            "task_id": task_id,
+            "sample_k": sample_idx,
+            "run_id": run_id,
+            "iter": iteration,
+            "policy_tag": policy_tag,
+            "request_id": uuid.uuid4().hex,
+        }
         return self._request("POST", "/reset", body, wait_s=self.reset_wait_s)
 
     def step(self, episode_id, response_text, seq=None):
-        return self._request("POST", "/step", {"episode_id": episode_id, "response_text": response_text, "seq": seq}, wait_s=self.step_wait_s)
+        return self._request(
+            "POST",
+            "/step",
+            {"episode_id": episode_id, "response_text": response_text, "seq": seq},
+            wait_s=self.step_wait_s,
+        )
 
     def close(self, episode_id, reason="external"):
         return self._request("POST", "/close", {"episode_id": episode_id, "reason": reason}, wait_s=self.step_wait_s)
@@ -110,10 +136,19 @@ class MockEnvClient:
         state["history"].append("mock_action")
         done = state["n"] >= self.steps or any(a["type"] == "done" for a in decoded.actions)
         if done:
-            return {"observation": None, "reward": None if self.no_reward else (1.0 if decoded.ok else 0.0), "done": True,
-                    "info": {"terminal_reason": "done" if decoded.ok else "parse_abort"}}
+            return {
+                "observation": None,
+                "reward": None if self.no_reward else (1.0 if decoded.ok else 0.0),
+                "done": True,
+                "info": {"terminal_reason": "done" if decoded.ok else "parse_abort"},
+            }
         observation = build_observation(f"mock task {state['task_id']}", state["history"], self.png, state["n"])
-        return {"observation": observation, "reward": None, "done": False, "info": {"parse": "ok" if decoded.ok else "failure"}}
+        return {
+            "observation": observation,
+            "reward": None,
+            "done": False,
+            "info": {"parse": "ok" if decoded.ok else "failure"},
+        }
 
     def close(self, episode_id, reason="external"):
         return {"reward": None if self.no_reward else 0.0, "info": {"terminal_reason": reason}}
@@ -150,13 +185,25 @@ def require_reward(reward, trajectory_uuid):
 def episode_records(system, turns, total_reward, trajectory_uuid, env_error=None):
     records = []
     for index, turn in enumerate(turns):
-        records.append({
-            "messages": [{"role": "system", "content": system}, turn["user"], {"role": "assistant", "content": turn["assistant"]}],
-            "images": [turn["image"]],
-            "response_token_ids": turn.get("token_ids"),
-            "rollout_infos": {"total_reward": total_reward, "num_turns": len(turns), "turn": index,
-                              "trajectory_uuid": trajectory_uuid, "images": [turn["image"]], "env_error": env_error},
-        })
+        records.append(
+            {
+                "messages": [
+                    {"role": "system", "content": system},
+                    turn["user"],
+                    {"role": "assistant", "content": turn["assistant"]},
+                ],
+                "images": [turn["image"]],
+                "response_token_ids": turn.get("token_ids"),
+                "rollout_infos": {
+                    "total_reward": total_reward,
+                    "num_turns": len(turns),
+                    "turn": index,
+                    "trajectory_uuid": trajectory_uuid,
+                    "images": [turn["image"]],
+                    "env_error": env_error,
+                },
+            }
+        )
     return records
 
 

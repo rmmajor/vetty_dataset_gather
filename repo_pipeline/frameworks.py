@@ -11,6 +11,7 @@ Cypress) is a new entry here plus its instrumentation file — no stage edits.
 The trajectory output contract is identical across profiles; only the capture mechanism
 differs (see the matching file in `instrumentation/`).
 """
+
 from dataclasses import dataclass
 
 # The Playwright image is built arch-native (fast on Apple Silicon). The Selenium image
@@ -37,19 +38,19 @@ _PW_TS_SUITE = _ENV_PREFIX + "xvfb-run -a npx playwright test --reporter=list 2>
 
 @dataclass(frozen=True)
 class FrameworkProfile:
-    name: str                          # registry key, e.g. "selenium-python"
-    test_framework: str                # "playwright" | "selenium"
-    language: str                      # "python" | "typescript" | "javascript"
-    install_commands: tuple            # shell commands, .format(repo_dir=...), run in order
-    injection_kind: str                # "python_conftest" | "ts_fixture"
-    instrumentation_filename: str      # file in instrumentation/ to inject
-    test_command_single: str           # stage 5, .format(repo_name=, test_name_prefix=)
-    test_command_suite: str            # stage 6, .format(repo_name=, test_name_prefix=)
-    setup_note: str                    # framework-specific setup hint for the agent prompt
-    action_vocabulary: tuple           # method names that count as interactive actions
-    sandbox_image: str                 # Docker image used for stages 5/6
-    sandbox_platform: str | None       # forced platform (e.g. "linux/amd64") or None for native
-    test_globs: tuple                  # filename globs to locate test files (stage 5 trial)
+    name: str  # registry key, e.g. "selenium-python"
+    test_framework: str  # "playwright" | "selenium"
+    language: str  # "python" | "typescript" | "javascript"
+    install_commands: tuple  # shell commands, .format(repo_dir=...), run in order
+    injection_kind: str  # "python_conftest" | "ts_fixture"
+    instrumentation_filename: str  # file in instrumentation/ to inject
+    test_command_single: str  # stage 5, .format(repo_name=, test_name_prefix=)
+    test_command_suite: str  # stage 6, .format(repo_name=, test_name_prefix=)
+    setup_note: str  # framework-specific setup hint for the agent prompt
+    action_vocabulary: tuple  # method names that count as interactive actions
+    sandbox_image: str  # Docker image used for stages 5/6
+    sandbox_platform: str | None  # forced platform (e.g. "linux/amd64") or None for native
+    test_globs: tuple  # filename globs to locate test files (stage 5 trial)
 
 
 PROFILES: dict[str, FrameworkProfile] = {
@@ -71,8 +72,17 @@ PROFILES: dict[str, FrameworkProfile] = {
         test_command_suite=_PYTEST_SUITE,
         setup_note="A conftest.py with instrumentation has been placed in the test directory; it sets the viewport itself, so no config changes are needed.",
         action_vocabulary=(
-            "click", "fill", "type", "press", "selectOption", "select_option",
-            "check", "uncheck", "dblclick", "dragTo", "drag_and_drop",
+            "click",
+            "fill",
+            "type",
+            "press",
+            "selectOption",
+            "select_option",
+            "check",
+            "uncheck",
+            "dblclick",
+            "dragTo",
+            "drag_and_drop",
         ),
         sandbox_image=SANDBOX_IMAGE,
         sandbox_platform=None,
@@ -92,8 +102,17 @@ PROFILES: dict[str, FrameworkProfile] = {
         test_command_suite=_PW_TS_SUITE,
         setup_note="Instrumentation is already fully wired: every test file's `@playwright/test` import has been redirected to /workspace/repo/instrumented-fixture, which overrides the `page` fixture and locks the 1280x720 viewport itself. Do NOT edit imports or playwright.config — just pick a promising test file and run it.",
         action_vocabulary=(
-            "click", "fill", "type", "press", "selectOption", "select_option",
-            "check", "uncheck", "dblclick", "dragTo", "drag_and_drop",
+            "click",
+            "fill",
+            "type",
+            "press",
+            "selectOption",
+            "select_option",
+            "check",
+            "uncheck",
+            "dblclick",
+            "dragTo",
+            "drag_and_drop",
         ),
         sandbox_image=SANDBOX_IMAGE,
         sandbox_platform=None,
@@ -114,8 +133,13 @@ PROFILES: dict[str, FrameworkProfile] = {
         test_command_suite=_PYTEST_SUITE,
         setup_note="A conftest.py with Selenium instrumentation has been placed in the test directory. It locks the viewport to 1280x720 via CDP and captures coordinates from getBoundingClientRect, so no config changes are needed. Chrome and a matching chromedriver are already on PATH in the image.",
         action_vocabulary=(
-            "click", "send_keys", "clear", "submit",
-            "select_by_value", "select_by_visible_text", "select_by_index",
+            "click",
+            "send_keys",
+            "clear",
+            "submit",
+            "select_by_value",
+            "select_by_visible_text",
+            "select_by_index",
         ),
         sandbox_image=SANDBOX_IMAGE_SELENIUM,
         sandbox_platform="linux/amd64",
@@ -145,12 +169,14 @@ def resolve_profile(test_framework: str | None, framework_language: str | None) 
 # also handles JavaScript (its test_globs match *.spec.js / *.test.js and the fixture re-export
 # works for JS), so javascript is listed even though the profile's primary `language` is
 # typescript. Extend this when adding a framework/language (alongside its profile + hook).
-SUPPORTED_COMBOS = frozenset({
-    ("playwright", "python"),
-    ("playwright", "typescript"),
-    ("playwright", "javascript"),
-    ("selenium", "python"),
-})
+SUPPORTED_COMBOS = frozenset(
+    {
+        ("playwright", "python"),
+        ("playwright", "typescript"),
+        ("playwright", "javascript"),
+        ("selenium", "python"),
+    }
+)
 
 
 def is_supported_profile(test_framework: str | None, framework_language: str | None) -> bool:

@@ -11,6 +11,7 @@ trajectories get success=true (the only ones `convert` trains on); success is ju
 against the original instruction — hindsight relabeling happens exclusively in the separate,
 audited `repo_pipeline.relabel_recoverable` pass, never here.
 """
+
 import asyncio
 import json
 import logging
@@ -20,10 +21,10 @@ from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions
 
+from repo_pipeline import operator_pii
 from repo_pipeline.agent_runner import run_agent
 from repo_pipeline.corpus_audit import _action_signature
 from repo_pipeline.driver_session import DriverClient, DriverError
-from repo_pipeline import operator_pii
 from repo_pipeline.llm_config import MODEL_FOR_REASONING, MODEL_FOR_TEACHER_AGENT
 from repo_pipeline.persona import MASKED_FIELDS, default_persona, persona_secrets
 from repo_pipeline.safety_watchdog import get_policy
@@ -181,7 +182,7 @@ _SECRET_KEY_DESC = {
     "email": "<secret:email> = your email address",
     "password": "<secret:password> = your password",
     "new_password": "<secret:new_password> = a new password to set whenever you must choose one "
-                    "(e.g. when resetting or changing your password)",
+    "(e.g. when resetting or changing your password)",
     "username": "<secret:username> = your username",
     "phone": "<secret:phone> = your phone number",
 }
@@ -203,8 +204,8 @@ def render_identity_block(persona: dict | None, secret_keys: list[str]) -> str:
         "\nYOUR IDENTITY — you are a disposable QA test persona, not a real person:\n"
         f"- Your name is {persona['full_name']} (username {persona['username']}). Use it wherever a "
         "form, profile, or message asks who you are.\n"
-        + contact_line +
-        "- NEVER type a real person's identity — no real name, email address, phone number, or postal "
+        + contact_line
+        + "- NEVER type a real person's identity — no real name, email address, phone number, or postal "
         "address, and above all nothing from your own environment, configuration, or memory of who is "
         "running you. Those belong to real people and must never enter a form.\n"
         "- If a field wants identity data not listed above (date of birth, address, company), invent a "
@@ -227,17 +228,28 @@ TEACHER_STYLE_BLOCKS = {
 }
 
 
-def render_policy_block(autonomy: str, auth_mode: str, secret_keys: list[str],
-                        webmail_url: str = "", webmail_preauthed: bool = True,
-                        persona: dict | None = None, task_style: str = "") -> str:
+def render_policy_block(
+    autonomy: str,
+    auth_mode: str,
+    secret_keys: list[str],
+    webmail_url: str = "",
+    webmail_preauthed: bool = True,
+    persona: dict | None = None,
+    task_style: str = "",
+) -> str:
     """The operating-mode block for TEACHER_PROMPT plus the opt-in task-style rules (TEACHER_STYLE_BLOCKS)."""
     mode_block = _render_mode_block(autonomy, auth_mode, secret_keys, webmail_url, webmail_preauthed, persona)
     return mode_block + TEACHER_STYLE_BLOCKS.get(task_style, "")
 
 
-def _render_mode_block(autonomy: str, auth_mode: str, secret_keys: list[str],
-                       webmail_url: str = "", webmail_preauthed: bool = True,
-                       persona: dict | None = None) -> str:
+def _render_mode_block(
+    autonomy: str,
+    auth_mode: str,
+    secret_keys: list[str],
+    webmail_url: str = "",
+    webmail_preauthed: bool = True,
+    persona: dict | None = None,
+) -> str:
     """The operating-mode instructions injected into TEACHER_PROMPT. This describes the agent's
     RESOURCES (it has credentials, it has an email inbox) and its stop condition — NOT a step-by-step
     procedure. The recorded `instruction` stays a terse user goal; the agent figures out the process.
@@ -256,14 +268,15 @@ def _render_mode_block(autonomy: str, auth_mode: str, secret_keys: list[str],
             "the app needs a login, a fresh secret, a CAPTCHA, or 2FA, call `handoff` with the "
             "reason; assume control returns and continue.\n"
             "- Everything safe and reversible (browse, search, fill non-sensitive forms, add-to-cart, "
-            "create drafts) you do normally.\n"
-            + identity_block
+            "create drafts) you do normally.\n" + identity_block
         )
     cred_items = "; ".join(_SECRET_KEY_DESC.get(k, f"<secret:{k}>") for k in secret_keys)
     creds_line = (
         "- You are provisioned with these credentials — type the placeholder EXACTLY into the field "
         "it belongs in and the system fills in the real value; never invent or type a real "
-        f"credential yourself: {cred_items}.\n" if secret_keys else ""
+        f"credential yourself: {cred_items}.\n"
+        if secret_keys
+        else ""
     )
     if not webmail_url:
         mail_line = ""
@@ -286,39 +299,58 @@ def _render_mode_block(autonomy: str, auth_mode: str, secret_keys: list[str],
             "arrived, wait again and check the Spam/Junk folder; if still nothing after two checks, "
             "request it once more. Only conclude it will not arrive after genuinely retrying.\n"
         )
-    done_line = ("- You are finished as soon as the goal is met (e.g. the account exists and you are "
-                 "signed in). Do not keep hunting for a confirmation email if the site already let "
-                 "you in.\n")
+    done_line = (
+        "- You are finished as soon as the goal is met (e.g. the account exists and you are "
+        "signed in). Do not keep hunting for a confirmation email if the site already let "
+        "you in.\n"
+    )
 
     if auth_mode == "pre_session":
         # The session is injected — the agent is ALREADY signed in. No login ritual: just do the task.
         # Without this a PERSISTED session that expired between runs dead-ends every task on the site.
-        expired_line = ("- If the session has expired and the app shows a login screen anyway, sign in "
-                        "with your credentials and carry on.\n" if secret_keys else "")
-        return ("\nOPERATING MODE — autonomous QA (you are already signed in):\n"
-                "- You are signed in to the app. Pursue the goal directly; do NOT log out or look "
-                "for a login screen unless the task itself asks you to.\n"
-                + expired_line + creds_line + mail_line + identity_block)
+        expired_line = (
+            "- If the session has expired and the app shows a login screen anyway, sign in "
+            "with your credentials and carry on.\n"
+            if secret_keys
+            else ""
+        )
+        return (
+            "\nOPERATING MODE — autonomous QA (you are already signed in):\n"
+            "- You are signed in to the app. Pursue the goal directly; do NOT log out or look "
+            "for a login screen unless the task itself asks you to.\n"
+            + expired_line
+            + creds_line
+            + mail_line
+            + identity_block
+        )
     if auth_mode == "discovered":
         # Start signed out WITH credentials available — sign in only if the task can't proceed
         # without it (the realistic 'hit the wall, then log in' pattern), otherwise just work.
-        return ("\nOPERATING MODE — autonomous QA (disposable test environment):\n"
-                "- Pursue the goal directly. ONLY if the app blocks you until you sign in should you "
-                "sign in (creating the account first with your credentials if you do not have one "
-                "yet), then continue toward the goal. Do not seek out a login if the task does "
-                "not require one.\n" + creds_line + mail_line + identity_block)
+        return (
+            "\nOPERATING MODE — autonomous QA (disposable test environment):\n"
+            "- Pursue the goal directly. ONLY if the app blocks you until you sign in should you "
+            "sign in (creating the account first with your credentials if you do not have one "
+            "yet), then continue toward the goal. Do not seek out a login if the task does "
+            "not require one.\n" + creds_line + mail_line + identity_block
+        )
     if auth_mode == "login":
         # Logging in / creating (or recovering) an account IS the goal of this task. The recorded
         # instruction is a terse user goal; the agent works out the steps from these resources.
-        return ("\nOPERATING MODE — autonomous QA (disposable test environment):\n"
-                "- Pursue the goal end-to-end, including signing in / creating or recovering the "
-                "account; the environment resets after the run, so finishing real flows is safe.\n"
-                + creds_line + mail_line + done_line + identity_block)
+        return (
+            "\nOPERATING MODE — autonomous QA (disposable test environment):\n"
+            "- Pursue the goal end-to-end, including signing in / creating or recovering the "
+            "account; the environment resets after the run, so finishing real flows is safe.\n"
+            + creds_line
+            + mail_line
+            + done_line
+            + identity_block
+        )
     return identity_block
 
 
-def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str = "browser",
-                            autonomy: str = "autonomous"):
+def build_driver_mcp_server(
+    client: DriverClient, state: dict, server_name: str = "browser", autonomy: str = "autonomous"
+):
     """In-process MCP server exposing the in-container driver to the teacher.
 
     `state` is the per-task mutable record shared with the caller: action count, completion
@@ -396,10 +428,15 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         ),
     )
     async def click_tool(args):
-        return await _act({
-            "kind": "click", "ref": args["ref"], "thought": args.get("thought", ""),
-            "button": args.get("button", "left"), "dblclick": bool(args.get("dblclick", False)),
-        })
+        return await _act(
+            {
+                "kind": "click",
+                "ref": args["ref"],
+                "thought": args.get("thought", ""),
+                "button": args.get("button", "left"),
+                "dblclick": bool(args.get("dblclick", False)),
+            }
+        )
 
     @tool(
         "type",
@@ -415,10 +452,15 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         ),
     )
     async def type_tool(args):
-        return await _act({
-            "kind": "type", "ref": args["ref"], "text": args.get("text", ""),
-            "thought": args.get("thought", ""), "press_enter": bool(args.get("press_enter", False)),
-        })
+        return await _act(
+            {
+                "kind": "type",
+                "ref": args["ref"],
+                "text": args.get("text", ""),
+                "thought": args.get("thought", ""),
+                "press_enter": bool(args.get("press_enter", False)),
+            }
+        )
 
     @tool(
         "press",
@@ -443,9 +485,14 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         action_schema({"ref": {"type": "integer"}, "to_ref": {"type": "integer"}}, ["ref", "to_ref"]),
     )
     async def drag_tool(args):
-        return await _act({
-            "kind": "drag", "ref": args["ref"], "to_ref": args["to_ref"], "thought": args.get("thought", ""),
-        })
+        return await _act(
+            {
+                "kind": "drag",
+                "ref": args["ref"],
+                "to_ref": args["to_ref"],
+                "thought": args.get("thought", ""),
+            }
+        )
 
     @tool(
         "hover",
@@ -463,7 +510,8 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         "screenshot first. For normal elements always use click with a ref.",
         action_schema(
             {
-                "x": {"type": "integer"}, "y": {"type": "integer"},
+                "x": {"type": "integer"},
+                "y": {"type": "integer"},
                 "button": {"type": "string", "enum": ["left", "right"]},
                 "dblclick": {"type": "boolean"},
             },
@@ -471,10 +519,16 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         ),
     )
     async def click_xy_tool(args):
-        return await _act({
-            "kind": "click_xy", "x": args["x"], "y": args["y"], "thought": args.get("thought", ""),
-            "button": args.get("button", "left"), "dblclick": bool(args.get("dblclick", False)),
-        })
+        return await _act(
+            {
+                "kind": "click_xy",
+                "x": args["x"],
+                "y": args["y"],
+                "thought": args.get("thought", ""),
+                "button": args.get("button", "left"),
+                "dblclick": bool(args.get("dblclick", False)),
+            }
+        )
 
     @tool(
         "drag_path",
@@ -484,7 +538,8 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         action_schema(
             {
                 "path": {
-                    "type": "array", "minItems": 2,
+                    "type": "array",
+                    "minItems": 2,
                     "items": {
                         "type": "object",
                         "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}},
@@ -514,10 +569,14 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         },
     )
     async def upload_tool(args):
-        return await _act({
-            "kind": "upload", "ref": args["ref"],
-            "filename": args.get("filename", "upload.txt"), "content": args.get("content"),
-        })
+        return await _act(
+            {
+                "kind": "upload",
+                "ref": args["ref"],
+                "filename": args.get("filename", "upload.txt"),
+                "content": args.get("content"),
+            }
+        )
 
     @tool(
         "select",
@@ -525,10 +584,14 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         action_schema({"ref": {"type": "integer"}, "value": {"type": "string"}}, ["ref", "value"]),
     )
     async def select_tool(args):
-        return await _act({
-            "kind": "select", "ref": args["ref"], "value": args.get("value", ""),
-            "thought": args.get("thought", ""),
-        })
+        return await _act(
+            {
+                "kind": "select",
+                "ref": args["ref"],
+                "value": args.get("value", ""),
+                "thought": args.get("thought", ""),
+            }
+        )
 
     @tool("snapshot", "Refresh the interactive-element view of the current page.", {})
     async def snapshot_tool(args):
@@ -554,9 +617,13 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         action_schema({"seconds": {"type": "number"}}, ["seconds"]),
     )
     async def wait_tool(args):
-        return await _act({
-            "kind": "wait", "seconds": float(args.get("seconds", 1)), "thought": args.get("thought", ""),
-        })
+        return await _act(
+            {
+                "kind": "wait",
+                "seconds": float(args.get("seconds", 1)),
+                "thought": args.get("thought", ""),
+            }
+        )
 
     @tool(
         "navigate",
@@ -612,26 +679,34 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         action_schema({"reason": {"type": "string"}}, ["reason"]),
     )
     async def handoff_tool(args):
-        return await _act({"kind": "handoff", "reason": args.get("reason", "login"), "thought": args.get("thought", "")})
+        return await _act(
+            {"kind": "handoff", "reason": args.get("reason", "login"), "thought": args.get("thought", "")}
+        )
 
     @tool(
         "confirm",
         "Guarded mode only. When you are about to perform a CONSEQUENTIAL, hard-to-undo action "
         "(place an order, pay, send a message to a real person, publish, delete data, accept "
         "terms), DO NOT do it — call this to propose it and wait for a verdict. proposed_action: "
-        "the action you would take, e.g. {\"type\":\"click\",\"ref\":12}. risk_category: one of "
+        'the action you would take, e.g. {"type":"click","ref":12}. risk_category: one of '
         "purchase|payment|send|publish|delete|consent|account_create|other. If approved, perform "
         "the action next; if denied, stop — pausing is the correct, successful outcome.",
-        action_schema({"proposed_action": {"type": "object"}, "risk_category": {"type": "string"}},
-                      ["proposed_action", "risk_category"]),
+        action_schema(
+            {"proposed_action": {"type": "object"}, "risk_category": {"type": "string"}},
+            ["proposed_action", "risk_category"],
+        ),
     )
     async def confirm_tool(args):
         proposed = args.get("proposed_action") or {}
         risk = args.get("risk_category", "")
-        res = await _act({
-            "kind": "confirm", "proposed_action": proposed,
-            "risk_category": risk, "thought": args.get("thought", ""),
-        })
+        res = await _act(
+            {
+                "kind": "confirm",
+                "proposed_action": proposed,
+                "risk_category": risk,
+                "thought": args.get("thought", ""),
+            }
+        )
         # A refused confirm (budget exhausted, driver error) recorded no step, so there is nothing
         # for a verdict to attach to — never spend a watchdog call or emit an orphan event step.
         if res.get("is_error") or state["completed"]:
@@ -655,15 +730,24 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         # Record the verdict as an observation step (empty actions + event): excluded from SFT
         # targets, threaded into the student's history so it learns to execute only after approval.
         try:
-            await _run(client.act, {
-                "kind": "approval_event",
-                "event": {"kind": "approval", "decision": verdict["decision"],
-                          "rationale": verdict.get("rationale", ""), "by": "watchdog"},
-            })
+            await _run(
+                client.act,
+                {
+                    "kind": "approval_event",
+                    "event": {
+                        "kind": "approval",
+                        "decision": verdict["decision"],
+                        "rationale": verdict.get("rationale", ""),
+                        "by": "watchdog",
+                    },
+                },
+            )
         except Exception as e:
             logger.warning(f"approval_event recording failed: {e}")
         if verdict["decision"] == "approve":
-            return _text(f"Approved: {verdict.get('rationale', '')}. Now perform the proposed action with the matching tool.")
+            return _text(
+                f"Approved: {verdict.get('rationale', '')}. Now perform the proposed action with the matching tool."
+            )
         # Deny is terminal: completing here (the agent paused correctly) is the success.
         state["completed"] = True
         return _text(
@@ -672,14 +756,38 @@ def build_driver_mcp_server(client: DriverClient, state: dict, server_name: str 
         )
 
     tools = [
-        click_tool, type_tool, press_tool, scroll_tool, drag_tool, hover_tool,
-        click_xy_tool, drag_path_tool, upload_tool, select_tool,
-        snapshot_tool, screenshot_tool, wait_tool, navigate_tool, complete_tool,
+        click_tool,
+        type_tool,
+        press_tool,
+        scroll_tool,
+        drag_tool,
+        hover_tool,
+        click_xy_tool,
+        drag_path_tool,
+        upload_tool,
+        select_tool,
+        snapshot_tool,
+        screenshot_tool,
+        wait_tool,
+        navigate_tool,
+        complete_tool,
     ]
     allowed_names = [
-        "click", "type", "press", "scroll", "drag", "hover",
-        "click_xy", "drag_path", "upload", "select",
-        "snapshot", "screenshot", "wait", "navigate", "task_complete",
+        "click",
+        "type",
+        "press",
+        "scroll",
+        "drag",
+        "hover",
+        "click_xy",
+        "drag_path",
+        "upload",
+        "select",
+        "snapshot",
+        "screenshot",
+        "wait",
+        "navigate",
+        "task_complete",
     ]
     # Guarded mode adds the pause-and-ask / takeover behaviors; autonomous mode omits them so it
     # drives straight through (and pre-existing repo captures are byte-for-byte unchanged).
@@ -721,23 +829,42 @@ async def run_teacher_task(
     existing callers (repo capture) keep their current autonomous behavior."""
     persona = persona or default_persona()
     state = {
-        "actions": 0, "completed": False, "agent_outcome": "", "agent_summary": "",
-        "instruction": task["instruction"], "autonomy": autonomy, "auth_mode": auth_mode,
-        "env": env, "registry": registry, "full_name": full_name, "approval_policy": get_policy(),
+        "actions": 0,
+        "completed": False,
+        "agent_outcome": "",
+        "agent_summary": "",
+        "instruction": task["instruction"],
+        "autonomy": autonomy,
+        "auth_mode": auth_mode,
+        "env": env,
+        "registry": registry,
+        "full_name": full_name,
+        "approval_policy": get_policy(),
     }
 
     loop = asyncio.get_running_loop()
     task_meta = {
-        "difficulty": task.get("difficulty", ""), "expected_actions": task.get("expected_actions", 0),
-        "autonomy": autonomy, "auth_mode": auth_mode, "env": env, "persona": persona["username"],
+        "difficulty": task.get("difficulty", ""),
+        "expected_actions": task.get("expected_actions", 0),
+        "autonomy": autonomy,
+        "auth_mode": auth_mode,
+        "env": env,
+        "persona": persona["username"],
         "task_style": task_style,
     }
     # A lane's provisioned credential always wins over the persona's fallback under the same key.
     session_secrets = {**persona_secrets(persona), **(secrets or {})}
     session = await loop.run_in_executor(
-        None, lambda: client.session(task["id"], app_url, task["instruction"], task_meta=task_meta,
-                                     auth_config=auth_config, secrets=session_secrets,
-                                     mail_config=mail_config)
+        None,
+        lambda: client.session(
+            task["id"],
+            app_url,
+            task["instruction"],
+            task_meta=task_meta,
+            auth_config=auth_config,
+            secrets=session_secrets,
+            mail_config=mail_config,
+        ),
     )
 
     server, allowed = build_driver_mcp_server(client, state, autonomy=autonomy)
@@ -746,10 +873,15 @@ async def run_teacher_task(
         url=session["url"],
         snapshot=session["snapshot"],
         max_actions=MAX_ACTIONS_PER_TASK,
-        policy_block=render_policy_block(autonomy, auth_mode, list((secrets or {}).keys()),
-                                         webmail_url=((mail_config or {}).get("url") or webmail_url),
-                                         webmail_preauthed=webmail_preauthed, persona=persona,
-                                         task_style=task_style),
+        policy_block=render_policy_block(
+            autonomy,
+            auth_mode,
+            list((secrets or {}).keys()),
+            webmail_url=((mail_config or {}).get("url") or webmail_url),
+            webmail_preauthed=webmail_preauthed,
+            persona=persona,
+            task_style=task_style,
+        ),
     )
 
     final_text = ""
@@ -788,9 +920,7 @@ async def run_teacher_task(
                 logger.warning(f"session capture failed for {task['id']}: {e}")
                 state["storage_state"] = None
         try:
-            await loop.run_in_executor(
-                None, client.finish, state["agent_outcome"], state["agent_summary"]
-            )
+            await loop.run_in_executor(None, client.finish, state["agent_outcome"], state["agent_summary"])
         except Exception as e:
             logger.warning(f"driver finish failed for {task['id']}: {e}")
 
@@ -804,7 +934,7 @@ def _step_summary(traj: dict, limit: int = 40) -> str:
         for a in step.get("actions", []):
             atype = a.get("type")
             if atype == "type":
-                kinds.append(f"type \"{(a.get('text') or '')[:40]}\"")
+                kinds.append(f'type "{(a.get("text") or "")[:40]}"')
             elif atype == "keypress":
                 kinds.append(f"press {'+'.join(a.get('keys') or [])}")
             elif atype == "confirm":
@@ -815,7 +945,7 @@ def _step_summary(traj: dict, limit: int = 40) -> str:
                 kinds.append(atype or "?")
         if step.get("event"):
             kinds.append(f"[watchdog: {step['event'].get('decision', '?')}]")
-        target = f" on {step.get('role') or ''} \"{(step.get('name') or '')[:50]}\"".rstrip()
+        target = f' on {step.get("role") or ""} "{(step.get("name") or "")[:50]}"'.rstrip()
         lines.append(f"{step['step']}. {', '.join(kinds)}{target if step.get('name') else ''}")
     if len(traj.get("steps", [])) > limit:
         lines.append(f"... and {len(traj['steps']) - limit} more steps")
@@ -843,8 +973,7 @@ def _verify_prompt_stream(text: str, screenshot_paths: list[Path]):
     return stream()
 
 
-def _verification_screenshots(traj_dir: Path, steps: list,
-                              mid_screenshots: int = None) -> tuple[list[Path], str]:
+def _verification_screenshots(traj_dir: Path, steps: list, mid_screenshots: int = None) -> tuple[list[Path], str]:
     """Final screenshot plus evenly-sampled mid-trajectory frames. A final-screenshot-only
     verifier is process-blind: a run that wandered into the right end state trains wandering as
     positive. Mid frames let the judge see whether progress was actually being made."""
@@ -914,8 +1043,11 @@ def degenerate_loop_evidence(steps: list[dict]) -> dict:
             repeats_by_action[signature] = repeats_by_action.get(signature, 0) + 1
     dominant_repeats = max(repeats_by_action.values(), default=0)
     # Far stricter than the converter's stuck-loop DEFECT check: a real run that retried one control four times must survive this.
-    degenerate = bool(ui_steps) and dominant_repeats >= DEGENERATE_MIN_REPEATS and \
-        dominant_repeats / len(ui_steps) >= DEGENERATE_LOOP_FRACTION
+    degenerate = (
+        bool(ui_steps)
+        and dominant_repeats >= DEGENERATE_MIN_REPEATS
+        and dominant_repeats / len(ui_steps) >= DEGENERATE_LOOP_FRACTION
+    )
     return {"ui_steps": len(ui_steps), "dominant_action_repeats": dominant_repeats, "degenerate": degenerate}
 
 
@@ -958,8 +1090,14 @@ async def verify_trajectory(
         style_rules=VERIFY_STYLE_RULES.get((capture_meta.get("task_meta") or {}).get("task_style", ""), ""),
     )
 
-    verdict = {"success": False, "claimed_success": False, "contradiction": False, "efficiency": None, "accomplished": None,
-               "reasoning": VERIFIER_UNAVAILABLE_REASON}
+    verdict = {
+        "success": False,
+        "claimed_success": False,
+        "contradiction": False,
+        "efficiency": None,
+        "accomplished": None,
+        "reasoning": VERIFIER_UNAVAILABLE_REASON,
+    }
     try:
         result_text = await run_agent(
             _verify_prompt_stream(prompt, screenshots),
@@ -978,7 +1116,9 @@ async def verify_trajectory(
         if result_text.find("{") != -1:
             verdict = verdict_from_parsed(_parse_first_json_object(result_text))
             if verdict["contradiction"]:
-                logger.warning(f"{traj_dir.name}: judge claimed success with unmet criteria {verdict['criteria_met']} — recorded as success=false")
+                logger.warning(
+                    f"{traj_dir.name}: judge claimed success with unmet criteria {verdict['criteria_met']} — recorded as success=false"
+                )
     except UsageLimitReached:
         raise
     except Exception as e:
@@ -995,8 +1135,10 @@ async def verify_trajectory(
     # A goal the verifier confirmed was met is never overturned by step count; only a degenerate recording, which by construction accomplished nothing, is.
     traj["success"] = bool(verdict["success"] and not evidence["degenerate"])
     if verdict["success"] and evidence["degenerate"]:
-        logger.warning(f"{traj_dir.name}: verified success overridden — degenerate recording "
-                       f"({evidence['dominant_action_repeats']}/{ui_steps} UI steps are one repeated action)")
+        logger.warning(
+            f"{traj_dir.name}: verified success overridden — degenerate recording "
+            f"({evidence['dominant_action_repeats']}/{ui_steps} UI steps are one repeated action)"
+        )
 
     capture_meta["verifier"] = {
         **verdict,
@@ -1009,8 +1151,7 @@ async def verify_trajectory(
     }
     trajectory_file.write_text(json.dumps(traj, indent=2))
     meta_file.write_text(json.dumps(capture_meta, indent=2))
-    return {**verdict, "relabeled": relabeled, "degenerate": evidence["degenerate"],
-            "final_success": traj["success"]}
+    return {**verdict, "relabeled": relabeled, "degenerate": evidence["degenerate"], "final_success": traj["success"]}
 
 
 SESSION_PROBE_PROMPT = """An automated agent just attempted to register and/or sign in on {site}, \

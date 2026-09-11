@@ -25,6 +25,7 @@ def run_bootable_gate(registry: RepoRegistry, repos: list[dict]) -> tuple[list[d
     """Probe each repo (no LLM) and split into kept vs rejected. Returns
     (kept, n_rejected, n_probe_errors). A soft reject is kept (passed to the LLM) unless aggressive;
     probe errors are left at their input status (retryable)."""
+
     def probe(repo):
         try:
             accept, reason = gate_repo(repo["full_name"])
@@ -40,8 +41,12 @@ def run_bootable_gate(registry: RepoRegistry, repos: list[dict]) -> tuple[list[d
             elif accept or not (is_hard_reject(reason) or BOOTABLE_GATE_AGGRESSIVE):
                 kept.append(repo)  # bootable, or a soft reject we defer to the LLM
             else:
-                registry.reject(repo["full_name"], stage=2, reason=f"not a bootable app: {reason}",
-                                category=FailureCategory.NOT_BOOTABLE)
+                registry.reject(
+                    repo["full_name"],
+                    stage=2,
+                    reason=f"not a bootable app: {reason}",
+                    category=FailureCategory.NOT_BOOTABLE,
+                )
                 rejected += 1
     return kept, rejected, errors
 
@@ -67,7 +72,12 @@ def deduplicate_forks(registry: RepoRegistry, repos: list[dict]) -> tuple[list[d
 
         parent_name = repo.get("parent_repo")
         if parent_name and registry.has_repo(parent_name):
-            registry.reject(repo["full_name"], stage=2, reason=f"fork of {parent_name} (parent already in registry)", category=FailureCategory.DEDUP)
+            registry.reject(
+                repo["full_name"],
+                stage=2,
+                reason=f"fork of {parent_name} (parent already in registry)",
+                category=FailureCategory.DEDUP,
+            )
             deduped += 1
             continue
 
@@ -88,7 +98,7 @@ def deduplicate_clones(registry: RepoRegistry, repos: list[dict]) -> tuple[list[
         description_groups[desc_hash].append(repo)
 
     duplicates_to_reject = set()
-    for desc_hash, group in description_groups.items():
+    for _desc_hash, group in description_groups.items():
         if len(group) < 2:
             continue
 
@@ -103,7 +113,12 @@ def deduplicate_clones(registry: RepoRegistry, repos: list[dict]) -> tuple[list[
     deduped = 0
     for repo in repos:
         if repo["full_name"] in duplicates_to_reject:
-            registry.reject(repo["full_name"], stage=2, reason="duplicate description (likely clone)", category=FailureCategory.DEDUP)
+            registry.reject(
+                repo["full_name"],
+                stage=2,
+                reason="duplicate description (likely clone)",
+                category=FailureCategory.DEDUP,
+            )
             deduped += 1
         else:
             kept.append(repo)
@@ -138,8 +153,10 @@ def run_filter(registry: RepoRegistry, limit: int = None):
     gate_rejected = gate_errors = 0
     if BOOTABLE_GATE:
         survivors, gate_rejected, gate_errors = run_bootable_gate(registry, after_clone_dedup)
-        logger.info(f"Bootable-app gate: {len(survivors)} bootable, {gate_rejected} not-bootable "
-                    f"rejected (no LLM), {gate_errors} probe errors left for retry")
+        logger.info(
+            f"Bootable-app gate: {len(survivors)} bootable, {gate_rejected} not-bootable "
+            f"rejected (no LLM), {gate_errors} probe errors left for retry"
+        )
     else:
         survivors = after_clone_dedup
 
@@ -153,5 +170,11 @@ def run_filter(registry: RepoRegistry, limit: int = None):
 
     rejected += fork_deduped + clone_deduped + gate_rejected
     logger.info(f"Filter complete: {passed} passed, {rejected} rejected total")
-    return {"passed": passed, "rejected": rejected, "fork_deduped": fork_deduped,
-            "clone_deduped": clone_deduped, "gate_rejected": gate_rejected, "gate_errors": gate_errors}
+    return {
+        "passed": passed,
+        "rejected": rejected,
+        "fork_deduped": fork_deduped,
+        "clone_deduped": clone_deduped,
+        "gate_rejected": gate_rejected,
+        "gate_errors": gate_errors,
+    }

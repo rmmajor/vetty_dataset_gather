@@ -21,7 +21,6 @@ from repo_pipeline.dashboard.loader import (
     summarize_warnings,
 )
 
-
 DEFAULT_TRAJ_DIR = REPO_ROOT / "trajectories"
 DEFAULT_DB_PATH = REPO_ROOT / "pipeline_data" / "registry.db"
 
@@ -75,16 +74,18 @@ def page_header(title: str, description: str) -> None:
     st.caption(description)
 
 
-def apply_path_filters(traj_df: pd.DataFrame, step_df: pd.DataFrame, *,
-                       path_kind: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def apply_path_filters(
+    traj_df: pd.DataFrame, step_df: pd.DataFrame, *, path_kind: str
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     t = traj_df[traj_df["path_kind"] == path_kind]
     if t.empty:
         return t, step_df.iloc[0:0]
 
     with st.sidebar:
         st.markdown(f"### Path {path_kind} filters")
-        success_pick = st.radio("Outcome", ["all", "success only", "fail only"],
-                                key=f"success_{path_kind}", horizontal=True)
+        success_pick = st.radio(
+            "Outcome", ["all", "success only", "fail only"], key=f"success_{path_kind}", horizontal=True
+        )
         if success_pick == "success only":
             t = t[t["success"]]
         elif success_pick == "fail only":
@@ -92,20 +93,17 @@ def apply_path_filters(traj_df: pd.DataFrame, step_df: pd.DataFrame, *,
 
         domains = sorted(d for d in t["domain"].fillna("").unique() if d)
         if domains:
-            picked = st.multiselect("Domain", domains, default=domains,
-                                     key=f"domain_{path_kind}")
+            picked = st.multiselect("Domain", domains, default=domains, key=f"domain_{path_kind}")
             t = t[t["domain"].isin(picked) | (t["domain"].fillna("") == "")]
 
         if path_kind == "B":
             repos = sorted(r for r in t["source_repo"].fillna("").unique() if r)
             if repos:
-                picked = st.multiselect("Source repo", repos, default=repos,
-                                         key=f"repo_{path_kind}")
+                picked = st.multiselect("Source repo", repos, default=repos, key=f"repo_{path_kind}")
                 t = t[t["source_repo"].isin(picked)]
             frameworks = sorted(f for f in t["framework"].fillna("").unique() if f)
             if frameworks:
-                picked = st.multiselect("Framework", frameworks, default=frameworks,
-                                         key=f"fw_{path_kind}")
+                picked = st.multiselect("Framework", frameworks, default=frameworks, key=f"fw_{path_kind}")
                 t = t[t["framework"].isin(picked)]
 
     s = step_df[step_df["task_id"].isin(t["task_id"])].reset_index(drop=True)
@@ -121,8 +119,16 @@ def populated_count(traj_df: pd.DataFrame) -> dict[str, int]:
     if traj_df.empty:
         return {}
     counts: dict[str, int] = {}
-    for col in ("framework", "task_type", "dedup_hash", "domain", "website",
-                 "source_repo", "n_navigations", "repo_stars"):
+    for col in (
+        "framework",
+        "task_type",
+        "dedup_hash",
+        "domain",
+        "website",
+        "source_repo",
+        "n_navigations",
+        "repo_stars",
+    ):
         if col not in traj_df.columns:
             counts[col] = 0
             continue

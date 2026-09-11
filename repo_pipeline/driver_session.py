@@ -12,6 +12,7 @@ Owns everything about getting an agent-drivable browser running inside a sandbox
 
 Used by stage 5 (boot-gate probe) and stage 6 (agent capture).
 """
+
 import logging
 import os
 import re
@@ -52,9 +53,7 @@ def install_driver(sandbox):
     sandbox.exec_command(f"mkdir -p {DRIVER_DIR} {RESULTS_DIR}")
     sandbox.write_file(f"{DRIVER_DIR}/browser_driver.js", driver_src)
 
-    probe = (
-        f"node -e \"require('{DRIVER_BAKED_DIR}/node_modules/playwright-core')\" 2>/dev/null && echo BAKED"
-    )
+    probe = f"node -e \"require('{DRIVER_BAKED_DIR}/node_modules/playwright-core')\" 2>/dev/null && echo BAKED"
     stdout, _, _ = sandbox.exec_command(probe)
     if "BAKED" in stdout:
         return
@@ -90,9 +89,9 @@ def _wait_for_http_port(sandbox, preferred: int, timeout: int) -> int | None:
         f"for p in {preferred} $(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null "
         f"| awk 'NR>1 && $4==\"0A\"{{print $2}}' | sed 's/.*://' "
         f"| while read h; do printf '%d\\n' \"0x$h\" 2>/dev/null; done | sort -un); do "
-        f"[ \"$p\" = \"{DRIVER_PORT}\" ] && continue; "
+        f'[ "$p" = "{DRIVER_PORT}" ] && continue; '
         f"code=$(curl -s -o /dev/null -w '%{{http_code}}' -m 2 \"http://127.0.0.1:$p/\" 2>/dev/null); "
-        f"case \"$code\" in 2*|3*) echo \"CUA_PORT=$p\"; exit 0;; esac; "
+        f'case "$code" in 2*|3*) echo "CUA_PORT=$p"; exit 0;; esac; '
         f"done; sleep 1; done"
     )
     out, _, _ = sandbox.exec_command(script, timeout=timeout + 20)
@@ -105,9 +104,7 @@ def app_is_up(sandbox, app_url: str) -> bool:
     app server that can crash mid-session (an unhandled error, an OOM, a route that kills the dev
     server) — after which every remaining task fails with CONNECTION_REFUSED. Cheap in-container
     curl probe so the caller can restart the app before the next task."""
-    out, _, _ = sandbox.exec_command(
-        f"curl -s -o /dev/null -w '%{{http_code}}' -m 5 '{app_url}/' 2>/dev/null"
-    )
+    out, _, _ = sandbox.exec_command(f"curl -s -o /dev/null -w '%{{http_code}}' -m 5 '{app_url}/' 2>/dev/null")
     return out.strip()[:1] in ("2", "3")
 
 
@@ -190,8 +187,10 @@ class DriverClient:
         # setup so the agent finds a ready inbox when it navigates there for email verification /
         # password reset (auth-flow capture); the login is non-recorded, like the initial goto.
         body = {
-            "task_id": task_id, "start_url": start_url,
-            "instruction": instruction, "task_meta": task_meta or {},
+            "task_id": task_id,
+            "start_url": start_url,
+            "instruction": instruction,
+            "task_meta": task_meta or {},
         }
         if auth_config:
             body["auth_config"] = auth_config

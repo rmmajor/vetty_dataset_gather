@@ -25,7 +25,6 @@ SEARCH_QUERIES = [
     # that merely contain a test). The stage-2 bootable-app gate would reject most of them anyway,
     # but not discovering them at all saves the discovery API budget + DB bloat + gate probes.
     # The named-app / topic / bootable-app queries below are the agent-mode yield.
-
     # ---- Real product test suites (large projects using Playwright for CI) ----
     "playwright e2e test language:TypeScript stars:>500",
     "playwright e2e test language:TypeScript stars:100..500",
@@ -36,7 +35,6 @@ SEARCH_QUERIES = [
     "playwright test language:Python stars:>10",
     "playwright test language:JavaScript stars:>50",
     "playwright test language:JavaScript stars:10..100",
-
     # ---- Named production applications ----
     "playwright test grafana",
     "playwright test supabase",
@@ -94,7 +92,6 @@ SEARCH_QUERIES = [
     "playwright test nextcloud",
     "playwright test immich",
     "playwright test paperless",
-
     # ---- Complex UI pattern queries ----
     "playwright test data grid inline edit",
     "playwright test rich text editor tiptap",
@@ -127,7 +124,6 @@ SEARCH_QUERIES = [
     "playwright test keyboard shortcuts",
     "playwright test context menu right click",
     "playwright test undo redo",
-
     # ---- Domain-specific (real business flows) ----
     "playwright ecommerce checkout test",
     "playwright shopping cart test",
@@ -148,7 +144,6 @@ SEARCH_QUERIES = [
     "playwright webhook integration test",
     "playwright api key management test",
     "playwright audit log test",
-
     # ---- Real-product domains (diversity: under-covered verticals) ----
     "playwright fintech banking app test",
     "playwright healthcare patient portal test",
@@ -160,25 +155,21 @@ SEARCH_QUERIES = [
     "playwright video streaming app test",
     "playwright calendar scheduling app test",
     "playwright file manager test",
-
     # ---- Dependency-based (code search — finds real projects) ----
     '"@playwright/test" filename:package.json',
     "playwright filename:requirements.txt",
     "pytest-playwright filename:requirements.txt",
     '"@playwright/test" filename:playwright.config',
-
     # ---- Topic-based ----
     "topic:playwright topic:e2e-testing",
     "topic:playwright topic:test-automation",
     "topic:playwright-tests",
     "topic:browser-testing playwright",
-
     # ---- Self-hosted apps with Playwright CI ----
     "playwright ci self-hosted stars:>50",
     "playwright e2e open source app stars:>100",
     "playwright integration test SaaS",
     '"npx playwright test" filename:.github/workflows',
-
     # ---- Bootable web apps, TEST-INDEPENDENT ----
     # Agent capture made the funnel test-agnostic everywhere downstream of here: the boot
     # gate boots apps (no instrumentation), the proposer grounds in README + live homepage,
@@ -212,7 +203,6 @@ SELENIUM_SEARCH_QUERIES = [
     # ---- Broad supersets: REMOVED 2026-06-15 (same flood reason as the Playwright supersets) ----
     # `selenium language:Python` windowed to every >=5-star Python Selenium repo — almost all pure
     # test suites, which agent mode (Node-app boot) rejects. The named/topic queries below remain.
-
     # ---- Real product test suites (Python star tiers) ----
     "selenium e2e test language:Python stars:>500",
     "selenium e2e test language:Python stars:100..500",
@@ -223,7 +213,6 @@ SELENIUM_SEARCH_QUERIES = [
     "selenium test language:Python stars:>10",
     "selenium webdriver test language:Python stars:>50",
     "pytest selenium language:Python stars:>10",
-
     # ---- Named production applications ----
     "selenium test grafana language:Python",
     "selenium test supabase language:Python",
@@ -281,7 +270,6 @@ SELENIUM_SEARCH_QUERIES = [
     "selenium test nextcloud language:Python",
     "selenium test immich language:Python",
     "selenium test paperless language:Python",
-
     # ---- Complex UI pattern queries ----
     "selenium test data grid inline edit language:Python",
     "selenium test rich text editor tiptap language:Python",
@@ -314,7 +302,6 @@ SELENIUM_SEARCH_QUERIES = [
     "selenium test keyboard shortcuts language:Python",
     "selenium test context menu right click language:Python",
     "selenium test undo redo language:Python",
-
     # ---- Domain-specific (real business flows) ----
     "selenium ecommerce checkout test language:Python",
     "selenium shopping cart test language:Python",
@@ -335,19 +322,16 @@ SELENIUM_SEARCH_QUERIES = [
     "selenium webhook integration test language:Python",
     "selenium api key management test language:Python",
     "selenium audit log test language:Python",
-
     # ---- Dependency-based (code search — finds real projects) ----
     "selenium filename:requirements.txt language:Python",
     "pytest-selenium filename:requirements.txt",
     "selenium webdriver filename:requirements.txt language:Python",
     '"from selenium import webdriver" language:Python',
-
     # ---- Topic-based ----
     "topic:selenium topic:e2e-testing",
     "topic:selenium topic:test-automation",
     "topic:selenium-webdriver",
     "topic:browser-testing selenium",
-
     # ---- Self-hosted apps with Selenium CI ----
     "selenium ci self-hosted language:Python stars:>50",
     "selenium e2e open source app language:Python stars:>50",

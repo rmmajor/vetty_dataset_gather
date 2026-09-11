@@ -1,0 +1,11 @@
+Terminal supervision for blocked runs: turn recorded bot-wall failures into
+wall demos.
+
+positional arguments:
+  corpus
+
+options:
+  -h, --help            show this help message and exit
+  --apply
+  --max-examples MAX_EXAMPLES
+  --dry-run             List the plans and exit (default)

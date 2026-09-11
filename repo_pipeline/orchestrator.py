@@ -50,8 +50,10 @@ def requeue_rescore(registry: RepoRegistry, stage: int, min_score: float, dry_ru
     score is >= min_score back to that stage's input status, so re-running stage N re-admits them."""
     verb = "would re-queue" if dry_run else "re-queued"
     n = registry.reset_rejected(stage=stage, min_score=min_score, dry_run=dry_run)
-    logger.info(f"Rescore re-queue: {verb} {n} stage-{stage} rejections with score >= {min_score}"
-                f"{' (dry-run)' if dry_run else ''}. Re-run --stage {stage} to re-admit them.")
+    logger.info(
+        f"Rescore re-queue: {verb} {n} stage-{stage} rejections with score >= {min_score}"
+        f"{' (dry-run)' if dry_run else ''}. Re-run --stage {stage} to re-admit them."
+    )
     return n
 
 
@@ -64,9 +66,7 @@ async def prune_unfit(registry: RepoRegistry, dry_run: bool = False) -> int:
     applied to the existing backlog."""
     from repo_pipeline.stage4_deep_analyze import fit_veto, judge_fit
 
-    candidates = registry.get_repos_by_status(
-        [RepoStatus.ANALYZED.value, RepoStatus.VALIDATED.value]
-    )
+    candidates = registry.get_repos_by_status([RepoStatus.ANALYZED.value, RepoStatus.VALIDATED.value])
     verb = "would prune" if dry_run else "pruned"
     logger.info(f"Prune unfit: re-judging {len(candidates)} repos past stage 4")
     pruned = 0
@@ -92,9 +92,13 @@ async def prune_unfit(registry: RepoRegistry, dry_run: bool = False) -> int:
         if reason:
             logger.info(f"  PRUNE {repo['full_name']} ({repo['status']}): {reason}")
             if not dry_run:
-                registry.reject(repo["full_name"], stage=4, reason=f"fit veto: {reason}",
-                                category=FailureCategory.QUALITY_GATE,
-                                deep_analysis=analysis.model_dump())
+                registry.reject(
+                    repo["full_name"],
+                    stage=4,
+                    reason=f"fit veto: {reason}",
+                    category=FailureCategory.QUALITY_GATE,
+                    deep_analysis=analysis.model_dump(),
+                )
             pruned += 1
         else:
             logger.info(f"  KEEP  {repo['full_name']} ({repo['status']})")
@@ -118,6 +122,7 @@ def setup_logging(data_dir: Path, verbose: bool = False):
     root_logger.addHandler(console_handler)
 
     from datetime import datetime
+
     log_file = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     file_handler = logging.FileHandler(str(log_file))
     file_handler.setFormatter(formatter)
@@ -146,11 +151,21 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
     print("Status counts:")
     # The 7-stage funnel — always shown (even at 0) so the full pipeline is visible at a glance.
     progress_statuses = [
-        "discovered", "filtered", "scored", "analyzed", "validated", "captured", "completed",
+        "discovered",
+        "filtered",
+        "scored",
+        "analyzed",
+        "validated",
+        "captured",
+        "completed",
     ]
     # Rejection buckets — only shown when non-empty.
     rejection_statuses = [
-        "rejected_filter", "rejected_score", "rejected_analyze", "rejected_trial", "rejected_generate",
+        "rejected_filter",
+        "rejected_score",
+        "rejected_analyze",
+        "rejected_trial",
+        "rejected_generate",
     ]
     for status in progress_statuses:
         print(f"  {status:25s} {stats.get(status, 0):>6,}")
@@ -184,7 +199,7 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
     if rejection_reasons:
         print("\nTop rejection reasons (all stages, all time):")
         for i, (reason, count) in enumerate(rejection_reasons, 1):
-            print(f"  {i}. \"{reason}\" ({count:,})")
+            print(f'  {i}. "{reason}" ({count:,})')
 
     if stages:
         for stage in stages:
@@ -196,7 +211,7 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
                 continue
             print(f"\nTop rejection reasons (stage {stage} — {rejected_status.value}):")
             for i, (reason, count) in enumerate(per_stage, 1):
-                print(f"  {i}. \"{reason}\" ({count:,})")
+                print(f'  {i}. "{reason}" ({count:,})')
 
     print()
 
@@ -220,18 +235,22 @@ async def run_stage(
 ) -> dict:
     if stage == 1:
         from repo_pipeline.stage1_discover import run_discovery
+
         return run_discovery(registry, github_token, star_floor=star_floor)
 
     elif stage == 2:
         from repo_pipeline.stage2_filter import run_filter
+
         return run_filter(registry, limit=limit)
 
     elif stage == 3:
         from repo_pipeline.stage3_shallow_score import run_shallow_score
+
         return await run_shallow_score(registry, limit=limit, workers=workers, budget_remaining=budget_remaining)
 
     elif stage == 4:
         from repo_pipeline.stage4_deep_analyze import run_deep_analyze
+
         # Stage 4 is static analysis only (clone + read files, NO npm install / app boot), so
         # its containers are light — the 3-worker default is conservative. Raise via env when
         # you want to blast the scored backlog and have RAM headroom.
@@ -241,6 +260,7 @@ async def run_stage(
 
     elif stage == 5:
         from repo_pipeline.stage5_trial_run import run_trial
+
         # Boot gate = clone + npm install + boot + driver probe (~1-2GB/worker). Default 2 is
         # safe alongside capture; raise via env when running stage 5 on its own (no concurrent
         # stage-6 capture eating RAM) to drain the analyzed backlog faster.
@@ -250,16 +270,22 @@ async def run_stage(
 
     elif stage == 6:
         from repo_pipeline.stage6_generate import run_generate
+
         # Each stage-6 worker holds a sandbox with a booted app + headless Chromium (~1.2GB
         # real). Default 2 fits alongside the other stages in an ~8GB Docker VM; raise via
         # env when the VM has headroom or other lanes are idle.
         stage6_cap = int(os.environ.get("STAGE6_WORKERS", "2"))
         stage6_workers = safe_parallel_sandboxes(min(workers, stage6_cap))
-        return await run_generate(registry, trajectory_dir, limit=limit, workers=stage6_workers, budget_remaining=budget_remaining)
+        return await run_generate(
+            registry, trajectory_dir, limit=limit, workers=stage6_workers, budget_remaining=budget_remaining
+        )
 
     elif stage == 7:
         from repo_pipeline.stage7_think import run_think
-        return await run_think(registry, trajectory_dir, limit=limit, workers=min(workers, 3), budget_remaining=budget_remaining)
+
+        return await run_think(
+            registry, trajectory_dir, limit=limit, workers=min(workers, 3), budget_remaining=budget_remaining
+        )
 
     else:
         raise ValueError(f"Unknown stage: {stage}")
@@ -270,10 +296,10 @@ async def run_stage(
 # the task proposer + ~8 multi-turn teacher tasks + per-task verification per repo; replay
 # only does the 1-per-trajectory instruction + task-type calls.
 STAGE_COST_ESTIMATES = {
-    3: 0.15,   # Sonnet shallow scoring
-    4: 0.20,   # Sonnet static deep-analysis
-    5: 0.02,   # code-driven boot gate / trial — negligible LLM
-    7: 0.50,   # finalize: polish (agent, text-only) / per-step think-with-image (replay)
+    3: 0.15,  # Sonnet shallow scoring
+    4: 0.20,  # Sonnet static deep-analysis
+    5: 0.02,  # code-driven boot gate / trial — negligible LLM
+    7: 0.50,  # finalize: polish (agent, text-only) / per-step think-with-image (replay)
 }
 STAGE6_COST_BY_MODE = {"agent": 6.00, "replay": 0.20}
 
@@ -322,7 +348,7 @@ async def drain_funnel(
             return True
         if rate_limit_tracker.limit_reached():
             util = rate_limit_tracker.max_utilization()
-            util_str = f"{util*100:.0f}%" if util is not None else "hard 429"
+            util_str = f"{util * 100:.0f}%" if util is not None else "hard 429"
             logger.warning(f"Claude usage limit reached ({util_str}), stopping")
             return True
         return False
@@ -397,9 +423,14 @@ async def drain_funnel(
         )
 
     from repo_pipeline.notifier import send_report
+
     try:
         await send_report(
-            registry, run_duration, budget_used(), budget, stage_results,
+            registry,
+            run_duration,
+            budget_used(),
+            budget,
+            stage_results,
             rate_limit_info=rate_limit_tracker.latest(),
         )
     except Exception as e:
@@ -410,8 +441,10 @@ async def drain_funnel(
         for err in stage_errors:
             logger.warning(f"  !! {err}")
 
-    logger.info(f"Run complete in {run_duration/3600:.1f}h, metered spend: ${budget_used():.2f}/${budget:.2f} "
-                f"across {cost_tracker.call_count} calls")
+    logger.info(
+        f"Run complete in {run_duration / 3600:.1f}h, metered spend: ${budget_used():.2f}/${budget:.2f} "
+        f"across {cost_tracker.call_count} calls"
+    )
     return stage_results
 
 
@@ -424,8 +457,13 @@ async def run_overnight(
     limit: int = None,
 ):
     return await drain_funnel(
-        registry, github_token, trajectory_dir,
-        budget=budget, workers=workers, limit=limit, loop=False,
+        registry,
+        github_token,
+        trajectory_dir,
+        budget=budget,
+        workers=workers,
+        limit=limit,
+        loop=False,
     )
 
 
@@ -440,12 +478,16 @@ async def run_until_limit(
 ):
     rate_limit_tracker.threshold = threshold_pct / 100.0
     logger.info(
-        f"Running until Claude usage reaches {threshold_pct:.0f}% "
-        f"(or budget ${budget:.2f} spent, or funnel drained)"
+        f"Running until Claude usage reaches {threshold_pct:.0f}% (or budget ${budget:.2f} spent, or funnel drained)"
     )
     return await drain_funnel(
-        registry, github_token, trajectory_dir,
-        budget=budget, workers=workers, limit=limit, loop=True,
+        registry,
+        github_token,
+        trajectory_dir,
+        budget=budget,
+        workers=workers,
+        limit=limit,
+        loop=True,
     )
 
 
@@ -538,8 +580,10 @@ async def async_main(args):
                     budget_remaining=args.budget - (cost_tracker.total_usd - cost_baseline),
                     star_floor=args.star_floor,
                 )
-                logger.info(f"Stage {stage} result: {result} "
-                            f"(metered spend so far: ${cost_tracker.total_usd - cost_baseline:.2f})")
+                logger.info(
+                    f"Stage {stage} result: {result} "
+                    f"(metered spend so far: ${cost_tracker.total_usd - cost_baseline:.2f})"
+                )
 
             print_status(registry, stages=stages)
             return
@@ -567,22 +611,68 @@ Examples:
         """,
     )
     parser.add_argument("--stage", type=str, help="Run specific stage(s): N or N-M (e.g., 3 or 3-6)")
-    parser.add_argument("--capture-mode", type=str, choices=["agent", "replay"], default=None,
-                        help="Stage 4-6 behavior: 'agent' (teacher acts in the booted app; default) or "
-                             "'replay' (legacy instrumented test suites). Also settable via PIPELINE_CAPTURE_MODE.")
-    parser.add_argument("--overnight", action="store_true", help="Run stages 3-6 on all pending repos, notify via Telegram")
-    parser.add_argument("--until-limit", type=float, nargs="?", const=100.0, default=None, metavar="PCT", help="Loop stages 3-6 until Claude usage reaches PCT%% of the subscription limit (bare flag = 100). Honors --budget too.")
+    parser.add_argument(
+        "--capture-mode",
+        type=str,
+        choices=["agent", "replay"],
+        default=None,
+        help="Stage 4-6 behavior: 'agent' (teacher acts in the booted app; default) or "
+        "'replay' (legacy instrumented test suites). Also settable via PIPELINE_CAPTURE_MODE.",
+    )
+    parser.add_argument(
+        "--overnight", action="store_true", help="Run stages 3-6 on all pending repos, notify via Telegram"
+    )
+    parser.add_argument(
+        "--until-limit",
+        type=float,
+        nargs="?",
+        const=100.0,
+        default=None,
+        metavar="PCT",
+        help="Loop stages 3-6 until Claude usage reaches PCT%% of the subscription limit (bare flag = 100). Honors --budget too.",
+    )
     parser.add_argument("--status", action="store_true", help="Print registry stats and exit")
-    parser.add_argument("--requeue-stale", action="store_true", help="Re-queue rejections from superseded code (per STAGE_BEHAVIOR_CUTOFFS) for a retry")
-    parser.add_argument("--requeue-infra", action="store_true", help="Re-queue infra/flaky rejections (clone/SDK/timeout/max-turns) across stages for a retry")
-    parser.add_argument("--requeue-stage", type=int, default=None, help="Re-queue rejections at this stage whose stored gate score >= --min-score (after lowering a threshold)")
-    parser.add_argument("--min-score", type=float, default=None, help="Score floor for --requeue-stage (e.g. --requeue-stage 4 --min-score 4)")
-    parser.add_argument("--prune-unfit", action="store_true", help="Re-judge repos already past stage 4 and reject obvious bad-fits (toys, boilerplates, login-walled, test-suite-only) so no more stage-5/6 compute is wasted. Reversible via --requeue-stage 4 --min-score 0. Honors --dry-run.")
-    parser.add_argument("--dry-run", action="store_true", help="With --requeue-*: report counts without modifying the registry")
+    parser.add_argument(
+        "--requeue-stale",
+        action="store_true",
+        help="Re-queue rejections from superseded code (per STAGE_BEHAVIOR_CUTOFFS) for a retry",
+    )
+    parser.add_argument(
+        "--requeue-infra",
+        action="store_true",
+        help="Re-queue infra/flaky rejections (clone/SDK/timeout/max-turns) across stages for a retry",
+    )
+    parser.add_argument(
+        "--requeue-stage",
+        type=int,
+        default=None,
+        help="Re-queue rejections at this stage whose stored gate score >= --min-score (after lowering a threshold)",
+    )
+    parser.add_argument(
+        "--min-score",
+        type=float,
+        default=None,
+        help="Score floor for --requeue-stage (e.g. --requeue-stage 4 --min-score 4)",
+    )
+    parser.add_argument(
+        "--prune-unfit",
+        action="store_true",
+        help="Re-judge repos already past stage 4 and reject obvious bad-fits (toys, boilerplates, login-walled, test-suite-only) so no more stage-5/6 compute is wasted. Reversible via --requeue-stage 4 --min-score 0. Honors --dry-run.",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="With --requeue-*: report counts without modifying the registry"
+    )
     parser.add_argument("--limit", type=int, default=None, help="Max repos per stage in this run")
     parser.add_argument("--workers", type=int, default=5, help="Parallel workers for LLM stages (default: 5)")
-    parser.add_argument("--star-floor", type=int, default=5, help="Stage 1: exhaustively scrape repos down to this star count (default: 5)")
-    parser.add_argument("--budget", type=float, default=50.0, help="Max total LLM budget for this run in USD (default: 50.0)")
+    parser.add_argument(
+        "--star-floor",
+        type=int,
+        default=5,
+        help="Stage 1: exhaustively scrape repos down to this star count (default: 5)",
+    )
+    parser.add_argument(
+        "--budget", type=float, default=50.0, help="Max total LLM budget for this run in USD (default: 50.0)"
+    )
     parser.add_argument("--data-dir", type=str, default="pipeline_data/", help="Pipeline data directory")
     parser.add_argument("--traj-dir", type=str, default="trajectories/", help="Trajectory output directory")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
@@ -593,6 +683,7 @@ Examples:
     setup_logging(data_dir, verbose=args.verbose)
 
     from repo_pipeline.sandbox import install_sigterm_handler
+
     install_sigterm_handler()
 
     asyncio.run(async_main(args))

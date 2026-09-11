@@ -17,6 +17,7 @@ Environment variables:
     TEST_NAME_PREFIX  — prefix for task IDs (default: repo)
     FRAMEWORK / FRAMEWORK_LANGUAGE — recorded into capture_meta.json
 """
+
 import hashlib
 import inspect
 import json
@@ -135,12 +136,14 @@ class StepRecorder:
             action["scroll_x"] = 0
             action["scroll_y"] = int(value) if value else 0
 
-        self.steps.append({
-            "step": self.step_counter,
-            "screenshot": screenshot_filename,
-            "thought": "",
-            "actions": [action],
-        })
+        self.steps.append(
+            {
+                "step": self.step_counter,
+                "screenshot": screenshot_filename,
+                "thought": "",
+                "actions": [action],
+            }
+        )
 
         m = dict(meta) if meta else {}
         sha = hashlib.sha256(screenshot_bytes).hexdigest()
@@ -167,15 +170,17 @@ class StepRecorder:
         clean_steps = []
         for step in self.steps:
             m = self.meta_by_step.get(step["step"], {})
-            clean_steps.append({
-                "step": step["step"],
-                "screenshot": step["screenshot"],
-                "thought": step["thought"],
-                "actions": step["actions"],
-                "bbox": m.get("bbox"),
-                "role": m.get("role"),
-                "name": m.get("name"),
-            })
+            clean_steps.append(
+                {
+                    "step": step["step"],
+                    "screenshot": step["screenshot"],
+                    "thought": step["thought"],
+                    "actions": step["actions"],
+                    "bbox": m.get("bbox"),
+                    "role": m.get("role"),
+                    "name": m.get("name"),
+                }
+            )
 
         trajectory = {
             "task_id": self.test_name or "unknown",
@@ -290,7 +295,13 @@ def _prepare(page, element, selector):
         cx, cy = _get_center(box)
         meta = _build_meta(page, element, selector, box)
         screenshot = page.screenshot(type="png")
-        return {"screenshot": screenshot, "cx": cx, "cy": cy, "meta": meta, "selector": str(selector) if selector else ""}
+        return {
+            "screenshot": screenshot,
+            "cx": cx,
+            "cy": cy,
+            "meta": meta,
+            "selector": str(selector) if selector else "",
+        }
     except Exception:
         return None
 
@@ -323,8 +334,16 @@ def _commit(pending, page, action_type, err, selector="", value="", button="left
     meta = pending["meta"]
     _finalize_outcome(meta, page, err)
     try:
-        _recorder.record(action_type, pending["cx"], pending["cy"], pending["screenshot"],
-                         selector=pending["selector"] or selector, value=value, button=button, meta=meta)
+        _recorder.record(
+            action_type,
+            pending["cx"],
+            pending["cy"],
+            pending["screenshot"],
+            selector=pending["selector"] or selector,
+            value=value,
+            button=button,
+            meta=meta,
+        )
     except Exception:
         pass
 
@@ -335,17 +354,22 @@ def _commit_fill(pending, page, value, err):
     meta = pending["meta"]
     _finalize_outcome(meta, page, err)
     try:
-        _recorder.record("click", pending["cx"], pending["cy"], pending["screenshot"],
-                         selector=pending["selector"], meta=dict(meta))
-        _recorder.record("type", pending["cx"], pending["cy"], pending["screenshot"],
-                         value=value, meta=dict(meta))
+        _recorder.record(
+            "click", pending["cx"], pending["cy"], pending["screenshot"], selector=pending["selector"], meta=dict(meta)
+        )
+        _recorder.record("type", pending["cx"], pending["cy"], pending["screenshot"], value=value, meta=dict(meta))
     except Exception:
         pass
 
 
 # (method name, recorded action type) for the click-like family that share one shape.
-_CLICK_LIKE = [("click", "click"), ("select_option", "click"), ("check", "click"),
-               ("uncheck", "click"), ("dblclick", "double_click")]
+_CLICK_LIKE = [
+    ("click", "click"),
+    ("select_option", "click"),
+    ("check", "click"),
+    ("uncheck", "click"),
+    ("dblclick", "double_click"),
+]
 
 
 def _patch_page_sync(page):

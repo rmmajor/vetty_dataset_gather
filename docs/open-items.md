@@ -40,7 +40,7 @@ public-site finalizer over them would write `source_repo: public:<name>` and cor
 
 ## 3. The watchdog contradicts itself on the same risk class
 
-Identical action — invite `qa-teammate@web-library.net` — three sites, three verdicts:
+Identical action — invite the same burner recipient — three sites, three verdicts:
 
 | site | verdict | rationale |
 |---|---|---|

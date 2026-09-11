@@ -24,10 +24,15 @@ class FakePopen:
 
 
 def test_argv_binds_loopback_both_ways():
-    tunnel = SshTunnel(["ssh", "-p", "2222", "-i", "k", "root@h"], [("R", 8900), ("L", 8001)], popen=FakePopen, sleep=lambda s: None)
+    tunnel = SshTunnel(
+        ["ssh", "-p", "2222", "-i", "k", "root@h"], [("R", 8900), ("L", 8001)], popen=FakePopen, sleep=lambda s: None
+    )
     argv = tunnel.argv()
     assert argv[0] == "ssh" and "-N" in argv and argv[-1] == "root@h"
-    assert argv[argv.index("-R") + 1] == "127.0.0.1:8900:127.0.0.1:8900" and argv[argv.index("-L") + 1] == "127.0.0.1:8001:127.0.0.1:8001"
+    assert (
+        argv[argv.index("-R") + 1] == "127.0.0.1:8900:127.0.0.1:8900"
+        and argv[argv.index("-L") + 1] == "127.0.0.1:8001:127.0.0.1:8001"
+    )
     assert "ServerAliveInterval=15" in argv and "ExitOnForwardFailure=yes" in argv
 
 

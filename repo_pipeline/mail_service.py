@@ -23,6 +23,7 @@ Entry points: `ensure_mail_stack()` (idempotent bring-up), `mail_env_for_app()` 
 to inject when booting an app), `scenario_address()` (mint an isolated mailbox address),
 `teardown_mail_stack()`. Run `python -m repo_pipeline.mail_service` to smoke it standalone.
 """
+
 import hashlib
 import logging
 import re
@@ -36,15 +37,15 @@ import docker
 logger = logging.getLogger(__name__)
 
 MAIL_NETWORK = "vetty-mail"
-WEBMAIL_HOST = "mail.test"            # network alias the in-sandbox browser navigates to
-MAIL_SERVER_ALIAS = "greenmail"      # network alias the app's SMTP + Roundcube target
+WEBMAIL_HOST = "mail.test"  # network alias the in-sandbox browser navigates to
+MAIL_SERVER_ALIAS = "greenmail"  # network alias the app's SMTP + Roundcube target
 
 GREENMAIL_IMAGE = "greenmail/standalone:2.1.0"
 ROUNDCUBE_IMAGE = "roundcube/roundcubemail:latest"
 GREENMAIL_CONTAINER = "vetty-greenmail"
 ROUNDCUBE_CONTAINER = "vetty-roundcube"
 
-SMTP_PORT = 3025                      # in-network ports (GreenMail "test.all" defaults)
+SMTP_PORT = 3025  # in-network ports (GreenMail "test.all" defaults)
 IMAP_PORT = 3143
 WEBMAIL_PORT = 80
 
@@ -55,8 +56,7 @@ HOST_IMAP_PORT = int(__import__("os").environ.get("MAIL_HOST_IMAP_PORT", "13143"
 HOST_WEBMAIL_PORT = int(__import__("os").environ.get("MAIL_HOST_WEBMAIL_PORT", "18080"))
 
 GREENMAIL_OPTS = (
-    "-Dgreenmail.setup.test.all -Dgreenmail.auth.disabled "
-    "-Dgreenmail.users.login=email -Dgreenmail.hostname=0.0.0.0"
+    "-Dgreenmail.setup.test.all -Dgreenmail.auth.disabled -Dgreenmail.users.login=email -Dgreenmail.hostname=0.0.0.0"
 )
 READY_TIMEOUT = 90
 
@@ -64,12 +64,25 @@ READY_TIMEOUT = 90
 # without per-app special-casing (Django EMAIL_*, Laravel MAIL_*, Symfony MAILER_DSN, Node
 # SMTP_*/MAIL_*). GreenMail accepts any credentials (auth disabled) over plaintext on :3025.
 _SMTP_ENV_TEMPLATE = {
-    "SMTP_HOST": "{host}", "SMTP_PORT": "{port}", "SMTP_USER": "qa", "SMTP_PASSWORD": "qa",
-    "SMTP_PASS": "qa", "SMTP_SECURE": "false", "SMTP_TLS": "false",
-    "MAIL_HOST": "{host}", "MAIL_PORT": "{port}", "MAIL_MAILER": "smtp",
-    "MAIL_USERNAME": "qa", "MAIL_PASSWORD": "qa", "MAIL_ENCRYPTION": "",
-    "EMAIL_HOST": "{host}", "EMAIL_PORT": "{port}", "EMAIL_HOST_USER": "qa",
-    "EMAIL_HOST_PASSWORD": "qa", "EMAIL_USE_TLS": "false", "EMAIL_USE_SSL": "false",
+    "SMTP_HOST": "{host}",
+    "SMTP_PORT": "{port}",
+    "SMTP_USER": "qa",
+    "SMTP_PASSWORD": "qa",
+    "SMTP_PASS": "qa",
+    "SMTP_SECURE": "false",
+    "SMTP_TLS": "false",
+    "MAIL_HOST": "{host}",
+    "MAIL_PORT": "{port}",
+    "MAIL_MAILER": "smtp",
+    "MAIL_USERNAME": "qa",
+    "MAIL_PASSWORD": "qa",
+    "MAIL_ENCRYPTION": "",
+    "EMAIL_HOST": "{host}",
+    "EMAIL_PORT": "{port}",
+    "EMAIL_HOST_USER": "qa",
+    "EMAIL_HOST_PASSWORD": "qa",
+    "EMAIL_USE_TLS": "false",
+    "EMAIL_USE_SSL": "false",
     "MAILER_DSN": "smtp://{host}:{port}",
 }
 
@@ -117,8 +130,14 @@ def _ensure_container(client, name, image, *, ports, environment, command=None) 
     except docker.errors.NotFound:
         pass
     return client.containers.run(
-        image, name=name, detach=True, ports=ports, environment=environment,
-        command=command, labels={"vetty-mail": "1"}, restart_policy={"Name": "unless-stopped"},
+        image,
+        name=name,
+        detach=True,
+        ports=ports,
+        environment=environment,
+        command=command,
+        labels={"vetty-mail": "1"},
+        restart_policy={"Name": "unless-stopped"},
     )
 
 
@@ -145,14 +164,18 @@ def ensure_mail_stack(client=None, wait: bool = True) -> MailStack:
     _ensure_network(client)
 
     greenmail = _ensure_container(
-        client, GREENMAIL_CONTAINER, GREENMAIL_IMAGE,
+        client,
+        GREENMAIL_CONTAINER,
+        GREENMAIL_IMAGE,
         ports={f"{SMTP_PORT}/tcp": HOST_SMTP_PORT, f"{IMAP_PORT}/tcp": HOST_IMAP_PORT},
         environment={"GREENMAIL_OPTS": GREENMAIL_OPTS},
     )
     _connect_alias(client, greenmail, (MAIL_SERVER_ALIAS,))
 
     roundcube = _ensure_container(
-        client, ROUNDCUBE_CONTAINER, ROUNDCUBE_IMAGE,
+        client,
+        ROUNDCUBE_CONTAINER,
+        ROUNDCUBE_IMAGE,
         ports={f"{WEBMAIL_PORT}/tcp": HOST_WEBMAIL_PORT},
         environment={
             "ROUNDCUBEMAIL_DEFAULT_HOST": MAIL_SERVER_ALIAS,
@@ -174,9 +197,7 @@ def ensure_mail_stack(client=None, wait: bool = True) -> MailStack:
                 break
             time.sleep(2)
         if not (smtp_ready and web_ready):
-            raise RuntimeError(
-                f"mail stack not ready within {READY_TIMEOUT}s (smtp={smtp_ready}, webmail={web_ready})"
-            )
+            raise RuntimeError(f"mail stack not ready within {READY_TIMEOUT}s (smtp={smtp_ready}, webmail={web_ready})")
         logger.info("mail stack ready (greenmail SMTP + roundcube HTTP)")
 
     return MailStack()
@@ -237,4 +258,6 @@ if __name__ == "__main__":
     s.quit()
     logger.info(f"sent verification mail to {addr}")
     logger.info(f"webmail (in-sandbox): {stack.webmail_url}  | host: http://127.0.0.1:{stack.host_webmail_port}/")
-    logger.info(f"app SMTP env target: {stack.smtp_host}:{stack.smtp_port}  | env keys: {sorted(mail_env_for_app(stack))}")
+    logger.info(
+        f"app SMTP env target: {stack.smtp_host}:{stack.smtp_port}  | env keys: {sorted(mail_env_for_app(stack))}"
+    )

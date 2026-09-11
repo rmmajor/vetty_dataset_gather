@@ -1,0 +1,11 @@
+Render-probe candidate sites through the ACTUAL sandbox browser, before any
+teacher run.
+
+positional arguments:
+  config                a public_sites*.json to probe
+
+options:
+  -h, --help            show this help message and exit
+  --urls [URLS ...]     probe bare URLs instead
+  --mark                write skip_capture for dead sites back into the config
+  --sandbox-image SANDBOX_IMAGE

@@ -17,6 +17,7 @@ Two concerns, both generic (config/data driven, never a per-repo `if name ==` ch
 The known-accounts file is the first slice of the Phase-5 burner store; it lives under
 `credentials/` (gitignored) so real logins never enter version control.
 """
+
 import json
 import logging
 import os
@@ -31,12 +32,19 @@ _DUMMY_SECRET = "qa_test_secret_0123456789abcdef0123456789abcdef"
 # Common env var names auth apps read for signing/session secrets and the app's own base URL.
 # A superset is harmless: an app ignores the names it does not use.
 _BOOT_ENV_SECRETS = {
-    "JWT_SECRET": _DUMMY_SECRET, "JWT_REFRESH_SECRET": _DUMMY_SECRET,
-    "ACCESS_TOKEN_SECRET": _DUMMY_SECRET, "REFRESH_TOKEN_SECRET": _DUMMY_SECRET,
-    "AUTH_SECRET": _DUMMY_SECRET, "NEXTAUTH_SECRET": _DUMMY_SECRET,
-    "SESSION_SECRET": _DUMMY_SECRET, "COOKIE_SECRET": _DUMMY_SECRET,
-    "TOKEN_SECRET": _DUMMY_SECRET, "SECRET": _DUMMY_SECRET, "APP_SECRET": _DUMMY_SECRET,
-    "JWT_EXPIRES_IN": "1d", "AUTH_TRUST_HOST": "true",
+    "JWT_SECRET": _DUMMY_SECRET,
+    "JWT_REFRESH_SECRET": _DUMMY_SECRET,
+    "ACCESS_TOKEN_SECRET": _DUMMY_SECRET,
+    "REFRESH_TOKEN_SECRET": _DUMMY_SECRET,
+    "AUTH_SECRET": _DUMMY_SECRET,
+    "NEXTAUTH_SECRET": _DUMMY_SECRET,
+    "SESSION_SECRET": _DUMMY_SECRET,
+    "COOKIE_SECRET": _DUMMY_SECRET,
+    "TOKEN_SECRET": _DUMMY_SECRET,
+    "SECRET": _DUMMY_SECRET,
+    "APP_SECRET": _DUMMY_SECRET,
+    "JWT_EXPIRES_IN": "1d",
+    "AUTH_TRUST_HOST": "true",
     # Next.js / many SSR apps build absolute links (incl. emailed verification URLs) from this.
     # The app binds the dev-server default port inside the container, so localhost == the app.
     "NEXTAUTH_URL": "http://127.0.0.1:3000",
@@ -91,8 +99,7 @@ def is_registered_burner(burner_id: str) -> bool:
     guarded capture refuses to run against a real site without a vetted disposable identity. NEVER
     relax this to 'assume registered' — the whole safety story rests on it."""
     entry = _load_burners().get(burner_id or "")
-    return bool(isinstance(entry, dict) and entry.get("registered")
-                and entry.get("email") and entry.get("password"))
+    return bool(isinstance(entry, dict) and entry.get("registered") and entry.get("email") and entry.get("password"))
 
 
 def burner_account(burner_id: str) -> dict | None:
@@ -101,13 +108,21 @@ def burner_account(burner_id: str) -> dict | None:
     if not is_registered_burner(burner_id):
         return None
     entry = _load_burners()[burner_id]
-    return {"email": entry["email"], "password": entry["password"],
-            "provisioning_mode": entry.get("provisioning_mode", "human_provisioned")}
+    return {
+        "email": entry["email"],
+        "password": entry["password"],
+        "provisioning_mode": entry.get("provisioning_mode", "human_provisioned"),
+    }
 
 
-def register_burner(burner_id: str, email: str, password: str,
-                    provisioning_mode: str = "human_provisioned",
-                    first_name: str = "", last_name: str = "") -> None:
+def register_burner(
+    burner_id: str,
+    email: str,
+    password: str,
+    provisioning_mode: str = "human_provisioned",
+    first_name: str = "",
+    last_name: str = "",
+) -> None:
     """Register (or update) a burner in the gitignored burner store so the guarded/public lane's
     fail-closed `is_registered_burner` gate will permit it. Called by the human-provisioning helper
     after a person clears a signup wall; `provisioning_mode` records how the identity was created
@@ -119,8 +134,7 @@ def register_burner(burner_id: str, email: str, password: str,
         raise ValueError("register_burner requires a non-empty burner_id, email, and password")
     _CRED_DIR.mkdir(parents=True, exist_ok=True)
     registry = _load_burners()
-    entry = {"email": email, "password": password,
-             "provisioning_mode": provisioning_mode, "registered": True}
+    entry = {"email": email, "password": password, "provisioning_mode": provisioning_mode, "registered": True}
     if first_name or last_name:
         entry["first_name"], entry["last_name"] = first_name, last_name
     registry[burner_id] = entry
@@ -180,14 +194,21 @@ def provisioned_refs(site_name: str) -> list[str]:
     return [session_ref(site_name, mode) for mode in _LANE_SLUG]
 
 
-def save_provisioned_session(ref: str, email: str, password: str, state: dict,
-                             provisioning_mode: str = "human_provisioned",
-                             first_name: str = "", last_name: str = "") -> None:
+def save_provisioned_session(
+    ref: str,
+    email: str,
+    password: str,
+    state: dict,
+    provisioning_mode: str = "human_provisioned",
+    first_name: str = "",
+    last_name: str = "",
+) -> None:
     """Persist both halves of a provisioned login — every lane's write path, human or autonomous."""
     # State first: its empty-dump refusal then aborts before a burner is registered with no session.
     save_storage_state(ref, state)
-    register_burner(ref, email, password, provisioning_mode=provisioning_mode,
-                    first_name=first_name, last_name=last_name)
+    register_burner(
+        ref, email, password, provisioning_mode=provisioning_mode, first_name=first_name, last_name=last_name
+    )
 
 
 def load_provisioned_session(ref: str) -> dict | None:
@@ -199,8 +220,11 @@ def load_provisioned_session(ref: str) -> dict | None:
     # Same emptiness bar as the save path, so a hollowed-out file resumes nothing instead of pretending.
     if not _carries_a_session(state):
         return None
-    return {"storage_state": state, "provisioning_mode": burner["provisioning_mode"],
-            "secrets": {"email": burner["email"], "password": burner["password"]}}
+    return {
+        "storage_state": state,
+        "provisioning_mode": burner["provisioning_mode"],
+        "secrets": {"email": burner["email"], "password": burner["password"]},
+    }
 
 
 def find_provisioned_session(site_name: str) -> dict | None:
@@ -214,5 +238,8 @@ def find_provisioned_session(site_name: str) -> dict | None:
 
 def unvetted_session_refs(site_name: str) -> list[str]:
     """Refs with a saved session no registered burner vouches for — unknown provenance, never reusable."""
-    return [ref for ref in provisioned_refs(site_name)
-            if _storage_state_path(ref).exists() and not is_registered_burner(ref)]
+    return [
+        ref
+        for ref in provisioned_refs(site_name)
+        if _storage_state_path(ref).exists() and not is_registered_burner(ref)
+    ]

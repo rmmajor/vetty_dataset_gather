@@ -1,0 +1,13 @@
+Human-in-the-loop login provisioning (headed browser)
+
+positional arguments:
+  site             Site name or signup URL (omit with --all/--sites)
+
+options:
+  -h, --help       show this help message and exit
+  --sites SITES    Comma-separated site names/URLs to provision in a loop
+  --all            Provision ALL needs_human sites in a loop
+  --config CONFIG  Source config path (default: search both)
+  --serve          Serve the localhost control API instead of prompting in the
+                   terminal
+  --port PORT      Control API port on 127.0.0.1 (default 8778)

@@ -11,6 +11,7 @@ the original files byte-for-byte.
   python -m repo_pipeline.relabel_recoverable trajectories/ --judge-orphans   # verdict-less dirs
   python -m repo_pipeline.relabel_recoverable trajectories/ --apply [--limit N]
 """
+
 import argparse
 import asyncio
 import json
@@ -33,7 +34,8 @@ PROPOSE_BUDGET_USD = 0.10
 # The June failure mode: "compress a PDF" relabeled to "navigate to the compress page". A proposed
 # instruction that reads as a browsing procedure instead of a user goal is rejected outright.
 NOT_GOAL_SHAPED = re.compile(
-    r"^(navigate|go to|open|visit|click|scroll|attempt|try to|load)\b|screenshot|\bstep\b", re.IGNORECASE)
+    r"^(navigate|go to|open|visit|click|scroll|attempt|try to|load)\b|screenshot|\bstep\b", re.IGNORECASE
+)
 
 PROPOSE_PROMPT = """A browser agent attempted a task on {domain} but only got part of the way. \
 Below is what it did. Name the user goal that the run ACTUALLY accomplished end to end, as one \
@@ -77,7 +79,7 @@ def find_candidates(corpus_dir: Path) -> list[dict]:
             continue
         if cmeta.get("agent_outcome") not in ("partial", "completed"):
             continue
-        if ((cmeta.get("verifier") or {}).get("degenerate")):
+        if (cmeta.get("verifier") or {}).get("degenerate"):
             continue
         steps = [s for s in traj.get("steps", []) if s.get("actions")]
         if len(steps) < RELABEL_MIN_STEPS:
@@ -117,8 +119,12 @@ async def propose_instruction(candidate: dict) -> tuple[str | None, str]:
     )
     text = await run_agent(
         prompt,
-        ClaudeAgentOptions(model=MODEL_FOR_GROUNDED_GENERATION, max_turns=1,
-                           max_budget_usd=PROPOSE_BUDGET_USD, permission_mode="bypassPermissions"),
+        ClaudeAgentOptions(
+            model=MODEL_FOR_GROUNDED_GENERATION,
+            max_turns=1,
+            max_budget_usd=PROPOSE_BUDGET_USD,
+            permission_mode="bypassPermissions",
+        ),
         full_name=f"relabel:{candidate['dir'].name}",
         stage=7,
         purpose="relabel_propose",
@@ -146,12 +152,14 @@ def _append_done_step(traj_dir: Path, proposal: str):
         if not steps:
             return
         screenshot = steps[-1].get("screenshot", "")
-    steps.append({
-        "step": (steps[-1]["step"] + 1) if steps else 1,
-        "screenshot": screenshot,
-        "thought": f"The goal is accomplished: {proposal.rstrip('.')}. I stop here.",
-        "actions": [{"type": "done"}],
-    })
+    steps.append(
+        {
+            "step": (steps[-1]["step"] + 1) if steps else 1,
+            "screenshot": screenshot,
+            "thought": f"The goal is accomplished: {proposal.rstrip('.')}. I stop here.",
+            "actions": [{"type": "done"}],
+        }
+    )
     traj["total_steps"] = len(steps)
     traj_file.write_text(json.dumps(traj, indent=2))
 
@@ -195,18 +203,20 @@ async def apply_one(candidate: dict, report_rows: list) -> str:
     cmeta = _load(cmeta_file)
     verifier = cmeta.get("verifier") or {}
     meta = _load(meta_file)
-    meta.update({
-        "instruction": proposal,
-        "original_instruction": original_instruction,
-        "relabeled": True,
-        "relabeled_from": "hindsight_v2",
-        "success": True,
-        "efficiency": verifier.get("efficiency"),
-        "efficiency_ratio": verifier.get("efficiency_ratio"),
-        # The thoughts still pursue the ORIGINAL goal (naming sub-goals the new instruction drops);
-        # marking them raw sends them through the polish pass, which rewrites against the new goal.
-        "thought_source": "teacher_raw",
-    })
+    meta.update(
+        {
+            "instruction": proposal,
+            "original_instruction": original_instruction,
+            "relabeled": True,
+            "relabeled_from": "hindsight_v2",
+            "success": True,
+            "efficiency": verifier.get("efficiency"),
+            "efficiency_ratio": verifier.get("efficiency_ratio"),
+            # The thoughts still pursue the ORIGINAL goal (naming sub-goals the new instruction drops);
+            # marking them raw sends them through the polish pass, which rewrites against the new goal.
+            "thought_source": "teacher_raw",
+        }
+    )
     meta_file.write_text(json.dumps(meta, indent=2))
     report_rows.append((traj_dir, "relabeled", proposal))
     logger.info(f"  {traj_dir.name}: relabeled -> {proposal!r}")
@@ -274,8 +284,10 @@ def print_dry_run(corpus_dir: Path):
     print("| --- | --- | --- | --- |")
     for c in candidates:
         instr = c["trajectory"].get("instruction", "").replace("|", "/")[:100]
-        print(f"| {c['dir'].relative_to(corpus_dir)} | {c['capture_meta'].get('agent_outcome')} "
-              f"| {len(c['trajectory'].get('steps', []))} | {instr} |")
+        print(
+            f"| {c['dir'].relative_to(corpus_dir)} | {c['capture_meta'].get('agent_outcome')} "
+            f"| {len(c['trajectory'].get('steps', []))} | {instr} |"
+        )
     print(f"\norphans (never judged): {len(find_orphans(corpus_dir))}")
 
 

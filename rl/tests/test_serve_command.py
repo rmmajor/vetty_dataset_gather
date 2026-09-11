@@ -1,11 +1,12 @@
 """vLLM serve exposes every adapter it is given, so one rental can score several checkpoints."""
+
 from rl_train import build_vllm_serve_command
 
 CFG = {"base_model": "Qwen/Qwen3.5-9B", "compute": {"serve_port": 8001}}
 
 
 def _modules(cmd):
-    return cmd[cmd.index("--lora-modules") + 1:cmd.index("--max-lora-rank")]
+    return cmd[cmd.index("--lora-modules") + 1 : cmd.index("--max-lora-rank")]
 
 
 def test_single_adapter_keeps_the_canonical_served_name():

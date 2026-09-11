@@ -12,6 +12,7 @@ Teardown is defense-in-depth so credits are never wasted:
   4. A crash-safe state file (`state.py`) + the `cleanup` orphan sweep for hard kills.
   5. An independent max-runtime watchdog thread that force-destroys a hung run.
 """
+
 import asyncio
 import logging
 import os
@@ -52,6 +53,7 @@ def _run_job(provider, cfg, job, *, enable_safety: bool = True) -> int:
     _sweep_orphans(provider, cfg)
 
     instance = None
+    outcome = "FAILED"
     stop = threading.Event()
     try:
         offer = provider.search_offer(cfg)
@@ -96,12 +98,16 @@ def _run_job(provider, cfg, job, *, enable_safety: bool = True) -> int:
         summary = job.report(cfg)
         if summary:
             print(f"\n=== {job.name} results ===\n{summary}\n")
+        outcome = "DONE"
         return 0
     finally:
         stop.set()
         if instance is not None:
             _guaranteed_destroy(provider, instance, cfg)
             state.clear_instance(instance.id)
+        # After teardown, so a wedged Telegram call can never delay destroying the box.
+        if cfg.notify:
+            _notify(f"remote_train {job.name}: {outcome} (instance {instance.id if instance else 'none'})")
 
 
 def _rescue(provider, instance, cfg, job) -> None:
@@ -124,7 +130,8 @@ def cleanup(provider, cfg: RemoteTrainConfig, *, sweep_all: bool = False) -> int
     skipped_live: list = []
     for record in state.read_instances():
         inst = Instance(
-            id=str(record["id"]), provider=record.get("provider", cfg.provider),
+            id=str(record["id"]),
+            provider=record.get("provider", cfg.provider),
             label=record.get("label", cfg.instance_label),
         )
         if state.owner_alive(record) and not sweep_all:
@@ -157,6 +164,7 @@ def cleanup(provider, cfg: RemoteTrainConfig, *, sweep_all: bool = False) -> int
 
 
 # ----- teardown primitives -----
+
 
 def _owned_by_us(provider, instance, cfg) -> bool:
     """The ownership gate every teardown path passes through: the account is SHARED.
@@ -201,7 +209,8 @@ def _install_signal_handlers(provider, instance, cfg) -> None:
         if cfg.keep_on_signal:
             logger.warning(
                 f"Signal {signum} received — LEAVING instance {instance.id} running so the detached "
-                f"job finishes. Collect/destroy later with: python -m remote_train cleanup")
+                f"job finishes. Collect/destroy later with: python -m remote_train cleanup"
+            )
             # os._exit, not sys.exit: SystemExit would unwind through the finally block, which
             # destroys the instance — the very thing this branch exists to avoid.
             state.mark_abandoned(instance.id)
@@ -276,6 +285,7 @@ def _sweep_orphans(provider, cfg) -> None:
 
 # ----- run steps -----
 
+
 def _remote_script(cfg, body: str) -> str:
     wd = cfg.remote_workdir
     return (
@@ -334,7 +344,9 @@ def _wait_for_completion(provider, instance, cfg, deadline: float, job=None) -> 
         except ProviderError as e:
             poll_failures += 1
             if poll_failures >= _MAX_POLL_FAILURES:
-                raise ProviderError(f"status poll failed {poll_failures}x in a row; treating the box as lost: {e}") from e
+                raise ProviderError(
+                    f"status poll failed {poll_failures}x in a row; treating the box as lost: {e}"
+                ) from e
             logger.warning(f"status poll failed ({str(e)[:120]}); retry {poll_failures}/{_MAX_POLL_FAILURES - 1}")
             time.sleep(cfg.poll_interval_s)
             continue
@@ -382,6 +394,7 @@ def _notify(message: str) -> None:
 
 # ----- no-cost self-test (teardown guarantee is the central assertion) -----
 
+
 def run_smoke_test() -> int:
     failures = []
     tmp = Path(tempfile.mkdtemp(prefix="remote_train_smoke_"))
@@ -392,7 +405,9 @@ def run_smoke_test() -> int:
     (tmp / "output" / "adapter_config.json").write_text("{}")
     (tmp / "output" / "adapter_model.safetensors").write_bytes(b"0" * 16)
     state.STATE_FILE = tmp / ".remote_train_state.json"
-    state.BAD_OFFER_FILE = tmp / ".remote_train_bad_offers.json"  # the mock's simulated failures must not blocklist real offers
+    state.BAD_OFFER_FILE = (
+        tmp / ".remote_train_bad_offers.json"
+    )  # the mock's simulated failures must not blocklist real offers
 
     def make_cfg(job="train"):
         cfg = RemoteTrainConfig()
@@ -418,7 +433,7 @@ def run_smoke_test() -> int:
     offer = provider.search_offer(cfg)
     check("geo-exclusion drops RU/CN; cheapest allowed is SE", offer.id == "se-1" and offer.country == "SE")
     check("excluded offers were actually present", any(o.country in ("RU", "CN") for o in provider._fake_offers))
-    check("instance is labeled roman.maior", provider.provision(offer, cfg).label == "roman.maior")
+    check("instance is labeled cua-remote-train", provider.provision(offer, cfg).label == "cua-remote-train")
 
     foreign = MockProvider(make_cfg())
     foreign.reported_label = "someone.else"
@@ -457,7 +472,7 @@ def run_smoke_test() -> int:
     state.STATE_FILE = Path(tempfile.mkdtemp()) / "state.json"
     state.record_instance(Instance(id="orphan-1", provider="mock", label=cfg.instance_label))
     records = state.read_instances()
-    records[0]["pid"] = 2 ** 22  # a pid that cannot be running
+    records[0]["pid"] = 2**22  # a pid that cannot be running
     state._write(records)
     cleanup(dead, make_cfg())
     check("cleanup still reclaims a box whose owner run died", dead.destroyed == ["orphan-1"])
@@ -481,7 +496,10 @@ def run_smoke_test() -> int:
     state.record_instance(Instance(id="released-2", provider="mock", label=cfg.instance_label))
     state.mark_abandoned("released-2")
     by_id = {r["id"]: r for r in state.read_instances()}
-    check("mark_abandoned writes the pid null sentinel", by_id["released-2"]["pid"] is None and not state.owner_alive(by_id["released-2"]))
+    check(
+        "mark_abandoned writes the pid null sentinel",
+        by_id["released-2"]["pid"] is None and not state.owner_alive(by_id["released-2"]),
+    )
     check("mark_abandoned leaves the other record owned", by_id["kept-1"]["pid"] == os.getpid())
     cleanup(handed_over, make_cfg())
     check("cleanup reclaims only the released box", handed_over.destroyed == ["released-2"])
@@ -535,8 +553,10 @@ def run_smoke_test() -> int:
     provider._cli_json = lambda *a, **k: {"success": False, "new_contract": 4242}
     provider.destroy = lambda instance: destroyed_ids.append(instance.id) or True
     try:
-        provider.provision(Offer(id="1", price_per_hour=0.1, gpu_name="x", gpu_ram_gb=24,
-                                 num_gpus=1, country="US", reliability=1.0), make_cfg())
+        provider.provision(
+            Offer(id="1", price_per_hour=0.1, gpu_name="x", gpu_ram_gb=24, num_gpus=1, country="US", reliability=1.0),
+            make_cfg(),
+        )
     except ProviderError:
         pass
     check("vast: a failed create that allocated a contract destroys it", destroyed_ids == ["4242"])

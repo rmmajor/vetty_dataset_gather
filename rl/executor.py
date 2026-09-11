@@ -1,14 +1,34 @@
 """Turn a decoded student step into the driver's `sequence` payload."""
+
 from repo_pipeline.corpus_audit import VIEWPORT
 
 MISSING_THOUGHT_PLACEHOLDER = "(no reasoning emitted)"
 CONTROL_TYPES = ("done", "handoff", "confirm")
 # Uppercased aliases → Playwright key names; local copy because the Path-A recorder that owns the full map imports `openai`.
 KEY_ALIASES = {
-    "CTRL": "Control", "CONTROL": "Control", "ALT": "Alt", "SHIFT": "Shift", "META": "Meta", "CMD": "Meta",
-    "COMMAND": "Meta", "ENTER": "Enter", "RETURN": "Enter", "TAB": "Tab", "ESCAPE": "Escape", "ESC": "Escape",
-    "BACKSPACE": "Backspace", "DELETE": "Delete", "SPACE": " ", "UP": "ArrowUp", "DOWN": "ArrowDown",
-    "LEFT": "ArrowLeft", "RIGHT": "ArrowRight", "PAGEUP": "PageUp", "PAGEDOWN": "PageDown", "HOME": "Home", "END": "End",
+    "CTRL": "Control",
+    "CONTROL": "Control",
+    "ALT": "Alt",
+    "SHIFT": "Shift",
+    "META": "Meta",
+    "CMD": "Meta",
+    "COMMAND": "Meta",
+    "ENTER": "Enter",
+    "RETURN": "Enter",
+    "TAB": "Tab",
+    "ESCAPE": "Escape",
+    "ESC": "Escape",
+    "BACKSPACE": "Backspace",
+    "DELETE": "Delete",
+    "SPACE": " ",
+    "UP": "ArrowUp",
+    "DOWN": "ArrowDown",
+    "LEFT": "ArrowLeft",
+    "RIGHT": "ArrowRight",
+    "PAGEUP": "PageUp",
+    "PAGEDOWN": "PageDown",
+    "HOME": "Home",
+    "END": "End",
 }
 
 

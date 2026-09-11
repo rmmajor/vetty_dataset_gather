@@ -14,6 +14,7 @@ sub-apps, and stacks needing a DB/backend/credentials are out of scope (would ne
 host execution, which are deliberately not built). Those keep failing no_capture — now with a
 persisted log (see stage5) explaining why.
 """
+
 import json
 import logging
 import os
@@ -48,33 +49,57 @@ _DEV_SERVER_ENV = (
     "NODE_OPTIONS=--dns-result-order=ipv4first HOST=0.0.0.0 npm_config_engine_strict=false"
 )
 _PW_CONFIG_NAMES = (
-    "playwright.config.ts", "playwright.config.js", "playwright.config.mjs",
-    "playwright.config.cjs", "playwright.config.mts", "playwright.config.cts",
+    "playwright.config.ts",
+    "playwright.config.js",
+    "playwright.config.mjs",
+    "playwright.config.cjs",
+    "playwright.config.mts",
+    "playwright.config.cts",
 )
 # Framework dependency name → its default dev-server port, when the script doesn't state one.
 _FRAMEWORK_PORTS = (
-    ("next", 3000), ("nuxt", 3000), ("@remix-run", 3000), ("vite", 5173),
-    ("@sveltejs", 5173), ("react-scripts", 3000), ("@angular", 4200),
-    ("vue-cli-service", 8080), ("astro", 4321), ("gatsby", 8000), ("vue", 8080),
+    ("next", 3000),
+    ("nuxt", 3000),
+    ("@remix-run", 3000),
+    ("vite", 5173),
+    ("@sveltejs", 5173),
+    ("react-scripts", 3000),
+    ("@angular", 4200),
+    ("vue-cli-service", 8080),
+    ("astro", 4321),
+    ("gatsby", 8000),
+    ("vue", 8080),
 )
 
 
 @dataclass(frozen=True)
 class AppStartSpec:
-    start_cmd: str           # shell command that boots the app
-    port: int                # TCP port the app is expected to listen on
-    build_cmd: str | None    # one-time build to run before starting, or None
+    start_cmd: str  # shell command that boots the app
+    port: int  # TCP port the app is expected to listen on
+    build_cmd: str | None  # one-time build to run before starting, or None
     app_dir: str = REPO_DIR  # directory holding the app's package.json (monorepos: a subdir)
     package_manager: str = "npm"  # npm | pnpm | yarn — drives install + run
-    install_cmd: str = ""    # PM-aware dependency install for app_dir (empty ⇒ caller installs)
+    install_cmd: str = ""  # PM-aware dependency install for app_dir (empty ⇒ caller installs)
 
 
 # Web-app directory names — boosted when scoring monorepo subdirs.
 _APP_SUBDIR_NAMES = ("frontend", "client", "web", "app", "ui", "www", "site", "dashboard", "webapp")
 # Frontend-framework markers: a package.json pulling one of these is almost certainly the bootable
 # UI, vs an api/lib/tooling package sharing the same monorepo.
-_FRONTEND_DEPS = ("react", "vue", "svelte", "next", "nuxt", "vite", "@angular", "solid-js",
-                  "preact", "astro", "@remix-run", "gatsby")
+_FRONTEND_DEPS = (
+    "react",
+    "vue",
+    "svelte",
+    "next",
+    "nuxt",
+    "vite",
+    "@angular",
+    "solid-js",
+    "preact",
+    "astro",
+    "@remix-run",
+    "gatsby",
+)
 
 
 def _find_app_dir(sandbox) -> str | None:
@@ -181,8 +206,7 @@ def _install_cmd(pm: str, app_dir: str) -> str:
             f"cd {app_dir} && npm_config_engine_strict=false pnpm install --no-frozen-lockfile"
         )
     return (  # yarn classic
-        "npm install -g yarn@1 >/dev/null 2>&1; "
-        f"cd {app_dir} && npm_config_engine_strict=false yarn install"
+        f"npm install -g yarn@1 >/dev/null 2>&1; cd {app_dir} && npm_config_engine_strict=false yarn install"
     )
 
 
@@ -228,8 +252,10 @@ def detect_app_start(sandbox, profile: FrameworkProfile, for_agent: bool = False
         package_manager=pm,
         install_cmd=_install_cmd(pm, install_dir),
     )
-    logger.info(f"app-start: will run `{pm} run {chosen}` in {app_dir.replace(REPO_DIR, '.')} on :{port}"
-                f"{' (after build, install in ' + install_dir.replace(REPO_DIR, '.') + ')' if build_cmd else ''} [pm={pm}]")
+    logger.info(
+        f"app-start: will run `{pm} run {chosen}` in {app_dir.replace(REPO_DIR, '.')} on :{port}"
+        f"{' (after build, install in ' + install_dir.replace(REPO_DIR, '.') + ')' if build_cmd else ''} [pm={pm}]"
+    )
     return spec
 
 

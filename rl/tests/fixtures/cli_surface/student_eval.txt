@@ -1,0 +1,11 @@
+Evaluate a served computer-use student model
+
+positional arguments:
+  {run,judge,compare,sources}
+    run                 run a task set against a served model
+    judge               score the episodes a --no-judge run deferred
+    compare             render a before/after table
+    sources             list the registered task sources
+
+options:
+  -h, --help            show this help message and exit

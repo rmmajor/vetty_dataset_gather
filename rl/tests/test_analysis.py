@@ -72,7 +72,9 @@ def _write_safetensors(path, tensors):
 def test_lora_norms_on_constructed_fixture():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "adapter_model.safetensors"
-        _write_safetensors(path, {"m.lora_A.weight": [3.0, 4.0], "m.lora_B.weight": [1.0, 2.0, 2.0], "m.base.weight": [9.0]})
+        _write_safetensors(
+            path, {"m.lora_A.weight": [3.0, 4.0], "m.lora_B.weight": [1.0, 2.0, 2.0], "m.base.weight": [9.0]}
+        )
         norms = lora_norms(path)
         assert math.isclose(norms["A"], 5.0) and math.isclose(norms["B"], 3.0)
         assert norms["tensors"] == {"A": 1, "B": 1}
@@ -92,4 +94,3 @@ def test_zero_variance_needs_two_samples():
     single = per_task_stats([RECORDS[0]])
     assert not single["a"]["zero_variance"]
     assert per_task_stats(RECORDS)["b"]["zero_variance"]
-

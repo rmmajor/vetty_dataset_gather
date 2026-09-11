@@ -29,13 +29,12 @@ from repo_pipeline.dashboard._state import (
 )
 from repo_pipeline.dashboard.loader import load_iso_date_range
 
-
 st.set_page_config(page_title="Trajectory dashboard", page_icon="📊", layout="wide")
 
 page_header(
     "Trajectory dashboard",
     "Exploratory view over the trajectory corpus. Pick a path from the sidebar for deeper "
-    "per-path distributions, or open the Inspector to look at individual trajectories."
+    "per-path distributions, or open the Inspector to look at individual trajectories.",
 )
 
 traj_df, step_df, warnings = cached_load_corpus(str(DEFAULT_TRAJ_DIR))
@@ -63,58 +62,44 @@ st.markdown("---")
 st.subheader("Per-trajectory distributions")
 
 c1, c2 = st.columns(2)
-c1.plotly_chart(charts.steps_per_traj_hist(traj_df), width="stretch",
-                 key="landing_steps_hist")
-c2.plotly_chart(charts.actions_per_traj_hist(traj_df), width="stretch",
-                 key="landing_actions_hist")
+c1.plotly_chart(charts.steps_per_traj_hist(traj_df), width="stretch", key="landing_steps_hist")
+c2.plotly_chart(charts.actions_per_traj_hist(traj_df), width="stretch", key="landing_actions_hist")
 
 c3, c4 = st.columns(2)
-c3.plotly_chart(charts.per_traj_action_entropy_hist(traj_df), width="stretch",
-                 key="landing_action_entropy_hist")
-c4.plotly_chart(charts.unique_action_types_per_traj_hist(traj_df), width="stretch",
-                 key="landing_unique_action_types_hist")
+c3.plotly_chart(charts.per_traj_action_entropy_hist(traj_df), width="stretch", key="landing_action_entropy_hist")
+c4.plotly_chart(
+    charts.unique_action_types_per_traj_hist(traj_df), width="stretch", key="landing_unique_action_types_hist"
+)
 
 c5, c6 = st.columns(2)
-c5.plotly_chart(charts.instruction_length_hist(traj_df), width="stretch",
-                 key="landing_instruction_len_hist")
-c6.plotly_chart(charts.success_pie(traj_df), width="stretch",
-                 key="landing_success_pie")
+c5.plotly_chart(charts.instruction_length_hist(traj_df), width="stretch", key="landing_instruction_len_hist")
+c6.plotly_chart(charts.success_pie(traj_df), width="stretch", key="landing_success_pie")
 
 st.markdown("---")
 st.subheader("Actions across all steps")
 
 c7, c8 = st.columns(2)
-c7.plotly_chart(charts.action_type_bar(step_df), width="stretch",
-                 key="landing_action_type_bar")
-c8.plotly_chart(charts.thought_presence_bar(step_df), width="stretch",
-                 key="landing_thought_presence_bar")
+c7.plotly_chart(charts.action_type_bar(step_df), width="stretch", key="landing_action_type_bar")
+c8.plotly_chart(charts.thought_presence_bar(step_df), width="stretch", key="landing_thought_presence_bar")
 
-st.plotly_chart(charts.click_heatmap(step_df), width="stretch",
-                 key="landing_click_heatmap")
+st.plotly_chart(charts.click_heatmap(step_df), width="stretch", key="landing_click_heatmap")
 
 st.markdown("---")
 st.subheader("Sources")
 
 c9, c10 = st.columns(2)
-c9.plotly_chart(charts.domain_bar(traj_df, column="domain"), width="stretch",
-                 key="landing_domain_bar")
-c10.plotly_chart(charts.domain_bar(traj_df, column="website"), width="stretch",
-                 key="landing_website_bar")
+c9.plotly_chart(charts.domain_bar(traj_df, column="domain"), width="stretch", key="landing_domain_bar")
+c10.plotly_chart(charts.domain_bar(traj_df, column="website"), width="stretch", key="landing_website_bar")
 
 c11, c12 = st.columns(2)
-c11.plotly_chart(charts.source_repo_bar(traj_df), width="stretch",
-                 key="landing_source_repo_bar")
-c12.plotly_chart(charts.task_type_bar(traj_df), width="stretch",
-                 key="landing_task_type_bar")
+c11.plotly_chart(charts.source_repo_bar(traj_df), width="stretch", key="landing_source_repo_bar")
+c12.plotly_chart(charts.task_type_bar(traj_df), width="stretch", key="landing_task_type_bar")
 
-st.plotly_chart(charts.recorded_timeline(traj_df), width="stretch",
-                 key="landing_recorded_timeline")
+st.plotly_chart(charts.recorded_timeline(traj_df), width="stretch", key="landing_recorded_timeline")
 
 st.markdown("---")
 st.subheader("Cross-cuttings")
 
 c13, c14 = st.columns(2)
-c13.plotly_chart(charts.steps_vs_actions_scatter(traj_df), width="stretch",
-                  key="landing_steps_vs_actions")
-c14.plotly_chart(charts.instruction_vs_steps_scatter(traj_df), width="stretch",
-                  key="landing_instr_vs_steps")
+c13.plotly_chart(charts.steps_vs_actions_scatter(traj_df), width="stretch", key="landing_steps_vs_actions")
+c14.plotly_chart(charts.instruction_vs_steps_scatter(traj_df), width="stretch", key="landing_instr_vs_steps")

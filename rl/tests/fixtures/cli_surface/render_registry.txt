@@ -1,0 +1,7 @@
+Render experiments/*.csv into the README between registry markers, and fill
+Wilson intervals.
+
+options:
+  -h, --help  show this help message and exit
+  --fill-ci   compute missing Wilson intervals and rewrite results.csv
+  --check     exit 1 if the README block is stale

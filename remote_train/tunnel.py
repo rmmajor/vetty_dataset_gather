@@ -1,4 +1,5 @@
 """SSH tunnel resource for remote jobs: -R exposes the Mac env service to the box, -L brings the box's serve port here; supervised like autossh."""
+
 import logging
 import subprocess
 import threading
@@ -29,8 +30,16 @@ class SshTunnel:
 
     def argv(self):
         target = self.base[-1]
-        argv = [*self.base[:-1], "-N", "-o", f"ServerAliveInterval={self.keepalive_s}", "-o", "ServerAliveCountMax=4",
-                "-o", "ExitOnForwardFailure=yes"]
+        argv = [
+            *self.base[:-1],
+            "-N",
+            "-o",
+            f"ServerAliveInterval={self.keepalive_s}",
+            "-o",
+            "ServerAliveCountMax=4",
+            "-o",
+            "ExitOnForwardFailure=yes",
+        ]
         for direction, port in self.forwards:
             argv += [f"-{direction}", f"127.0.0.1:{port}:127.0.0.1:{port}"]
         return [*argv, target]
@@ -48,7 +57,9 @@ class SshTunnel:
             if not self.alive:
                 break
             attempt += 1
-            logger.warning(f"ssh tunnel exited (rc={self.proc.poll() if self.proc else 'spawn-failed'}); restarting in {min(60, 5 * attempt)}s")
+            logger.warning(
+                f"ssh tunnel exited (rc={self.proc.poll() if self.proc else 'spawn-failed'}); restarting in {min(60, 5 * attempt)}s"
+            )
             self.sleep(min(60, 5 * attempt))
 
     def start(self):

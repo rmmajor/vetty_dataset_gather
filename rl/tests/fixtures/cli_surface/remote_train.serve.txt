@@ -1,0 +1,19 @@
+options:
+  -h, --help            show this help message and exit
+  --config CONFIG       Path to remote_train.yaml
+  --provider {mock,vastai}
+                        Compute provider
+  --gpu GPU             GPU name substring filter (e.g. A100)
+  --min-vram MIN_VRAM   Minimum GPU VRAM in GB
+  --disk DISK           Minimum/requested disk in GB (must hold model weights)
+  --max-price MAX_PRICE
+                        Max $/hr cap
+  --max-hours MAX_HOURS
+                        Max wall-clock hours (teardown watchdog)
+  --verbose             Debug logging
+  --rl-config RL_CONFIG
+                        RL run config (default rl_config.yaml)
+  --adapter ADAPTER     LoRA adapter dir to serve on top of the base (e.g.
+                        output)
+  --for-seconds FOR_SECONDS
+                        Auto-stop after N seconds (0 = until Ctrl-C)

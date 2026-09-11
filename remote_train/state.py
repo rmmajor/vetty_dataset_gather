@@ -9,6 +9,7 @@ stranger's. Records are therefore a list, never a single slot that later runs ov
 
 Path is overridable via `REMOTE_TRAIN_STATE_FILE`.
 """
+
 import json
 import logging
 import os
@@ -22,10 +23,15 @@ STATE_FILE = Path(os.environ.get("REMOTE_TRAIN_STATE_FILE", ".remote_train_state
 
 def record_instance(instance) -> None:
     records = [r for r in read_instances() if str(r.get("id")) != str(instance.id)]
-    records.append({
-        "provider": instance.provider, "id": instance.id, "label": instance.label,
-        "pid": os.getpid(), "started_at": time.time(),
-    })
+    records.append(
+        {
+            "provider": instance.provider,
+            "id": instance.id,
+            "label": instance.label,
+            "pid": os.getpid(),
+            "started_at": time.time(),
+        }
+    )
     _write(records)
     logger.info(f"Recorded instance {instance.id} to {STATE_FILE} for crash-safe teardown")
 

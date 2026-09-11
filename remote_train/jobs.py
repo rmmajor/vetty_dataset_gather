@@ -10,8 +10,9 @@ the teardown guarantees never change.
   grpo  — RL: ship the SFT adapter + rl/ code, run rl_train.py against the Mac env service over a tunnel.
   serve — serve the student on serve_port through a tunnel (for rl.eval / live harness smokes).
 """
-import contextlib
+
 import ast
+import contextlib
 import hashlib
 import json
 import logging
@@ -25,7 +26,7 @@ from pathlib import Path
 
 import yaml
 
-from remote_train.benchmarks import BENCHMARKS, build_benchmark, materialize
+from remote_train.benchmarks import build_benchmark, materialize
 from rl_train import build_deploy_command, build_merge_command, build_vllm_serve_command, load_task_ids, make_dataset
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 class RemoteJob:
     """Contract for anything the lifecycle can run on a box."""
+
     name: str = "base"
 
     def preflight(self, cfg) -> None:
@@ -79,7 +81,9 @@ class TrainJob(RemoteJob):
         if not Path(cfg.train_config).is_file():
             raise FileNotFoundError(f"train config '{cfg.train_config}' not found")
         if not Path("repo_pipeline").is_dir():
-            raise FileNotFoundError("repo_pipeline/ not found — train_qwen.py imports it and the box would die at import")
+            raise FileNotFoundError(
+                "repo_pipeline/ not found — train_qwen.py imports it and the box would die at import"
+            )
         # Fail before renting: a resume without optimizer state silently restarts from step 0.
         if cfg.resume_from:
             ckpt = Path(cfg.resume_from)
@@ -161,8 +165,10 @@ class EvalJob(RemoteJob):
                 spec["coord_space"] = cfg.eval_coord_space
             specs.append(spec)
         self.models_yaml.write_text(yaml.safe_dump(specs, sort_keys=False))
-        logger.info(f"benchmark '{self.benchmark.name}' on {[s['model'] for s in specs]}"
-                    f"{f' (limit {cfg.eval_limit})' if cfg.eval_limit else ' (full dataset)'}")
+        logger.info(
+            f"benchmark '{self.benchmark.name}' on {[s['model'] for s in specs]}"
+            f"{f' (limit {cfg.eval_limit})' if cfg.eval_limit else ' (full dataset)'}"
+        )
 
     def upload(self, provider, instance, cfg) -> None:
         wd = cfg.remote_workdir
@@ -305,7 +311,9 @@ class GrpoJob(RemoteJob):
         if selection and not task_ids:
             raise ValueError(f"{selection} selected no tasks — the frontier band is empty")
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        rows = make_dataset(suite_path, self.dataset_path, "train", 1, self.rl.get("train_max_expected_actions"), task_ids)
+        rows = make_dataset(
+            suite_path, self.dataset_path, "train", 1, self.rl.get("train_max_expected_actions"), task_ids
+        )
         if rows == 0:
             raise ValueError(f"no train tasks in {suite_path} after the band filter")
         env_url = self.rl["env_url"]
@@ -316,10 +324,16 @@ class GrpoJob(RemoteJob):
             self.assert_tasks_served(base, task_ids or self.dataset_task_ids())
         weights = Path(cfg.output_dir) / "adapter_model.safetensors"
         header = {
-            "run_id": self.run_id, "base_model": self.rl["base_model"], "sft_adapter": cfg.output_dir,
-            "sft_adapter_sha256": _sha256(weights) if weights.is_file() else "", "rl_config_sha256": _sha256(cfg.rl_config),
-            "suite_sha256": json.loads(suite_path.read_text()).get("suite_sha256", ""), "train_rows": rows,
-            "git_head": _git_head(), "env_url": env_url, "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "run_id": self.run_id,
+            "base_model": self.rl["base_model"],
+            "sft_adapter": cfg.output_dir,
+            "sft_adapter_sha256": _sha256(weights) if weights.is_file() else "",
+            "rl_config_sha256": _sha256(cfg.rl_config),
+            "suite_sha256": json.loads(suite_path.read_text()).get("suite_sha256", ""),
+            "train_rows": rows,
+            "git_head": _git_head(),
+            "env_url": env_url,
+            "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         (self.run_dir / "run_header.json").write_text(json.dumps(header, indent=2))
         logger.info(f"grpo run {self.run_id}: {rows} train rows, env {env_url}, compute {self.rl.get('compute')}")
@@ -357,7 +371,9 @@ class GrpoJob(RemoteJob):
 
     def resources(self, provider, instance, cfg):
         compute = self.rl.get("compute") or {}
-        return provider.tunnel(instance, cfg, [("R", int(compute.get("env_port", 8900))), ("L", int(compute.get("serve_port", 8001)))])
+        return provider.tunnel(
+            instance, cfg, [("R", int(compute.get("env_port", 8900))), ("L", int(compute.get("serve_port", 8001)))]
+        )
 
     def remote_command(self, cfg) -> str:
         wd = cfg.remote_workdir
@@ -377,8 +393,19 @@ class GrpoJob(RemoteJob):
     def run_eval(self, phase):
         tag = "before" if "BEFORE" in phase else "after"
         port = (self.rl.get("compute") or {}).get("serve_port", 8001)
-        argv = [sys.executable, "-m", "rl.eval", "--endpoint", f"http://127.0.0.1:{port}/v1", "--model", "policy",
-                "--run-id", f"{self.run_id}-{tag}", "--out", str(self.run_dir / "eval_runs")]
+        argv = [
+            sys.executable,
+            "-m",
+            "rl.eval",
+            "--endpoint",
+            f"http://127.0.0.1:{port}/v1",
+            "--model",
+            "policy",
+            "--run-id",
+            f"{self.run_id}-{tag}",
+            "--out",
+            str(self.run_dir / "eval_runs"),
+        ]
         logger.info(f"running student eval ({tag}) through the tunnel: {' '.join(argv)}")
         result = subprocess.run(argv, capture_output=True, text=True)
         (self.run_dir / f"eval_{tag}.log").write_text(result.stdout + result.stderr)
@@ -406,8 +433,10 @@ class GrpoJob(RemoteJob):
     def collect(self, provider, instance, cfg) -> None:
         wd = cfg.remote_workdir
         logger.info("Downloading RL outputs…")
-        for remote, local in ((f"{wd}/rl_output/", self.run_dir / "rl_output"),
-                              (f"{wd}/rl_runs/{self.run_id}/", self.run_dir / "box")):
+        for remote, local in (
+            (f"{wd}/rl_output/", self.run_dir / "rl_output"),
+            (f"{wd}/rl_runs/{self.run_id}/", self.run_dir / "box"),
+        ):
             for attempt in range(1, 4):
                 try:
                     provider.download(instance, remote, str(local) + "/")
@@ -426,7 +455,7 @@ class GrpoJob(RemoteJob):
 
 
 def parse_serve_adapters(spec):
-    """"name=path,name=path" -> {name: path}; a bare path keeps the canonical single-adapter name."""
+    """ "name=path,name=path" -> {name: path}; a bare path keeps the canonical single-adapter name."""
     if not spec:
         return {}
     entries = [part.strip() for part in str(spec).split(",") if part.strip()]
@@ -437,6 +466,7 @@ def parse_serve_adapters(spec):
 
 class ServeJob(RemoteJob):
     """Rent a box, serve the base (+ adapter) student on serve_port through the tunnel until serve_seconds or Ctrl-C."""
+
     name = "serve"
 
     def __init__(self, cfg):
@@ -460,7 +490,9 @@ class ServeJob(RemoteJob):
             provider.upload(instance, local.rstrip("/") + "/", f"{wd}/serve_adapter/{name}/")
         if self.rl.get("serve_merged_base"):
             provider.exec(instance, f"mkdir -p {wd}/sft_adapter", timeout=60)
-            provider.upload(instance, str(Path(self.rl["sft_adapter"]).expanduser()).rstrip("/") + "/", f"{wd}/sft_adapter/")
+            provider.upload(
+                instance, str(Path(self.rl["sft_adapter"]).expanduser()).rstrip("/") + "/", f"{wd}/sft_adapter/"
+            )
 
     def resources(self, provider, instance, cfg):
         return provider.tunnel(instance, cfg, [("L", int((self.rl.get("compute") or {}).get("serve_port", 8001)))])

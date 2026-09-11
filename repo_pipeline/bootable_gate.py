@@ -9,16 +9,39 @@ one network call via the `gh` CLI (reusing its auth, like stage 3's metadata fet
 All signal sets are module-level data — adding a framework / config file / compose name is a data
 edit, not a logic change (the project's "generalize, don't special-case" rule).
 """
+
 import json
 import subprocess
 
 # A run script + one of these as a dependency = a bootable frontend app. Canonical package names
 # (scoped names listed in full) so membership is an exact set test.
 FRONTEND_FRAMEWORKS = {
-    "react", "react-dom", "vue", "nuxt", "next", "svelte", "@sveltejs/kit", "astro", "solid-js",
-    "preact", "gatsby", "@angular/core", "@remix-run/react", "@remix-run/node", "remix",
-    "ember-source", "alpinejs", "lit", "qwik", "@builder.io/qwik", "vite", "@vue/cli-service",
-    "react-scripts", "@quasar/app", "vitepress", "@nuxt/kit",
+    "react",
+    "react-dom",
+    "vue",
+    "nuxt",
+    "next",
+    "svelte",
+    "@sveltejs/kit",
+    "astro",
+    "solid-js",
+    "preact",
+    "gatsby",
+    "@angular/core",
+    "@remix-run/react",
+    "@remix-run/node",
+    "remix",
+    "ember-source",
+    "alpinejs",
+    "lit",
+    "qwik",
+    "@builder.io/qwik",
+    "vite",
+    "@vue/cli-service",
+    "react-scripts",
+    "@quasar/app",
+    "vitepress",
+    "@nuxt/kit",
 }
 
 # Server frameworks + a template engine = a server-rendered bootable app even without a JS frontend
@@ -31,14 +54,32 @@ RUN_SCRIPTS = {"dev", "start", "serve", "preview", "develop"}
 
 # e2e test tooling: corroborates "this is a test suite, not an app" when no framework is present.
 E2E_TEST_TOOLING = {
-    "@playwright/test", "playwright", "playwright-core", "cypress", "selenium-webdriver",
-    "@wdio/cli", "webdriverio", "puppeteer", "nightwatch", "testcafe", "@testing-library/cypress",
+    "@playwright/test",
+    "playwright",
+    "playwright-core",
+    "cypress",
+    "selenium-webdriver",
+    "@wdio/cli",
+    "webdriverio",
+    "puppeteer",
+    "nightwatch",
+    "testcafe",
+    "@testing-library/cypress",
 }
 
 # A config file (entry-name prefix) for a framework that serves an app; with a run script = bootable.
 APP_CONFIG_PREFIXES = (
-    "next.config", "nuxt.config", "vite.config", "svelte.config", "astro.config", "remix.config",
-    "gatsby-config", "angular.json", "quasar.config", "vue.config", "rsbuild.config",
+    "next.config",
+    "nuxt.config",
+    "vite.config",
+    "svelte.config",
+    "astro.config",
+    "remix.config",
+    "gatsby-config",
+    "angular.json",
+    "quasar.config",
+    "vue.config",
+    "rsbuild.config",
 )
 
 COMPOSE_FILES = {"docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"}
@@ -55,10 +96,12 @@ APP_STRUCTURE_DIRS = {"src", "app", "apps", "client", "frontend", "web", "packag
 # a test suite. The ambiguous remainder ("package.json without a framework", "no bootable-app
 # signal") is a known false-positive class (jQuery/Bootstrap/vanilla web UIs the probe can't tell
 # from non-apps), so by default it passes through to the LLM stages instead of being rejected here.
-HARD_REJECT_REASONS = frozenset({
-    "no package.json / compose / app structure",
-    "test-suite only (e2e tooling, no app framework)",
-})
+HARD_REJECT_REASONS = frozenset(
+    {
+        "no package.json / compose / app structure",
+        "test-suite only (e2e tooling, no app framework)",
+    }
+)
 
 
 def is_hard_reject(reason: str) -> bool:
@@ -152,9 +195,10 @@ def probe_repo(full_name: str) -> tuple[list[str], str | None]:
     owner, name = full_name.split("/", 1)
     try:
         result = subprocess.run(
-            ["gh", "api", "graphql", "-f", f"owner={owner}", "-f", f"name={name}",
-             "-f", f"query={_PROBE_QUERY}"],
-            capture_output=True, text=True, timeout=60,
+            ["gh", "api", "graphql", "-f", f"owner={owner}", "-f", f"name={name}", "-f", f"query={_PROBE_QUERY}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         raise ProbeError(f"gh probe failed for {full_name}: {e}")

@@ -1,0 +1,12 @@
+Public-site teacher capture lane
+
+options:
+  -h, --help            show this help message and exit
+  --sites SITES         Comma-separated site names (default: all)
+  --max-tasks MAX_TASKS
+                        Max tasks per site this run
+  --no-propose          Disable proposer-generated tasks; run only curated
+                        config tasks
+  --parallel PARALLEL   Concurrent site sandboxes
+  --traj-dir TRAJ_DIR
+  --config CONFIG       Path to a sites JSON (default: public_sites.json)

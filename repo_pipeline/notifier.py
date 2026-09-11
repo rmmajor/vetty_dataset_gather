@@ -13,10 +13,7 @@ def get_bot_config() -> tuple[str, str]:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat_id:
-        raise ValueError(
-            "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in environment "
-            "(or .env file)"
-        )
+        raise ValueError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in environment (or .env file)")
     return token, chat_id
 
 
@@ -112,7 +109,7 @@ def format_report(
     if rejection_reasons:
         lines.append("Top rejection reasons:")
         for i, (reason, count) in enumerate(rejection_reasons, 1):
-            lines.append(f"  {i}. \"{reason}\" ({count:,})")
+            lines.append(f'  {i}. "{reason}" ({count:,})')
 
     return "\n".join(lines)
 
@@ -141,7 +138,11 @@ async def send_report(
         return
 
     report = format_report(
-        registry, run_duration_seconds, budget_used, budget_limit, stage_results,
+        registry,
+        run_duration_seconds,
+        budget_used,
+        budget_limit,
+        stage_results,
         rate_limit_info=rate_limit_info,
     )
     logger.info(f"Report:\n{report}")
@@ -162,5 +163,6 @@ async def test_notifier():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     import sys
+
     if "--test" in sys.argv:
         asyncio.run(test_notifier())

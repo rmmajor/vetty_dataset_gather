@@ -1,0 +1,12 @@
+Audited hindsight-relabel pass over recoverable failed/partial agent captures.
+
+positional arguments:
+  corpus
+
+options:
+  -h, --help         show this help message and exit
+  --dry-run          List candidates, write nothing
+  --apply            Propose + re-verify + write
+  --judge-orphans    Run the verifier on never-judged dirs
+  --workers WORKERS
+  --limit LIMIT

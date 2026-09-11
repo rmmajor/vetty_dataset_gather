@@ -20,7 +20,6 @@ from claude_agent_sdk import AssistantMessage, RateLimitEvent, ResultMessage, qu
 
 from repo_pipeline.schemas import FailureCategory, RetryableFailure
 from repo_pipeline.sdk_runner import (
-    CLAUDE_CLI_PATH,
     DEFAULT_QUERY_TIMEOUT_S,
     UsageLimitReached,
     cost_tracker,
@@ -91,16 +90,25 @@ async def run_agent(
         # trajectory is already finalized by its own finally block). Runaway protection comes
         # from max_turns + the per-task action cap, not from dollars.
         if "maximum budget" in str(e).lower():
-            logger.info(f"agent[{purpose}] {full_name} reached its per-call budget cap "
-                        f"(informational — not treated as a failure)")
+            logger.info(
+                f"agent[{purpose}] {full_name} reached its per-call budget cap "
+                f"(informational — not treated as a failure)"
+            )
             return result_text
         raise
 
     if result_msg is not None and registry is not None:
         registry.record_agent_call(
-            full_name, stage, purpose, getattr(options, "model", ""),
-            result_msg.num_turns, result_msg.total_cost_usd, result_msg.usage,
-            result_msg.subtype, result_msg.is_error, result_msg.duration_ms,
+            full_name,
+            stage,
+            purpose,
+            getattr(options, "model", ""),
+            result_msg.num_turns,
+            result_msg.total_cost_usd,
+            result_msg.usage,
+            result_msg.subtype,
+            result_msg.is_error,
+            result_msg.duration_ms,
         )
 
     if not result_text and last_assistant_text:
@@ -114,9 +122,7 @@ async def run_agent(
             raise UsageLimitReached(f"HTTP 429 from agent ({purpose})")
         if raise_on_error and not result_text:
             category = (
-                FailureCategory.MAX_TURNS
-                if result_msg.subtype == "error_max_turns"
-                else FailureCategory.SDK_ERROR
+                FailureCategory.MAX_TURNS if result_msg.subtype == "error_max_turns" else FailureCategory.SDK_ERROR
             )
             raise RetryableFailure(category, f"agent ended with {result_msg.subtype}")
 

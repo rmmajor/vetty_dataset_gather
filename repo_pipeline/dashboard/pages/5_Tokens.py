@@ -60,17 +60,21 @@ c1.plotly_chart(charts.tokens_by_stage_bar(calls_df), width="stretch", key="tok_
 c2.plotly_chart(charts.avg_tokens_by_stage_bar(calls_df), width="stretch", key="tok_avg_stage")
 
 st.markdown("#### Average tokens per call, by stage & purpose")
-summary = df.groupby(["stage", "purpose"]).agg(
-    calls=("stage", "size"),
-    avg_input=("input_tokens", "mean"),
-    avg_cache_read=("cache_read_tokens", "mean"),
-    avg_cache_write=("cache_creation_tokens", "mean"),
-    avg_output=("output_tokens", "mean"),
-    avg_total=("total_tokens", "mean"),
-    avg_cost=("cost_usd", "mean"),
-).reset_index().sort_values(["stage", "purpose"])
+summary = (
+    df.groupby(["stage", "purpose"])
+    .agg(
+        calls=("stage", "size"),
+        avg_input=("input_tokens", "mean"),
+        avg_cache_read=("cache_read_tokens", "mean"),
+        avg_cache_write=("cache_creation_tokens", "mean"),
+        avg_output=("output_tokens", "mean"),
+        avg_total=("total_tokens", "mean"),
+        avg_cost=("cost_usd", "mean"),
+    )
+    .reset_index()
+    .sort_values(["stage", "purpose"])
+)
 summary = summary.round(
-    {"avg_input": 0, "avg_cache_read": 0, "avg_cache_write": 0, "avg_output": 0,
-     "avg_total": 0, "avg_cost": 4}
+    {"avg_input": 0, "avg_cache_read": 0, "avg_cache_write": 0, "avg_output": 0, "avg_total": 0, "avg_cost": 4}
 )
 st.dataframe(summary, width="stretch", hide_index=True)

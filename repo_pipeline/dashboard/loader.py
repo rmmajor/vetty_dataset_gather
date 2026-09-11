@@ -13,16 +13,15 @@ import sqlite3
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 from pydantic import ValidationError
 
-from repo_pipeline.schemas import CaptureMeta, Trajectory, TrajectoryMetadata
 from repo_pipeline.dashboard.metrics import (
     PLACEHOLDER_THOUGHT_SUBSTRINGS,
     shannon_entropy_nats,
 )
+from repo_pipeline.schemas import CaptureMeta, Trajectory, TrajectoryMetadata
 
 
 def _find_task_dirs(root: Path) -> list[Path]:
@@ -41,7 +40,7 @@ def _find_task_dirs(root: Path) -> list[Path]:
     return found
 
 
-def _read_json(path: Path) -> Optional[dict]:
+def _read_json(path: Path) -> dict | None:
     if not path.exists():
         return None
     try:
@@ -59,7 +58,7 @@ def _classify_path_kind(metadata: dict, task_id: str) -> str:
     return "A"
 
 
-def _parse_recorded_date(timestamp_str: str) -> Optional[pd.Timestamp]:
+def _parse_recorded_date(timestamp_str: str) -> pd.Timestamp | None:
     if not timestamp_str:
         return None
     try:
@@ -74,7 +73,7 @@ def _is_placeholder(thought: str) -> bool:
     return any(substr in thought for substr in PLACEHOLDER_THOUGHT_SUBSTRINGS)
 
 
-def _bbox_contains(bbox: Optional[dict], x: Optional[float], y: Optional[float]) -> Optional[bool]:
+def _bbox_contains(bbox: dict | None, x: float | None, y: float | None) -> bool | None:
     if bbox is None or x is None or y is None:
         return None
     bx, by = bbox.get("x"), bbox.get("y")
@@ -84,7 +83,7 @@ def _bbox_contains(bbox: Optional[dict], x: Optional[float], y: Optional[float])
     return bool(bx <= x <= bx + bw and by <= y <= by + bh)
 
 
-def _click_to_center_px(bbox: Optional[dict], x: Optional[float], y: Optional[float]) -> Optional[float]:
+def _click_to_center_px(bbox: dict | None, x: float | None, y: float | None) -> float | None:
     if bbox is None or x is None or y is None:
         return None
     bx, by = bbox.get("x"), bbox.get("y")
@@ -96,7 +95,7 @@ def _click_to_center_px(bbox: Optional[dict], x: Optional[float], y: Optional[fl
     return float(math.hypot(x - cx, y - cy))
 
 
-def _bbox_area_ratio(bbox: Optional[dict], viewport_w: int, viewport_h: int) -> Optional[float]:
+def _bbox_area_ratio(bbox: dict | None, viewport_w: int, viewport_h: int) -> float | None:
     if bbox is None:
         return None
     bw, bh = bbox.get("width"), bbox.get("height")
@@ -106,7 +105,7 @@ def _bbox_area_ratio(bbox: Optional[dict], viewport_w: int, viewport_h: int) -> 
     return float(bw * bh) / float(vp_area)
 
 
-def _first_coord_action(actions: list[dict]) -> tuple[Optional[float], Optional[float]]:
+def _first_coord_action(actions: list[dict]) -> tuple[float | None, float | None]:
     for action in actions:
         if action.get("type") in ("click", "type", "drag"):
             x = action.get("x")
@@ -140,7 +139,7 @@ def _action_counter(trajectory: Trajectory) -> Counter:
     return counter
 
 
-def _per_trajectory_action_entropy(trajectory: Trajectory) -> Optional[float]:
+def _per_trajectory_action_entropy(trajectory: Trajectory) -> float | None:
     counter = _action_counter(trajectory)
     if not counter:
         return None
@@ -187,7 +186,7 @@ def load_corpus(traj_root: Path) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]
                 success=trajectory.success,
             )
 
-        capture_meta: Optional[CaptureMeta] = None
+        capture_meta: CaptureMeta | None = None
         capture_raw = _read_json(task_dir / "capture_meta.json")
         if capture_raw is not None:
             try:
@@ -210,85 +209,77 @@ def load_corpus(traj_root: Path) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]
         metadata_row = metadata.model_dump()
         metadata_row["instruction"] = effective_instruction
 
-        traj_rows.append({
-            **metadata_row,
-            "path_kind": path_kind,
-            "trajectory_dir": str(rel),
-            "n_steps_actual": len(trajectory.steps),
-            "n_click":    action_counter.get("click", 0),
-            "n_type":     action_counter.get("type", 0),
-            "n_keypress": action_counter.get("keypress", 0),
-            "n_scroll":   action_counter.get("scroll", 0),
-            "n_wait":     action_counter.get("wait", 0),
-            "n_drag":     action_counter.get("drag", 0),
-            "n_actions_total": sum(action_counter.values()),
-            "action_entropy_nats": per_traj_entropy,
-            "instruction_len_chars": len(effective_instruction),
-            "instruction_token_est": len(effective_instruction) // 4,
-            "has_capture_meta": capture_meta is not None,
-            "recorded_date": _parse_recorded_date(metadata.timestamp),
-            "viewport_w": viewport_w,
-            "viewport_h": viewport_h,
-        })
+        traj_rows.append(
+            {
+                **metadata_row,
+                "path_kind": path_kind,
+                "trajectory_dir": str(rel),
+                "n_steps_actual": len(trajectory.steps),
+                "n_click": action_counter.get("click", 0),
+                "n_type": action_counter.get("type", 0),
+                "n_keypress": action_counter.get("keypress", 0),
+                "n_scroll": action_counter.get("scroll", 0),
+                "n_wait": action_counter.get("wait", 0),
+                "n_drag": action_counter.get("drag", 0),
+                "n_actions_total": sum(action_counter.values()),
+                "action_entropy_nats": per_traj_entropy,
+                "instruction_len_chars": len(effective_instruction),
+                "instruction_token_est": len(effective_instruction) // 4,
+                "has_capture_meta": capture_meta is not None,
+                "recorded_date": _parse_recorded_date(metadata.timestamp),
+                "viewport_w": viewport_w,
+                "viewport_h": viewport_h,
+            }
+        )
 
         for step in trajectory.steps:
             step_key = str(step.step)
-            cap_step = (capture_meta.steps.get(step_key)
-                        if capture_meta is not None else None)
+            cap_step = capture_meta.steps.get(step_key) if capture_meta is not None else None
             x, y = _first_coord_action(step.actions)
-            bbox = step.bbox if step.bbox is not None else (
-                cap_step.bbox if cap_step is not None else None
-            )
+            bbox = step.bbox if step.bbox is not None else (cap_step.bbox if cap_step is not None else None)
             role = step.role if step.role else (cap_step.role if cap_step is not None else None)
             name = step.name if step.name else (cap_step.name if cap_step is not None else None)
 
-            step_rows.append({
-                "task_id": trajectory.task_id,
-                "path_kind": path_kind,
-                "step": step.step,
-                "screenshot": step.screenshot,
-                "screenshot_path": str(task_dir / step.screenshot),
-                "action_type": _step_action_type(step.actions),
-                "n_actions": len(step.actions),
-                "actions": step.actions,
-                "x": x,
-                "y": y,
-                "thought": step.thought or "",
-                "has_thought": bool((step.thought or "").strip()),
-                "thought_len": len(step.thought or ""),
-                "is_placeholder_thought": _is_placeholder(step.thought or ""),
-                "bbox": bbox,
-                "role": role,
-                "name": name,
-                "selector":         (cap_step.selector if cap_step is not None else None),
-                "tag":              (cap_step.tag      if cap_step is not None else None),
-                "is_visible":       (cap_step.is_visible if cap_step is not None else None),
-                "is_enabled":       (cap_step.is_enabled if cap_step is not None else None),
-                "in_viewport":      (cap_step.in_viewport if cap_step is not None else None),
-                "url_before":       (cap_step.url_before  if cap_step is not None else None),
-                "url_after":        (cap_step.url_after   if cap_step is not None else None),
-                "caused_navigation":(cap_step.caused_navigation if cap_step is not None else None),
-                "dom_changed":      (cap_step.dom_changed if cap_step is not None else None),
-                "console_errors":   (cap_step.console_errors if cap_step is not None else None),
-                "dt_ms":            (cap_step.dt_ms if cap_step is not None else None),
-                "wait_state":       (cap_step.wait_state if cap_step is not None else None),
-                "bbox_contains_click": _bbox_contains(bbox, x, y),
-                "click_to_center_px": _click_to_center_px(bbox, x, y),
-                "bbox_area_ratio": _bbox_area_ratio(bbox, viewport_w, viewport_h),
-            })
+            step_rows.append(
+                {
+                    "task_id": trajectory.task_id,
+                    "path_kind": path_kind,
+                    "step": step.step,
+                    "screenshot": step.screenshot,
+                    "screenshot_path": str(task_dir / step.screenshot),
+                    "action_type": _step_action_type(step.actions),
+                    "n_actions": len(step.actions),
+                    "actions": step.actions,
+                    "x": x,
+                    "y": y,
+                    "thought": step.thought or "",
+                    "has_thought": bool((step.thought or "").strip()),
+                    "thought_len": len(step.thought or ""),
+                    "is_placeholder_thought": _is_placeholder(step.thought or ""),
+                    "bbox": bbox,
+                    "role": role,
+                    "name": name,
+                    "selector": (cap_step.selector if cap_step is not None else None),
+                    "tag": (cap_step.tag if cap_step is not None else None),
+                    "is_visible": (cap_step.is_visible if cap_step is not None else None),
+                    "is_enabled": (cap_step.is_enabled if cap_step is not None else None),
+                    "in_viewport": (cap_step.in_viewport if cap_step is not None else None),
+                    "url_before": (cap_step.url_before if cap_step is not None else None),
+                    "url_after": (cap_step.url_after if cap_step is not None else None),
+                    "caused_navigation": (cap_step.caused_navigation if cap_step is not None else None),
+                    "dom_changed": (cap_step.dom_changed if cap_step is not None else None),
+                    "console_errors": (cap_step.console_errors if cap_step is not None else None),
+                    "dt_ms": (cap_step.dt_ms if cap_step is not None else None),
+                    "wait_state": (cap_step.wait_state if cap_step is not None else None),
+                    "bbox_contains_click": _bbox_contains(bbox, x, y),
+                    "click_to_center_px": _click_to_center_px(bbox, x, y),
+                    "bbox_area_ratio": _bbox_area_ratio(bbox, viewport_w, viewport_h),
+                }
+            )
 
     traj_df = pd.DataFrame(traj_rows)
     step_df = pd.DataFrame(step_rows)
     return traj_df, step_df, warnings
-
-
-def split_by_path(traj_df: pd.DataFrame, step_df: pd.DataFrame,
-                  path_kind: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    if traj_df.empty:
-        return traj_df, step_df
-    t = traj_df[traj_df["path_kind"] == path_kind].reset_index(drop=True)
-    s = step_df[step_df["task_id"].isin(t["task_id"])].reset_index(drop=True)
-    return t, s
 
 
 def summarize_warnings(warnings: list[str], limit: int = 20) -> str:
@@ -306,11 +297,23 @@ def summarize_warnings(warnings: list[str], limit: int = 20) -> str:
 # absent DB or a pre-migration schema (returns an empty frame instead of raising).
 
 _SHALLOW_DIMS = [
-    "production_complexity", "ui_difficulty", "interaction_richness", "test_count",
-    "multi_page_flows", "runnability", "framework_clarity", "application_vs_library",
+    "production_complexity",
+    "ui_difficulty",
+    "interaction_richness",
+    "test_count",
+    "multi_page_flows",
+    "runnability",
+    "framework_clarity",
+    "application_vs_library",
 ]
-_DEEP_FIELDS = ["test_file_count", "test_case_count", "is_self_contained", "estimated_trajectories",
-                "test_framework", "framework_language"]
+_DEEP_FIELDS = [
+    "test_file_count",
+    "test_case_count",
+    "is_self_contained",
+    "estimated_trajectories",
+    "test_framework",
+    "framework_language",
+]
 
 
 def _json_get(blob, key):
@@ -361,7 +364,7 @@ def load_agent_calls(db_path: Path) -> pd.DataFrame:
     return _read_sql(db_path, "SELECT * FROM agent_calls")
 
 
-def load_iso_date_range(traj_df: pd.DataFrame) -> tuple[Optional[str], Optional[str]]:
+def load_iso_date_range(traj_df: pd.DataFrame) -> tuple[str | None, str | None]:
     if traj_df.empty or "recorded_date" not in traj_df.columns:
         return None, None
     dates = traj_df["recorded_date"].dropna()
@@ -369,5 +372,7 @@ def load_iso_date_range(traj_df: pd.DataFrame) -> tuple[Optional[str], Optional[
         return None, None
     lo = dates.min()
     hi = dates.max()
-    return (lo.isoformat() if isinstance(lo, datetime) else str(lo),
-            hi.isoformat() if isinstance(hi, datetime) else str(hi))
+    return (
+        lo.isoformat() if isinstance(lo, datetime) else str(lo),
+        hi.isoformat() if isinstance(hi, datetime) else str(hi),
+    )

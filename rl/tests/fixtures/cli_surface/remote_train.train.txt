@@ -1,0 +1,23 @@
+options:
+  -h, --help            show this help message and exit
+  --config CONFIG       Path to remote_train.yaml
+  --provider {mock,vastai}
+                        Compute provider
+  --gpu GPU             GPU name substring filter (e.g. A100)
+  --min-vram MIN_VRAM   Minimum GPU VRAM in GB
+  --disk DISK           Minimum/requested disk in GB (must hold model weights)
+  --max-price MAX_PRICE
+                        Max $/hr cap
+  --max-hours MAX_HOURS
+                        Max wall-clock hours (teardown watchdog)
+  --verbose             Debug logging
+  --resume-from RESUME_FROM
+                        Local trainer checkpoint dir to continue from instead
+                        of step 0.
+  --trajectories-dir TRAJECTORIES_DIR
+                        Corpus directory to ship (default: ./trajectories).
+  --keep-on-signal      If this supervisor is killed, leave the box running so
+                        the detached job finishes; recover with `remote_train
+                        cleanup`.
+  --push-hf PUSH_HF     HuggingFace repo to upload the adapter to.
+  --notify              Telegram ping on completion.

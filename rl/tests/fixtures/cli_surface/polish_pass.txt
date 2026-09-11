@@ -1,0 +1,12 @@
+Stage-7 thought polish over trajectory dirs the registry flow cannot reach
+(site_* lanes).
+
+positional arguments:
+  corpus
+
+options:
+  -h, --help         show this help message and exit
+  --workers WORKERS
+  --limit LIMIT
+  --all              Include untrainable dirs too
+  --dry-run          List the targets and exit

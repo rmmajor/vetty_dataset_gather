@@ -19,6 +19,7 @@ consistent with the burner-only invariant.
 Run: python -m repo_pipeline.capture_logingated [--sites a,b] [--provisioning open_signup,email_verify]
      [--max-tasks-per-site N] [--max-sites N] [--parallel K]
 """
+
 import argparse
 import asyncio
 import json
@@ -32,8 +33,7 @@ from repo_pipeline.public_capture import _verify_and_finalize, resolve_named_sit
 from repo_pipeline.registry import RepoRegistry
 from repo_pipeline.sandbox import DockerSandbox, install_sigterm_handler, safe_parallel_sandboxes
 from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
-from repo_pipeline.stage6_generate import (_is_valid_trajectory, _safe_task_id, is_capture_exhausted,
-                                           is_capture_settled)
+from repo_pipeline.stage6_generate import _is_valid_trajectory, _safe_task_id, is_capture_exhausted, is_capture_settled
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +50,7 @@ async def _run(fn, *args):
     return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
 
 
-def load_sites(config_path: Path, allow: set[str],
-               only: list[str] | set[str] | None = None) -> list[dict]:
+def load_sites(config_path: Path, allow: set[str], only: list[str] | set[str] | None = None) -> list[dict]:
     if only:
         # Searched across every config, not just this lane's: the worklist is split over several.
         return resolve_named_sites(list(only), config_path)
@@ -71,8 +70,9 @@ def _needs_verification(traj_dir: Path) -> bool:
         return False
 
 
-async def _finalize_tasks(tasks: list, site: dict, site_dir: Path, states: dict,
-                          secrets: dict | None, summary: dict, registry):
+async def _finalize_tasks(
+    tasks: list, site: dict, site_dir: Path, states: dict, secrets: dict | None, summary: dict, registry
+):
     """Verify + finalize trajectories host-side. Used for tasks captured this run AND for orphans
     from a prior interrupted run — `states.get(id)` is None for orphans (verify_trajectory falls
     back to capture_meta), and `secrets` is None when there is no burner password to assert the
@@ -88,8 +88,10 @@ async def _finalize_tasks(tasks: list, site: dict, site_dir: Path, states: dict,
             logger.error(f"[{site['name']}] SECRET LEAK in '{task['id']}': password appears literally")
         if verdict.get("final_success"):
             summary["verified"] += 1
-        logger.info(f"[{site['name']}] task '{task['id']}': verified={verdict.get('final_success')} "
-                    f"({verdict.get('efficiency')}) leaked={leaked}")
+        logger.info(
+            f"[{site['name']}] task '{task['id']}': verified={verdict.get('final_success')} "
+            f"({verdict.get('efficiency')}) leaked={leaked}"
+        )
 
 
 async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | None) -> dict:
@@ -101,19 +103,27 @@ async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | No
     # Captured on a prior run but never verified (interrupt / usage-limit abort). Resume would skip
     # these as "valid" so they would never become trainable — finalize them here. Verification is
     # host-side, so an orphan-only resume needs no sandbox or mailbox.
-    orphaned = [t for t in tasks if t not in pending
-                and _needs_verification(site_dir / f"task_{_safe_task_id(t['id'])}")]
-    summary = {"site": site["name"], "registered": False, "captured": 0, "verified": 0,
-               "skipped": len(tasks) - len(pending)}
+    orphaned = [
+        t for t in tasks if t not in pending and _needs_verification(site_dir / f"task_{_safe_task_id(t['id'])}")
+    ]
+    summary = {
+        "site": site["name"],
+        "registered": False,
+        "captured": 0,
+        "verified": 0,
+        "skipped": len(tasks) - len(pending),
+    }
     if not pending and not orphaned:
-        exhausted = [t for t in tasks
-                     if is_capture_exhausted(site_dir / f"task_{_safe_task_id(t['id'])}")]
-        logger.info(f"[{site['name']}] all {len(tasks)} task(s) settled "
-                    f"({len(tasks) - len(exhausted)} recorded, {len(exhausted)} out of retries)")
+        exhausted = [t for t in tasks if is_capture_exhausted(site_dir / f"task_{_safe_task_id(t['id'])}")]
+        logger.info(
+            f"[{site['name']}] all {len(tasks)} task(s) settled "
+            f"({len(tasks) - len(exhausted)} recorded, {len(exhausted)} out of retries)"
+        )
         return summary
     if not pending:
-        logger.info(f"[{site['name']}] finalizing {len(orphaned)} orphaned trajectory(ies) from a "
-                    f"prior interrupted run")
+        logger.info(
+            f"[{site['name']}] finalizing {len(orphaned)} orphaned trajectory(ies) from a prior interrupted run"
+        )
         await _finalize_tasks(orphaned, site, site_dir, {}, None, summary, registry)
         return summary
 
@@ -121,8 +131,10 @@ async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | No
     unvetted_refs = app_secrets.unvetted_session_refs(site["name"]) if provisioned is None else []
     if unvetted_refs:
         # Unknown provenance (possibly a real account): never reuse it, never overwrite it either.
-        logger.error(f"[{site['name']}] FAIL-CLOSED: storage_state {unvetted_refs} exists but no "
-                     f"registered burner — delete it to re-provision this site; skipping")
+        logger.error(
+            f"[{site['name']}] FAIL-CLOSED: storage_state {unvetted_refs} exists but no "
+            f"registered burner — delete it to re-provision this site; skipping"
+        )
         summary["fail_closed"] = True
         return summary
 
@@ -131,8 +143,10 @@ async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | No
         mailbox, captured_session = None, provisioned["storage_state"]
         secrets, ref = provisioned["secrets"], provisioned["ref"]
         summary["resumed"] = True
-        logger.info(f"[{site['name']}] reusing persisted burner session '{ref}' "
-                    f"({provisioned['provisioning_mode']}) — {len(pending)} task(s) run signed in")
+        logger.info(
+            f"[{site['name']}] reusing persisted burner session '{ref}' "
+            f"({provisioned['provisioning_mode']}) — {len(pending)} task(s) run signed in"
+        )
     else:
         mailbox, captured_session = mailtm.create_mailbox(), None
         # One masked secret reused for the site account and the mail.tm inbox login.
@@ -157,19 +171,35 @@ async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | No
             try:
                 if is_registration:
                     # First task also registers/signs in (discovered mode); give it the signup budget.
-                    reg_task = {**task, "expected_actions": int(task.get("expected_actions", 10))
-                                + REGISTRATION_ACTION_BUDGET}
+                    reg_task = {
+                        **task,
+                        "expected_actions": int(task.get("expected_actions", 10)) + REGISTRATION_ACTION_BUDGET,
+                    }
                     state = await run_teacher_task(
-                        client, reg_task, site["start_url"], registry=registry, full_name=f"site:{site['name']}",
-                        autonomy="autonomous", auth_mode="discovered", secrets=secrets,
-                        webmail_url=mailtm.WEBMAIL_URL, webmail_preauthed=False, capture_session=True,
+                        client,
+                        reg_task,
+                        site["start_url"],
+                        registry=registry,
+                        full_name=f"site:{site['name']}",
+                        autonomy="autonomous",
+                        auth_mode="discovered",
+                        secrets=secrets,
+                        webmail_url=mailtm.WEBMAIL_URL,
+                        webmail_preauthed=False,
+                        capture_session=True,
                     )
                     attempted_registration = True
                 else:
                     # Start signed in; the masked credentials ride along in case the session expired.
                     state = await run_teacher_task(
-                        client, task, site["start_url"], registry=registry, full_name=f"site:{site['name']}",
-                        autonomy="autonomous", auth_mode="pre_session", secrets=secrets,
+                        client,
+                        task,
+                        site["start_url"],
+                        registry=registry,
+                        full_name=f"site:{site['name']}",
+                        autonomy="autonomous",
+                        auth_mode="pre_session",
+                        secrets=secrets,
                         auth_config={"auth_mode": "pre_session", "storage_state": captured_session},
                     )
             except UsageLimitReached:
@@ -184,8 +214,9 @@ async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | No
             summary["captured"] += 1
             site_dir.mkdir(parents=True, exist_ok=True)
             await _run(sandbox.copy_out, RESULTS_DIR, str(site_dir))
-            logger.info(f"[{site['name']}] task '{task['id']}': {state['actions']} actions, "
-                        f"outcome={state['agent_outcome']}")
+            logger.info(
+                f"[{site['name']}] task '{task['id']}': {state['actions']} actions, outcome={state['agent_outcome']}"
+            )
             if is_registration:
                 # Registration succeeds when it leaves a REUSABLE AUTHENTICATED SESSION, judged from
                 # the final screen — not when the bundled task's goal completed. A slow email-verify
@@ -195,29 +226,41 @@ async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | No
                 session = state.get("storage_state")
                 traj_dir = site_dir / f"task_{_safe_task_id(task['id'])}"
                 authed = bool(session) and await session_authenticated(
-                    traj_dir, site["name"], state.get("agent_summary", ""),
-                    registry=registry, full_name=f"site:{site['name']}",
+                    traj_dir,
+                    site["name"],
+                    state.get("agent_summary", ""),
+                    registry=registry,
+                    full_name=f"site:{site['name']}",
                 )
-                logger.info(f"[{site['name']}] registration: storage_state="
-                            f"{'present' if session else 'EMPTY'}"
-                            f"({len(json.dumps(session)) if session else 0}B), authenticated={authed}")
+                logger.info(
+                    f"[{site['name']}] registration: storage_state="
+                    f"{'present' if session else 'EMPTY'}"
+                    f"({len(json.dumps(session)) if session else 0}B), authenticated={authed}"
+                )
                 if authed:
                     captured_session = session
                     summary["registered"] = True
                     try:
                         app_secrets.save_provisioned_session(
-                            ref, mailbox["address"], mailbox["password"], session,
+                            ref,
+                            mailbox["address"],
+                            mailbox["password"],
+                            session,
                             provisioning_mode="generated",
                         )
-                        logger.info(f"[{site['name']}] persisted burner + session as '{ref}' — future "
-                                    f"runs of this site start signed in, no re-registration")
+                        logger.info(
+                            f"[{site['name']}] persisted burner + session as '{ref}' — future "
+                            f"runs of this site start signed in, no re-registration"
+                        )
                     except (ValueError, OSError) as e:
                         # Best-effort: an unpersistable session must not cost this run its remaining tasks.
                         logger.error(f"[{site['name']}] could not persist the burner session '{ref}': {e}")
                 else:
-                    logger.warning(f"[{site['name']}] no authenticated session after the first task — "
-                                   f"site is gated beyond autonomous reach; skipping the remaining "
-                                   f"{len(pending) - 1} task(s) (needs human provisioning)")
+                    logger.warning(
+                        f"[{site['name']}] no authenticated session after the first task — "
+                        f"site is gated beyond autonomous reach; skipping the remaining "
+                        f"{len(pending) - 1} task(s) (needs human provisioning)"
+                    )
                     break
     finally:
         await _run(sandbox.stop)
@@ -229,40 +272,54 @@ async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | No
 
     # Persist the registration outcome so genuinely-blocked sites become a human-provisioning queue.
     if summary["registered"]:
-        provisioning_status.mark(site["name"], provisioning_status.REGISTERED,
-                                 provisioning=site.get("provisioning", ""))
+        provisioning_status.mark(
+            site["name"], provisioning_status.REGISTERED, provisioning=site.get("provisioning", "")
+        )
     elif attempted_registration:
         # A flaky failure (e.g. a verification email that did not arrive this run) must NOT downgrade
         # a site that has ALREADY proved autonomously doable — registered on a prior run, or having
         # produced a trainable trajectory this run. Those stay in the autonomous lane (retried next
         # run); only sites with no evidence of autonomous success go to the human-provisioning queue
         # (a human hits the same flaky email, so a transient failure is the wrong reason to route there).
-        already_doable = (provisioning_status.get_status(site["name"]) == provisioning_status.REGISTERED
-                          or summary["verified"] > 0)
+        already_doable = (
+            provisioning_status.get_status(site["name"]) == provisioning_status.REGISTERED or summary["verified"] > 0
+        )
         if already_doable:
-            logger.info(f"[{site['name']}] registration failed this run but the site has prior "
-                        f"autonomous success — keeping it in the autonomous lane (not needs_human)")
+            logger.info(
+                f"[{site['name']}] registration failed this run but the site has prior "
+                f"autonomous success — keeping it in the autonomous lane (not needs_human)"
+            )
         else:
-            provisioning_status.mark(site["name"], provisioning_status.NEEDS_HUMAN,
-                                     reason="autonomous registration could not establish a session "
-                                            "(captcha / phone / disposable-email block likely)",
-                                     provisioning=site.get("provisioning", ""))
+            provisioning_status.mark(
+                site["name"],
+                provisioning_status.NEEDS_HUMAN,
+                reason="autonomous registration could not establish a session "
+                "(captcha / phone / disposable-email block likely)",
+                provisioning=site.get("provisioning", ""),
+            )
             summary["needs_human"] = True
     return summary
 
 
 async def main():
     parser = argparse.ArgumentParser(description="Autonomous login-gated capture (self-register burner)")
-    parser.add_argument("--sites", type=str, default=None, help="Comma-separated site names (overrides --provisioning filter)")
-    parser.add_argument("--provisioning", type=str, default=",".join(sorted(AUTONOMOUS_PROVISIONING)),
-                        help="Comma-separated provisioning classes to attempt")
+    parser.add_argument(
+        "--sites", type=str, default=None, help="Comma-separated site names (overrides --provisioning filter)"
+    )
+    parser.add_argument(
+        "--provisioning",
+        type=str,
+        default=",".join(sorted(AUTONOMOUS_PROVISIONING)),
+        help="Comma-separated provisioning classes to attempt",
+    )
     parser.add_argument("--max-tasks-per-site", type=int, default=None)
     parser.add_argument("--max-sites", type=int, default=None)
     parser.add_argument("--parallel", type=int, default=2)
     parser.add_argument("--traj-dir", type=str, default="trajectories/")
     parser.add_argument("--config", type=str, default=None)
-    parser.add_argument("--retry-blocked", action="store_true",
-                        help="Re-attempt sites already marked needs_human (default: skip them)")
+    parser.add_argument(
+        "--retry-blocked", action="store_true", help="Re-attempt sites already marked needs_human (default: skip them)"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -281,10 +338,12 @@ async def main():
         before = len(sites)
         sites = [s for s in sites if s["name"] not in blocked]
         if before - len(sites):
-            logger.info(f"Skipping {before - len(sites)} site(s) already marked needs_human "
-                        f"(human-provisioning queue; --retry-blocked to force a re-attempt)")
+            logger.info(
+                f"Skipping {before - len(sites)} site(s) already marked needs_human "
+                f"(human-provisioning queue; --retry-blocked to force a re-attempt)"
+            )
     if args.max_sites:
-        sites = sites[:args.max_sites]
+        sites = sites[: args.max_sites]
     logger.info(f"Login-gated autonomous capture over {len(sites)} site(s): {', '.join(s['name'] for s in sites)}")
 
     registry = RepoRegistry("pipeline_data/registry.db")
@@ -301,8 +360,10 @@ async def main():
                 r = await capture_site(site, Path(args.traj_dir), registry, args.max_tasks_per_site)
                 results.append(r)
                 session = "reused" if r.get("resumed") else "registered" if r["registered"] else "none"
-                logger.info(f"[{r['site']}] done ({len(results)}/{len(sites)}): session={session}, "
-                            f"{r['captured']} captured, {r['verified']} verified, {r['skipped']} skipped")
+                logger.info(
+                    f"[{r['site']}] done ({len(results)}/{len(sites)}): session={session}, "
+                    f"{r['captured']} captured, {r['verified']} verified, {r['skipped']} skipped"
+                )
             except UsageLimitReached:
                 logger.warning(f"[{site['name']}] usage limit reached — captures so far are kept")
             except Exception as e:
@@ -315,9 +376,11 @@ async def main():
 
     registered = sum(1 for r in results if r.get("registered"))
     reused = sum(1 for r in results if r.get("resumed"))
-    logger.info(f"DONE: {len(results)}/{len(sites)} sites attempted, {registered} newly registered, "
-                f"{reused} run on a persisted session, {sum(r['captured'] for r in results)} captured, "
-                f"{sum(r['verified'] for r in results)} verified")
+    logger.info(
+        f"DONE: {len(results)}/{len(sites)} sites attempted, {registered} newly registered, "
+        f"{reused} run on a persisted session, {sum(r['captured'] for r in results)} captured, "
+        f"{sum(r['verified'] for r in results)} verified"
+    )
 
 
 if __name__ == "__main__":

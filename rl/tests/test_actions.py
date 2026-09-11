@@ -50,7 +50,9 @@ def test_multiline_type_text_round_trips():
 
 def test_drag_keeps_endpoints_only():
     action = {"type": "drag", "path": [{"x": 1, "y": 1}, {"x": 5, "y": 5}, {"x": 9, "y": 9}]}
-    assert decode_step(encode_step("", [action])).actions == [{"type": "drag", "path": [{"x": 1, "y": 1}, {"x": 9, "y": 9}]}]
+    assert decode_step(encode_step("", [action])).actions == [
+        {"type": "drag", "path": [{"x": 1, "y": 1}, {"x": 9, "y": 9}]}
+    ]
 
 
 def test_missing_think_is_allowed():
@@ -94,7 +96,7 @@ def test_trailing_prose_after_actions_is_stray():
 
 
 def test_prefilled_think_keeps_the_thought():
-    decoded = decode_step('I will click the field.\n</think>\n\naction: click(<ref>(10, 20)</ref>, button=left)')
+    decoded = decode_step("I will click the field.\n</think>\n\naction: click(<ref>(10, 20)</ref>, button=left)")
     assert decoded.thought == "I will click the field."
     assert decoded.actions == [{"type": "click", "x": 10, "y": 20, "button": "left"}]
     assert not decoded.errors and decoded.ok
