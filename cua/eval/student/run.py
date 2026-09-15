@@ -69,7 +69,7 @@ async def judge_episode(record: EpisodeRecord, cfg: EvalConfig):
         record.judge_deferred = True
         record.judge_reasoning = VERIFIER_UNAVAILABLE_REASON
         return
-    # `final_success` carries the capture gate's degenerate-loop override; the raw `success` key would score a loop as a win.
+    # `final_success` carries the capture gate's loop override, which the raw `success` key would score as a win.
     record.judged_success = bool(verdict.get("claimed_success", verdict.get("success")))
     record.verified_success = bool(verdict.get("final_success", verdict.get("success")))
     record.efficiency = verdict.get("efficiency") or ""
@@ -122,7 +122,7 @@ async def _judge_fresh_episode(record: EpisodeRecord, cfg: EvalConfig, episode_d
         if cfg.judge and record.outcome not in UNSCORED_OUTCOMES:
             await judge_episode(record, cfg)
         elif not cfg.judge and record.outcome not in UNSCORED_OUTCOMES:
-            # --no-judge OWES a verdict: without this the episode reads as a judged failure and a resume skips it forever.
+            # --no-judge OWES a verdict: without it the episode reads as a judged failure and a resume skips it forever.
             record.judge_deferred = True
     except UsageLimitReached:
         # The episode ran and only the verdict is owed, so a resume must re-judge from disk.

@@ -1,18 +1,4 @@
-"""Public-site teacher capture — the real-web diversity lane.
-
-Funnel-sourced trajectories all live on localhost apps; rich bootable repos are ~2% of GitHub.
-This lane points the SAME teacher/driver/verifier machinery at a curated registry of stable,
-login-free, bot-tolerant public sites (`public_sites.json`) with hand-authored hard tasks —
-cookie banners, dense layouts, real search ranking, map canvases — at the same ~$1/trajectory.
-
-Tasks are non-destructive by curation policy (browse/search/navigate/configure-view only).
-Output lands as `trajectories/site_<name>/task_*/`, fully inside the existing contract:
-verify -> polish inline (these dirs have no registry row, so stage 7 never visits them),
-then `make convert` / `make audit-corpus` ingest them like any agent capture.
-
-Run: python -m cua.pipeline.lanes.public [--sites wikipedia,mdn] [--max-tasks N]
-     (or `make capture-public`)
-"""
+"""Public-site teacher capture: the same teacher, driver and verifier pointed at a curated registry of real sites."""
 
 import argparse
 import asyncio
@@ -55,7 +41,7 @@ async def propose_for_site(
     client, sandbox, site: dict, avoid: list[str], registry, auth_config: dict | None = None
 ) -> dict | None:
     """Ground the proposer in the LIVE public site, mirroring stage 6's context probe."""
-    # The probe carries the site's session so a login-gated site is proposed from its signed-in state, not its login wall.
+    # The probe carries the site's session, so a login-gated site is proposed from its signed-in state.
     probe = await run_blocking(lambda: client.session("context_probe", site["start_url"], auth_config=auth_config))
     snapshot = probe.get("snapshot", "")
     screenshot = await run_blocking(client.screenshot_b64)
@@ -85,7 +71,7 @@ async def propose_for_site(
 
 
 def _resolve_site_auth(site: dict):
-    """A site's login posture (see sites/schema.md) as (autonomy, auth_mode, secrets, auth_config), or None to skip it."""
+    """A site's login posture as (autonomy, auth_mode, secrets, auth_config), or None to skip the site."""
     autonomy = site.get("autonomy", "autonomous")
     auth_mode = site.get("auth_mode", "none")
     if autonomy == "autonomous" and auth_mode == "none":
@@ -157,7 +143,7 @@ async def capture_site(
     autonomy, auth_mode, site_secrets, site_auth_config = resolved
 
     persisted = load_proposed_tasks(site_dir)
-    # With a persisted proposal (or proposing off) the full task set is known without the driver, so a recorded site never starts a sandbox.
+    # With a persisted proposal the task set is known without the driver, so a recorded site starts no sandbox.
     if persisted is not None or not propose:
         full = _merge_tasks(curated, persisted or [], max_tasks)
         if _all_recorded(site, site_dir, full):
@@ -237,14 +223,14 @@ async def main():
     try:
         sites = load_sites(config, only=only)
     except ValueError as e:
-        raise SystemExit(f"--sites: {e}")
+        raise SystemExit(f"--sites: {e}") from e
     logger.info(f"Public capture over {len(sites)} sites: {', '.join(s['name'] for s in sites)}")
     if args.no_propose:
         _warn_when_nothing_to_capture(sites, config)
 
     registry = RepoRegistry("pipeline_data/registry.db")
     results = []
-    # Never more sandboxes than the Docker VM's RAM can hold: an over-subscribed VM thrashes and strangles every one of them.
+    # Never more sandboxes than the Docker VM's RAM holds: an over-subscribed VM thrashes and strangles all of them.
     parallel = safe_parallel_sandboxes(int(args.parallel))
     semaphore = asyncio.Semaphore(parallel)
     logger.info(f"Running {parallel} site(s) concurrently (requested {args.parallel})")

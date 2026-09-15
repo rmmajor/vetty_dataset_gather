@@ -43,7 +43,7 @@ password).
 
 **Goals**
 - Produce login-gated trajectories in the existing trajectory format, consumable by
-  `cua/sft/legacy_train_qwen.py convert` with no special-casing.
+  `python -m cua.sft convert` with no special-casing.
 - Teach two behaviors under **one agent**: a *guarded* assistant (pause/confirm, handoff for
   secrets, never commit irreversible) and an *autonomous* QA agent (given creds in a test env,
   do everything end-to-end including login and commit).
@@ -187,12 +187,12 @@ Production splits here, so we support both behind `auth_mode`:
 | Component | File | Change |
 |---|---|---|
 | Action contract | `cua/pipeline/schemas.py` | `TrajectoryMetadata` gains `autonomy`, `auth_mode`, `risk_category`, `preconditions`; `TrajectoryStep` gains optional `event`. Additive/optional. |
-| Teacher tools | `cua/pipeline/agent_capture.py` (`build_driver_mcp_server`) | Add `handoff` and `confirm` tools (each requires `thought`). On `confirm`, call the watchdog, record the verdict event, branch proceed/terminate. |
+| Teacher tools | `cua/pipeline/teacher/tools.py` (`build_driver_mcp_server`) | Add `handoff` and `confirm` tools (each requires `thought`). On `confirm`, call the watchdog, record the verdict event, branch proceed/terminate. |
 | Watchdog | new `cua/pipeline/safety_watchdog.py` + `cua/pipeline/llm_config.py` | `ApprovalPolicy` interface; LLM impl (`MODEL_FOR_SAFETY_JUDGE`); static-rule + human impls as drop-ins. |
 | Driver | `cua/pipeline/driver_session.py`, `cua/pipeline/instrumentation/browser_driver.js` | (a) `<secret:NAME>` → real-value substitution at execution (placeholder stays recorded); (b) load `storage_state` for `pre_session`. |
 | Proposer | `cua/pipeline/task_proposer.py` | Accept `autonomy`/`auth_mode`; propose policy-aware tasks + success criteria (guarded: "reach the confirm/handoff point"). |
-| Verifier | `cua/pipeline/agent_capture.py` (`verify_trajectory`) | Policy-aware success: guarded = correctly paused/handed-off at the right step; autonomous = task actually completed. |
-| Converter | `cua/sft/legacy_train_qwen.py` (`format_action_for_training`, history builder, `corpus_audit`) | Render `handoff`/`confirm`; thread the approval `event` into `action_history`; mark confirm-terminal trajectories trainable (not "stuck"); secret-leak scan. |
+| Verifier | `cua/pipeline/teacher/verify.py` (`verify_trajectory`) | Policy-aware success: guarded = correctly paused/handed-off at the right step; autonomous = task actually completed. |
+| Converter | `cua/trajectory/actions.py` + `cua/prompt/format.py` + `cua/sft/convert.py` (`format_action_for_training`, the history builder, the shared trainability gate) | Render `handoff`/`confirm`; thread the approval `event` into `action_history`; mark confirm-terminal trajectories trainable (not "stuck"); secret-leak scan. |
 | Credentials | new gitignored secret store | Per-site burner creds + `storage_state` files. Never committed. |
 
 ## 6. The two lanes (data flow)
@@ -201,7 +201,7 @@ Both lanes emit the **same trajectory format** and share the same teacher / driv
 converter. They differ only in environment and the watchdog's risk bar — the intended
 generalization.
 
-### 6.1 Guarded / live lane (`cua/pipeline/public_capture.py`)
+### 6.1 Guarded / live lane (`cua/pipeline/lanes/public.py`)
 
 Pick an auth-tagged site → `auth_mode` decides start state (`pre_session`: inject saved session,
 agent inherits login; `handoff_login`: start fresh, agent emits `handoff(login)`, session
@@ -258,7 +258,7 @@ behavior.**
    (rendering + approval-event history + secret scan) + policy-aware verifier. Validated by an
    extended **`make test-driver`** scripted (no-LLM) run that asserts `handoff`, `confirm`,
    masked-secret substitution, and the approval event all satisfy the trajectory contract.
-2. **Guarded / live lane** — `public_capture.py` auth_mode + per-site credential/session config
+2. **Guarded / live lane** — `cua/pipeline/lanes/public.py` auth_mode + per-site credential/session config
    + confirm-terminal on irreversible. Validated with a small `--limit` E2E on a safe site.
 3. **Autonomous / QA lane** — sandbox agent-capture + credential injection + full transactional.
    Validated with a small `--limit` E2E on a test-env app.

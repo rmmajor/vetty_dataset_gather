@@ -1,17 +1,4 @@
-"""Centralized model selection for every Claude SDK call site in the pipeline.
-
-All call sites import a NAMED purpose (`MODEL_FOR_REASONING`, `MODEL_FOR_GROUNDED_GENERATION`,
-`MODEL_FOR_CLASSIFICATION`) rather than a model string. Swapping the model for one purpose
-(or all of them) is a one-line edit here; the call sites never change.
-
-The purposes capture intent, not capability — if a future re-split sends classification
-to a cheaper model again, the constant changes here and every classifier follows. No grep
-across stage files, no hardcoded model names anywhere else in `cua/pipeline/`.
-
-Model IDs come from `LATEST_MODEL_BY_CLASS`, one entry per capability class. When a new
-generation ships (e.g. a future Sonnet), bump the class entry and every purpose on that
-class follows.
-"""
+"""Centralized model selection: every call site imports a named PURPOSE, never a model string."""
 
 LATEST_MODEL_BY_CLASS = {
     "opus": "claude-opus-4-8",

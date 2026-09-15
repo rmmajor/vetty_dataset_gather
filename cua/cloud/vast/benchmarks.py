@@ -1,4 +1,4 @@
-"""Benchmark registry: one `Benchmark` entry declares the files, deps, command, results dir and summarizer of an eval that runs on a rented box."""
+"""Benchmark registry: one entry declares the files, deps, command, results dir and summarizer of one eval."""
 
 import json
 import logging
@@ -83,6 +83,8 @@ BENCHMARKS: dict = {
             "cua/prompt/effects.py",
             "cua/prompt/format.py",
             "cua/settings.py",
+            "cua/student/__init__.py",
+            "cua/student/client.py",
             "cua/trajectory/__init__.py",
             "cua/trajectory/actions.py",
             "pyproject.toml",
@@ -91,10 +93,10 @@ BENCHMARKS: dict = {
         requirements=".[eval]",
         results_dir="eval_results",
         command="python -m cua.eval.screenspot run --models-config {models_yaml} --output-dir {results_dir}",
-        # NOT the harness default (os-copilot/ScreenSpot-v2), which load_dataset() cannot read at all.
+        # The harness default, pinned here: os-copilot/ScreenSpot-v2 is raw JSON that load_dataset() cannot read.
         dataset="rootsautomation/ScreenSpot",
         split="test",
-        # Properties of THIS mirror, pinned because getting one wrong reports a confident wrong number (coord_space is per MODEL, so EvalJob writes it).
+        # Properties of THIS mirror, pinned because getting one wrong reports a confident wrong number, not a crash.
         extra_args=("--bbox-format", "xyxy", "--bbox-normalized"),
         summarize=_summarize_screenspot,
     ),
@@ -108,7 +110,7 @@ def build_benchmark(name: str) -> Benchmark:
 
 
 def materialize(benchmark: Benchmark, staging: Path) -> list:
-    """[(local_path, remote_relpath)] for every harness file, keeping each DECLARED relative path so an imported package lands as a package."""
+    """[(local_path, remote_relpath)] per harness file, keeping each DECLARED path so a package lands as a package."""
     staging.mkdir(parents=True, exist_ok=True)
     pairs = []
     for name in benchmark.files:

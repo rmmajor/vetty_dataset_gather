@@ -7,16 +7,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
-from cua.eval.student.blocks import detect_block
+from cua.eval.blocks import detect_block
 from cua.pipeline.driver_session import DriverError
 from cua.pipeline.instrumentation import RESULTS_DIR
 from cua.prompt.format import history_entries_for_step
 from cua.rl import checks
 from cua.rl.actions import decode_step
-from cua.rl.executor import control_index, to_sequence_payload, validate_actions
 from cua.rl.judge import cached_verdict, judge_success
 from cua.rl.observation import build_observation
 from cua.rl.rewards import compute_reward
+from cua.student.executor import control_index, to_sequence_payload, validate_actions
 from cua.trajectory.schema import safe_task_id
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ class Episode:
         return self._observe()
 
     def _observe(self):
-        # A navigation can still be committing right after an action, and the driver's title/screenshot reads then fail transiently.
+        # A navigation can still be committing after an action, when the driver's reads fail transiently.
         for attempt in range(3):
             try:
                 shot = self.client.observe()
@@ -221,7 +221,7 @@ class Episode:
             return None, None
         try:
             snapshot, page_text = self.client.snapshot(), self._page_text()
-            # A CAPTCHA/WAF wall is the environment refusing, not the policy failing, so the analysis drops these samples.
+            # A CAPTCHA or WAF wall is the environment refusing, not the policy failing, so analysis drops it.
             self.blocked = detect_block(snapshot.get("url", ""), f"{snapshot.get('snapshot', '')}\n{page_text}")
             if self.blocked:
                 logger.warning(
@@ -233,7 +233,8 @@ class Episode:
         except Exception as e:
             self.oracle_error = f"snapshot: {str(e)[:120]}"
             logger.error(
-                f"{self.episode_id}: oracle snapshot failed — scoring this episode as a failure is NOT a measurement: {e}"
+                f"{self.episode_id}: oracle snapshot failed — scoring this episode as a failure is NOT "
+                f"a measurement: {e}"
             )
             return (
                 {"passed": False, "results": {"error": str(e)[:200]}} if spec else None,

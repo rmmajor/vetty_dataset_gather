@@ -44,8 +44,7 @@ STAGE_TO_REJECTED_STATUS = {
     4: RepoStatus.REJECTED_ANALYZE,
     5: RepoStatus.REJECTED_TRIAL,
     6: RepoStatus.REJECTED_GENERATE,
-    # Stage 7 (think) never rejects: a captured repo with good trajectories stays `captured`
-    # until its thoughts are complete (resumable across runs), it is never thrown away.
+    # Stage 7 never rejects: a captured repo stays `captured` until its thoughts are complete.
 }
 
 STAGE_TO_INPUT_STATUS = {
@@ -59,10 +58,7 @@ STAGE_TO_INPUT_STATUS = {
 
 
 class FailureCategory(str, Enum):
-    """Why a repo failed a stage. Orthogonal to RepoStatus (which encodes the stage): the
-    status says where it died, the category says *why* — a quality decision vs an infra/flaky
-    failure. Stored in repos.failure_category alongside the free-text filter_reason so the
-    dashboard can split genuine rejections from recoverable infrastructure noise."""
+    """Why a repo failed a stage, orthogonal to the RepoStatus that says where it died."""
 
     # Quality decisions — the funnel did its job; terminal.
     QUALITY_GATE = "quality_gate"  # score / gate below threshold
@@ -88,8 +84,6 @@ class FailureCategory(str, Enum):
     BUDGET_EXCEEDED = "budget_exceeded"
 
 
-# Categories a transient retry can plausibly recover from. Tunable via env so the operator can
-# re-classify a category (e.g. move NO_CAPTURE in/out) without code edits.
 RETRYABLE_CATEGORIES = {
     FailureCategory.CLONE_FAILED,
     FailureCategory.SDK_ERROR,
@@ -100,8 +94,7 @@ RETRYABLE_CATEGORIES = {
     FailureCategory.PARSE_FAILED,
 }
 
-# Infra categories that are NOT auto-retried but ARE recoverable by re-queue (they need a config
-# change first, e.g. a higher max_turns). Used by --requeue-infra.
+# Not auto-retried, but recoverable by --requeue-infra once the config that caused them changes.
 NON_QUALITY_CATEGORIES = RETRYABLE_CATEGORIES | {
     FailureCategory.MAX_TURNS,
     FailureCategory.BUDGET_EXCEEDED,
@@ -112,8 +105,7 @@ CAPTURE_MODE = PIPELINE.capture_mode
 
 
 class PipelineFailure(Exception):
-    """Base for stage failures. ``category`` is a FailureCategory, ``reason`` the human detail,
-    and ``extra`` any registry fields to persist with the outcome (e.g. the scores behind it)."""
+    """Base for stage failures: a category, a human reason, and extra registry fields to persist."""
 
     def __init__(self, category: "FailureCategory", reason: str, **extra):
         super().__init__(reason)
@@ -130,8 +122,7 @@ class RetryableFailure(PipelineFailure):
     """An infrastructure / flaky failure — retried up to MAX_RETRIES before becoming terminal."""
 
 
-# Per-stage cutoff: rejections recorded before this instant were produced by superseded code and
-# should be re-queued (--requeue-stale). Extend when a stage's behavior changes again.
+# Rejections recorded before a stage's cutoff came from superseded code, so --requeue-stale re-queues them.
 STAGE_BEHAVIOR_CUTOFFS = {
     5: "2026-05-27T14:29:03+03:00",  # commit 31c698d replaced agent-driven stage 5 with code-driven
 }
@@ -177,10 +168,7 @@ class DeepAnalysis(BaseModel):
     deps_install_success: bool = False
     estimated_trajectories: int = 0
     notes: str = ""
-    # Stage-4 fit verdict. The holistic "is this worth capturing at all?" judgment, set by the
-    # deep-analysis prompt (agent mode) or by judge_fit over a stored analysis. Defaults keep
-    # analyses recorded before the verdict existed parsing cleanly — good_fit=True means "the
-    # holistic layer did not veto it" (the deterministic fit_veto rules still apply on top).
+    # good_fit=True means the holistic layer did not veto, and keeps analyses recorded before the verdict parsing.
     good_fit: bool = True
     veto_reason: str = ""
 
@@ -195,9 +183,7 @@ class TrialResults(BaseModel):
     total_actions_captured: int = 0
     screenshots_captured: int = 0
     notes: str = ""
-    # Boot-gate UI sophistication profile (agent mode): counts of draggables, sliders,
-    # canvases, rich-text editors etc. from the driver's /affordances endpoint. Drives the
-    # task proposer's drag/complex-input quotas and the dashboard's sophistication view.
+    # Counts from the driver's /affordances, which drive the proposer's drag and complex-input quotas.
     affordances: dict = Field(default_factory=dict)
 
     @property

@@ -1,4 +1,4 @@
-"""Outcome-checked thought relabel: every thought opens with what the previous action did, judged from consecutive screens."""
+"""Outcome-checked thought relabel: every thought opens with what the previous action did, judged from consecutive screens."""  # noqa: E501
 
 import asyncio
 import base64
@@ -168,7 +168,7 @@ async def llm_call(blocks: list[dict], full_name: str) -> str:
 
     return await run_agent(
         prompt_stream(),
-        # tools=[] removes every built-in tool: a tool call would consume the single turn and the SDK raises error_max_turns.
+        # tools=[] removes every built-in tool: a tool call would consume the one turn and raise error_max_turns.
         ClaudeAgentOptions(
             model=MODEL_FOR_GROUNDED_GENERATION,
             max_turns=1,
@@ -204,7 +204,7 @@ def write_relabel(
 
 
 async def relabel_trajectory(traj_dir: Path, call_llm=llm_call, apply: bool = False) -> dict:
-    """Rewrite one trajectory's thoughts window by window; returns status, window counts and (step, old, new) changes."""
+    """Rewrite one trajectory's thoughts window by window, as status, window counts and (step, old, new) changes."""
     trajectory_path = traj_dir / TRAJECTORY_FILE
     original_bytes = trajectory_path.read_bytes()
     trajectory = json.loads(original_bytes)
@@ -308,7 +308,7 @@ def render_report(corpus_dir: Path, rows: list, apply: bool) -> str:
 
 
 class OutcomeRelabelPass(CorpusPass):
-    """Windowed vision relabel of every thought; `writes` is what --apply flips, so a dry run still generates and prints old -> new."""
+    """Windowed vision relabel of every thought; `writes` is what --apply flips, so a dry run still previews."""
 
     name = "outcome_relabel"
 
@@ -371,7 +371,8 @@ def print_estimate(estimate: dict) -> None:
         f"({PIPELINE.outcome_window_steps} steps each), {estimate['images']} images"
     )
     print(
-        f"tokens: ~{estimate['input_tokens']:,} in ({estimate['image_tokens']:,} image @ {PIPELINE.outcome_image_tokens}/image) "
+        f"tokens: ~{estimate['input_tokens']:,} in ({estimate['image_tokens']:,} image "
+        f"@ {PIPELINE.outcome_image_tokens}/image) "
         f"+ ~{estimate['output_tokens']:,} out"
     )
     print(

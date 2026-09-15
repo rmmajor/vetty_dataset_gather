@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -92,7 +93,7 @@ Score this repository on each dimension from 1-5:
 
 Respond with ONLY a JSON object (no markdown, no explanation):
 {{"production_complexity": N, "ui_difficulty": N, "interaction_richness": N, "test_count": N, "multi_page_flows": N, "runnability": N, "framework_clarity": N, "application_vs_library": N}}
-"""
+"""  # noqa: E501
 
 
 def _run_gh(args: list[str], timeout: int = 30) -> str:
@@ -113,8 +114,6 @@ def _fetch_file_content(repo_name: str, file_path: str) -> str:
     if not raw:
         return "(not available)"
     try:
-        import base64
-
         return base64.b64decode(raw).decode("utf-8", errors="replace")
     except Exception:
         return raw[:2000]
@@ -167,7 +166,10 @@ async def fetch_repo_context_via_agent(repo: dict) -> dict:
     if not sample_tests:
         sample_tests = "(no test samples available)"
 
-    raw_combined = f"FILE_TREE:\n{file_tree}\n\nDEPS:\n{deps_content}\n\nTEST_LISTING:\n{test_listing}\n\nSAMPLE_TESTS:\n{sample_tests}"
+    raw_combined = (
+        f"FILE_TREE:\n{file_tree}\n\nDEPS:\n{deps_content}\n\n"
+        f"TEST_LISTING:\n{test_listing}\n\nSAMPLE_TESTS:\n{sample_tests}"
+    )
     logger.info(f"Fetched context for {repo_name}: {len(raw_combined)} chars, {len(test_files)} test files found")
 
     return {
@@ -228,12 +230,11 @@ async def score_single_repo(registry: RepoRegistry, repo: dict, context: dict) -
         return ShallowScores(**scores_dict)
     except (json.JSONDecodeError, Exception) as e:
         logger.debug(f"Raw response: {result_text[:500]}")
-        raise RetryableFailure(FailureCategory.PARSE_FAILED, f"failed to parse scores: {str(e)[:120]}")
+        raise RetryableFailure(FailureCategory.PARSE_FAILED, f"failed to parse scores: {str(e)[:120]}") from e
 
 
 async def process_repo(registry: RepoRegistry, repo: dict):
-    """Shallow-score one repo. Raises QualityReject when it fails the app/run/interact gate
-    (carrying the scores so they persist) or RetryableFailure on a scoring SDK/parse failure."""
+    """Shallow-score one repo, rejecting it when it fails the app/run/interact gate."""
     repo_name = repo["full_name"]
 
     if repo.get("current_stage", 0) >= 3:
@@ -248,10 +249,7 @@ async def process_repo(registry: RepoRegistry, repo: dict):
     total = scores.total
     rlog.info(f"{total}/35 — {scores.model_dump()}")
 
-    # Gate on the signals that actually predict usable web-UI trajectories: it's an app not a
-    # library (application_vs_library), it can run in the sandbox (runnability), and tests do more
-    # than navigate+assert (interaction_richness). production_complexity is NOT gated — it conflates
-    # "real app" with "complex app", which wrongly rejects simple-but-ideal apps like SauceDemo.
+    # production_complexity is deliberately not gated: it conflates "real app" with "complex app".
     if (
         scores.application_vs_library < PIPELINE.stage3_gate_app_min
         or scores.runnability < PIPELINE.stage3_gate_runnability_min
@@ -292,10 +290,7 @@ async def run_shallow_score(
     async def process_with_semaphore(repo):
         nonlocal cost_estimate
 
-        # Guards live INSIDE the semaphore: all repo coroutines are gathered up front, so a check
-        # placed before `async with` is evaluated by every coroutine while cost_estimate is still
-        # ~0 — they all pass it, then queue past the gate, and the budget cap never fires. Re-checked
-        # here under the semaphore, the cap sees the cost accrued by already-finished repos and stops.
+        # Inside the semaphore, not before it: gathered coroutines all read cost_estimate ~0 and race past the cap.
         async with semaphore:
             if rate_limit_tracker.limit_reached():
                 return

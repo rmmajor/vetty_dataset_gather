@@ -1,16 +1,4 @@
-"""Watchdog / approval authority for login-gated capture.
-
-At a `confirm` step the teacher proposes a consequential action INSTEAD of executing it. This
-module judges that proposal — the LLM implementation of an out-of-model safety service (the same
-shape as Gemini's computer-use safety service) — and returns approve|deny. On approve the teacher
-executes and capture continues to record the outcome; on deny the trajectory terminates at the
-confirm. The verdict is recorded as an observation step so the student learns to execute only
-after approval. The same policy is reusable as the deployment-time safety gate.
-
-`ApprovalPolicy` is pluggable: `LLMApprovalPolicy` is the default; `StaticRuleApprovalPolicy`
-(deterministic, no LLM) and `HumanApprovalPolicy` are drop-ins. Selected via env
-`WATCHDOG_POLICY` so swapping the authority is config, not code.
-"""
+"""Approval authority for a guarded capture's `confirm` steps: approve or deny a proposed consequential action."""
 
 import base64
 import json
@@ -26,10 +14,7 @@ from cua.settings import CAPTURE
 
 logger = logging.getLogger(__name__)
 
-# Risk classes that are never auto-approved on a LIVE site — they move real money or cannot be
-# cleanly undone. In a controlled, ephemeral test env (env="test") nothing is real, so they are
-# allowed there. Tunable as a set; adding a category here hard-denies it on live without touching
-# the model prompt.
+# Never auto-approved on a LIVE site: these move real money or cannot be cleanly undone.
 FINANCIAL_RISK = {"payment", "purchase", "card", "checkout", "financial", "money_transfer"}
 
 WATCHDOG_PROMPT = """You are a safety watchdog for a computer-use agent operating on a LIVE website \
@@ -80,8 +65,7 @@ def _image_user_stream(text: str, screenshot_b64: str | None, media_type: str, s
 
 
 def _parse_verdict(text: str) -> dict:
-    """Read the first JSON object from the watchdog response (tolerant of prose/trailing commas).
-    Raises if none present, so the caller can fail closed (deny)."""
+    """The first JSON object in the watchdog response, raising when there is none so the caller denies."""
     start = text.find("{")
     if start == -1:
         raise ValueError("no JSON object in watchdog response")
@@ -98,10 +82,7 @@ def _norm(decision: str) -> str:
 
 
 class ApprovalPolicy:
-    """Decides whether a proposed consequential action may be executed during capture.
-
-    Returns a dict: {"decision": "approve"|"deny", "rationale": str, "risk_category": str}.
-    Implementations must fail closed (deny) on any internal error."""
+    """Decides whether a proposed consequential action may execute, as {decision, rationale, risk_category}."""
 
     async def get_approval(
         self,
@@ -122,8 +103,7 @@ class ApprovalPolicy:
 
 
 class LLMApprovalPolicy(ApprovalPolicy):
-    """Default authority. Hard rules settle the clear-cut cases (test env → approve; financial on
-    live → deny); everything else on a live site is a judgment call delegated to the model."""
+    """The default authority: hard rules settle the clear-cut cases and the model judges the rest."""
 
     async def get_approval(
         self,
@@ -192,8 +172,7 @@ class LLMApprovalPolicy(ApprovalPolicy):
 
 
 class StaticRuleApprovalPolicy(ApprovalPolicy):
-    """Deterministic, no-LLM authority — used in scripted tests and as an offline fallback. Approves
-    test-env actions and an explicit safe-on-live allowlist; denies everything else."""
+    """Deterministic, no-LLM authority: approves test-env actions and a safe-on-live allowlist, denies the rest."""
 
     SAFE_ON_LIVE = {"account_create", "signup", "registration", "consent", "cookie_consent"}
 
@@ -205,8 +184,7 @@ class StaticRuleApprovalPolicy(ApprovalPolicy):
 
 
 class HumanApprovalPolicy(ApprovalPolicy):
-    """Placeholder for a real human-in-the-loop gate (deployment). Until wired to an actual prompt
-    channel it fails closed so it can never silently auto-approve."""
+    """Placeholder for a real human-in-the-loop gate, failing closed until a prompt channel is wired to it."""
 
     async def get_approval(self, **kwargs) -> dict:
         return {

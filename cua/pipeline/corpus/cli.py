@@ -1,4 +1,4 @@
-"""The corpus passes' shared argparse surface: one declaration per flag, added in whatever order a pass's help already prints it."""
+"""The corpus passes' shared argparse surface: one declaration per flag, added in each pass's own order."""
 
 import argparse
 from pathlib import Path
@@ -16,7 +16,7 @@ SHARED_ARGUMENTS = {
 
 
 def add_shared(parser, *names, **overrides):
-    """Add the named shared arguments in the given order; `workers={"default": 2}` retunes one without redeclaring it."""
+    """Add the named shared arguments in order; `workers={"default": 2}` retunes one without redeclaring it."""
     for name in names:
         flags, kwargs = SHARED_ARGUMENTS[name]
         parser.add_argument(*flags, **{**kwargs, **overrides.get(name, {})})

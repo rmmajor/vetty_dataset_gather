@@ -1,24 +1,4 @@
-"""Autonomous login-gated capture — self-register a disposable burner, then run a site's
-login-gated tasks with that one session.
-
-Per site: mint a real disposable mailbox (mail.tm) and run the site's tasks easy-first. The first
-task runs in `discovered` auth mode with the masked burner credentials + the webmail inbox, so the
-teacher signs in (creating the account first when the site has none), then completes the task; its
-authenticated session (storage_state) is captured and REUSED via `pre_session` for the remaining
-tasks so there is no repeated login. Session + burner are PERSISTED (app_secrets), so a later run of
-the same site skips registration entirely and starts every task signed in — a site is registered
-once, not once per run. If the first task cannot establish a session — registration
-blocked by captcha / phone / disposable-domain rejection — the site is abandoned after that single
-attempt, so a gated-beyond-reach site costs one trajectory rather than many; those sites belong to
-the human provisioning lane.
-
-Only attempts sites whose `provisioning` is plausibly autonomous (default: open_signup, email_verify).
-Credentials only ever reach the recording as `<secret:...>` placeholders (driver-side substitution),
-consistent with the burner-only invariant.
-
-Run: python -m cua.pipeline.lanes.logingated [--sites a,b] [--provisioning open_signup,email_verify]
-     [--max-tasks-per-site N] [--max-sites N] [--parallel K]
-"""
+"""Autonomous login-gated capture: self-register a disposable burner, then run a site's tasks on that one session."""
 
 import argparse
 import asyncio
@@ -47,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 AUTONOMOUS_PROVISIONING = {"open_signup", "email_verify"}
 DIFFRANK = {"easy": 0, "medium": 1, "hard": 2}
-# The first task per site also signs up, so budget extra expected actions or a goal-completing run is mis-graded "meandering".
+# The first task per site also signs up, so without extra budget a completed run is mis-graded "meandering".
 REGISTRATION_ACTION_BUDGET = 16
 
 
@@ -79,7 +59,7 @@ def _site_identity(site: dict, pending: list, summary: dict):
 
 async def _register_outcome(site: dict, task: dict, state: dict, site_dir: Path, registry) -> bool:
     """Whether the first task left a REUSABLE AUTHENTICATED SESSION, judged from the final screen."""
-    # Not whether the task's goal completed: a slow email-verify login often establishes the session yet exhausts its budget first.
+    # Not whether the goal completed: a slow email-verify login often establishes the session yet runs out of budget.
     session = state.get("storage_state")
     authed = bool(session) and await session_authenticated(
         site_dir / f"task_{safe_task_id(task['id'])}",
@@ -120,7 +100,7 @@ def _mark_registration_outcome(site: dict, summary: dict, attempted: bool) -> No
         return
     if not attempted:
         return
-    # A site with prior autonomous success stays in this lane: a human would hit the same flaky email, so a transient failure is the wrong reason to route there.
+    # A site with prior autonomous success stays here: a human would hit the same flaky email this run hit.
     already_doable = (
         provisioning_status.get_status(site["name"]) == provisioning_status.REGISTERED or summary["verified"] > 0
     )
@@ -159,7 +139,7 @@ async def _run_pending(client, sandbox, site, site_dir, pending, identity, regis
             run_task = {**task, "expected_actions": expected}
             auth = {"auth_mode": "discovered", "webmail_url": mailtm.WEBMAIL_URL, "webmail_preauthed": False}
             auth["capture_session"] = True
-        # Only the teacher call is guarded, so one task's failure never skips finalizing the tasks already captured here.
+        # Only the teacher call is guarded, so one task's failure still finalizes the tasks already captured.
         try:
             state = await run_teacher_task(
                 client,
@@ -204,7 +184,7 @@ async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | No
     if max_tasks:
         tasks = tasks[:max_tasks]
     pending = [t for t in tasks if not is_capture_settled(site_dir / f"task_{safe_task_id(t['id'])}")]
-    # Captured on a prior run but never verified: resume would skip these as "valid" so they would never become trainable.
+    # Captured on a prior run but never verified: resume reads these as settled, so they would never train.
     orphaned = [t for t in tasks if t not in pending and needs_verification(site_dir / f"task_{safe_task_id(t['id'])}")]
     summary = {
         "site": site["name"],
@@ -246,7 +226,7 @@ async def capture_site(site: dict, base_dir: Path, registry, max_tasks: int | No
     finally:
         await run_blocking(sandbox.stop)
 
-    # Finalizing here sets summary["verified"] first, so the registration outcome below can tell a flaky failure from a wall.
+    # Finalizing first fills summary["verified"], which is how the outcome below tells a flaky failure from a wall.
     results = await finalize_tasks(ran + orphaned, site, site_dir, states, registry, secrets=identity[2])
     summary["verified"] = sum(1 for r in results.values() if r["verdict"].get("final_success"))
     _mark_registration_outcome(site, summary, attempted_registration)
@@ -301,7 +281,7 @@ async def main():
     try:
         sites = _sites_for_run(args)
     except ValueError as e:
-        raise SystemExit(f"--sites: {e}")
+        raise SystemExit(f"--sites: {e}") from e
     logger.info(f"Login-gated autonomous capture over {len(sites)} site(s): {', '.join(s['name'] for s in sites)}")
 
     registry = RepoRegistry("pipeline_data/registry.db")

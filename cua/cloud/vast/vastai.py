@@ -1,4 +1,4 @@
-"""Vast.ai provider: the `ComputeProvider` contract over the `vastai` CLI and ssh/rsync, with its CLI-schema assumptions documented in docs/architecture.md."""
+"""Vast.ai provider: the `ComputeProvider` contract implemented over the `vastai` CLI and ssh/rsync."""
 
 import json
 import logging
@@ -25,7 +25,9 @@ _SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/nu
 
 
 def offer_query(cfg) -> str:
-    """Vast's search grammar. gpu_ram is GIGABYTES in a QUERY but megabytes in the response JSON — verified by probe: `gpu_ram >= 70` returns only 81920MB cards."""
+    """Vast's search grammar, where gpu_ram is GIGABYTES in a QUERY but megabytes in the response JSON."""
+
+    # Verified by probe: `gpu_ram >= 70` returns only 81920MB cards.
     query = (
         f"reliability > {cfg.min_reliability} num_gpus={cfg.num_gpus} "
         f"gpu_ram >= {cfg.min_vram_gb} compute_cap >= {cfg.min_compute_cap} "
@@ -48,8 +50,6 @@ class VastAIProvider(ComputeProvider):
 
     def __init__(self, cfg):
         self.cfg = cfg
-
-    # ----- offer selection / provisioning -----
 
     def search_offer(self, cfg) -> Offer:
         raw = self._cli_json(["search", "offers", offer_query(cfg), "-o", "dph_total", "--limit", "200"])
@@ -120,7 +120,7 @@ class VastAIProvider(ComputeProvider):
         return result.stdout.strip()
 
     def _attach_ssh_key(self, instance_id: str, pub: str) -> None:
-        """Attach our key to THIS instance, since a team-scoped API key cannot register an account-wide one; the onstart hook is the fallback."""
+        """Attach our key to THIS instance, since a team-scoped API key cannot register an account-wide one."""
         try:
             self._cli(["attach", "ssh", str(instance_id), pub])
             logger.info(f"Attached local SSH key to instance {instance_id}")
@@ -144,8 +144,6 @@ class VastAIProvider(ComputeProvider):
             time.sleep(10)
         raise ProviderError(f"Instance {instance.id} not SSH-ready within {timeout}s")
 
-    # ----- remote exec / transfer -----
-
     def exec(self, instance, command, *, stream=False, timeout=0) -> tuple:
         cmd = self._ssh_base(instance) + [command]
         logger.debug(f"[vastai exec] {command[:200]}")
@@ -168,8 +166,6 @@ class VastAIProvider(ComputeProvider):
 
     def download(self, instance, remote_path, local_path) -> None:
         self._rsync(instance, remote_path, local_path, upload=False)
-
-    # ----- teardown -----
 
     def destroy(self, instance) -> bool:
         for attempt in range(1, 6):
@@ -216,8 +212,6 @@ class VastAIProvider(ComputeProvider):
                     )
                 )
         return owned
-
-    # ----- internals -----
 
     def _ssh_base(self, instance) -> list:
         key = os.path.expanduser(self.cfg.ssh_key_path)

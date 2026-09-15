@@ -1,4 +1,4 @@
-"""Terminal success for a rollout dir: programmatic check first, Claude verifier as fallback/audit — all SDK calls on one background loop."""
+"""Terminal success for a rollout dir: the programmatic check first, the Claude verifier as fallback or audit."""
 
 import asyncio
 import json
@@ -43,7 +43,7 @@ async def _verify(traj_dir, task, bridge, verify):
 
 
 def _run_verifier(traj_dir, task, bridge, verify, sleep):
-    # The tracker's rejected flag is sticky, so a stale limit would defer every verdict for the rest of the run; clear it and let the call prove the limit.
+    # The tracker's rejected flag is sticky, so a stale limit would defer every verdict for the rest of the run.
     deadline = time.monotonic() + RL.verify_wait_s
     while True:
         if rate_limit_tracker.limit_reached():

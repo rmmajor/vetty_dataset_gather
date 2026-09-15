@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 
 from telegram import Bot
 
@@ -24,8 +25,6 @@ def format_report(
     stage_results: dict[int, dict],
     rate_limit_info=None,
 ) -> str:
-    from datetime import datetime
-
     date_str = datetime.now().strftime("%Y-%m-%d")
     hours = int(run_duration_seconds // 3600)
     minutes = int((run_duration_seconds % 3600) // 60)
@@ -68,8 +67,7 @@ def format_report(
             trajectories = result.get("trajectories", 0)
             extra = f", {trajectories} new trajectories"
         lines.append(f"Stage {stage_num} ({name}): {processed} processed, {passed} passed, {rejected} rejected{extra}")
-        # A crashed stage starves everything downstream — it must be front-page news in the
-        # morning report, not something discovered by grepping run logs.
+        # A crashed stage starves everything downstream, so the morning report has to lead with it.
         if result.get("error"):
             lines.append(f"  🚨 STAGE CRASHED: {result['error'][:200]}")
 

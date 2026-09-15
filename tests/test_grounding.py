@@ -1,4 +1,4 @@
-"""Grounding slice of `python -m cua.sft convert`: element-description -> click examples mined from recorded click steps."""
+"""Grounding slice of `python -m cua.sft convert`: element-description to click examples from recorded steps."""
 
 import io
 import itertools

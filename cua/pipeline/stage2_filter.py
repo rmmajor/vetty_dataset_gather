@@ -13,9 +13,7 @@ MAX_SIZE_KB = 500_000
 
 
 def run_bootable_gate(registry: RepoRegistry, repos: list[dict]) -> tuple[list[dict], int, int]:
-    """Probe each repo (no LLM) and split into kept vs rejected. Returns
-    (kept, n_rejected, n_probe_errors). A soft reject is kept (passed to the LLM) unless aggressive;
-    probe errors are left at their input status (retryable)."""
+    """Probe each repo without an LLM, as (kept, n_rejected, n_probe_errors); a probe error keeps its input status."""
 
     def probe(repo):
         try:

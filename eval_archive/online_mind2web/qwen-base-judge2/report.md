@@ -12,7 +12,7 @@ Success is over the SCORED episodes (5 verified of 34); site-blocked / unreachab
 | label | `qwen-base-judge2` |
 | started (UTC) | 2026-08-27T23:09:42.440365+00:00 |
 | finished (UTC) | 2026-08-27T23:55:39.948655+00:00 |
-| endpoint | `https://bombaleylo2--cua-serve-server.us-east.modal.direct/v1` |
+| endpoint | `https://<modal-workspace>--cua-serve-server.us-east.modal.direct/v1` |
 | model | `cua-student` |
 | adapter / checkpoint | `(none declared)` |
 | task source | `online_mind2web` — 300 tasks across live third-party websites (Online-Mind2Web, COLM 2025) |

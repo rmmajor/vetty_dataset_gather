@@ -8,14 +8,14 @@ from pathlib import Path
 
 from cua.eval.student.backends import BROWSER_BACKENDS, STUDENT_BACKENDS
 from cua.eval.student.config import EVAL_RUNS_DIR, EvalConfig
-from cua.eval.student.episode import COORD_SPACES
 from cua.eval.student.fingerprint import coord_space_diagnosis
-from cua.eval.student.observation import DEFAULT_OBSERVATION, OBSERVATION_FORMATS
 from cua.eval.student.report import render_comparison
 from cua.eval.student.run import judge_run, load_run, run_eval
 from cua.eval.task_sources import TASK_SOURCES, TaskSourceUnavailable
 from cua.pipeline.sandbox import install_sigterm_handler
 from cua.settings import EVAL
+from cua.student.executor import COORD_SPACES
+from cua.student.observation import DEFAULT_OBSERVATION, OBSERVATION_FORMATS
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +284,7 @@ def _cmd_run(args, parser):
         results = asyncio.run(run_eval(cfg))
     except TaskSourceUnavailable as e:
         logger.error(str(e))
-        raise SystemExit(2)
+        raise SystemExit(2) from e
     metrics = results["metrics"]
     print(
         f"\nverified task success: {metrics['verified_success_rate'] * 100:.1f}% across "

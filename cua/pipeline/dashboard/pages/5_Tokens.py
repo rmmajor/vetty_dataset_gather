@@ -1,10 +1,4 @@
-"""Tokens page — total token usage and average tokens per stage.
-
-Reads agent_calls from pipeline_data/registry.db. Usage splits into output, uncached input,
-cache-read and cache-write. The cache columns populate only for calls recorded after the
-cache-token telemetry fix (registry.record_agent_call); older rows count input+output only, so
-historical totals understate true input (most of which was served from cache).
-"""
+"""Tokens page: total token usage and average tokens per stage, from the agent_calls ledger."""
 
 import streamlit as st
 

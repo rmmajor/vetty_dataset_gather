@@ -1,6 +1,6 @@
 """Merge a LoRA adapter into its base on Modal, so a second adapter can be served on top of it."""
 
-# A GRPO adapter is trained over MERGED SFT weights and cannot be stacked on the raw base, so serve.py serves this by path.
+# A GRPO adapter is trained over MERGED SFT weights and cannot stack on the raw base, so serve.py serves it by path.
 import os
 import pathlib
 import subprocess

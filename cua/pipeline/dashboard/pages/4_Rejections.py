@@ -1,10 +1,4 @@
-"""Rejections page — why repos leave the funnel, and the data to tune the gates.
-
-Reads pipeline_data/registry.db (not the trajectory corpus). Score-distribution charts split
-passed vs rejected with the gate threshold drawn in, so the operator can see exactly how many
-repos a threshold change would recover. Existing rejections only have data here after running
-`python -m cua.pipeline.backfill_scores`; new ones populate automatically.
-"""
+"""Rejections page: why repos leave the funnel, and the score distributions the gates are tuned from."""
 
 import streamlit as st
 

@@ -1,4 +1,4 @@
-"""Scripted (no-LLM, no-network) check of the outcome relabel pass: windows, fallback, apply writes, resume skip, prompt content."""
+"""Scripted (no-LLM, no-network) check of the outcome relabel pass: windows, fallback, writes, resume, prompt."""
 
 import asyncio
 import base64
@@ -80,7 +80,7 @@ def _target_numbers(blocks: list[dict]) -> list[int]:
 
 
 class FakeLLM:
-    """Records every window prompt and answers with `NEW k` per target step, or a wrong-length array for chosen calls."""
+    """Records every window prompt and answers `NEW k` per target step, or a wrong-length array when chosen."""
 
     def __init__(self, bad_calls: tuple = ()):
         self.calls: list[list[dict]] = []
@@ -270,7 +270,7 @@ def check_window_errors(work_dir: Path) -> list[str]:
     traj_dir = make_trajectory_dir(work_dir, "task_sdk_error", 14)
     result = asyncio.run(
         outcome_relabel.relabel_trajectory(
-            traj_dir, call_llm=RaisingLLM(RuntimeError("Claude Code returned an error result"), on_call=2), apply=True
+            traj_dir, call_llm=RaisingLLM(RuntimeError("the agent CLI returned an error result"), on_call=2), apply=True
         )
     )
     thoughts = [s["thought"] for s in json.loads((traj_dir / "trajectory.json").read_text())["steps"]]

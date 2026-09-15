@@ -10,7 +10,7 @@
     "label": "baseline_qwen35_9b",
     "run_id": "",
     "student": "openai",
-    "endpoint": "https://roman-yu-major--cua-serve-server.us-east.modal.direct/v1",
+    "endpoint": "https://<modal-workspace>--cua-serve-server.us-east.modal.direct/v1",
     "model": "cua-student",
     "adapter": "",
     "api_key": "<redacted>",

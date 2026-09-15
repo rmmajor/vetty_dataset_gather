@@ -1,4 +1,4 @@
-"""ms-swift-free half of the GRPO plugin: env clients, message/record shaping, format reward — unit-tested on the Mac."""
+"""ms-swift-free half of the GRPO plugin: env clients, message and record shaping, and the format reward."""
 
 import base64
 import gzip
@@ -29,7 +29,7 @@ def _retry_after(error):
 
 
 class HttpEnvClient:
-    """Talks to cua/rl/service.py through the ingress; every 5xx (the service's 503 or the tunnel's own 502/524) is retried, 4xx is fatal."""
+    """Talks to cua/rl/service.py through the ingress, where every 5xx is retried and every 4xx is fatal."""
 
     def __init__(
         self,
@@ -44,7 +44,7 @@ class HttpEnvClient:
         **_,
     ):
         self.step_wait_s = step_wait_s
-        # A comma-separated list is an ordered set of ingresses to the same service; attempts rotate through it so one dead tunnel does not end the run.
+        # A comma-separated list is an ordered set of ingresses to one service, so a dead tunnel cannot end the run.
         self.base_urls = [u.strip().rstrip("/") for u in base_url.split(",") if u.strip()]
         self.token, self.timeout_s = token, timeout_s
         self.retries, self.backoff_s, self.reset_wait_s, self.opener = retries, backoff_s, reset_wait_s, opener
@@ -81,7 +81,7 @@ class HttpEnvClient:
         raise ConnectionError(f"env service unreachable after {attempt} attempts: {last}")
 
     def reset(self, task_id, sample_idx, run_id, iteration, policy_tag):
-        # Queueing for a slot is the normal case at generation start, so a reset waits far longer than a step; request_id makes a cut-off retry land on the same episode.
+        # A reset waits far longer than a step, and request_id lands a cut-off retry on the same episode.
         body = {
             "task_id": task_id,
             "sample_k": sample_idx,
@@ -114,11 +114,11 @@ def blank_png_b64(size):
 
 
 class MockEnvClient:
-    """Offline stand-in for the env service: fixed PNG, reward 1.0 iff the final response decodes, done after `steps`."""
+    """Offline stand-in for the env service: a fixed PNG, and reward 1.0 only when the final response decodes."""
 
     def __init__(self, steps=3, image_size=(1280, 720), **_):
         self.steps, self.png = steps, blank_png_b64(image_size)
-        # env-read: the GRPO smoke toggles this in-process to simulate the verdictless service the run must refuse to train on
+        # env-read: the GRPO smoke toggles this to simulate a verdictless service the run must refuse
         self.no_reward = os.environ.get("RL_MOCK_NO_REWARD") == "1"
         self.episodes = {}
 

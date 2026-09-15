@@ -1,9 +1,4 @@
-"""Shared descriptive-stat helpers and small constants used by the loader and the charts.
-
-This module is deliberately small — the dashboard is exploratory (raw distributions); it does
-not impose targets, scores, or thresholds. The constants below are descriptive bands used to
-*label* parts of a histogram (e.g. "useful band [30, 500] chars"), never to gate or score.
-"""
+"""Descriptive-stat helpers and the histogram labelling bands the loader and charts share, which never score."""
 
 from collections import Counter
 from math import log

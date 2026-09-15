@@ -1,4 +1,4 @@
-"""Scripted (no-LLM, no-network) check of the instruction style pass: qa_verify selection, cap, idempotency and writes."""
+"""Scripted (no-LLM, no-network) check of the instruction style pass: selection, cap, idempotency and writes."""
 
 import asyncio
 import json
@@ -51,7 +51,10 @@ CORPUS = [
 EXPECTED_SELECTION = ["task_recheck_a", "task_recheck_b"]
 ORIGINAL = "Turn off email notifications in the settings and make sure the change sticks."
 PROCEDURE = "Open the settings page, click Notifications, scroll to Email and then select off."
-REWRITE = "Unchecking Email notifications in Settings persists after save and reload. Verify the box stays unchecked when the page is reopened."
+REWRITE = (
+    "Unchecking Email notifications in Settings persists after save and reload. "
+    "Verify the box stays unchecked when the page is reopened."
+)
 
 
 def _write_corpus(root: Path) -> None:

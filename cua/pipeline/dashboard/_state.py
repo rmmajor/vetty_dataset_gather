@@ -1,8 +1,4 @@
-"""Streamlit-side helpers shared by every page (cached loader, sidebar, KPI strip, filters).
-
-Kept separate from loader.py / charts.py / metrics.py so those stay free of `streamlit`
-imports and remain unit-reasonable from a plain Python REPL.
-"""
+"""Streamlit-side helpers shared by every page: the cached loader, the sidebar, the KPI strip and the filters."""
 
 from pathlib import Path
 
@@ -107,11 +103,7 @@ def apply_path_filters(
 
 
 def populated_count(traj_df: pd.DataFrame) -> dict[str, int]:
-    """Diagnostic: how many trajectories have each enriched field populated.
-
-    Surfaced at the top of each page as a small grey strip so the user can tell at a glance
-    which charts will be lit up vs which are empty-state today.
-    """
+    """How many trajectories have each enriched field populated, for the grey strip at the top of a page."""
     if traj_df.empty:
         return {}
     counts: dict[str, int] = {}

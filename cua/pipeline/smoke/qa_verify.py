@@ -1,4 +1,4 @@
-"""Scripted (no-LLM, no-Docker, no-network) check that the qa_verify task style reaches the proposer, teacher, verifier, metadata and site config."""
+"""Scripted (no-LLM, no-Docker) check that the qa_verify task style reaches every stage that must honour it."""
 
 import asyncio
 import json
@@ -37,7 +37,8 @@ TASK = {
     "id": "email-toggle-persists",
     "difficulty": "medium",
     "expected_actions": 10,
-    "instruction": "Toggling Email notifications in Settings persists after save and reload. Verify the unchecked state survives a page reload.",
+    "instruction": "Toggling Email notifications in Settings persists after save and reload. "
+    "Verify the unchecked state survives a page reload.",
 }
 PROPOSER_REPLY = json.dumps(
     {
@@ -181,7 +182,9 @@ def check_proposer() -> list[str]:
         proposal = _with_stubbed_agent(
             task_proposer,
             _capturing_run_agent(captured, PROPOSER_REPLY),
-            lambda: asyncio.run(task_proposer.propose_tasks(repo, "(snapshot)", None, "", "", task_style=style)),
+            lambda style=style: asyncio.run(
+                task_proposer.propose_tasks(repo, "(snapshot)", None, "", "", task_style=style)
+            ),
         )
         injected = bool(captured) and block in captured[0]
         if injected != expect:
@@ -225,7 +228,7 @@ def check_teacher() -> list[str]:
         _with_stubbed_agent(
             teacher_run,
             _capturing_run_agent(captured, ""),
-            lambda: asyncio.run(
+            lambda driver=driver, style=style: asyncio.run(
                 teacher_run.run_teacher_task(
                     driver, TASK, "https://app.test/", auth_mode="pre_session", task_style=style
                 )
@@ -236,7 +239,8 @@ def check_teacher() -> list[str]:
             failures.append(f"teacher: prompt injected={injected} for task_style={style!r} (expected {expect})")
         if (driver.task_meta or {}).get("task_style") != style:
             failures.append(
-                f"teacher: task_meta.task_style={driver.task_meta and driver.task_meta.get('task_style')!r}, expected {style!r}"
+                f"teacher: task_meta.task_style={driver.task_meta and driver.task_meta.get('task_style')!r}, "
+                f"expected {style!r}"
             )
     return failures
 
@@ -262,7 +266,7 @@ def check_verifier(work_dir: Path) -> list[str]:
         _with_stubbed_agent(
             teacher_verify,
             _capturing_run_agent(captured, FAILED_VERDICT),
-            lambda: asyncio.run(teacher_verify.verify_trajectory(traj_dir)),
+            lambda traj_dir=traj_dir: asyncio.run(teacher_verify.verify_trajectory(traj_dir)),
         )
         injected = bool(captured) and rules in captured[0]
         if injected != expect:

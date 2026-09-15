@@ -11,7 +11,7 @@ from cua.pipeline.corpus.audit import corpus_health_violations
 from cua.prompt.coords import COORD_SPACE
 from cua.prompt.format import PREV_IMAGE_SIZE, PROMPT_FORMAT_VERSION
 
-# High-entropy literals that cannot be legitimate page content; masked credentials ship as `<secret:NAME>`, so a literal is a real leak.
+# High-entropy literals that cannot be page content; credentials ship as `<secret:NAME>`, so a literal leaked.
 _SECRET_PATTERNS = [
     ("private_key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
     ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),

@@ -5,7 +5,7 @@ import logging
 import sys
 from pathlib import Path
 
-from cua.eval.student.blocks import BLOCK_SIGNATURES
+from cua.eval.blocks import BLOCK_SIGNATURES
 from cua.pipeline.corpus.cli import build_parser
 from cua.pipeline.corpus.pass_base import CorpusPass, Outcome
 from cua.trajectory.io import TRAJECTORY_FILE, TrajectoryDir, iter_trajectory_dirs
@@ -131,7 +131,7 @@ def apply_plan(plan: dict):
     traj["success"] = True
     recorded.save_trajectory(traj)
 
-    # The old verdict graded the UNTRIMMED run, so carrying its efficiency over would subsample a 4-step demo as meandering.
+    # The old verdict graded the UNTRIMMED run, so carrying it over would subsample a 4-step demo as meandering.
     cmeta = recorded.capture_meta
     if cmeta.get("verifier"):
         cmeta["verifier"] = {

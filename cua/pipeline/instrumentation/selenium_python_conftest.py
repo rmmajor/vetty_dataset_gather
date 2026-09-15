@@ -1,27 +1,4 @@
-"""Drop-in conftest.py for instrumenting Python Selenium test repos.
-
-Place this file in the test directory of a Selenium Python repo. Unlike the Playwright
-conftest (which patches a fixture-provided `page`), Selenium repos build their own
-WebDriver, so this module patches the Selenium classes themselves at import time —
-`WebElement`, `Select`, and `WebDriver` — and captures a screenshot + the element's
-viewport-centre coordinate + a DOM probe (tag, role, accessible name, attributes,
-visibility) + page state before each interaction. Naming/saving is driven by global
-pytest hooks (not an autouse fixture) so both pytest-function and unittest.TestCase
-style tests are captured.
-
-Coordinates and bbox come from getBoundingClientRect (viewport-relative CSS pixels,
-matching Playwright's bounding_box). The viewport is locked to 1280x720 at
-deviceScaleFactor=1 via CDP so the recorded coordinates align with the screenshot pixels.
-
-Three files are written per test (see save()): trajectory.json (training contract +
-inline bbox/role/name), capture_meta.json (full per-step diagnostics), metadata.json.
-
-Environment variables:
-    TRAJECTORY_DIR  — directory to write results (default: /workspace/results)
-    SOURCE_REPO     — repo identifier for metadata
-    TEST_NAME_PREFIX — prefix for task IDs (default: repo)
-    FRAMEWORK / FRAMEWORK_LANGUAGE — recorded into capture_meta.json
-"""
+"""Drop-in conftest.py that records a trajectory from a Python Selenium repo's own tests."""
 
 import hashlib
 import inspect
@@ -38,8 +15,7 @@ VIEWPORT_WIDTH = 1280
 VIEWPORT_HEIGHT = 720
 TEST_SOURCE_MAX_CHARS = 2000
 
-# DOM probe run against the target element via execute_script. Returns bbox too, since
-# Selenium has no boundingBox() method. Keep in sync with PROBE_JS in pw_python_conftest.py.
+# Returns the bbox too, since Selenium has no boundingBox(); kept in sync with PROBE_JS in the Playwright conftest.
 _PROBE_JS = """
 var el = arguments[0];
 if (!el) { return null; }
@@ -227,9 +203,7 @@ def _safe_url(driver):
 
 
 def _lock_viewport(driver):
-    """Pin the rendering viewport to 1280x720 at DSF=1 so coordinates align with the
-    screenshot pixels. CDP sets the viewport (not the outer window) precisely; fall back
-    to set_window_size for non-Chrome drivers."""
+    """Pin the rendering viewport to 1280x720 at DSF=1, so recorded coordinates align with the screenshot pixels."""
     key = id(driver)
     if key in _viewport_locked:
         return
@@ -269,8 +243,7 @@ def _build_meta(driver, probe, bbox):
 
 
 def _prepare(driver, element):
-    """Scroll the element to the viewport centre, probe it, then take the screenshot from
-    the same post-scroll state. Returns None on any failure (instrumentation must not raise)."""
+    """Scroll the element to the viewport centre, probe it and shoot from that same state; None on any failure."""
     try:
         _lock_viewport(driver)
         try:
@@ -295,9 +268,7 @@ def _prepare(driver, element):
             except Exception:
                 cx = cy = 0
         if cx == 0 and cy == 0:
-            # No usable on-screen coordinate. Skip the action entirely rather than record a (0,0)
-            # step — mirrors the Playwright TS hook and keeps invalid points out of the trajectory,
-            # the main cause of Selenium's low capture yield.
+            # Skipped rather than recorded at (0,0): invalid points were the main cause of Selenium's low yield.
             return None
         meta = _build_meta(driver, probe, bbox)
         shot = driver.get_screenshot_as_png()
@@ -352,10 +323,9 @@ def _split_keys(args):
 
 
 def _patch_selenium():
-    """Monkey-patch the Selenium classes. Wrapped methods capture before-state, run the
-    original (recording its outcome), and never raise (instrumentation must not break a
-    test). Returns False if Selenium is not importable (instrumentation no-ops)."""
+    """Monkey-patch the Selenium classes so every interaction records a step; False when Selenium is not importable."""
     try:
+        # lazy: a repo without Selenium installed must still import this conftest, which then no-ops
         from selenium.webdriver.common.keys import Keys
         from selenium.webdriver.remote.webdriver import WebDriver
         from selenium.webdriver.remote.webelement import WebElement
@@ -460,10 +430,7 @@ _patch_selenium()
 
 
 def _capture_test_source(item, output_dir):
-    """Persist the test function's source (body + docstring) next to the trajectory so the
-    stage-6 instruction generator can infer intent from it instead of just the function name.
-    Best-effort: any failure is swallowed — older trajectories simply have no test_source.txt
-    and the instruction prompt has an explicit fallback for that case."""
+    """Persist the test function's source next to the trajectory, so the instruction generator can infer intent."""
     if not output_dir:
         return
     try:

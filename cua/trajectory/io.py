@@ -1,4 +1,4 @@
-"""The one corpus walk, the one tolerant JSON loader and the one read/write handle for a recorded `task_*/` directory."""
+"""The one corpus walk, the one tolerant JSON loader and the one handle on a recorded `task_*/` directory."""
 
 import json
 from collections.abc import Iterator
@@ -8,7 +8,7 @@ from pathlib import Path
 TRAJECTORY_FILE = "trajectory.json"
 METADATA_FILE = "metadata.json"
 CAPTURE_META_FILE = "capture_meta.json"
-# Every corpus writer has always used these, so a pass that rewrites one file leaves the rest of the corpus byte-comparable.
+# Every corpus writer has always used these, so rewriting one file leaves the rest of the corpus byte-comparable.
 JSON_DUMP_KWARGS = {"indent": 2}
 
 
@@ -35,7 +35,7 @@ def write_json(path: Path, payload: dict) -> None:
 
 @dataclass
 class TrajectoryDir:
-    """Handle on one `task_*/` directory: its three contract files, loaded on first use and written back unchanged in shape."""
+    """Handle on one `task_*/` directory's three contract files, loaded on first use and written back in shape."""
 
     path: Path
     _files: dict = field(default_factory=dict, repr=False)
@@ -62,11 +62,11 @@ class TrajectoryDir:
         return self._cached(CAPTURE_META_FILE)
 
     def screenshot_path(self, step: dict) -> Path:
-        """A step's screenshot; a step recording none resolves to the directory itself, which is what every caller assumed."""
+        """A step's screenshot; a step recording none resolves to the directory itself, as every caller assumed."""
         return self.path / step.get("screenshot", "")
 
     def is_trainable(self) -> bool:
-        # lazy: cua.pipeline.corpus.audit imports this module for the walk, so its gate can only be reached at call time.
+        # lazy: corpus.audit imports this module for the walk, so its gate is only reachable at call time.
         from cua.pipeline.corpus.audit import trainability
 
         return trainability(self.trajectory, self.metadata, self.capture_meta, self.path.name) is None

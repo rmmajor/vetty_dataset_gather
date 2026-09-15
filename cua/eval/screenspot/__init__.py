@@ -1,4 +1,4 @@
-"""ScreenSpot grounding evaluation: does a predicted click point land inside the target element's box (docs/evaluation.md)."""
+"""ScreenSpot grounding: does a predicted click point land inside the target element's box (docs/evaluation.md)."""
 
 from cua.eval.screenspot.cli import main
 from cua.eval.screenspot.config import EvalConfig, ModelSpec

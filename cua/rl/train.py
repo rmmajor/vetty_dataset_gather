@@ -111,7 +111,7 @@ def load_rl_config(path="rl_config.yaml"):
 
 
 def build_merge_command(cfg):
-    # --exist_ok: without it a merge killed mid-write poisons every retry, since swift export refuses the half-written dir.
+    # --exist_ok: without it a merge killed mid-write poisons every retry, since export refuses the half-written dir.
     return [
         "swift",
         "export",
@@ -158,7 +158,7 @@ def build_deploy_command(cfg, adapters=None):
 
 
 def build_vllm_serve_command(cfg, adapters=None):
-    """Plain vLLM OpenAI server for the vllm/vllm-openai image: base model as `cua-student`, the adapter as `cua-student-lora`."""
+    """Plain vLLM OpenAI server: the base model as `cua-student` and the adapter as `cua-student-lora`."""
     model = cfg["merged_model"] if cfg.get("serve_merged_base") else cfg["base_model"]
     argv = [
         "vllm",
@@ -178,7 +178,7 @@ def build_vllm_serve_command(cfg, adapters=None):
         str(cfg.get("vllm_limit_mm_per_prompt", '{"image": 1}')),
     ]
     if adapters:
-        # A dict serves several checkpoints from one rental, each under its own name; a string keeps the canonical single-adapter name.
+        # A dict serves several checkpoints from one rental, each under its own name; a string keeps one name.
         named = adapters if isinstance(adapters, dict) else {"cua-student-lora": adapters}
         argv += [
             "--enable-lora",
@@ -202,7 +202,7 @@ def build_env(cfg, run_dir, workdir=None):
     if cfg.get("env_token"):
         env["RL_ENV_TOKEN"] = str(cfg["env_token"])
     if workdir:
-        # env-read: prepends the repo root to the inherited path, since swift loads --external_plugins as a top-level module
+        # env-read: prepends the repo root, since swift loads --external_plugins as a top-level module
         env["PYTHONPATH"] = os.pathsep.join(p for p in (str(workdir), os.environ.get("PYTHONPATH", "")) if p)
     return env
 
@@ -256,7 +256,7 @@ def _http_ok(url):
 
 
 class PhaseDriver:
-    """On-box orchestration: merge → (deploy, EVAL_BEFORE) → rollout + rlhf → (deploy latest, EVAL_AFTER); phases signalled via PHASE/PHASE_ACK files."""
+    """On-box orchestration: merge, deploy, EVAL_BEFORE, rollout and rlhf, deploy latest, EVAL_AFTER."""
 
     def __init__(
         self,
@@ -419,7 +419,9 @@ def main():
     if args.command == "make-dataset":
         task_ids = load_task_ids(args.task_ids_file) if args.task_ids_file else None
         print(
-            f"wrote {make_dataset(args.tasks, args.out, args.split, args.repeats, args.max_expected_actions, task_ids)} rows -> {args.out}"
+            "wrote "
+            f"{make_dataset(args.tasks, args.out, args.split, args.repeats, args.max_expected_actions, task_ids)} "
+            f"rows -> {args.out}"
         )
         return 0
     return PhaseDriver(load_rl_config(args.config), args.run_dir, args.workdir).run(mode=args.mode)

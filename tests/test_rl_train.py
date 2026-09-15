@@ -264,8 +264,7 @@ def test_grpo_job_on_poll_handles_handshake_and_collects_adapter():
         assert stop == [False, False, False, False]
         assert job.evals_done == ["EVAL_BEFORE_READY", "EVAL_AFTER_READY"]
         assert any("PHASE_ACK" in c for c in provider.exec_log)
-        # rl_output/ not latest/: `latest` exists only after training ends, so pulling it mid-run
-    # always failed and every checkpoint died with the box.
+    # rl_output/, not latest/: `latest` appears only after training ends, so every mid-run checkpoint died with the box.
     assert any("DOWNLOAD /workspace/rl_output/" in c for c in provider.exec_log)
 
 

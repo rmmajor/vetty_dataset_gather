@@ -1,4 +1,4 @@
-"""Provider-pluggable remote jobs: importing this package registers every provider into `base.PROVIDERS`, which populates `--provider`."""
+"""Provider-pluggable remote jobs: importing this package registers every provider into `base.PROVIDERS`."""
 
 from cua.cloud.vast import (
     mock,  # noqa: F401 — registers "mock"

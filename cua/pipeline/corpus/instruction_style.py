@@ -1,4 +1,4 @@
-"""Rewrite trainable-corpus instructions into a registered target voice (STYLE_MODES: goal | qa_verify), resumable via metadata.instruction_style."""
+"""Rewrite trainable-corpus instructions into a registered target voice (STYLE_MODES: goal | qa_verify), resumable via metadata.instruction_style."""  # noqa: E501
 
 import asyncio
 import json
@@ -179,7 +179,7 @@ STYLE_MODES: dict[str, StyleMode] = {
 
 
 class InstructionStylePass(CorpusPass):
-    """One registered voice over the trainable corpus: `writes` is what --apply flips, so a dry run can still preview old -> new."""
+    """One registered voice over the trainable corpus; `writes` is what --apply flips, so a dry run still previews."""
 
     name = "instruction_style"
 

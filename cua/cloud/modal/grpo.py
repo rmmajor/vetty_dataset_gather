@@ -1,10 +1,16 @@
-"""Run the GRPO phase driver (cua/rl/train.py run) on a Modal GPU against the Mac env service exposed through a public ingress."""
+"""Run the GRPO phase driver on a Modal GPU against the Mac env service reached through a public ingress."""
 
+import json
 import os
 import pathlib
+import shutil
+import subprocess
+import sys
 import tomllib
+from pathlib import Path
 
 import modal
+import yaml
 
 from cua.cloud.modal.common import (
     CODE_ROOT,
@@ -15,6 +21,7 @@ from cua.cloud.modal.common import (
     outputs,
     with_package,
 )
+from cua.rl.train import derive_run_config, load_rl_config, load_task_ids, make_dataset
 from cua.settings import CLOUD, RL
 
 APP_NAME = "cua-grpo"
@@ -26,7 +33,7 @@ _CONSTRAINTS_FILE = pathlib.Path("constraints/rl-modal.txt")
 
 
 def _rl_requirements():
-    """Everything `pip install -e ".[rl]" -c constraints/rl-modal.txt` installs: core deps, the rl extra, the resolved GPU column."""
+    """Everything the `[rl]` extra and `constraints/rl-modal.txt` install: core deps plus the resolved GPU column."""
     project = tomllib.loads(_PYPROJECT_FILE.read_text())["project"]
     pins = [line.strip() for line in _CONSTRAINTS_FILE.read_text().splitlines() if line.strip() and line[0] != "#"]
     return list(project["dependencies"]) + list(project["optional-dependencies"]["rl"]) + pins
@@ -35,7 +42,7 @@ def _rl_requirements():
 # Module-level reads re-run inside the container, where these files are absent and the image is already built.
 _RL_REQUIREMENTS = _rl_requirements() if _PYPROJECT_FILE.is_file() and _CONSTRAINTS_FILE.is_file() else []
 
-# Pinned to CUDA 12.8.1: the vLLM/torch column resolved in constraints/rl-modal.txt needs it, unlike the SFT lane's 12.4.1.
+# Pinned to CUDA 12.8.1: the vLLM and torch column in constraints/rl-modal.txt needs it, unlike the SFT lane.
 image = with_package(
     modal.Image.from_registry("nvidia/cuda:12.8.1-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
@@ -66,18 +73,8 @@ def grpo(
     task_ids_file: str = "",
     no_reward_smoke: bool = False,
 ):
-    import json
-    import shutil
-    import subprocess
-    import sys
-    from pathlib import Path
-
-    import yaml
-
-    from cua.rl.train import derive_run_config, load_rl_config, load_task_ids, make_dataset
-
     if no_reward_smoke:
-        # env-read: inherited by cua.rl.train's subprocesses, so the mock env's verdictless closes kill the run instead of training zeros
+        # env-read: inherited by cua.rl.train's subprocesses, so a verdictless close kills the run
         os.environ["RL_MOCK_NO_REWARD"] = "1"
 
     adapter_src = Path(OUT_MOUNT) / sft_adapter

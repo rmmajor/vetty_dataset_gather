@@ -1,10 +1,4 @@
-"""Path A page — mind2web / GPT-5.4 CUA trajectories.
-
-Real-web trajectories recorded by `cua/path_a/recorder.py`. No in-sandbox DOM
-probe, so `bbox` / `role` / `name` / `tag` / `dt_ms` / `dom_changed` are unset on every step.
-Distributions here focus on what is available: action mix, instruction & thought shape,
-domain / website spread, and click coordinate density on the viewport.
-"""
+"""Path A page: mind2web / GPT-5.4 CUA trajectories, whose element-level fields are never captured."""
 
 import streamlit as st
 

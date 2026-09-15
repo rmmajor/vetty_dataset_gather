@@ -1,4 +1,4 @@
-"""The no-model self-test: every non-model component (prompt parity, parsing, coordinate mapping, hit-testing, aggregation, reporting) against synthetic samples."""
+"""The no-model self-test: prompt parity, parsing, coordinate mapping, hit-testing and reporting, on synthetics."""
 
 import json
 from pathlib import Path

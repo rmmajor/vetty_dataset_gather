@@ -1,9 +1,4 @@
-"""Per-trajectory inspector — pick one, see its screenshots + action overlays.
-
-Bbox is drawn as a green rectangle around the target element when available; otherwise a
-small red dot marks the click `(x, y)`. Right column carries the step table (action / role /
-name / thought).
-"""
+"""Per-trajectory inspector: pick one trajectory and step through its screenshots with action overlays."""
 
 import json
 from pathlib import Path

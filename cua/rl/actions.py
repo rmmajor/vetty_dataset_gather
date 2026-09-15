@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from cua.trajectory.actions import ACTION_SPECS, format_action_for_training
 
 _THINK_RE = re.compile(r"^\s*<think>(.*?)</think>[ \t]*\n?", re.DOTALL)
-# Reasoning templates PREFILL the opening <think>, so a served completion carries only the closing tag and the thought would otherwise be lost as stray text.
+# Reasoning templates PREFILL `<think>`, so a completion has only the closing tag and its thought reads as stray text.
 _THINK_PREFILLED_RE = re.compile(r"\A(?!\s*<think>)(.*?)</think>[ \t]*\n?", re.DOTALL)
 _LINE_RE = re.compile(r"^action:\s*([a-z_]+)\((.*)\)\s*$", re.DOTALL)
 
@@ -25,7 +25,7 @@ class StepDecode:
 
 
 def _split_action_lines(text):
-    """Group lines into `action:` entries; a line continuing an unterminated entry (multi-line type text) is appended to it."""
+    """Group lines into `action:` entries; a line continuing an unterminated entry (multi-line type) joins it."""
     entries, stray = [], []
     for line in text.splitlines():
         if line.startswith("action:"):
@@ -37,24 +37,24 @@ def _split_action_lines(text):
     return entries, stray
 
 
-def _decode_entry(entry, actions, errors):
+def _decode_entry(entry, errors):
+    """The action one `action:` line decodes to, or None with the reason appended to `errors`."""
     line = _LINE_RE.match(entry)
     if not line:
         errors.append(f"bad_line:{entry[:40]}")
-        return True
+        return None
     name, args = line.group(1), line.group(2)
     spec = ACTION_SPECS.get(name)
     if spec is None or spec.decode is None:
         errors.append(f"unknown_action:{name}")
-        return True
+        return None
     action = spec.decode(args)
     if action is None:
         errors.append(f"bad_args:{name}")
-        return True
-    actions.append(action)
-    return format_action_for_training(action) == entry
+    return action
 
 
+# Strict on purpose, NOT cua.eval.student.grammar: that reading takes more spellings and reads `confirm` differently.
 def decode_step(text):
     raw = text or ""
     errors = []
@@ -68,7 +68,13 @@ def decode_step(text):
     errors.extend(f"stray_text:{s[:40]}" for s in stray)
     actions, canonical = [], True
     for entry in entries:
-        canonical = _decode_entry(entry, actions, errors) and canonical
+        action = _decode_entry(entry, errors)
+        if action is None:
+            continue
+        actions.append(action)
+        # Formatted unconditionally, so a formatter failure surfaces on every action and not only until the first one.
+        is_canonical = format_action_for_training(action) == entry
+        canonical = canonical and is_canonical
     if not actions and not errors:
         errors.append("no_actions")
     return StepDecode(thought=thought, actions=actions, errors=errors, canonical=canonical and not errors, raw=raw)

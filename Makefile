@@ -22,6 +22,7 @@ PIPELINE_BUDGET ?= 30
 PIPELINE_WORKERS ?= 5
 PIPELINE_LIMIT ?=
 PIPELINE_LIMIT_PCT ?= 100
+GATE_SAMPLE   ?=
 # ScreenSpot grounding eval
 EVAL_MODELS      ?= eval_models.yaml
 EVAL_DATASET     ?= rootsautomation/ScreenSpot
@@ -43,7 +44,7 @@ EVAL_COORD_SPACE ?=
 EVAL_LIMIT       ?=
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[A-Za-z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 # ---------- Setup ----------
 
@@ -145,7 +146,7 @@ fixtures-build: ## Rewrite the behaviour-regression fixtures under tests/fixture
 fixtures-check: ## Fail if today's behaviour differs from the stored regression fixtures
 	python -m tests.regression_fixtures check
 
-check: test-rl-unit test-eval test-verify-gate test-qa-verify test-remote test-corpus-audit test-instruction-style test-outcome-relabel registry-check fixtures-check lint ## Tier-1 gate: every no-LLM, no-network self-test plus the regression fixtures
+check: test-rl-unit test-eval test-verify-gate test-qa-verify test-remote test-corpus-audit test-instruction-style test-outcome-relabel registry-check conventions-check fixtures-check lint ## Tier-1 gate: every no-LLM, no-network self-test plus the regression fixtures
 	$(MAKE) test-student-eval EVAL_ARGS=--no-judge
 
 test-rl: ## Docker-only end-to-end smoke of the RL harness (static page + scripted policy, no LLM)
@@ -372,17 +373,22 @@ registry: ## Re-render experiments/*.csv into the README registry block
 registry-check: ## Fail if the README registry block is out of date
 	python experiments/render_registry.py --check
 
+conventions-check: ## Fail if the environment table in docs/conventions.md no longer matches cua/settings.py
+	python -m cua.settings --check
+
 # ---------- Lint / format ----------
 
 LINT_PATHS     ?= .
 ENV_READ_ALLOW ?= cua/settings.py
+# Empty: no path is exempt from the convention checks; a finding anywhere fails `make lint`.
+LINT_PENDING   ?=
 
-lint: ## Ruff plus the repo's own comment/env/import conventions (the env-read check is enforcing, the other two report)
+lint: ## Ruff plus the repo's own comment/env/import conventions, all three enforcing
 	ruff check .
 	ruff format --check .
-	python scripts/check_comments.py $(LINT_PATHS)
-	python scripts/check_env_reads.py $(LINT_PATHS) --allow $(ENV_READ_ALLOW)
-	python scripts/check_nested_imports.py $(LINT_PATHS) --report-only
+	python scripts/check_comments.py $(LINT_PATHS) --quiet --pending $(LINT_PENDING)
+	python scripts/check_env_reads.py $(LINT_PATHS) --quiet --allow $(ENV_READ_ALLOW)
+	python scripts/check_nested_imports.py $(LINT_PATHS) --quiet --pending $(LINT_PENDING)
 
 fmt: ## Apply ruff formatting plus the safe import/upgrade autofixes
 	ruff format .

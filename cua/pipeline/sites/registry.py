@@ -1,4 +1,4 @@
-"""The site registries as one loader: every capture lane resolves its sites here, from the JSON data `schema.md` documents."""
+"""The site registries as one loader: every capture lane resolves its sites here, from the documented JSON."""
 
 import json
 import logging
@@ -73,7 +73,7 @@ def load_sites(
 ) -> list[dict]:
     """The sites a lane should capture from `path`, filtered by whichever of the two gates that lane uses."""
     if only:
-        # Explicitly named sites run even when skip-tagged, and are searched across EVERY config: the worklist is split over several.
+        # Explicitly named sites run even when skip-tagged, and are searched across EVERY config file.
         return resolve_named_sites(list(only), path)
     sites = json.loads(Path(path).read_text())["sites"]
     if allow_provisioning is not None:

@@ -1,4 +1,4 @@
-"""Scoring: read a point out of the model's text, map it into source-image pixels through the spec's coordinate space, hit-test it."""
+"""Scoring: read a point from the model's text, map it into source-image pixels via the spec's space, hit-test it."""
 
 import re
 from dataclasses import dataclass
@@ -14,7 +14,7 @@ class Record:
     mapped_point: tuple | None  # mapped into original-image pixels
     bbox_xyxy: tuple
     hit: bool
-    # Without the source dimensions a saved run cannot be re-scored, the only way to tell grounding failure from mismatch.
+    # Without the source dimensions a saved run cannot be re-scored, the only way to tell a miss from a mismatch.
     orig_w: int = 0
     orig_h: int = 0
 
@@ -55,7 +55,7 @@ class NativeAbsCoordSpace(CoordSpace):
         return (x, y)
 
 
-# A space maps points both directions and NEVER touches the image; a new convention is another entry, not a caller branch.
+# A space maps points both ways and NEVER touches the image; a new convention is another entry, not a branch.
 COORD_SPACES: dict = {
     "viewport_abs": lambda cfg: ViewportAbsCoordSpace(cfg.viewport_w, cfg.viewport_h),
     "normalized_1000": lambda cfg: Normalized1000CoordSpace(),

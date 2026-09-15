@@ -1,10 +1,4 @@
-"""Path B page — QA repo Playwright/Selenium trajectories.
-
-Deterministic test runs in the sandbox. When `capture_meta.json` is present every element
-field (`bbox`, `role`, `tag`, `is_visible`, …) and every per-action diagnostic (`dt_ms`,
-`dom_changed`, `caused_navigation`) lights up. This is the path where the Elements tab is
-meaningful.
-"""
+"""Path B page: sandboxed QA-repo trajectories, the path where every element field is populated."""
 
 import streamlit as st
 

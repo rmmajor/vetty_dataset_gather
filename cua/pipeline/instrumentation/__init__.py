@@ -15,12 +15,7 @@ INJECT_MARKER = "# --- injected trajectory instrumentation ---"
 
 
 def setup_repo_instrumentation(sandbox, profile: FrameworkProfile):
-    """Install dependencies and inject the framework's instrumentation into the cloned
-    repo so that running its tests captures trajectories to /workspace/results.
-
-    Driven entirely by `profile` (see cua.pipeline.frameworks). Shared by stage 5
-    (trial) and stage 6 (generate).
-    """
+    """Install dependencies and inject `profile`'s instrumentation, so running the repo's tests records trajectories."""
     for command in profile.install_commands:
         sandbox.exec_command(command.format(repo_dir=REPO_DIR), timeout=300)
 
@@ -41,11 +36,7 @@ _PW_IMPORT_RE = re.compile(r"""(from\s+)(['"])@playwright/test\2""")
 
 
 def _wire_ts_fixture(sandbox):
-    """Redirect every TS/JS test file's `@playwright/test` import to the injected
-    instrumented fixture. The fixture re-exports the whole module (a drop-in superset)
-    and overrides the `page` fixture, so this single import swap makes instrumentation
-    auto-apply to every test — no per-test edits by the agent, no manual wiring.
-    """
+    """Redirect every TS/JS test file's `@playwright/test` import to the injected drop-in fixture."""
     fixture_ref = f"{REPO_DIR}/instrumented-fixture"  # extension-less, as used in imports
     seen = set()
     rewired = 0
@@ -71,10 +62,7 @@ def _wire_ts_fixture(sandbox):
 
 
 def _inject_python_conftest(sandbox, conftest_filename: str):
-    """Make the instrumentation load under pytest. pytest only auto-discovers files
-    named exactly conftest.py, so append the instrumentation to the repo's top-level
-    conftest.py (preserving its own fixtures), or create one if none exists.
-    """
+    """Append the instrumentation to the repo's top-level conftest.py, the only name pytest auto-discovers."""
     conftest_content = INSTRUMENTATION_DIR.joinpath(conftest_filename).read_text()
 
     existing_conftests = sandbox.list_files("conftest.py", REPO_DIR)

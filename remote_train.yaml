@@ -36,6 +36,6 @@ output_dir: output
 val_split: 0.1
 
 # ----- Optional post-train steps (default off) -----
-run_eval: false           # run cua/eval/screenspot.py before/after on the box (needs that file)
+run_eval: false           # run cua/eval/screenspot/ before/after on the box (needs that package)
 push_hf_repo: ""          # e.g. "your-hf-handle/qwen-cua-lora"; needs HF_TOKEN
 notify: false             # Telegram ping on completion (needs TELEGRAM_BOT_TOKEN/CHAT_ID)

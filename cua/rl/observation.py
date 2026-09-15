@@ -1,4 +1,4 @@
-"""The student's observation: the exact SFT user turn plus the PNG, and its OpenAI-message rendering."""
+"""The RL lane's frozen v2 observation: the sft-v1/v2 user turn plus the PNG, and its OpenAI-message rendering."""
 
 from cua.prompt.format import SYSTEM_PROMPT, build_step_user_text
 
@@ -12,6 +12,7 @@ def build_observation(instruction, action_history, image_png_b64, step_index):
     }
 
 
+# Image first, no screenshot headers: what an sft-v1/v2 policy trained on, so not cua.student.observation's turn.
 def to_openai_messages(observation):
     return [
         {"role": "system", "content": observation["system"]},

@@ -316,8 +316,7 @@ async def record_single_task(client, task, output_dir, max_steps, viewport_width
                 }
             )
 
-            # DOM-free capture metadata: GPT's computer tool is screenshot-only, so element
-            # semantics stay null; we still record url/screenshot/timing signals.
+            # GPT's computer tool is screenshot-only, so element semantics stay null while url and timing do not.
             sha = hashlib.sha256(screenshot_bytes).hexdigest()
             w, h = png_dims(screenshot_bytes)
             now = time.monotonic()

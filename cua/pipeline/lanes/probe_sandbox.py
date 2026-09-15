@@ -1,18 +1,4 @@
-"""Render-probe candidate sites through the ACTUAL sandbox browser, before any teacher run.
-
-`probe_capturable` fetches over HTTP from the host, which answers a different question: rome2rio
-passes it yet serves the container a Cloudflare Turnstile challenge, and sbb.ch passes it yet
-renders a blank page inside Chromium. Both facts cost 2-3 teacher runs each to discover. This
-probe opens each start_url in a sandbox driver session, reads the snapshot and the affordance
-counts, and reports the sites worth capturing — seconds per site, no LLM.
-
-  python -m cua.pipeline.lanes.probe_sandbox cua/pipeline/sites/public_sites_search.json
-  python -m cua.pipeline.lanes.probe_sandbox --urls https://a.test https://b.test
-  python -m cua.pipeline.lanes.probe_sandbox <config> --mark   # write skip_capture into the config
-
-Run it when capture is NOT running: each probe holds a sandbox, and total sandbox memory is the
-host's binding constraint (see safe_parallel_sandboxes).
-"""
+"""Render-probe candidate sites through the ACTUAL sandbox browser, before any teacher run."""
 
 import argparse
 import json
@@ -20,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from cua.eval.student.blocks import detect_block
+from cua.eval.blocks import detect_block
 from cua.pipeline.driver_session import boot_driver_sync
 from cua.pipeline.instrumentation import RESULTS_DIR
 from cua.pipeline.sandbox import DockerSandbox

@@ -80,7 +80,7 @@ class EnvService:
         return {"episode_id": episode_id, "observation": observation}
 
     def _next_k(self, run_id, iteration, task_id):
-        # The trainer's GRPO samples of one task all carry the same sample_idx, so the service numbers them; k is what keeps their trajectory dirs apart.
+        # The trainer's GRPO samples of one task share a sample_idx, so k is what keeps their trajectory dirs apart.
         with self.lock:
             key = (run_id, iteration, task_id)
             self.k_counters[key] = self.k_counters.get(key, -1) + 1
@@ -121,7 +121,7 @@ class EnvService:
             try:
                 observation, reward, done, info = entry["episode"].step(body["response_text"])
             except Exception as e:
-                # A step that raised after acting must end the episode here: a retried request would otherwise execute the action again.
+                # A step that raised after acting ends the episode: a retried request would act a second time.
                 logger.exception(f"{episode_id}: step failed — closing the episode")
                 record = entry["episode"].close("step_error")
                 observation, reward, done, info = (
@@ -276,7 +276,8 @@ def main():
         pool.start()
         threading.Thread(target=_reap_forever, args=(service,), daemon=True).start()
         logger.info(
-            f"env service on {args.host}:{args.port} with {pool.slot_count} slot(s), {len(tasks)} tasks (suite {suite['suite_sha256'][:12]}), "
+            f"env service on {args.host}:{args.port} with {pool.slot_count} slot(s), {len(tasks)} tasks "
+            f"(suite {suite['suite_sha256'][:12]}), "
             f"driver loop guard at {pool.loop_guard_repeats} repeats"
         )
         server.serve_forever()

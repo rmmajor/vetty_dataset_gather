@@ -1,22 +1,4 @@
-"""Drop-in conftest.py for instrumenting Python Playwright test repos.
-
-Place this file in the test directory of a Playwright Python repo. It
-monkey-patches Page and Locator methods to capture, before each interaction, a
-screenshot + the target element's bounding box + a rich DOM probe (tag, role,
-accessible name, attributes, visibility) + page state (url, scroll, console
-errors), recording all of it into the trajectory files.
-
-Three files are written per test (see save()):
-    trajectory.json   — the minimal training contract + inline bbox/role/name
-    capture_meta.json  — full per-step diagnostics, keyed by step number
-    metadata.json      — trajectory-level fields (aggregates filled later in stage 6)
-
-Environment variables:
-    TRAJECTORY_DIR    — directory to write results (default: /workspace/results)
-    SOURCE_REPO       — repo identifier for metadata
-    TEST_NAME_PREFIX  — prefix for task IDs (default: repo)
-    FRAMEWORK / FRAMEWORK_LANGUAGE — recorded into capture_meta.json
-"""
+"""Drop-in conftest.py that records a trajectory from a Python Playwright repo's own tests."""
 
 import hashlib
 import inspect
@@ -34,8 +16,7 @@ TRAJECTORY_DIR = os.environ.get("TRAJECTORY_DIR", "/workspace/results")  # env-r
 VIEWPORT_WIDTH = 1280
 VIEWPORT_HEIGHT = 720
 
-# Single-round-trip DOM probe run against the target element. Keep in sync with the
-# equivalent constants in pw_ts_fixture.ts and selenium_python_conftest.py.
+# One round trip per element, and kept in sync with the same constant in the TS fixture and the Selenium conftest.
 PROBE_JS = """(el) => {
   if (!el) return null;
   const cs = getComputedStyle(el);
@@ -255,8 +236,7 @@ def _safe_url(page):
 
 
 def _build_meta(page, evaluatable, selector, box):
-    """Assemble the pre-action half of a step's capture metadata. url_after /
-    caused_navigation / error are filled in _commit after the original action runs."""
+    """The pre-action half of a step's capture metadata, which `_commit` completes once the action has run."""
     probe = {}
     if evaluatable is not None:
         try:
@@ -435,6 +415,7 @@ def _safe_query(page, selector):
 
 def _patch_locator_sync(page):
     """Patch the Locator class so locator.click(), locator.fill(), etc. are instrumented."""
+    # lazy: the conftest is importable in a repo whose Playwright install is still missing
     from playwright.sync_api import Locator
 
     def make(method_name, action_type):
@@ -488,10 +469,7 @@ def _patch_locator_sync(page):
 
 
 def _capture_test_source(node, output_dir):
-    """Persist the test function's source (body + docstring) next to the trajectory so the
-    stage-6 instruction generator can infer intent from it instead of just the function name.
-    Best-effort: any failure is swallowed — older trajectories simply have no test_source.txt
-    and the instruction prompt has an explicit fallback for that case."""
+    """Persist the test function's source next to the trajectory, so the instruction generator can infer intent."""
     if not output_dir:
         return
     try:

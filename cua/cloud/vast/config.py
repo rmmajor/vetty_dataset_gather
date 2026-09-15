@@ -1,4 +1,4 @@
-"""One remote-job config dataclass plus its layered loader: dataclass defaults < remote_train.yaml < env < CLI, secrets from env only."""
+"""One remote-job config dataclass and its layered loader: defaults < yaml < env < CLI, secrets from env only."""
 
 import os
 from dataclasses import dataclass, field
@@ -18,7 +18,7 @@ class RemoteTrainConfig:
     min_vram_gb: int = 48
     # bfloat16 needs Ampere sm_80+, so cheap Turing cards (compute_cap 750) cannot run the workload.
     min_compute_cap: int = 800
-    # Host driver's max supported CUDA; 0 disables the filter. Images built on newer CUDA fail at engine init on older drivers.
+    # 0 disables the filter; an image built on newer CUDA fails at engine init on an older host driver.
     min_cuda_vers: float = 0.0
     num_gpus: int = 1
     max_price_per_hour: float = 2.0

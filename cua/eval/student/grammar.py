@@ -1,4 +1,4 @@
-"""ONE tolerant definition of the student action grammar, enumerated in CLAUDE.md's Student eval section."""
+"""ONE tolerant definition of the student action grammar, enumerated in docs/evaluation.md's student-eval section."""
 
 import json
 import re
@@ -7,7 +7,7 @@ from typing import NamedTuple
 
 from cua.trajectory.actions import format_action_for_training
 
-# Any UNAMBIGUOUS spelling is accepted, with canonical_form_rate reported instead: a base model has only seen this grammar DESCRIBED.
+# Any UNAMBIGUOUS spelling is accepted and reported as canonical_form_rate: a base model only saw it DESCRIBED.
 ACTION_VERBS = (
     "click",
     "double_click",
@@ -366,8 +366,9 @@ def _think_text(text: str):
     return (think_match.group(1).strip() if think_match else ""), think_re.sub("", text, count=1)
 
 
+# NOT cua.rl.actions.decode_step, the formatter's strict inverse: this reading is the `action_grammar` parity key.
 def parse_student_output(text: str, tolerant_grammar: bool = True) -> ParsedStep:
-    """Split one assistant turn into its `<think>` text and ordered action dicts; a step fails only when NO line parsed."""
+    """Split one assistant turn into `<think>` text and ordered actions; a step fails only when NO line parsed."""
     text = text or ""
     think, body = _think_text(text)
 

@@ -1,4 +1,4 @@
-"""A rental whose job failed is blocklisted, so a deterministic cheapest-first retry stops re-renting the same broken host."""
+"""A rental whose job failed is blocklisted, so a cheapest-first retry stops re-renting the same broken host."""
 
 import json
 import tempfile

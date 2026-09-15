@@ -1,4 +1,4 @@
-"""The inference backends: one registry entry per way of asking a model where to click, all shown training's grounding prompt."""
+"""One registry entry per way of asking a model where to click; the served arms get training's grounding prompt."""
 
 import asyncio
 import concurrent.futures
@@ -7,8 +7,6 @@ import json
 import os
 import subprocess
 import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
 from cua.eval.screenspot.dataset import prepare_sample_image
@@ -21,9 +19,13 @@ from cua.prompt.format import (
     to_openai_content,
 )
 from cua.settings import EVAL
+from cua.student.client import OpenAICompatibleClient, RetryPolicy
 
 # The element description handed to the grounding observation; a ScreenSpot instruction names the target.
 GROUNDING_DESCRIPTION_TEMPLATE = 'the element described as "{instruction}"'
+
+# An unreachable endpoint scores as a parse failure instead of aborting: one dead arm loses no other's numbers.
+SPENT_ATTEMPTS_SCORE_AS_PARSE_FAILURE = RetryPolicy(attempts=3, backoff=lambda attempt: 2 * attempt)
 
 CLAUDE_GROUNDING_SYSTEM_PROMPT = (
     "You are a GUI grounding model. Given a screenshot and a described element, reply with the "
@@ -151,36 +153,6 @@ class SwiftPredictor(Predictor):
             return read_swift_results(result_path, len(samples))
 
 
-class ChatCompletionsClient:
-    """A stdlib-only /chat/completions client, so the harness adds no HTTP dependency to the rented box's `.[eval]` install."""
-
-    def __init__(self, endpoint, api_key, timeout_s=180, attempts=3):
-        self.url = f"{endpoint.rstrip('/')}/chat/completions"
-        self.api_key = api_key
-        self.timeout_s = timeout_s
-        self.attempts = attempts
-
-    def complete(self, model, messages, temperature, max_tokens):
-        """The answer text, or "" once the attempts are spent — an unreachable endpoint scores as a parse failure, not an abort."""
-        body = json.dumps(
-            {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
-        ).encode()
-        request = urllib.request.Request(
-            self.url,
-            data=body,
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-        )
-        for attempt in range(self.attempts):
-            try:
-                with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-                    return json.load(response)["choices"][0]["message"]["content"] or ""
-            except Exception:
-                if attempt == self.attempts - 1:
-                    return ""
-                time.sleep(2 * (attempt + 1))
-        return ""
-
-
 class OpenAIPredictor(Predictor):
     """Any OpenAI-compatible /chat/completions endpoint, same wire format the student eval uses."""
 
@@ -190,13 +162,21 @@ class OpenAIPredictor(Predictor):
         endpoint = EVAL.screenspot_endpoint.rstrip("/")
         if not endpoint:
             raise ValueError("set SCREENSPOT_ENDPOINT to the /v1 base url of the served model")
-        self.client = ChatCompletionsClient(endpoint, EVAL.screenspot_api_key)
+        self.client = OpenAICompatibleClient(
+            endpoint=endpoint,
+            model=model,
+            api_key=EVAL.screenspot_api_key,
+            temperature=cfg.temperature,
+            max_tokens=cfg.max_tokens,
+            retry=SPENT_ATTEMPTS_SCORE_AS_PARSE_FAILURE,
+            send_empty_auth=True,
+        )
         self.cfg = cfg
 
     def _one(self, sample, coord_space):
         image = prepare_sample_image(sample.image)
         messages = build_openai_messages(sample.instruction, encode_png(image))
-        return self.client.complete(self.model, messages, self.cfg.temperature, self.cfg.max_tokens)
+        return self.client.chat(messages)
 
     def predict_batch(self, samples, cfg, coord_space):
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as pool:
@@ -204,7 +184,7 @@ class OpenAIPredictor(Predictor):
 
 
 class ClaudePredictor(Predictor):
-    """The frontier arm, reached through the logged-in `claude` CLI and never an API key; grounding is the one apples-to-apples lane."""
+    """The frontier arm, through the logged-in `claude` CLI and never an API key; grounding is the fair lane."""
 
     def __init__(self, model, cfg):
         self.model = model

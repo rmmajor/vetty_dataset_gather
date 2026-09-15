@@ -1,4 +1,4 @@
-"""One-time migration: parse each already-rejected repo's free-text filter_reason back into a failure_category and the stage-3/4 scores behind it, so the dashboard and --requeue-infra see historical rejections; parse-only, no LLM, idempotent."""
+"""One-time migration parsing each rejected repo's free-text filter_reason back into a category and its scores."""
 
 import argparse
 import json

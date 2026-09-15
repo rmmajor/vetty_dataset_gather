@@ -1,17 +1,4 @@
-"""Autonomous REGISTER -> verify-email capture on a REAL public site, end-to-end in the browser.
-
-Mints a disposable mail.tm mailbox, then lets the Claude teacher: create an account on a real site
-using that address (typed masked), walk to the mail.tm web inbox, sign in, open the confirmation
-message, and follow its link — all visually, recorded as one trajectory. This is the deployment
-skill saucedemo's login could not prove.
-
-The site account password is the mailbox password (one masked secret reused for both the site and
-the inbox login). Real verification mail is also confirmed out-of-band via the mail.tm API purely
-as a harness sanity check; the agent still reads it in the browser.
-
-Run: python -m cua.pipeline.lanes.register_real_site <name> <signup_url> ["instruction"]
-     python -m cua.pipeline.lanes.register_real_site reset <name> <signup_url>
-"""
+"""Register-then-verify-email capture on one REAL public site, done end-to-end in the browser as one trajectory."""
 
 import argparse
 import asyncio

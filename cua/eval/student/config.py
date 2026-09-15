@@ -3,10 +3,10 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from cua.eval.student.observation import DEFAULT_OBSERVATION
 from cua.eval.task_sources import EvalTask
 from cua.prompt.format import PROMPT_FORMAT_VERSION
 from cua.settings import EVAL
+from cua.student.observation import DEFAULT_OBSERVATION
 
 EVAL_RUNS_DIR = Path(EVAL.runs_dir)
 

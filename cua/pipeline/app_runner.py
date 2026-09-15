@@ -1,19 +1,4 @@
-"""Start a repo's own app before running its E2E tests, inside the sandbox.
-
-Most E2E suites assume an app is already serving (a dev server on localhost). The pipeline ran
-the tests with nothing serving, so they failed (`pass_rate 0`) and captured nothing — the dominant
-no_capture cause. This module detects a repo's bundled web app and runs it alongside the tests.
-
-The sandbox runs each command in an *independent* shell, so a dev server backgrounded in one
-`exec_command` dies before the next call. The fix is to start + wait + test + stop inside a single
-compound command (`wrap_test_command`). Repos whose Playwright config already declares a `webServer`
-are left alone — Playwright manages that lifecycle itself.
-
-Scope (v1): Node apps with a root `package.json` start script. Python app servers, monorepo
-sub-apps, and stacks needing a DB/backend/credentials are out of scope (would need docker-compose /
-host execution, which are deliberately not built). Those keep failing no_capture — now with a
-persisted log (see stage5) explaining why.
-"""
+"""Detect, start and stop a repo's own Node web app inside the sandbox, for replay tests and for agent capture."""
 
 import json
 import logging
@@ -29,17 +14,7 @@ logger = logging.getLogger(__name__)
 # Start scripts to try, in order of preference. `dev` needs no build and is the most likely to work.
 _START_SCRIPTS = ("dev", "start", "serve", "preview")
 
-# Dev servers must serve the APP, not developer tooling: CRA/webpack splash full-screen ESLint
-# walls over the page on lint findings (e.g. CRLF/LF mismatches on checkout), which would land
-# in every recorded screenshot. These env vars disable the lint plugin and overlay at the
-# source; the browser driver additionally scrubs any overlay that still appears. BROWSER=none
-# stops CRA trying to open a browser; CI='' keeps warnings from being promoted to hard errors.
-#
-# NODE_OPTIONS=--dns-result-order=ipv4first: dev servers (Vite, Next, …) bind to the hostname
-# `localhost`, which Node resolves to IPv6 `::1` first on this image — but the boot probe and the
-# browser driver reach the app over IPv4 `127.0.0.1`, so a perfectly-served app reads as NO_BOOT.
-# Forcing IPv4-first resolution makes `localhost` bind 127.0.0.1, where the harness looks.
-# HOST=0.0.0.0 covers servers that honour $HOST (CRA/webpack) by binding all interfaces.
+# Suppresses the dev-server lint overlay from every screenshot, and resolves `localhost` to the IPv4 the probe uses.
 _DEV_SERVER_ENV = (
     "DISABLE_ESLINT_PLUGIN=true ESLINT_NO_DEV_ERRORS=true BROWSER=none CI='' "
     "NODE_OPTIONS=--dns-result-order=ipv4first HOST=0.0.0.0 npm_config_engine_strict=false"
@@ -80,8 +55,7 @@ class AppStartSpec:
 
 # Web-app directory names — boosted when scoring monorepo subdirs.
 _APP_SUBDIR_NAMES = ("frontend", "client", "web", "app", "ui", "www", "site", "dashboard", "webapp")
-# Frontend-framework markers: a package.json pulling one of these is almost certainly the bootable
-# UI, vs an api/lib/tooling package sharing the same monorepo.
+# A package.json pulling one of these is almost certainly the bootable UI, not an api or lib package beside it.
 _FRONTEND_DEPS = (
     "react",
     "vue",
@@ -99,11 +73,7 @@ _FRONTEND_DEPS = (
 
 
 def _find_app_dir(sandbox) -> str | None:
-    """Best directory to boot: a package.json that has a dev/start script, scored to prefer one
-    pulling in a frontend framework, in a web-ish, shallow dir. Searches root + monorepo subdirs
-    (apps/*, packages/*, examples/* up to depth 3, excluding node_modules) so a real app in
-    `apps/web` isn't missed — the dominant 'no bootable Node app' miss on monorepos. None when no
-    package.json with a recognizable start script exists."""
+    """The best directory to boot: a package.json with a start script, scored by framework, name and depth."""
     best = None  # (score, app_dir)
     for path in sandbox.list_files("package.json", REPO_DIR):
         if "/node_modules/" in path:
@@ -128,8 +98,8 @@ def _find_app_dir(sandbox) -> str | None:
 
 
 def _install_dir(sandbox, app_dir: str) -> str:
-    """Where dependency install runs: the workspace ROOT when the app is a monorepo package (so
-    pnpm/yarn install the whole workspace and place the app's binaries on PATH), else the app dir."""
+    """Where the dependency install runs: the workspace root for a monorepo package, else the app dir."""
+    # Installing at the root is what puts a workspace app's own binaries on PATH.
     if app_dir == REPO_DIR:
         return REPO_DIR
     out, _, _ = sandbox.exec_command(
@@ -169,10 +139,8 @@ def _infer_port(script: str, dep_names: str) -> int:
 
 
 def detect_package_manager(sandbox, app_dir: str) -> str:
-    """The app's package manager: the `packageManager` field (authoritative), else a lockfile,
-    else npm. pnpm/yarn projects fail under a blind `npm install` — their workspace binaries
-    (next, vite, turbo) never land on PATH, the dominant `sh: <tool>: not found` boot failure —
-    so we install and run them with their own PM."""
+    """The app's package manager, from the `packageManager` field, else a lockfile, else npm."""
+    # A pnpm or yarn project under a blind `npm install` never lands its binaries on PATH: the dominant boot failure.
     field = ((_read_json(sandbox, f"{app_dir}/package.json") or {}).get("packageManager") or "").lower()
     if field.startswith("pnpm"):
         return "pnpm"
@@ -187,13 +155,8 @@ def detect_package_manager(sandbox, app_dir: str) -> str:
 
 
 def _install_cmd(pm: str, app_dir: str) -> str:
-    """Dependency-install command for the detected PM. npm is built in. pnpm/yarn are installed
-    GLOBALLY via npm — NOT corepack, whose shim throws `DefaultVersion` on this image and then
-    shadows any fallback. We pin the PERMISSIVE major line (pnpm 8 / yarn 1): pnpm 10+ blocks
-    dependency build scripts behind an interactive `approve-builds` prompt and gates `pnpm run` on
-    a deps-status check — both fatal for unattended boots — while pnpm 8 runs builds (esbuild etc.)
-    directly. `npm_config_engine_strict=false` + `--no-frozen-lockfile` stop a mismatched
-    engines.node or a newer-format lockfile from blocking install (we have one Node, one shot)."""
+    """The dependency-install command for the detected package manager."""
+    # Globally via npm, not corepack, and pinned to the permissive major: pnpm 10+ gates unattended installs and runs.
     if pm == "npm":
         return f"cd {app_dir} && npm install"
     if pm == "pnpm":
@@ -207,15 +170,8 @@ def _install_cmd(pm: str, app_dir: str) -> str:
 
 
 def detect_app_start(sandbox, profile: FrameworkProfile, for_agent: bool = False) -> AppStartSpec | None:
-    """Inspect the cloned repo and decide how (if at all) to start its app.
-
-    Returns None when there's nothing to start here: no Node app, or a Playwright config that
-    already manages its own `webServer` (left to Playwright), or no recognizable start script.
-
-    ``for_agent=True`` (agent capture / boot gate): there is no Playwright test run to honour a
-    `webServer` config, so the webServer short-circuit is skipped and the package.json start
-    script is used directly — webServer blocks almost always wrap that same script.
-    """
+    """How to start this repo's app, or None when there is no Node app, no start script, or Playwright owns it."""
+    # for_agent skips the webServer short-circuit: no Playwright run honours it, and such blocks wrap the same script.
     app_dir = _find_app_dir(sandbox)
     if app_dir is None:
         return None  # no Node app to start (python app servers etc. are out of scope for v1)
@@ -232,8 +188,7 @@ def detect_app_start(sandbox, profile: FrameworkProfile, for_agent: bool = False
     if not chosen:
         return None
 
-    # Install at the workspace root for monorepo apps (pnpm/yarn install the whole workspace there
-    # and place the app's binaries), but detect the PM and run the dev script in the app's own dir.
+    # Install at the workspace root for a monorepo app, but detect the PM and run the dev script in the app's own dir.
     install_dir = _install_dir(sandbox, app_dir)
     pm = detect_package_manager(sandbox, install_dir)
     dep_names = " ".join(list(pkg.get("dependencies", {})) + list(pkg.get("devDependencies", {})))
@@ -262,12 +217,8 @@ def build_app(sandbox, spec: AppStartSpec | None):
 
 
 def wrap_test_command(test_cmd: str, spec: AppStartSpec | None) -> str:
-    """Wrap a test command so the app is started, waited on, tested, and stopped in ONE shell.
-
-    No-op when spec is None. Uses the bash `/dev/tcp` builtin for the port check (no curl needed).
-    The app's exit/kill is best-effort: the container is ephemeral, and a server left listening on
-    the port just keeps serving subsequent test files in the same trial.
-    """
+    """Wrap a test command so the app is started, waited on, tested and stopped inside ONE shell."""
+    # One shell because each exec is independent: a dev server backgrounded in one call dies before the next.
     if spec is None:
         return test_cmd
     return (

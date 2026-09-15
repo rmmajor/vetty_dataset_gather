@@ -61,7 +61,7 @@ def format_group(group):
 
 
 def comparison_rows(summaries, labels):
-    """Every table row as (name, one cell per label), headline metrics first and the data-type/source breakdowns under them."""
+    """Every row as (name, one cell per label): headline metrics first, the data-type/source breakdowns under them."""
     rows = [("overall accuracy", [f"{summaries[label]['accuracy'] * 100:.1f}%" for label in labels])]
     rows.append(("parse rate", [f"{summaries[label]['parse_rate'] * 100:.1f}%" for label in labels]))
     rows.append(("samples", [str(summaries[label]["total"]) for label in labels]))

@@ -1,4 +1,4 @@
-"""The grounding slice: recorded clicks land on a named element's bbox centre, a free ScreenSpot-style set on our own distribution."""
+"""The grounding slice: recorded clicks on a named element's bbox centre, a ScreenSpot-style set of our own."""
 
 import re
 from pathlib import Path

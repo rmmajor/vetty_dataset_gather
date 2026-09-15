@@ -29,7 +29,7 @@ class TrajectoryStep(BaseModel):
     bbox: dict | None = None
     role: str | None = None
     name: str | None = None
-    # Watchdog verdict {kind:"approval", decision, rationale, by} — an observation step: empty actions, never an SFT target, threaded into later history.
+    # A watchdog verdict is an observation step: empty actions, never an SFT target, threaded into later history.
     event: dict | None = None
 
 
@@ -68,27 +68,27 @@ class TrajectoryMetadata(BaseModel):
     thought_source: str = ""
     dedup_hash: str = ""
     task_type: str = ""
-    # Capture provenance and the verifier's grade, written by the host-side writers; efficiency stays None until a verdict exists.
+    # Capture provenance and the verifier's grade; efficiency stays None until a verdict exists.
     capture_source: str = ""
-    # Untyped on purpose: both come straight from unvalidated LLM JSON, and capture must record what it got, not reject it.
+    # Untyped on purpose: both come from unvalidated LLM JSON, and capture records what it got rather than rejecting.
     difficulty: Any = ""
     efficiency: Any = None
     efficiency_ratio: float | None = None
     relabeled: bool = False
     task_style: str = ""
-    # Login-gated lane, additive: capture policy, session provenance, terminal risk class, and the replay manifest convert ignores.
+    # Login-gated lane, additive: capture policy, session provenance, terminal risk class, replay manifest.
     autonomy: str = "autonomous"  # "guarded" | "autonomous"
     auth_mode: str = "none"  # "pre_session" | "handoff_login" | "none"
     risk_category: str = ""
     preconditions: dict = Field(default_factory=dict)
 
 
-# TrajectoryMetadata requires these three; placeholders let metadata_from validate a partial update that carries none of them.
+# TrajectoryMetadata requires these three, so placeholders let a partial update carrying none of them validate.
 _IDENTITY_PLACEHOLDERS = {"task_id": "", "instruction": "", "start_url": ""}
 
 
 def metadata_from(**fields) -> dict:
-    """A metadata.json body validated through TrajectoryMetadata, carrying exactly the fields the caller passed, in their order."""
+    """A metadata.json body validated through TrajectoryMetadata, carrying exactly the fields passed, in order."""
     unknown = [key for key in fields if key not in TrajectoryMetadata.model_fields]
     if unknown:
         raise ValueError(
@@ -97,7 +97,7 @@ def metadata_from(**fields) -> dict:
     try:
         validated = TrajectoryMetadata(**{**_IDENTITY_PLACEHOLDERS, **fields}).model_dump()
     except ValidationError as exc:
-        # A capture must never die on one odd generated value: degrade to the pre-schema write-through and name the field.
+        # A capture must never die on one odd generated value: degrade to the pre-schema write and name the field.
         offending = sorted({str(error["loc"][0]) for error in exc.errors() if error.get("loc")})
         logger.warning(f"metadata.json written unvalidated — field(s) failed the contract: {', '.join(offending)}")
         return dict(fields)

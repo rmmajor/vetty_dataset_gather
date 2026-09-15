@@ -1,4 +1,4 @@
-"""The teacher's browser tools: one registry entry per tool, assembled into the in-process MCP server the driver sits behind."""
+"""The teacher's browser tools: one registry entry per tool, assembled into one in-process MCP server."""
 
 import json
 import logging
@@ -52,7 +52,7 @@ def text_result(payload: str, is_error: bool = False) -> dict:
 
 
 async def dispatch_action(ctx: ToolContext, payload: dict) -> dict:
-    """Run one recorded driver action, refusing it when the task has ended, the budget is spent, or it carries operator identity."""
+    """Run one recorded driver action, refusing an ended task, a spent budget, or operator identity in the text."""
     state = ctx.state
     if state["completed"]:
         return text_result("task already completed — no further actions.", is_error=True)
@@ -196,7 +196,7 @@ async def handle_navigate(ctx: ToolContext, args: dict) -> dict:
 
 
 async def _record_done_step(ctx: ToolContext, args: dict) -> None:
-    """The terminal `done` step — final screenshot plus the agent's goal-is-met observation — which is the supervision that teaches WHEN to stop."""
+    """The terminal `done` step, a final screenshot plus the goal-is-met observation: the supervision for stopping."""
     thought = (args.get("closing_thought") or "").strip() or (args.get("summary") or "").strip()
     try:
         await run_blocking(ctx.client.act, {"kind": "done", "thought": thought})
@@ -208,7 +208,7 @@ async def _record_done_step(ctx: ToolContext, args: dict) -> None:
 
 async def handle_task_complete(ctx: ToolContext, args: dict) -> dict:
     outcome = args.get("outcome", "")
-    # Guarded on done-recording, not `completed`: a watchdog DENY already set `completed` and that trajectory still needs its terminal stop supervision.
+    # Guarded on done-recording, not `completed`: a watchdog DENY sets `completed` yet still owes a terminal step.
     if outcome == "completed" and not ctx.state.get("done_recorded"):
         await _record_done_step(ctx, args)
     ctx.state["completed"] = True
@@ -245,7 +245,7 @@ async def _request_approval(ctx: ToolContext, proposed: dict, risk: str) -> dict
 
 
 async def _record_approval_event(ctx: ToolContext, verdict: dict) -> None:
-    """The verdict as an observation step: no SFT target of its own, but threaded into the student's history so it learns to execute only after approval."""
+    """Record the verdict as an observation step, which trains nothing but puts approval before execution in history."""
     try:
         await run_blocking(
             ctx.client.act,
@@ -275,7 +275,7 @@ async def handle_confirm(ctx: ToolContext, args: dict) -> dict:
             "thought": args.get("thought", ""),
         },
     )
-    # A refused confirm recorded no step, so a verdict would have nothing to attach to: never spend a watchdog call or emit an orphan event step.
+    # A refused confirm recorded no step, so a verdict would have nothing to attach to and is never asked for.
     if result.get("is_error") or ctx.state["completed"]:
         return result
     verdict = await _request_approval(ctx, proposed, risk)
@@ -489,7 +489,7 @@ GUARDED_CONTROL_TOOLS = (
 
 
 AUTONOMOUS_TOOLS = (*INPUT_TOOLS, *OBSERVATION_TOOLS, *NAVIGATION_TOOLS, *CONTROL_TOOLS)
-# Guarded mode adds the pause-and-ask / takeover behaviors; every other autonomy drives straight through, so repo captures stay byte-for-byte unchanged.
+# Only guarded mode adds pause-and-ask and takeover, so every other lane's captures stay byte-for-byte unchanged.
 TOOLS_BY_AUTONOMY = {
     "autonomous": AUTONOMOUS_TOOLS,
     "guarded": (*AUTONOMOUS_TOOLS, *GUARDED_CONTROL_TOOLS),
@@ -499,7 +499,7 @@ TOOLS_BY_AUTONOMY = {
 def build_driver_mcp_server(
     client: DriverClient, state: dict, server_name: str = "browser", autonomy: str = "autonomous"
 ):
-    """In-process MCP server exposing the in-container driver to the teacher, with `state` the per-task record the handlers read and mutate."""
+    """In-process MCP server exposing the driver to the teacher, over the per-task record `state`."""
     # lazy: the server factory and the @tool wrapper are needed only once a server is actually built.
     from claude_agent_sdk import create_sdk_mcp_server, tool
 

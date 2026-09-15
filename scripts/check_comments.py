@@ -1,30 +1,24 @@
 """Report multi-line docstrings, runs of consecutive comment lines and banner comments in Python sources."""
 
-import argparse
 import ast
 import io
-import os
 import sys
 import tokenize
-from pathlib import Path
 
-SKIP_DIRS = {"eval_archive", "experiments", "docs", ".superpowers", "__pycache__", "build", "dist", "node_modules"}
+from _paths import add_pending, build_parser, python_files, report
+
 DOCSTRING_OWNERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 BANNER_CHARS = set("-=")
+BANNER_FENCE = 3
 
 
-def python_files(paths):
-    """Every .py file under the given files or directories, with generated, vendored and hidden trees pruned."""
-    found = []
-    for raw in paths:
-        path = Path(raw)
-        if path.is_file():
-            found.append(path)
-            continue
-        for directory, subdirs, filenames in os.walk(path):
-            subdirs[:] = sorted(name for name in subdirs if name not in SKIP_DIRS and not name.startswith("."))
-            found.extend(Path(directory) / name for name in filenames if name.endswith(".py"))
-    return sorted(found)
+def is_banner(text: str) -> bool:
+    """A rule made only of `-`/`=`, or a title fenced by at least three of them at both ends."""
+    if not text:
+        return False
+    leading = len(text) - len(text.lstrip("-="))
+    trailing = len(text) - len(text.rstrip("-="))
+    return set(text) <= BANNER_CHARS or (leading >= BANNER_FENCE and trailing >= BANNER_FENCE)
 
 
 def docstring_findings(tree):
@@ -63,7 +57,7 @@ def comment_findings(source):
         if token.type != tokenize.COMMENT or (token.start[0] == 1 and token.string.startswith("#!")):
             continue
         text = token.string.lstrip("#").strip()
-        if text and set(text) <= BANNER_CHARS:
+        if is_banner(text):
             findings.append((token.start[0], "banner comment"))
         if token.line.lstrip().startswith("#"):
             own_line.append(token.start[0])
@@ -77,25 +71,20 @@ def file_findings(path):
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Report multi-line docstrings, comment blocks and banner comments")
-    parser.add_argument("paths", nargs="+", help="Files or directories to scan")
-    parser.add_argument("--enforce", action="store_true", help="Exit 1 when anything is reported")
+    parser = build_parser("Report multi-line docstrings, comment blocks and banner comments")
+    add_pending(parser)
     args = parser.parse_args(argv)
     files = python_files(args.paths)
-    total = 0
+    lines_by_path = {}
     for path in files:
         try:
             findings = file_findings(path)
         except (SyntaxError, UnicodeDecodeError, tokenize.TokenError) as error:
-            print(f"{path}:1: unreadable ({error})")
+            lines_by_path[path] = [f"{path}:1: unreadable ({error})"]
             continue
-        for line, kind in findings:
-            print(f"{path}:{line}: {kind}")
         if findings:
-            print(f"{path}: {len(findings)} finding(s)")
-        total += len(findings)
-    print(f"check_comments: {total} finding(s) across {len(files)} file(s)")
-    return 1 if args.enforce and total else 0
+            lines_by_path[path] = [f"{path}:{line}: {kind}" for line, kind in findings]
+    return report("check_comments", lines_by_path, len(files), args)
 
 
 if __name__ == "__main__":

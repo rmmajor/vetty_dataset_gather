@@ -1,4 +1,4 @@
-"""What must never leave this repo with the code: one gitignore-derived exclusion list, shaped for rsync (Vast) or for a Modal image layer."""
+"""What must never leave this repo with the code, as one gitignore-derived exclusion list per transport."""
 
 import logging
 import subprocess
@@ -14,7 +14,7 @@ _GIT_TIMEOUT_S = 30
 
 
 def gitignored_excludes(root="cua", run=subprocess.run):
-    """rsync excludes for `root/`: bytecode, the known secret-bearing registries, and every other gitignored path under it."""
+    """rsync excludes for `root/`: bytecode, the secret-bearing registries, and every gitignored path under it."""
     argv = ["git", "ls-files", "--others", "--ignored", "--exclude-standard", f"{root}/"]
     baseline = (*ALWAYS_EXCLUDE, *STATIC_UPLOAD_EXCLUDES)
     try:

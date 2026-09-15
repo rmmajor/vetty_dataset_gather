@@ -1,4 +1,4 @@
-"""ms-swift plugin: BrowserEnv (gym Env over the Mac env service), BrowserScheduler (one record per turn), ActionFormatORM. Module paths verified against ms-swift 4.5.2."""
+"""ms-swift plugin: BrowserEnv, BrowserScheduler and ActionFormatORM, with paths verified against ms-swift 4.5.2."""
 
 import asyncio
 import copy
@@ -43,7 +43,7 @@ class BrowserEnv(Env):
         self.reward_missing = False
 
     async def _call(self, fn, *args, **kwargs):
-        # The env round-trips (slot waits, the verifier on a terminal step) must not block the rollout server's loop, or every concurrent episode stalls with them.
+        # The env round-trips must not block the rollout server's loop, or every concurrent episode stalls too.
         return await asyncio.get_running_loop().run_in_executor(None, functools.partial(fn, *args, **kwargs))
 
     async def reset(self, config):
@@ -75,7 +75,7 @@ class BrowserEnv(Env):
         try:
             result = await self._call(self.client.step, self.episode_id, response_text, seq=self.turn)
         except Exception as e:
-            # Recorded on the env too: an unlabelled transport blip becomes a 0.0 that outranks a genuine failure in its group.
+            # Recorded on the env too: an unlabelled transport blip becomes a 0.0 outranking a genuine failure.
             self.env_error = str(e)[:300]
             return "", 0.0, True, {"env_error": self.env_error}
         self.turn += 1
@@ -84,7 +84,7 @@ class BrowserEnv(Env):
             self.observation = observation
             self.last_image_path = self.recorder.save_png(self.trajectory_uuid, self.turn, observation["image_b64"])
         reward, done = result.get("reward"), bool(result.get("done"))
-        # ms-swift sums step rewards into total_reward, so a verdictless terminal must be flagged here and refused by the scheduler.
+        # ms-swift sums step rewards into total_reward, so a verdictless terminal is flagged for the scheduler.
         if done and reward is None:
             self.reward_missing = True
         return (
@@ -105,7 +105,7 @@ class BrowserEnv(Env):
 
 
 class BrowserScheduler(GYMScheduler):
-    """Each turn is a fresh single-image prompt; run() returns one RolloutOutput per turn carrying the episode reward (spec D2)."""
+    """Each turn is a fresh single-image prompt, returning one RolloutOutput per turn with the episode reward."""
 
     def _fresh_prompt(self, env):
         return [{"role": "system", "content": SYSTEM_PROMPT}, observation_to_user_message(env.observation)], [
@@ -136,19 +136,19 @@ class BrowserScheduler(GYMScheduler):
             if turn_result.get("done"):
                 break
             if self.check_finished(infer_request, choice, turn):
-                # The env only sees a close for a trainer-side cut, so name it: the reward treats max_turns like its own step cap.
+                # The env only sees a close for a trainer-side cut, so name it: the reward treats max_turns as a cap.
                 env.close_reason = "length" if choice.finish_reason == "length" else "max_turns"
                 break
             infer_request.messages, infer_request.images = self._fresh_prompt(env)
             turn += 1
         await self._close_and_remove(infer_request.uuid)
-        # A trainer-side cut (max_turns / length) is scored by the service at close, not by any step, so that reward must be read back here.
+        # A trainer-side cut is scored by the service at close, not by a step, so its reward is read back here.
         if turn_result.get("done"):
             total_reward = None if env.reward_missing else (turn_result.get("rollout_infos") or {}).get("total_reward")
         else:
             total_reward = env.close_reward
         if env.env_error is not None and total_reward is None:
-            # Env unavailability is the environment's fault, not a verdictless episode; it stays 0.0 but is labeled for the analysis.
+            # Env unavailability is the environment's fault, not a verdictless episode, so analysis sees it labeled.
             total_reward = 0.0
         total_reward = require_reward(total_reward, infer_request.uuid)
         records = episode_records(SYSTEM_PROMPT, turns, total_reward, infer_request.uuid, env_error=env.env_error)

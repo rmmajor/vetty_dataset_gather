@@ -28,8 +28,8 @@ tasks reachable (58.0%)**, level mix intact (easy 50 / medium 75 / hard 49 again
 `tasks_pinned_v2.jsonl` excluded 70 tasks as permanently blocked; 25 of those are reachable from a
 US exit, which is why this set is not a subset of it.
 
-Reproduce with `python -m repo_pipeline.student_eval ... --browser-backend vast_residential`, or
-re-probe with `repo_pipeline/remote_sandbox.py`'s `residential_offer_ids` plus a render probe.
+Reproduce with `python -m cua.eval.student ... --browser-backend vast_residential`, or
+re-probe with `cua/pipeline/remote_sandbox.py`'s `residential_offer_ids` plus a render probe.
 
 ## Two caveats
 

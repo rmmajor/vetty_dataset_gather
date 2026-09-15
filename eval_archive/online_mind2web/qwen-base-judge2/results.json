@@ -10,7 +10,7 @@
     "label": "qwen-base-judge2",
     "run_id": "",
     "student": "openai",
-    "endpoint": "https://bombaleylo2--cua-serve-server.us-east.modal.direct/v1",
+    "endpoint": "https://<modal-workspace>--cua-serve-server.us-east.modal.direct/v1",
     "model": "cua-student",
     "adapter": "",
     "api_key": "<redacted>",

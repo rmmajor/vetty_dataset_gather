@@ -1,18 +1,4 @@
-"""Cheap capturability pre-filter for login-gated sites.
-
-The autonomous lane cannot capture sites guarded by an anti-bot WAF (Cloudflare challenge, Akamai /
-Imperva / PerimeterX / DataDome) — the headless sandbox browser on a datacenter IP is blocked before
-any signup/email step. Discovering that with a full teacher run is wasteful, so this HTTP probe marks
-the unambiguously-blocked sites `needs_human` (the human-provisioning lane — they need a real browser
-/ residential IP) BEFORE the capture wave, which already skips `needs_human`.
-
-Same host egress IP as the sandbox, so IP-level blocks and full-page WAF challenges show here too.
-Conservative by design: it only rejects on explicit WAF block / challenge signatures and leaves
-anything uncertain (incl. transient network errors, and Turnstile-only-on-submit pages that still
-render) for the more accurate capture attempt to judge.
-
-Run: python -m cua.pipeline.lanes.probe_capturable [--provisioning email_verify] [--dry-run] [--workers N]
-"""
+"""Cheap HTTP pre-filter that routes the unambiguously WAF-blocked login-gated sites to the human lane."""
 
 import argparse
 import concurrent.futures

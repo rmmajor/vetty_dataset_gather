@@ -1,31 +1,4 @@
-"""Human-in-the-loop session provisioning for login-gated sites the autonomous lane can't reach.
-
-Some sites guard their signup/login with an interactive wall (captcha / phone / headless-fingerprint
-detection) that the headless sandbox agent cannot clear, so they end up in the `needs_human` queue
-([[autonomous-login-gated-capture]]). This helper is the human on-ramp: it opens a HEADED browser on
-the host, a person signs up / logs in and clears the wall ONCE by hand, and the resulting
-authenticated session is saved for the existing capture pipeline to reuse.
-
-Why the saved session then works from the headless sandbox: Docker Desktop containers egress via the
-host's public IP, so the sandbox replays the session from the SAME IP the human logged in from — the
-only thing the human cleared was the one-time interactive challenge; the durable session is portable.
-
-The identity is a disposable mail.tm burner — NEVER a personal account
-([[burner-accounts-only-for-capture]]) — minted ONCE per batch and reused on every site, so the
-operator types (and then autofills) the same credentials throughout while each site still gets its
-OWN storage_state under its OWN registered burner ref. Its inbox rides along in a second browser
-window so a verification link is one click away. After a successful login the helper persists the
-session + burner (via app_secrets), marks the site `registered`, and wires it into
-`public_sites_human.json` (auth_mode=pre_session) so `cua.pipeline.lanes.public --config
-public_sites_human.json` can run its tasks already signed in.
-
-Two ways to drive the SAME per-site open/save (`open_site` / `save_site`): the terminal loop, and
-`--serve`, a localhost-only JSON control API an assistant session drives with curl while the
-operator only ever types into the browser window in front of them.
-
-Run: python -m cua.pipeline.lanes.provision_human <site-name> | --sites a,b,c | --all [--config <cfg>]
-     python -m cua.pipeline.lanes.provision_human --serve [--port 8778] [--config <cfg>]
-"""
+"""Headed host browser where a person clears a signup wall once, so the capture lanes can reuse that session."""
 
 import argparse
 import functools
@@ -134,8 +107,7 @@ def print_identity(identity: dict) -> None:
 
 
 def show_latest_mail(token: str) -> None:
-    """Print the most recent message in the burner inbox so the human can read a verification
-    link/code without leaving the terminal (they may also open mail.tm in the browser instead)."""
+    """Print the most recent message in the burner inbox, so a verification code needs no browser switch."""
     messages = mailtm.list_messages(token)
     if not messages:
         print("  (no mail yet — wait ~10-20s after requesting it, then type 'mail' again)")
@@ -170,13 +142,8 @@ def upsert_human_config(site: dict, ref: str, app_url: str) -> None:
 
 
 def launch_realistic_chrome(playwright):
-    """Launch a HEADED browser that does not trip anti-bot fingerprinting (Cloudflare Turnstile,
-    reCAPTCHA). Playwright's default Chromium is the automation-branded 'Chrome for Testing' launched
-    with `--enable-automation` + the AutomationControlled blink feature, which set navigator.webdriver
-    and the tells Turnstile blocks even when a human solves the challenge. Prefer the real system
-    Google Chrome and strip those flags. One browser is reused across a batch; each site gets a fresh
-    isolated context (new_stealth_context). The person still solves the challenge — this only stops the
-    browser itself from being fingerprinted as a bot."""
+    """Launch a HEADED browser that does not trip anti-bot fingerprinting, so a human can solve the challenge."""
+    # Playwright's own Chromium sets navigator.webdriver, which Turnstile blocks even after a human solves it.
     launch = {
         "headless": False,
         "args": ["--disable-blink-features=AutomationControlled"],
@@ -293,8 +260,7 @@ def open_site(browser, site: dict, webmail: Webmail):
     except Exception as e:
         navigation_error = str(e).splitlines()[0]
         logger.warning(f"[{site['name']}] navigation issue ({navigation_error}); navigate manually in the window")
-    # Pre-login baseline: on a real site a plain visit already sets cookies, so "dump is non-empty"
-    # alone never proves anyone signed in — only a change against this does.
+    # A plain visit already sets cookies, so only a change against this baseline proves anyone signed in.
     baseline = storage_fingerprint(context.storage_state(indexed_db=True))
     return context, page, {"navigation_error": navigation_error, "baseline": baseline}
 
@@ -332,7 +298,7 @@ def save_site(site: dict, context, identity: dict, app_url: str, baseline: dict 
 
 
 def provision_site(browser, site: dict, identity: dict, webmail: Webmail, position: tuple[int, int]) -> str:
-    """Provision one site from the terminal with the batch burner; 'provisioned' | 'skipped' (SystemExit ends the batch)."""
+    """Provision one site from the terminal: 'provisioned' or 'skipped', while SystemExit ends the batch."""
     index, total = position
     print("\n" + "=" * 72)
     print(f"  [{index}/{total}] PROVISIONING: {site['name']}   →  {site['start_url']}")
@@ -447,7 +413,7 @@ class ProvisionSession:
             self.context, self.page, opened = open_site(self.browser, site, self.webmail)
         except Exception as e:
             self._close_context()
-            raise ControlError(502, f"could not open {site['name']}: {e}")
+            raise ControlError(502, f"could not open {site['name']}: {e}") from e
         self.site = site
         self.baseline = opened["baseline"]
         return {
@@ -468,7 +434,7 @@ class ProvisionSession:
                 site, self.context, self.identity, self._current_url() or site["start_url"], self.baseline
             )
         except ValueError as e:
-            raise ControlError(422, f"{e} — {site['name']} is not signed in; log in, then POST /save again")
+            raise ControlError(422, f"{e} — {site['name']} is not signed in; log in, then POST /save again") from e
         self._close_context()
         self.provisioned.append(site["name"])
         return {"ok": True, "site": site["name"], **saved}
@@ -531,7 +497,7 @@ class ControlHandler(BaseHTTPRequestHandler):
         try:
             parsed = json.loads(self.rfile.read(length) or b"{}")
         except json.JSONDecodeError as e:
-            raise ControlError(400, f"body is not JSON ({e})")
+            raise ControlError(400, f"body is not JSON ({e})") from e
         return parsed if isinstance(parsed, dict) else {}
 
     def _dispatch(self, routes: dict) -> None:
@@ -580,7 +546,7 @@ def serve(port: int, config_path: Path | None) -> None:
     try:
         probe.bind((CONTROL_HOST, port))
     except OSError as e:
-        raise SystemExit(f"cannot serve on {CONTROL_HOST}:{port} ({e}) — pass a free --port")
+        raise SystemExit(f"cannot serve on {CONTROL_HOST}:{port} ({e}) — pass a free --port") from e
     finally:
         probe.close()
 

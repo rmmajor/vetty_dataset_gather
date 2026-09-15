@@ -1,4 +1,4 @@
-"""In-memory provider for the no-cost self-test: fake offers, an instance that answers SSH, and a record of every destroy, upload and tunnel."""
+"""In-memory provider for the no-cost self-test: fake offers, an SSH-answering instance, a record of every call."""
 
 import json
 import logging

@@ -285,6 +285,8 @@ SECTIONS = {
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+CONVENTIONS_DOC = REPO_ROOT / "docs" / "conventions.md"
+TABLE_HEADER = "| variable | default | settings field | used by |"
 # Generated, vendored and gitignored data trees, pruned so the table scan stays a source-tree walk.
 SKIP_DIRS = {
     "__pycache__",
@@ -334,11 +336,29 @@ def markdown_table():
     return "\n".join(rows)
 
 
+def documented_table() -> str:
+    """The environment table as docs/conventions.md currently carries it, header row included."""
+    lines = CONVENTIONS_DOC.read_text(encoding="utf-8").splitlines()
+    start = lines.index(TABLE_HEADER)
+    end = start
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    return "\n".join(lines[start:end])
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Print the environment variables this package reads")
     parser.add_argument("--table", action="store_true", help="print the Markdown table for docs/conventions.md")
-    if not parser.parse_args(argv).table:
-        parser.error("nothing to print: pass --table")
+    parser.add_argument("--check", action="store_true", help="exit 1 when that table is stale")
+    args = parser.parse_args(argv)
+    if args.check:
+        if documented_table() == markdown_table():
+            print("docs/conventions.md: the environment table is up to date")
+            return 0
+        print("docs/conventions.md: the environment table is stale — regenerate with `python -m cua.settings --table`")
+        return 1
+    if not args.table:
+        parser.error("nothing to print: pass --table or --check")
     print(markdown_table())
     return 0
 

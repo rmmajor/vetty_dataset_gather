@@ -11,7 +11,7 @@ ROUNDTRIP = json.loads((Path(__file__).resolve().parent / "fixtures" / "action_r
 
 
 def _registry_keys(name: str) -> list:
-    """The key literals of a module-level dict assignment, as written — a duplicate survives here but not in the dict."""
+    """The key literals of a module-level dict assignment, as written: a duplicate survives here, not in the dict."""
     tree = ast.parse(GRAMMAR_SOURCE.read_text())
     for node in tree.body:
         targets = getattr(node, "targets", []) or ([node.target] if isinstance(node, ast.AnnAssign) else [])

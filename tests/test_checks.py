@@ -3,7 +3,9 @@ from cua.rl.checks import CHECKS, build_context, evaluate
 SNAPSHOT = {
     "url": "https://example.com/cart?id=7",
     "title": "Your Cart — Example",
-    "snapshot": '## Page text\nOrder confirmed. Thanks!\n## Interactive elements (in viewport)\n[1] button "Checkout"\n[2] textbox "Coupon" value="SAVE10"\n[3] checkbox "Gift wrap" (checked)\n',
+    "snapshot": "## Page text\nOrder confirmed. Thanks!\n"
+    '## Interactive elements (in viewport)\n[1] button "Checkout"\n'
+    '[2] textbox "Coupon" value="SAVE10"\n[3] checkbox "Gift wrap" (checked)\n',
 }
 
 

@@ -1,4 +1,4 @@
-"""The provider contract the remote lifecycle sees, the registry it is selected from, and the shared offer-selection policy."""
+"""The provider contract the lifecycle sees, the registry it is picked from, and the offer-selection policy."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -40,7 +40,7 @@ class Instance:
 
 
 class ComputeProvider:
-    """Every GPU provider implements these methods, raising `ProviderError` on failure, and appends a factory to `PROVIDERS`."""
+    """Every GPU provider implements these methods, raises `ProviderError` on failure, and appends to `PROVIDERS`."""
 
     name: str = "base"
 
@@ -61,7 +61,7 @@ class ComputeProvider:
         raise NotImplementedError
 
     def upload(self, instance: Instance, local_path: str, remote_path: str, *, exclude: Sequence[str] = ()) -> None:
-        """Copy a local file/dir to the instance, skipping paths matching the `exclude` patterns (rsync syntax, relative to `local_path`)."""
+        """Copy a local file or directory to the instance, skipping the `exclude` patterns (rsync syntax)."""
         raise NotImplementedError
 
     def download(self, instance: Instance, remote_path: str, local_path: str) -> None:

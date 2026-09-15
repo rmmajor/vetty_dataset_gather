@@ -1,28 +1,4 @@
-"""Shared, isolated webmail for end-to-end auth-flow capture (registration, email
-verification, password reset, email-OTP login).
-
-The agent does these flows entirely through the browser, as one screenshot trajectory: it
-registers on the booted app, then NAVIGATES to a real webmail UI, opens the verification /
-reset mail, clicks the link or reads the code, and returns to the app. To make that possible
-in isolation we run ONE mail stack per pipeline host, reused by every sandbox:
-
-  * GreenMail  — an SMTP sink + IMAP server that AUTO-CREATES a mailbox for any address on
-    first delivery/login (auth disabled). Each capture scenario gets a unique base address
-    `qa-<run>-<scenario>@mail.test`; GreenMail isolates them with zero provisioning. NOTE:
-    GreenMail strips `+tag` plus-addressing (pools it into the base mailbox), so scenario
-    identity must live in the base local-part — never a `+tag`.
-  * Roundcube  — a realistic webmail UI (so the inbox the student learns transfers to real
-    Gmail/Outlook at deployment), pointed at GreenMail over IMAP/SMTP.
-
-Both live on a user-defined Docker network (`vetty-mail`); each sandbox attaches to it so the
-booted app can SMTP to `greenmail:3025` and the in-container browser can reach the webmail at
-`http://mail.test/`. One shared stack (not per-sandbox) keeps memory flat — important given the
-Docker-VM ceiling that has wedged parallel capture before.
-
-Entry points: `ensure_mail_stack()` (idempotent bring-up), `mail_env_for_app()` (the SMTP env
-to inject when booting an app), `scenario_address()` (mint an isolated mailbox address),
-`teardown_mail_stack()`. Run `python -m cua.pipeline.mail_service` to smoke it standalone.
-"""
+"""One shared GreenMail + Roundcube stack per host: the isolated inbox a sandboxed app's auth mail lands in."""
 
 import hashlib
 import logging
@@ -33,6 +9,7 @@ import urllib.request
 from dataclasses import dataclass, field
 
 import docker
+
 from cua.settings import CAPTURE
 
 logger = logging.getLogger(__name__)
@@ -50,8 +27,7 @@ SMTP_PORT = 3025  # in-network ports (GreenMail "test.all" defaults)
 IMAP_PORT = 3143
 WEBMAIL_PORT = 80
 
-# Host-published ports for readiness polling + host-side mail probes (the in-sandbox path uses
-# the network DNS above, not these). Only one shared stack per host, so fixed ports are safe.
+# Fixed ports are safe because there is only ever one shared stack per host; the in-sandbox path uses DNS instead.
 HOST_SMTP_PORT = CAPTURE.mail_host_smtp_port
 HOST_IMAP_PORT = CAPTURE.mail_host_imap_port
 HOST_WEBMAIL_PORT = CAPTURE.mail_host_webmail_port
@@ -61,9 +37,7 @@ GREENMAIL_OPTS = (
 )
 READY_TIMEOUT = 90
 
-# SMTP env injected when booting an app, keyed broadly so the common frameworks pick it up
-# without per-app special-casing (Django EMAIL_*, Laravel MAIL_*, Symfony MAILER_DSN, Node
-# SMTP_*/MAIL_*). GreenMail accepts any credentials (auth disabled) over plaintext on :3025.
+# Keyed broadly so Django, Laravel, Symfony and Node apps all pick it up without per-app special-casing.
 _SMTP_ENV_TEMPLATE = {
     "SMTP_HOST": "{host}",
     "SMTP_PORT": "{port}",
@@ -121,8 +95,7 @@ def _connect_alias(client, container, aliases) -> None:
 
 
 def _ensure_container(client, name, image, *, ports, environment, command=None) -> "docker.models.containers.Container":
-    """Get-or-run a stably-named container. Reuses a running one, starts a stopped one, creates
-    if absent — so ensure_mail_stack() is idempotent across pipeline runs."""
+    """Get-or-run a stably-named container, so bringing the stack up is idempotent across runs."""
     try:
         c = client.containers.get(name)
         if c.status != "running":
@@ -218,16 +191,13 @@ def mail_env_for_app(stack: MailStack | None = None) -> dict:
 
 
 def scenario_address(run_id: str, scenario: str) -> str:
-    """A unique, isolated mailbox address for one capture scenario. Base local-part only — no
-    `+tag` (GreenMail pools plus-addresses into the base, which would cross-contaminate)."""
+    """A unique mailbox address per capture scenario, in the base local-part because GreenMail pools `+tag`."""
     slug = re.sub(r"[^a-z0-9]+", "-", f"{run_id}-{scenario}".lower()).strip("-")[:48]
     return f"qa-{slug}@{WEBMAIL_HOST}"
 
 
 def scenario_password(run_id: str, scenario: str) -> str:
-    """A deterministic per-scenario password that satisfies common sign-up complexity rules
-    (upper + lower + digit + symbol). Deterministic so resume reuses the same value; only ever
-    reaches the trajectory as the `<secret:password>` placeholder."""
+    """A per-scenario password meeting common complexity rules, deterministic so a resumed run reuses it."""
     h = hashlib.sha256(f"{run_id}/{scenario}".encode()).hexdigest()
     return f"Qa!{h[:10]}9"
 

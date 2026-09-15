@@ -1,6 +1,6 @@
 """Mechanical quality gate over the TRAINABLE corpus."""
 
-# Pydantic-free on purpose: the Modal and Vast train lanes install no pydantic and reach this module through cua.sft.convert.
+# Pydantic-free on purpose: the Modal and Vast train lanes install none and reach this through cua.sft.convert.
 import json
 import re
 import sys
@@ -29,12 +29,12 @@ DONE_EVIDENCE = re.compile(
     re.I,
 )
 
-# A step of only these yields an empty signature, which the run-length check treats as a break, so repeated pauses never read as a loop.
+# A step of only these has an empty signature, which the run-length check reads as a break, not as a loop.
 _CONTROL_TYPES = {"confirm", "handoff", "approval_event"}
 
 
 def action_signature(step: dict) -> tuple:
-    """Full action identity, scroll deltas and drag paths included, minus the control actions that must never read as a loop."""
+    """Full action identity, scroll deltas and drag paths included, minus the controls that never read as a loop."""
     return tuple(
         (
             a.get("type"),
@@ -306,13 +306,16 @@ def run_audit(corpus_dir: Path, health_config: Path | None = None, skip_health_g
 
     trainable = len(trainable_dirs)
     print(
-        f"\naudit: {trainable} trainable trajectories, {trainable_failures} failing, {skipped} not trainable (excluded/replay/unverified)"
+        f"\naudit: {trainable} trainable trajectories, {trainable_failures} failing, "
+        f"{skipped} not trainable (excluded/replay/unverified)"
     )
     metrics = corpus_metrics(trainable_dirs)
     print(
         f"outcome: done thoughts citing on-screen evidence {metrics['done_with_evidence']}/{metrics['done_steps']} "
-        f"({metrics['done_evidence_share']:.1%}); done after a re-check {metrics['done_after_recheck']}/{metrics['done_steps']} "
-        f"({metrics['done_after_recheck_share']:.1%}); qa_verify-voice trajectories {metrics['qa_verify_trajectories']}; "
+        f"({metrics['done_evidence_share']:.1%}); done after a re-check "
+        f"{metrics['done_after_recheck']}/{metrics['done_steps']} "
+        f"({metrics['done_after_recheck_share']:.1%}); qa_verify-voice trajectories "
+        f"{metrics['qa_verify_trajectories']}; "
         f"outcome-relabeled (thought_source={OUTCOME_RELABEL_SOURCE}) {metrics['outcome_relabeled']}/{trainable} "
         f"({metrics['outcome_relabeled_share']:.1%})"
     )

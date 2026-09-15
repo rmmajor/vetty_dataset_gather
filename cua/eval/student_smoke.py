@@ -13,18 +13,10 @@ from pathlib import Path
 
 from PIL import Image
 
+from cua.eval.blocks import detect_block
 from cua.eval.student.backends import BROWSER_BACKENDS, EvalBrowser, ReplayStudent
-from cua.eval.student.blocks import detect_block
 from cua.eval.student.config import EpisodeRecord, EvalConfig
-from cua.eval.student.episode import (
-    ACTION_TO_DRIVER,
-    action_coordinates,
-    driver_payload,
-    outside_coord_space,
-    outside_viewport,
-    run_episode,
-    scale_action,
-)
+from cua.eval.student.episode import run_episode
 from cua.eval.student.fingerprint import (
     EXPECTED_TO_DIFFER_KEYS,
     PARITY_EXEMPT_KEYS,
@@ -33,7 +25,6 @@ from cua.eval.student.fingerprint import (
 )
 from cua.eval.student.grammar import classify_action_line, parse_student_output
 from cua.eval.student.metrics import compute_metrics
-from cua.eval.student.observation import build_student_messages, observed_effect
 from cua.eval.student.report import render_comparison, render_report
 from cua.eval.student.run import judge_episode
 from cua.eval.task_sources import TASK_SOURCES, EvalTask
@@ -46,6 +37,15 @@ from cua.prompt.format import (
     SYSTEM_PROMPT,
     history_entries_for_step,
 )
+from cua.student.executor import (
+    ACTION_TO_DRIVER,
+    action_coordinates,
+    driver_payload,
+    outside_coord_space,
+    outside_viewport,
+    scale_action,
+)
+from cua.student.observation import build_student_messages, observed_effect
 from cua.trajectory.actions import format_action_for_training
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,8 @@ TEST_PAGE = """<!doctype html>
 <input id="name" type="text" placeholder="Your name"
        style="position:absolute;left:100px;top:100px;width:200px;height:30px">
 <button id="greet" style="position:absolute;left:100px;top:160px;width:200px;height:40px"
-        onclick="document.getElementById('status').innerText='hello '+document.getElementById('name').value">Greet</button>
+        onclick="document.getElementById('status').innerText='hello '+document.getElementById('name').value"
+        >Greet</button>
 <button id="menu" style="position:absolute;left:560px;top:100px;width:120px;height:30px">Open menu</button>
 <div id="menu-items">Hidden action revealed</div>
 <canvas id="board" width="300" height="150" style="position:absolute;left:100px;top:300px;border:1px solid"></canvas>
@@ -162,8 +163,7 @@ def check_parser_round_trip():
     logger.info(f"parser round-trip OK for {len(ROUND_TRIP_ACTIONS)} canonical actions over {len(seen)} types")
 
 
-# Every accepted surface variant, per verb, against the action it must produce. The canonical form
-# is generated from the action itself, so this table only lists DEVIATIONS.
+# Accepted variants per verb and the action each must produce; canonical forms are generated, so these are DEVIATIONS.
 GRAMMAR_MATRIX = [
     (
         {"type": "click", "x": 217, "y": 925, "button": "left"},
@@ -553,7 +553,7 @@ def check_prompt_format():
     assert _flatten_openai(first[1]["content"]) == golden["observations"]["no_history_step1"]["text"]
     assert [im.size for im in _decode_images(first[1]["content"])] == [(4, 4)]
 
-    # Built as the episode loop builds it (executed PIXEL actions + observed effect), so the golden proves the round trip.
+    # Built as the episode loop builds it (executed PIXEL actions + effect), so the golden proves the round trip.
     same_url, new_url = "https://x.test/", "https://x.test/projects/new"
     click = {"type": "click", "x": 640, "y": 360, "button": "left"}
     typed = {"type": "type", "text": "hello"}
@@ -579,11 +579,7 @@ def check_prompt_format():
 
 
 def check_v2_observation():
-    """An sft-v1/v2 checkpoint (and any GRPO LoRA over one) trained on ONE screenshot.
-
-    Sending it the sft3 two-image observation measures the prompt rather than the model, so the
-    format is selectable per arm exactly as the QA bench's `cua_observation` is.
-    """
+    """An sft-v1/v2 checkpoint trained on ONE screenshot, so the observation format is selectable per arm."""
     cur, prev = _png(), _png(block=(0, 0, 2, 2))
     history = ["click(500, 500) [no change]"]
 
@@ -600,7 +596,7 @@ def check_v2_observation():
 
 
 def check_png_forced():
-    """Effect annotations compare screenshots pixel-wise, so a lossy format is a config error, not a silent mis-annotation."""
+    """Effect annotations compare screenshots pixel-wise: a lossy format is a config error, not a mis-annotation."""
     assert EvalConfig().screenshot_format == "png"
     assert EvalConfig().coord_space == "normalized_1000", "stock Qwen and an sft3 checkpoint both answer normalized"
     try:
@@ -666,8 +662,7 @@ def check_browser_backends():
         assert not missing, f"{name} backend is missing {missing}"
         assert isinstance(built, ShellSandbox), f"{name} backend is not a ShellSandbox"
 
-    # Egress is a parity key: a Lviv run and a US-residential run see different sites, so they
-    # must not silently compare as the same harness.
+    # Egress is a parity key: a Lviv run and a US-residential run see different sites, never the same harness.
     source = TASK_SOURCES["online_mind2web"]
     local = harness_fingerprint(EvalConfig(browser_backend="docker", egress_note="UA/Lviv"), source, {})
     rented = harness_fingerprint(EvalConfig(browser_backend="vast_residential", egress_note="US/NYC"), source, {})
@@ -758,8 +753,7 @@ def check_report_rendering():
     assert "+25.0 pp" in comparison, comparison
     assert "All compared runs share" in comparison, comparison
 
-    # A stock-vs-sft-v1/v2 pair differs in coord_space BY DESIGN; that must read as an annotated
-    # expected difference, never as a parity violation that discredits the delta.
+    # A stock-vs-sft-v1/v2 pair differs in coord_space BY DESIGN: an expected difference, never a parity violation.
     results["harness"]["coord_space"] = "viewport_abs"
     comparison = render_comparison([results, after])
     assert "NOT the same harness" not in comparison, comparison

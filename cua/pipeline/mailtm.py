@@ -1,16 +1,4 @@
-"""Real disposable mailbox via mail.tm — the readable inbox for REAL-site auth flows.
-
-GreenMail ([[mail-service]]) only catches mail from sandboxed apps whose SMTP we redirect. A real
-public site sends its verification / reset mail to wherever the address resolves, so to capture
-register / password-reset on real sites the agent needs a genuine throwaway mailbox with a web UI
-it can open in the browser. mail.tm provides exactly that: an API to mint an address + a real web
-inbox at https://mail.tm the agent signs into and reads like a human.
-
-The mailbox is a disposable burner (random address + generated password), consistent with
-[[burner-accounts-only-for-capture]] — never a real personal inbox. The API here is used to MINT
-the box and (out-of-band, for the harness) confirm a message arrived; the agent still reads the
-message visually in the browser, which is the skill being captured.
-"""
+"""Mint a disposable mail.tm mailbox: the readable, browser-openable inbox real-site auth flows need."""
 
 import json
 import logging
@@ -41,8 +29,7 @@ def _req(method: str, path: str, body: dict | None = None, token: str | None = N
                 raw = resp.read().decode("utf-8", "replace")
             return json.loads(raw) if raw.strip() else {}
         except urllib.error.HTTPError as e:
-            # mail.tm throttles bursts (account/token creation especially). Back off and retry on
-            # 429/503; re-raise everything else (e.g. 422 address-taken, which create_mailbox handles).
+            # mail.tm throttles bursts, account and token creation especially, so those two codes are worth a retry.
             if e.code in (429, 503) and attempt < tries - 1:
                 retry_after = e.headers.get("Retry-After") if e.headers else None
                 delay = float(retry_after) if (retry_after and str(retry_after).isdigit()) else 5 * (2**attempt)
@@ -53,10 +40,7 @@ def _req(method: str, path: str, body: dict | None = None, token: str | None = N
                 continue
             raise
         except urllib.error.URLError as e:
-            # Transient host network/DNS blip (getaddrinfo "nodename nor servname", connection
-            # refused/reset/timeout) — these otherwise fail a whole site instantly during a brief
-            # outage and burn the queue. HTTPError (a URLError subclass) is handled above; this is
-            # the connection-level fallback. Back off and retry; give up only after `tries`.
+            # The connection-level fallback: a momentary DNS blip would otherwise fail a whole site and burn the queue.
             if attempt < tries - 1:
                 delay = 3 * (2**attempt)
                 logger.warning(
@@ -69,8 +53,7 @@ def _req(method: str, path: str, body: dict | None = None, token: str | None = N
 
 
 def _members(resp) -> list:
-    """Collection responses come back either as a plain JSON array (Accept: application/json) or in
-    hydra form ({'hydra:member': [...]}); normalise both to a list."""
+    """One collection response as a list, whether it arrived as a plain JSON array or in hydra form."""
     if isinstance(resp, list):
         return resp
     if isinstance(resp, dict):
@@ -92,8 +75,7 @@ def available_domain() -> str:
 
 
 def create_mailbox(local_part: str | None = None) -> dict:
-    """Mint a disposable mailbox. Returns {address, password, token} — `password` logs into both the
-    mail.tm web inbox AND (commonly reused as) the site account, `token` is for out-of-band reads."""
+    """Mint a disposable mailbox as {address, password, token}, whose password also opens the web inbox."""
     domain = available_domain()
     local = local_part or ("qa" + secrets.token_hex(6))
     address = f"{local}@{domain}"
@@ -123,8 +105,7 @@ def get_message(token: str, message_id: str) -> dict:
 
 
 def wait_for_message(token: str, timeout: int = 90, match: str | None = None) -> dict | None:
-    """Poll until a message arrives (out-of-band harness confirmation that the site actually sent
-    mail to the box). `match` optionally requires a substring in the subject/intro. None on timeout."""
+    """Poll until a message arrives, optionally matching a substring of its subject or intro; None on timeout."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         for m in list_messages(token):

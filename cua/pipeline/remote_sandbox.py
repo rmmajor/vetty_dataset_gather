@@ -1,18 +1,4 @@
-"""Runs the browser driver on a REMOTE host over SSH, so live sites see that host's IP.
-
-Why this exists: Online-Mind2Web is a US-centric benchmark, and measured from this machine's
-Ukrainian residential IP only 58% of its 300 tasks are reachable — the rest are geo- or WAF-blocked
-before the model acts. Egress is therefore an eval parameter, not a property of whoever runs it.
-
-`RemoteSandbox` is a `ShellSandbox` whose transport is ssh/rsync instead of docker exec, so
-`install_driver` / `start_driver` / `DriverClient` work against it unchanged. It deliberately does
-NOT nest Docker: a rented box is itself a container, so the driver runs natively against the
-Playwright image's browsers.
-
-`VastResidentialSandbox` adds the rental: it picks an offer whose public IP belongs to a consumer
-ISP (a datacenter ASN is blocked roughly as hard as a foreign one — measured), boots it, and
-destroys it on stop. Teardown is the same invariant as `remote_train`: every exit path destroys.
-"""
+"""Run the browser driver on a REMOTE host over ssh, so a live site sees that host's IP instead of this one's."""
 
 import json
 import logging
@@ -37,8 +23,7 @@ SSH_OPTS = [
     "-o",
     "ServerAliveInterval=15",
 ]
-# ASNs with consumer-broadband reputation. A datacenter exit (measured on an M247 VPN endpoint)
-# recovers 1 of 24 blocked sites; a residential one recovers 9.
+# Measured: a datacenter exit recovers 1 of 24 blocked sites where a residential one recovers 9.
 RESIDENTIAL_ASN = re.compile(
     r"charter|comcast|at&t|verizon|frontier|cox communication|spectrum|centurylink|"
     r"sonic|windstream|optimum|altice|t-mobile|lumen",
@@ -67,8 +52,6 @@ class RemoteSandbox(ShellSandbox):
         self.container_timeout = container_timeout
         self.workdir = workdir
         self.start_time = None
-
-    # ----- transport -----
 
     def _ssh_base(self) -> list:
         return ["ssh", "-i", self.key_path, "-p", str(self.port), *SSH_OPTS, f"{self.user}@{self.host}"]
@@ -99,12 +82,9 @@ class RemoteSandbox(ShellSandbox):
         if r.returncode != 0:
             raise OSError(f"copy_out {remote_path} failed: {r.stderr[:200]}")
 
-    # ----- lifecycle -----
-
     def start(self, name: str) -> str:
         self.start_time = time.time()
-        # The Playwright image ships the browsers but not the npm package, so the driver's
-        # playwright-core import fails until this runs; DRIVER_BAKED_DIR then resolves.
+        # The Playwright image ships the browsers but not the npm package the driver imports.
         setup = (
             f"mkdir -p {self.workdir} /opt/driver && cd /opt/driver && "
             "([ -d node_modules/playwright-core ] || (npm init -y >/dev/null 2>&1 && "
@@ -139,6 +119,7 @@ class VastResidentialSandbox(RemoteSandbox):
         self.egress = {}
 
     def start(self, name: str) -> str:
+        # lazy: keeps the Vast rental stack out of the import graph of every capture lane that never rents
         from cua.cloud.vast.base import Offer
         from cua.cloud.vast.config import RemoteTrainConfig
         from cua.cloud.vast.vastai import VastAIProvider
@@ -193,10 +174,7 @@ class VastResidentialSandbox(RemoteSandbox):
 
 
 def residential_offer_ids(max_price: float = 0.35, want: int = 8) -> list:
-    """Vast offer ids whose advertised public IP resolves to a consumer ISP, cheapest first.
-
-    `public_ipaddr` is exposed on the offer BEFORE renting, so the ASN can be checked for free.
-    """
+    """Vast offer ids whose advertised public IP resolves to a consumer ISP, cheapest first."""
     query = f"geolocation=US rentable=true dph<{max_price} disk_space>40 inet_down>100 num_gpus=1"
     raw = subprocess.run(
         ["vastai", "search", "offers", query, "--raw", "--limit", "200"], capture_output=True, text=True, timeout=180

@@ -1,22 +1,4 @@
-"""Boot secrets and known test-account credentials for agent capture.
-
-Two concerns, both generic (config/data driven, never a per-repo `if name ==` check):
-
-  * `boot_env_secrets()` — dummy values for the auth secrets a typical auth app reads at startup
-    (JWT_SECRET, *_SECRET, NEXTAUTH_URL ...). Without them most Next.js / Express auth apps throw
-    during boot. In a disposable, single-run sandbox a fixed dummy value is safe — these never
-    protect anything real. Merged into the app's environment alongside the mail config.
-
-  * `known_account(full_name)` — an OPTIONAL, gitignored registry of pre-existing test logins for
-    specific apps (demo apps routinely ship/advertise one, e.g. `admin@demo / admin`). When an app
-    has a known account, capture signs in with it instead of registering a fresh generated address
-    — which is the only practical path for apps whose mail leaves the sandbox (cloud email APIs,
-    hardcoded providers) so a generated mailbox would never receive the verification message.
-    Returned credentials are handed to the driver as masked `<secret:...>` values, never recorded.
-
-The known-accounts file is the first slice of the Phase-5 burner store; it lives under
-`credentials/` (gitignored) so real logins never enter version control.
-"""
+"""Boot secrets for a sandboxed app, plus the fail-closed registries of known test accounts and burner identities."""
 
 import json
 import logging
@@ -26,12 +8,10 @@ from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
 
-# Fixed dummy secret for the disposable sandbox. Long enough for libraries that assert a minimum
-# key length; identical across runs so a captured pre_session cookie stays valid on resume.
+# Fixed, not random: long enough for a minimum-key-length assert, and stable so a captured session survives a resume.
 _DUMMY_SECRET = "qa_test_secret_0123456789abcdef0123456789abcdef"
 
-# Common env var names auth apps read for signing/session secrets and the app's own base URL.
-# A superset is harmless: an app ignores the names it does not use.
+# A superset is harmless here: an app simply ignores the names it does not read.
 _BOOT_ENV_SECRETS = {
     "JWT_SECRET": _DUMMY_SECRET,
     "JWT_REFRESH_SECRET": _DUMMY_SECRET,
@@ -46,16 +26,14 @@ _BOOT_ENV_SECRETS = {
     "APP_SECRET": _DUMMY_SECRET,
     "JWT_EXPIRES_IN": "1d",
     "AUTH_TRUST_HOST": "true",
-    # Next.js / many SSR apps build absolute links (incl. emailed verification URLs) from this.
-    # The app binds the dev-server default port inside the container, so localhost == the app.
+    # Absolute links, emailed verification URLs included, are built from this, and the app binds this port in-container.
     "NEXTAUTH_URL": "http://127.0.0.1:3000",
     "AUTH_URL": "http://127.0.0.1:3000",
 }
 
 _CRED_DIR = Path(PIPELINE.credentials_dir)
 _KNOWN_ACCOUNTS_FILE = _CRED_DIR / "known_accounts.json"
-# Guarded/public-lane burner store (see [[burner-accounts-only-for-capture]]): real-site logins the
-# capture is permitted to use, plus the saved browser sessions that let a run start already signed in.
+# Real-site logins the capture is permitted to use, plus the saved sessions that start a run already signed in.
 _BURNER_FILE = _CRED_DIR / "burner_accounts.json"
 _STORAGE_STATE_DIR = _CRED_DIR / "storage_state"
 
@@ -69,8 +47,8 @@ def boot_env_secrets() -> dict:
 
 
 def known_account(full_name: str) -> dict | None:
-    """The {email, password} test login registered for `full_name`, or None. Reads the gitignored
-    known-accounts file each call (cheap, and lets the operator add an entry between runs)."""
+    """The {email, password} test login registered for `full_name`, or None."""
+    # Re-read every call, so an operator can add an entry between runs.
     if not _KNOWN_ACCOUNTS_FILE.exists():
         return None
     try:
@@ -95,17 +73,14 @@ def _load_burners() -> dict:
 
 
 def is_registered_burner(burner_id: str) -> bool:
-    """FAIL-CLOSED guard for the guarded/public lane: True only when the id maps to a burner that is
-    explicitly marked `registered`. Anything missing, malformed, or not-yet-registered → False, so a
-    guarded capture refuses to run against a real site without a vetted disposable identity. NEVER
-    relax this to 'assume registered' — the whole safety story rests on it."""
+    """FAIL-CLOSED: True only for an id mapping to a burner explicitly marked `registered`."""
+    # Never relax this to "assume registered": capturing against a real site is permitted only on this evidence.
     entry = _load_burners().get(burner_id or "")
     return bool(isinstance(entry, dict) and entry.get("registered") and entry.get("email") and entry.get("password"))
 
 
 def burner_account(burner_id: str) -> dict | None:
-    """The {email, password, provisioning_mode} for a REGISTERED burner, or None. Returns None for
-    any unregistered/unknown id (callers must treat None as 'do not proceed')."""
+    """The {email, password, provisioning_mode} of a REGISTERED burner, or None, read as "do not proceed"."""
     if not is_registered_burner(burner_id):
         return None
     entry = _load_burners()[burner_id]
@@ -124,13 +99,8 @@ def register_burner(
     first_name: str = "",
     last_name: str = "",
 ) -> None:
-    """Register (or update) a burner in the gitignored burner store so the guarded/public lane's
-    fail-closed `is_registered_burner` gate will permit it. Called by the human-provisioning helper
-    after a person clears a signup wall; `provisioning_mode` records how the identity was created
-    ('human_provisioned' | 'generated'). The generated disposable `first_name`/`last_name` are stored
-    when present so a signup form's name fields stay consistent on reuse. NEVER register a real
-    personal account here — the burner store is for disposable identities only
-    ([[burner-accounts-only-for-capture]])."""
+    """Register or update a burner in the gitignored store that `is_registered_burner` gates on."""
+    # Disposable identities only: a real personal account must never be registered here.
     if not (burner_id and email and password):
         raise ValueError("register_burner requires a non-empty burner_id, email, and password")
     _CRED_DIR.mkdir(parents=True, exist_ok=True)
@@ -152,11 +122,7 @@ def _carries_a_session(state) -> bool:
 
 
 def save_storage_state(ref: str, state: dict) -> None:
-    """Persist a Playwright storage_state dump (cookies + localStorage + IndexedDB) to
-    `credentials/storage_state/<ref>.json` so a later pre_session run starts already signed in.
-    Written by the human-provisioning helper right after a manual login; read back by
-    `load_storage_state`. Refuses an empty dump so a mis-run (human never actually signed in) fails
-    loudly instead of persisting a logged-out session."""
+    """Persist a Playwright storage_state dump so a later pre_session run starts already signed in."""
     if not ref:
         raise ValueError("save_storage_state requires a non-empty ref")
     if not _carries_a_session(state):
@@ -168,9 +134,7 @@ def save_storage_state(ref: str, state: dict) -> None:
 
 
 def load_storage_state(ref: str) -> dict | None:
-    """A saved Playwright storage_state (cookies + localStorage) for pre_session login on a real
-    site, read from `credentials/storage_state/<ref>.json`. None if the ref is missing/unreadable —
-    the caller fails closed (skips the site) rather than capture a logged-out session."""
+    """A saved Playwright storage_state for pre_session login, or None so the caller skips the site."""
     if not ref:
         return None
     path = _storage_state_path(ref)

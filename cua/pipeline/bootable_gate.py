@@ -1,20 +1,9 @@
-"""No-LLM bootable-app gate: decide whether a repo is a bootable interactive web app from a single
-GitHub probe (root tree + package.json), before any LLM stage runs. Stage 1/2 admit candidates; this
-rejects the test-suite / non-app majority cheaply so shallow_score (LLM) and deep_analyze (LLM +
-sandbox) only ever run on plausible apps.
-
-`classify_bootable` is a pure function (no I/O) so it is testable in isolation; `probe_repo` does the
-one network call via the `gh` CLI (reusing its auth, like stage 3's metadata fetch).
-
-All signal sets are module-level data — adding a framework / config file / compose name is a data
-edit, not a logic change (the project's "generalize, don't special-case" rule).
-"""
+"""No-LLM bootable-app gate: is this repo a bootable interactive web app, judged from one GitHub probe?"""
 
 import json
 import subprocess
 
-# A run script + one of these as a dependency = a bootable frontend app. Canonical package names
-# (scoped names listed in full) so membership is an exact set test.
+# A run script plus one of these as a dependency is a bootable frontend app; scoped names in full for exact set tests.
 FRONTEND_FRAMEWORKS = {
     "react",
     "react-dom",
@@ -44,8 +33,7 @@ FRONTEND_FRAMEWORKS = {
     "@nuxt/kit",
 }
 
-# Server frameworks + a template engine = a server-rendered bootable app even without a JS frontend
-# framework (the false-negative class called out in the spec). Both sets must intersect to accept.
+# A server framework AND a template engine make a server-rendered app even without a JS frontend framework.
 SERVER_FRAMEWORKS = {"express", "fastify", "koa", "@nestjs/core", "hapi", "@hapi/hapi", "h3"}
 TEMPLATE_ENGINES = {"ejs", "pug", "handlebars", "express-handlebars", "hbs", "nunjucks", "eta"}
 
@@ -84,18 +72,13 @@ APP_CONFIG_PREFIXES = (
 
 COMPOSE_FILES = {"docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"}
 
-# Root markers of a JS monorepo: the bootable app lives in a workspace subdir, so the root
-# package.json often has no framework dep. Accept conservatively (the per-app deep-probe is
-# deferred) — these are real multi-package apps, not test suites.
+# In a monorepo the bootable app lives in a workspace subdir, so the root package.json often has no framework dep.
 MONOREPO_MARKERS = {"pnpm-workspace.yaml", "lerna.json", "turbo.json", "nx.json", "rush.json"}
 
-# Directory names that signal app source (vs a pure test repo).
+# These directory names mark a repo that ships app source rather than a test suite alone.
 APP_STRUCTURE_DIRS = {"src", "app", "apps", "client", "frontend", "web", "packages", "server"}
 
-# Reject reasons confident enough to drop a repo WITHOUT an LLM: clearly not a Node app, or clearly
-# a test suite. The ambiguous remainder ("package.json without a framework", "no bootable-app
-# signal") is a known false-positive class (jQuery/Bootstrap/vanilla web UIs the probe can't tell
-# from non-apps), so by default it passes through to the LLM stages instead of being rejected here.
+# Every other reason is a known false-positive class (vanilla and jQuery UIs), so it reaches the LLM stages instead.
 HARD_REJECT_REASONS = frozenset(
     {
         "no package.json / compose / app structure",
@@ -105,14 +88,12 @@ HARD_REJECT_REASONS = frozenset(
 
 
 def is_hard_reject(reason: str) -> bool:
-    """True when a REJECT reason is confident enough to drop the repo at the gate (conservative
-    mode). Soft rejects fall through to the LLM stages."""
+    """True when a REJECT reason is confident enough to drop the repo at the gate, with no LLM stage run."""
     return reason in HARD_REJECT_REASONS
 
 
 def parse_package_json(text: str) -> dict | None:
-    """Extract the signal fields from package.json text. None when the text is absent/unparseable
-    (the caller then falls through to the no-package-json branch)."""
+    """The signal fields of package.json text, or None when it is absent or unparseable."""
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, TypeError):
@@ -128,12 +109,8 @@ def parse_package_json(text: str) -> dict | None:
 
 
 def classify_bootable(entry_names, pkg: dict | None) -> tuple[bool, str]:
-    """Pure verdict from a repo's root tree entry names + parsed root package.json (or None).
-
-    ACCEPT a plausible bootable interactive app; REJECT the test-suite / non-app majority. Borderline
-    cases lean ACCEPT — the downstream LLM stages still judge quality on this (smaller) survivor set;
-    the gate only removes high-confidence junk.
-    """
+    """Pure ACCEPT/REJECT verdict from a repo's root entry names and parsed root package.json."""
+    # Borderline cases lean ACCEPT: the LLM stages still judge quality, so the gate only removes high-confidence junk.
     names = set(entry_names)
     names_lower = {n.lower() for n in names}
 
@@ -148,7 +125,6 @@ def classify_bootable(entry_names, pkg: dict | None) -> tuple[bool, str]:
     has_frontend = bool(deps & FRONTEND_FRAMEWORKS)
     has_server_rendered = bool(deps & SERVER_FRAMEWORKS) and bool(deps & TEMPLATE_ENGINES)
 
-    # --- ACCEPT signals ---
     if has_run and has_frontend:
         return True, f"node frontend app ({', '.join(sorted(deps & FRONTEND_FRAMEWORKS))})"
     if has_run and has_server_rendered:
@@ -158,11 +134,9 @@ def classify_bootable(entry_names, pkg: dict | None) -> tuple[bool, str]:
     if app_config_present and has_run:
         return True, "app-config file + run script"
     if is_monorepo:
-        # The app is in a workspace package; root deps are not representative. Per-app deep-probe
-        # is deferred — accept and let the (now much smaller) LLM stages judge.
+        # Root deps are not representative of a workspace app, and the per-app deep probe is deferred.
         return True, "js monorepo (per-app deep-probe deferred)"
 
-    # --- REJECT signals ---
     if pkg is None and not compose_present and not has_app_dir:
         return False, "no package.json / compose / app structure"
     if pkg is not None and not has_frontend and not has_server_rendered:
@@ -183,13 +157,11 @@ query($owner:String!,$name:String!){
 
 
 class ProbeError(Exception):
-    """Raised when the GitHub probe could not be completed (network/auth/missing repo). The gate
-    treats this as a retryable infra failure, never a rejection."""
+    """The GitHub probe could not be completed; the gate treats this as retryable infra, never a rejection."""
 
 
 def probe_repo(full_name: str) -> tuple[list[str], str | None]:
-    """Fetch (root entry names, package.json text|None) for a repo via the gh GraphQL API.
-    Raises ProbeError on any failure so the caller can retry rather than reject."""
+    """(root entry names, package.json text or None) for a repo, via the gh GraphQL API."""
     if "/" not in full_name:
         raise ProbeError(f"bad repo name: {full_name}")
     owner, name = full_name.split("/", 1)
@@ -201,13 +173,13 @@ def probe_repo(full_name: str) -> tuple[list[str], str | None]:
             timeout=60,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        raise ProbeError(f"gh probe failed for {full_name}: {e}")
+        raise ProbeError(f"gh probe failed for {full_name}: {e}") from e
     if result.returncode != 0:
         raise ProbeError(f"gh probe non-zero for {full_name}: {result.stderr.strip()[:200]}")
     try:
         repo = json.loads(result.stdout)["data"]["repository"]
     except (json.JSONDecodeError, KeyError, TypeError) as e:
-        raise ProbeError(f"gh probe unparseable for {full_name}: {e}")
+        raise ProbeError(f"gh probe unparseable for {full_name}: {e}") from e
     if repo is None:
         raise ProbeError(f"repository not found: {full_name}")
     root = repo.get("root") or {}

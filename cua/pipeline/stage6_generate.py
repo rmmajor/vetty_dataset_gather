@@ -87,12 +87,8 @@ def _has_valid_trajectories(repo_traj_dir: Path) -> bool:
 
 
 def _use_discovered(account_index: int, ratio: float) -> bool:
-    """Decide whether the Nth `auth=="account"` task should run in `discovered` mode (start
-    signed out WITH creds and only sign in if the app forces it — the realistic 'hit the wall,
-    then log in' pattern) instead of `pre_session` (start already signed in via the captured
-    session). Deterministic so task-level resume picks the same mode on re-run. `ratio` is the
-    target fraction of account tasks that exercise the discover-then-login pattern; the rest reuse
-    the session — which keeps login from being skewed onto every trajectory."""
+    """Whether the Nth account task starts signed OUT with credentials rather than on the captured session."""
+    # Deterministic, so a task-level resume picks the same mode and login stays a minority of the corpus.
     if ratio <= 0:
         return False
     step = max(2, round(1 / ratio))
@@ -141,7 +137,7 @@ async def _capture_suite(rlog, repo: dict, profile, repo_traj_dir: Path, test_na
         try:
             await run_blocking(sandbox.copy_out, "/workspace/results", str(repo_traj_dir))
         except Exception as e:
-            raise RetryableFailure(FailureCategory.SANDBOX_ERROR, f"copy results failed: {str(e)[:200]}")
+            raise RetryableFailure(FailureCategory.SANDBOX_ERROR, f"copy results failed: {str(e)[:200]}") from e
     finally:
         await run_blocking(sandbox.stop)
 
@@ -178,7 +174,7 @@ async def _boot_repo_app(sandbox, repo: dict, profile, mail_env: dict | None) ->
     _, stderr, exit_code = await run_blocking(sandbox.clone_repo, repo["full_name"], repo.get("default_branch"))
     if exit_code != 0:
         raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
-    # No blind root `npm install`: start_app installs in the app's own dir, and a pre-install buries _find_app_dir under vendored package.json files.
+    # No blind root `npm install`: a pre-install buries _find_app_dir under vendored package.json files.
     app_url = await run_blocking(driver_session.start_app, sandbox, profile, mail_env)
     if app_url is None:
         log_tail, _, _ = await run_blocking(sandbox.exec_command, f"tail -15 {driver_session.APP_LOG} 2>/dev/null")
@@ -191,7 +187,7 @@ async def _boot_repo_app(sandbox, repo: dict, profile, mail_env: dict | None) ->
 
 async def _propose(rlog, registry, sandbox, client, repo: dict, app_url: str, repo_traj_dir: Path, mail: dict) -> list:
     """This repo's task list: a persisted proposal on resume, else the proposer grounded in the LIVE app."""
-    # A persisted proposal costs no LLM call AND keeps the task set stable, which is what makes task-level resume meaningful.
+    # A persisted proposal costs no LLM call and keeps the task set stable, which is what resume needs.
     tasks = load_proposed_tasks(repo_traj_dir)
     if tasks is not None:
         rlog.info(f"resuming persisted proposal: {len(tasks)} tasks")
@@ -222,7 +218,7 @@ async def _propose(rlog, registry, sandbox, client, repo: dict, app_url: str, re
         raise RetryableFailure(FailureCategory.SDK_ERROR, "task proposal failed or unparseable")
     health = proposal.get("app_health") or {}
     if not health.get("usable", True) or not proposal["tasks"]:
-        # The app booted but cannot host real tasks (dead backend, error content) — reject before one teacher call is spent.
+        # The app booted but cannot host real tasks, so reject it before a single teacher call is spent.
         raise QualityReject(
             FailureCategory.NO_CAPTURE,
             f"proposer judged app unusable: {health.get('notes', 'no tasks proposed')[:200]}",
@@ -242,13 +238,13 @@ def _task_auth(task: dict, mail: dict, captured_session, account_index: int) -> 
     """The teacher's auth kwargs for one task, or None when a known account makes the task impossible."""
     auth = task.get("auth", "none") if mail["auth_flow"] else "none"
     known, repo_name = mail["known"], mail["repo_name"]
-    # A known account is already registered and has no inbox, so a register task cannot be done and must not be relabeled either.
+    # A known account is already registered and has no inbox, so a register task can neither run nor be relabeled.
     if known and auth == "register":
         return None
     acct_email = known["email"] if known else mail_service.scenario_address(repo_name, "account")
     acct_password = known["password"] if known else mail_service.scenario_password(repo_name, "account")
     acct_creds = {"email": acct_email, "password": acct_password}
-    # Only a generated account needs the webmail: a known account is pre-verified and its mail may never reach GreenMail.
+    # Only a generated account needs the webmail: a known account is pre-verified and may never mail GreenMail.
     acct_mail = None if known else {"url": mail["webmail_url"], "address": acct_email, "password": "qa"}
     wiring = {"auth_mode": "none", "secrets": None, "mail_config": None, "auth_config": None, "capture_session": False}
     if auth in ("register", "login"):
@@ -265,7 +261,7 @@ def _task_auth(task: dict, mail: dict, captured_session, account_index: int) -> 
 
 async def _revive_app(rlog, sandbox, app_url: str, profile, mail_env: dict | None, task_id: str) -> str | None:
     """The URL to drive this task, restarting the shared dev server first when it stopped answering."""
-    # The server can die mid-session (unhandled error, OOM, a deploy action), after which every remaining task fails on CONNECTION_REFUSED.
+    # The server can die mid-session, after which every remaining task fails on CONNECTION_REFUSED.
     if driver_session.app_is_up(sandbox, app_url):
         return app_url
     rlog.warning(f"app at {app_url} unresponsive before task '{task_id}'; restarting")
@@ -319,14 +315,14 @@ async def _mail_wiring(repo_name: str) -> tuple[dict, dict | None]:
     context["known"] = app_secrets.known_account(repo_name)
     stack = await run_blocking(mail_service.ensure_mail_stack)
     context["webmail_url"] = stack.webmail_url
-    # Dummy auth secrets ride along with the SMTP env: most auth apps throw at startup without JWT_SECRET / NEXTAUTH_URL.
+    # Dummy auth secrets ride along with the SMTP env: most auth apps throw at startup without them.
     return context, {**mail_service.mail_env_for_app(stack), **app_secrets.boot_env_secrets()}
 
 
 async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo_traj_dir: Path):
     """Agent capture for one repo: boot its app, propose user tasks, run the teacher on each, copy out."""
     repo_name = repo["full_name"]
-    # Always the default Playwright image: the teacher never runs the repo's tests and the driver needs this image's /ms-playwright browsers.
+    # Always the default Playwright image: the driver needs the /ms-playwright browsers only it ships.
     sandbox = DockerSandbox(container_timeout=CAPTURE.container_timeout)
     captured_anything = False
     mail, mail_env = await _mail_wiring(repo_name)
@@ -367,7 +363,7 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
             account_index += 1 if wiring.pop("uses_account") else 0
             state, unproductive = await _run_task(rlog, client, task, app_url, repo_name, registry, wiring)
             minted = (state or {}).get("storage_state") and state.get("agent_outcome") == "completed"
-            # Only a CLAIMED-complete login mints the reusable session, so a half-finished one cannot make pre_session tasks start broken.
+            # Only a CLAIMED-complete login mints the session, so a half-finished one cannot break later tasks.
             if wiring["capture_session"] and minted:
                 captured_session = state["storage_state"]
                 rlog.info(f"captured auth session from '{task['id']}' for pre_session reuse")
@@ -421,7 +417,7 @@ async def _postprocess_teacher_capture(rlog, registry, repo, repo_traj_dir: Path
             f"{' (relabeled)' if verdict.get('relabeled') else ''} — {verdict.get('reasoning', '')[:100]}"
         )
 
-    # Dedup + cap among the verified: identical action shapes are excluded, then the longest survive, length being the scarce resource.
+    # Identical action shapes are excluded, then the longest survive: trajectory length is the scarce resource.
     verified = []
     for traj_dir in valid_dirs:
         traj = json.loads((traj_dir / "trajectory.json").read_text())
@@ -447,7 +443,7 @@ async def _postprocess_teacher_capture(rlog, registry, repo, repo_traj_dir: Path
 
 async def _capture_for_repo(rlog, registry, repo: dict, profile, repo_traj_dir: Path, capture_mode: str, prefix: str):
     """Capture this repo in the configured mode, or skip when a prior run already recorded everything."""
-    # Agent mode resumes at TASK granularity (_capture_agent skips recorded tasks and reuses the persisted proposal); replay resumes per repo.
+    # Agent mode resumes at TASK granularity, reusing the persisted proposal; replay mode resumes per repo.
     if capture_mode == "agent":
         if _teacher_capture_complete(repo_traj_dir):
             rlog.info(f"resuming: all proposed tasks already recorded ({repo_traj_dir.name}), skipping capture")
@@ -632,7 +628,7 @@ async def generate_instruction(
     except UsageLimitReached:
         raise
     except Exception as e:
-        # The task_id fallback is a safety net for SDK infrastructure failures, never a second guess at the model's content.
+        # A safety net for SDK infrastructure failures, never a second guess at the model's own content.
         logger.warning(f"Instruction generation failed: {e}")
         return f"Verify the {test_name.replace('_', ' ')} behavior."
 

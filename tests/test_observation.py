@@ -1,4 +1,4 @@
-"""SFT-3 prompt format: coordinate space, effect annotations, two-image observation layout, golden fixture (`--regen` rewrites it)."""
+"""SFT-3 prompt format: coordinate space, effect annotations, two-image layout and the golden fixture."""
 
 import io
 import json
@@ -129,8 +129,8 @@ def test_system_prompt_describes_sft3_inputs():
     )
     assert "[no change]" in SYSTEM_PROMPT and "-> /path" in SYSTEM_PROMPT
     assert (
-        "Available actions (x, y are normalized to 0-1000 across the screenshot width and height; scrollX/scrollY are pixel deltas):"
-        in SYSTEM_PROMPT
+        "Available actions (x, y are normalized to 0-1000 across the screenshot width and height; "
+        "scrollX/scrollY are pixel deltas):" in SYSTEM_PROMPT
     )
     assert "action: confirm(propose=click(<ref>(x, y)</ref>), risk=purchase)" in SYSTEM_PROMPT
     assert SYSTEM_PROMPT.endswith("and wait for approval instead of doing it.")

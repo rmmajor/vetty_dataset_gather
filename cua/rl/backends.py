@@ -165,7 +165,7 @@ class WorkerPool:
         worker, slot = self.free.get(timeout=timeout)
         with worker.lock:
             if worker.live == 0 and worker.needs_recycle():
-                # A sandbox can be gone entirely (OOM-killed, auto-removed); rebuilding it must not raise, or one dead container ends the batch.
+                # A sandbox can be gone entirely, and rebuilding must not raise, or one dead container ends the batch.
                 try:
                     worker.recycle()
                 except Exception as e:

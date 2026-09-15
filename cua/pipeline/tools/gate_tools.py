@@ -1,4 +1,4 @@
-"""Two offline passes over the no-LLM bootable-app gate: `validate` measures its precision/recall, `regate` re-gates the existing backlog."""
+"""Two offline passes over the bootable-app gate: `validate` measures it, `regate` re-gates the backlog."""
 
 import argparse
 import concurrent.futures
@@ -30,7 +30,7 @@ APPLY_WORKERS = 4
 
 
 def open_readonly(db_path: str) -> sqlite3.Connection:
-    """A `mode=ro` connection, so a report cannot write: RepoRegistry's constructor would (WAL pragma, schema, migrations)."""
+    """A `mode=ro` connection, so a report cannot write where RepoRegistry's constructor would."""
     connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
     return connection
@@ -41,7 +41,7 @@ def names_with_status(connection: sqlite3.Connection, status: str) -> list[str]:
 
 
 def probe(name: str) -> tuple[str, bool | None, str | None]:
-    """Gate one repo; a probe error reports accept=None and carries its message in the reason slot, so it is counted apart from an accept or a reject."""
+    """Gate one repo; a probe error answers accept=None, so it counts apart from an accept or a reject."""
     try:
         accept, reason = gate_repo(name)
         return name, accept, reason
@@ -76,7 +76,7 @@ def evaluate(names, label: str):
 
 
 def report_precision_floor(proven, legacy) -> None:
-    """Agent-mode proven-good repos must ALL accept; legacy replay suites rejecting here is the agent-mode pivot working, shown for honesty."""
+    """Agent-mode proven-good repos must ALL accept; a legacy replay suite rejecting here is the pivot working."""
     _, _, pr_rej, pr_err = evaluate(proven, "AGENT-MODE PROVEN-GOOD (must all ACCEPT)")
     if pr_rej:
         print("  !! FALSE NEGATIVES (gate would wrongly reject agent-mode proven-good repos):")
@@ -117,7 +117,7 @@ def report_recall(rej_sample, rej_score) -> None:
 
 
 def command_validate(args) -> int:
-    """Empirical proof for the gate: proven-good repos set the precision floor, a sample of LLM-rejected backlog measures recall, then the saved LLM dollars are projected."""
+    """Empirical proof for the gate: proven-good repos set the precision floor and a backlog sample measures recall."""
     connection = open_readonly(args.db)
     completed = [
         row["full_name"]
@@ -127,7 +127,7 @@ def command_validate(args) -> int:
     rej_analyze = names_with_status(connection, "rejected_analyze")
     connection.close()
 
-    # The gate is an AGENT-mode intake filter, so agent-captured repos must pass it; legacy replay suites are what the pivot stops admitting.
+    # The gate is an AGENT-mode intake filter, so agent-captured repos must pass and replay suites need not.
     proven = [c for c in completed if capture_source(c, args.trajectories) == "agent"]
     legacy = [c for c in completed if capture_source(c, args.trajectories) != "agent"]
 
@@ -206,7 +206,7 @@ def wait_for_budget(need: int) -> None:
 
 
 def apply_bucket(registry: RepoRegistry, names, stage: int, aggressive: bool, counts: dict) -> None:
-    """Probe one backlog bucket in chunks at low concurrency, committing rejects per chunk so progress survives and re-runs are idempotent."""
+    """Probe one backlog bucket in chunks, committing rejects per chunk so progress survives an interruption."""
     print(f"\n=== APPLY stage-{stage}: {len(names)} repos (chunks of {APPLY_CHUNK}) ===", flush=True)
     for i in range(0, len(names), APPLY_CHUNK):
         chunk = names[i : i + APPLY_CHUNK]
@@ -230,7 +230,7 @@ def apply_bucket(registry: RepoRegistry, names, stage: int, aggressive: bool, co
 
 
 def command_regate(args) -> int:
-    """Re-gate `filtered` (pending stage 3) and `scored` (pending stage 4) — the repos that would otherwise burn LLM scoring/analysis."""
+    """Re-gate the `filtered` and `scored` buckets, the repos that would otherwise burn LLM scoring and analysis."""
     connection = open_readonly(args.db)
     filtered = names_with_status(connection, "filtered")
     scored = names_with_status(connection, "scored")

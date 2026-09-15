@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 def requeue_stale(registry: RepoRegistry, dry_run: bool = False) -> int:
-    """Re-queue rejections produced by superseded code: per stage with a known behavior cutoff, reset rejections recorded before it to the stage's input status."""
+    """Re-queue rejections produced by superseded code, per stage with a known behavior cutoff."""
     verb = "would re-queue" if dry_run else "re-queued"
     total = 0
     for stage, cutoff in sorted(STAGE_BEHAVIOR_CUTOFFS.items()):
@@ -47,7 +47,7 @@ def requeue_stale(registry: RepoRegistry, dry_run: bool = False) -> int:
 
 
 def requeue_infra(registry: RepoRegistry, dry_run: bool = False) -> int:
-    """Re-queue infra/flaky rejections (clone/SDK/timeout/max-turns/...) across all stages, leaving genuine quality rejections in place."""
+    """Re-queue infra and flaky rejections across all stages, leaving genuine quality rejections in place."""
     verb = "would re-queue" if dry_run else "re-queued"
     n = registry.reset_rejected(category_in=NON_QUALITY_CATEGORIES, dry_run=dry_run)
     logger.info(f"Infra re-queue: {verb} {n} infra/flaky rejections{' (dry-run)' if dry_run else ''}")
@@ -55,7 +55,7 @@ def requeue_infra(registry: RepoRegistry, dry_run: bool = False) -> int:
 
 
 def requeue_rescore(registry: RepoRegistry, stage: int, min_score: float, dry_run: bool = False) -> int:
-    """Re-queue rejections a lowered gate would now accept: reset stage-N rejects whose stored gate score is >= min_score, so re-running stage N re-admits them."""
+    """Re-queue the stage-N rejects whose stored gate score a lowered `min_score` would now accept."""
     verb = "would re-queue" if dry_run else "re-queued"
     n = registry.reset_rejected(stage=stage, min_score=min_score, dry_run=dry_run)
     logger.info(
@@ -66,7 +66,7 @@ def requeue_rescore(registry: RepoRegistry, stage: int, min_score: float, dry_ru
 
 
 async def prune_unfit(registry: RepoRegistry, dry_run: bool = False) -> int:
-    """Retroactively reject repos past stage 4 that the stage-4 fit veto would refuse today, re-judged from their STORED analysis (no re-clone), so no more stage-5/6 compute is wasted; reversible via ``--requeue-stage 4 --min-score 0``."""
+    """Retroactively reject repos past stage 4 that today's fit veto refuses, re-judged from their STORED analysis."""
     candidates = registry.get_repos_by_status([RepoStatus.ANALYZED.value, RepoStatus.VALIDATED.value])
     verb = "would prune" if dry_run else "pruned"
     logger.info(f"Prune unfit: re-judging {len(candidates)} repos past stage 4")
@@ -191,7 +191,7 @@ def print_status_distributions(registry: RepoRegistry) -> None:
 
 
 def print_rejection_reasons(registry: RepoRegistry, stages: list[int] = None) -> None:
-    """Top rejection reasons across all stages, plus one section per requested stage so a --stage run sees what it just rejected."""
+    """Top rejection reasons across all stages, plus one section per requested stage."""
     rejection_reasons = registry.get_rejection_reasons(limit=10)
     if rejection_reasons:
         print("\nTop rejection reasons (all stages, all time):")
@@ -211,7 +211,7 @@ def print_rejection_reasons(registry: RepoRegistry, stages: list[int] = None) ->
 
 
 def print_status(registry: RepoRegistry, stages: list[int] = None):
-    """Print the pipeline registry status; ``stages`` (from --stage N) adds a per-stage rejection section on top of the all-stages aggregate."""
+    """Print the pipeline registry status, with a per-stage rejection section for each requested stage."""
     print("\n=== Pipeline Registry Status ===\n")
     print_status_counts(registry)
     print_status_distributions(registry)
@@ -241,7 +241,7 @@ class StageRequest:
 
 @dataclass(frozen=True)
 class StageSpec:
-    """One funnel stage: its entry point plus the worker, drain and budget-pacing policy the orchestrator applies to it."""
+    """One funnel stage: its entry point plus the worker, drain and budget-pacing policy applied to it."""
 
     number: int
     name: str
@@ -338,7 +338,7 @@ STAGES = {
 }
 
 DRAIN_STAGES = tuple(number for number, spec in sorted(STAGES.items()) if spec.drained)
-# Kept as a name because README and CLAUDE.md cite it; the specs are the source of the figures.
+# Kept as a name because README.md and docs/architecture.md cite it; the specs are the source of the figures.
 STAGE_COST_ESTIMATES = {
     number: spec.cost_estimate
     for number, spec in STAGES.items()
@@ -347,7 +347,7 @@ STAGE_COST_ESTIMATES = {
 
 
 def stage_workers(spec: StageSpec, workers: int) -> int:
-    """``--workers`` capped by the stage's own ceiling, then clamped against Docker VM memory for the stages that hold a container each."""
+    """``--workers`` capped by the stage's own ceiling, then clamped against Docker VM memory where that applies."""
     capped = workers if spec.workers_cap is None else min(workers, spec.workers_cap)
     return safe_parallel_sandboxes(capped) if spec.sandboxed else capped
 
@@ -394,7 +394,7 @@ def budget_used(baseline: float) -> float:
 
 
 def should_continue(baseline: float, budget: float) -> bool:
-    """False once --budget is covered by metered spend or the Claude usage limit is reached, so repos stay in their input status instead of being rejected."""
+    """False once --budget is covered by metered spend or the usage limit is reached, so repos keep their status."""
     used = budget_used(baseline)
     if used >= budget:
         logger.warning(f"Budget exhausted (${used:.2f}/${budget:.2f} metered), stopping")
@@ -408,7 +408,7 @@ def should_continue(baseline: float, budget: float) -> bool:
 
 
 def affordable_limit(stage: int, pending_count: int, remaining_budget: float, limit: int = None) -> int:
-    """How many repos this stage may take: what is pending, what the remaining budget pre-sizes, and any explicit --limit."""
+    """How many repos this stage may take: what is pending, what the budget pre-sizes, and any explicit --limit."""
     cost_per_repo = stage_cost(stage)
     max_affordable = int(remaining_budget / cost_per_repo) if cost_per_repo > 0 else pending_count
     effective_limit = min(pending_count, max_affordable)
@@ -416,7 +416,7 @@ def affordable_limit(stage: int, pending_count: int, remaining_budget: float, li
 
 
 def record_stage_error(stage: int, error: Exception, stage_results: dict, stage_errors: list[str]) -> None:
-    """A crashed stage starves everything downstream, so record it loudly — a stage-4 NameError once ran a whole night looking like "0 repos pending"."""
+    """Record a crashed stage loudly: it starves everything downstream while reading as "0 repos pending"."""
     logger.error(f"  Stage {stage} failed: {error}")
     stage_results.setdefault(stage, {"processed": 0, "passed": 0, "rejected": 0})
     stage_results[stage]["error"] = str(error)
@@ -466,7 +466,7 @@ async def run_pass(
             )
             processed = result.get("processed", 0)
             pass_processed += processed
-            # Accumulate processed across passes; the registry-derived passed/rejected/trajectories are cumulative already.
+            # Accumulated across passes; the registry-derived passed/rejected/trajectories are cumulative already.
             prev_processed = stage_results.get(stage, {}).get("processed", 0)
             stage_results[stage] = {**result, "processed": prev_processed + processed}
         except Exception as e:
@@ -523,9 +523,9 @@ async def drain_funnel(
     limit: int = None,
     loop: bool = False,
 ):
-    """Run the drain stages over pending repos, stopping on --budget (metered) or the Claude usage limit; ``loop=False`` is one forward pass (overnight), ``loop=True`` repeats until the funnel drains (until-limit)."""
+    """Run the drain stages over pending repos, stopping on --budget or the usage limit; ``loop`` repeats to drain."""
     start_time = time.time()
-    # Estimates only pre-size batches: the budget is paced by ACTUAL metered spend, which per-repo guesses drifted badly from.
+    # Estimates only pre-size batches: the budget is paced by ACTUAL metered spend, which guesses drifted from.
     baseline = cost_tracker.total_usd
     stage_results = {}
     stage_errors: list[str] = []
@@ -604,7 +604,7 @@ async def run_until_limit(
 
 
 async def run_maintenance(args, registry: RepoRegistry) -> bool:
-    """The registry-only commands (--status and the re-queue / prune passes); True once one of them has handled the invocation."""
+    """The registry-only commands: True once one of them has handled the invocation."""
     if args.status:
         print_status(registry)
         return True
@@ -744,7 +744,8 @@ Examples:
         const=100.0,
         default=None,
         metavar="PCT",
-        help="Loop stages 3-6 until Claude usage reaches PCT%% of the subscription limit (bare flag = 100). Honors --budget too.",
+        help="Loop stages 3-6 until Claude usage reaches PCT%% of the subscription limit (bare flag = 100). "
+        "Honors --budget too.",
     )
     parser.add_argument("--status", action="store_true", help="Print registry stats and exit")
     parser.add_argument(
@@ -772,7 +773,9 @@ Examples:
     parser.add_argument(
         "--prune-unfit",
         action="store_true",
-        help="Re-judge repos already past stage 4 and reject obvious bad-fits (toys, boilerplates, login-walled, test-suite-only) so no more stage-5/6 compute is wasted. Reversible via --requeue-stage 4 --min-score 0. Honors --dry-run.",
+        help="Re-judge repos already past stage 4 and reject obvious bad-fits (toys, boilerplates, login-walled, "
+        "test-suite-only) so no more stage-5/6 compute is wasted. Reversible via --requeue-stage 4 --min-score 0. "
+        "Honors --dry-run.",
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="With --requeue-*: report counts without modifying the registry"

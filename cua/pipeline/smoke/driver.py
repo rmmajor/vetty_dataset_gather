@@ -1,4 +1,4 @@
-"""Scripted (no-LLM) end-to-end check of the agent-capture browser driver: a sandboxed test page, a recorded session, and the trajectory contract over what it wrote."""
+"""Scripted (no-LLM) end-to-end check of the agent-capture browser driver against the trajectory contract."""
 
 import base64
 import json
@@ -42,7 +42,7 @@ TEST_PAGE = """<!doctype html>
 
 <div style="height: 1500px"></div>
 <a href="#bottom" id="bottom-link">Bottom link</a>
-</body></html>"""
+</body></html>"""  # noqa: E501
 
 APP_URL = "http://127.0.0.1:3000/"
 TASK_ID = "smoke_test"
@@ -71,7 +71,7 @@ class DriverSmoke:
         driver_session.install_driver(self.sandbox)
         driver_session.start_driver(self.sandbox)
         self.client = driver_session.DriverClient(self.sandbox)
-        # A session-scoped burner secret plus a (here empty, but valid) pre_session storage_state exercise the login-gated plumbing.
+        # A session-scoped burner secret plus an empty pre_session state exercise the login-gated plumbing.
         session = self.client.session(
             TASK_ID,
             APP_URL,

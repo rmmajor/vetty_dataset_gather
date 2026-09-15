@@ -1,7 +1,6 @@
 """Where the model is served and where the browser runs: two registries, so a new stack is one entry."""
 
 import json
-import time
 from pathlib import Path
 
 from cua.eval.student.config import EvalConfig
@@ -9,6 +8,13 @@ from cua.pipeline import driver_session, remote_sandbox
 from cua.pipeline.driver_session import DriverClient, run_blocking
 from cua.pipeline.sandbox import DockerSandbox
 from cua.settings import EVAL
+from cua.student.client import (
+    OpenAICompatibleClient,
+    RetryPolicy,
+    TransportError,
+    choice_text_parts,
+    requests_transport,
+)
 from cua.trajectory.actions import format_action_for_training
 
 
@@ -35,68 +41,50 @@ class OpenAIChatStudent(StudentClient):
         retries: int = 2,
         retry_backoff_s: int = 90,
     ):
-        self.url = self._chat_url(endpoint)
-        self.model = model
-        self.api_key = api_key
-        self.max_tokens = max_tokens
-        self.temperature = temperature
-        self.timeout_s = timeout_s
-        self.retries = retries
-        self.retry_backoff_s = retry_backoff_s
+        self.client = OpenAICompatibleClient(
+            endpoint=endpoint,
+            model=model,
+            api_key=api_key,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+            retry=RetryPolicy(
+                attempts=retries + 1,
+                backoff=lambda attempt: retry_backoff_s * attempt,
+                retry_error=lambda error: isinstance(error, TransportError),
+                fatal=_refused,
+                exhausted=_unreachable,
+            ),
+            content=self._content,
+            transport=requests_transport,
+        )
+        self.url = self.client.url
 
-    @staticmethod
-    def _chat_url(endpoint: str) -> str:
-        endpoint = endpoint.rstrip("/")
-        if endpoint.endswith("/chat/completions"):
-            return endpoint
-        return f"{endpoint}/chat/completions"
-
-    def _headers(self) -> dict:
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        return headers
-
-    def _payload(self, messages: list) -> dict:
-        return {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-        }
-
-    def _content(self, response) -> str:
+    def _content(self, body) -> str:
         try:
-            choice = response.json()["choices"][0]["message"]["content"]
+            return choice_text_parts(body)
         except (KeyError, IndexError, ValueError) as e:
-            raise StudentError(f"unexpected response shape from {self.url}: {e}")
-        if isinstance(choice, list):
-            choice = "".join(part.get("text", "") for part in choice if isinstance(part, dict))
-        return choice or ""
+            raise StudentError(f"unexpected response shape from {self.url}: {e}") from e
 
     def complete(self, messages: list) -> str:
-        # lazy: requests is an optional extra, resolved at call time — preserved from the pre-split module.
-        import requests
+        return self.client.chat(messages)
 
-        payload = self._payload(messages)
-        headers = self._headers()
-        last_error = None
-        for attempt in range(self.retries + 1):
-            if attempt:
-                time.sleep(self.retry_backoff_s * attempt)
-            try:
-                response = requests.post(self.url, json=payload, headers=headers, timeout=self.timeout_s)
-            except requests.RequestException as e:
-                last_error = f"transport error: {e}"
-                continue
-            if response.status_code >= 500:
-                # A preempted or restarting model answers 5xx for minutes: a retry, not a verdict on the episode.
-                last_error = f"HTTP {response.status_code}: {response.text[:200]}"
-                continue
-            if response.status_code != 200:
-                raise StudentError(f"{self.url} returned HTTP {response.status_code}: {response.text[:300]}")
-            return self._content(response)
-        raise StudentError(f"{self.url} unreachable after {self.retries + 1} attempts ({last_error})")
+
+def _refused(url: str, response) -> StudentError | None:
+    """A non-200 that is not a 5xx is the endpoint's verdict on the request, not a blip worth retrying."""
+    if response.status == 200:
+        return None
+    return StudentError(f"{url} returned HTTP {response.status}: {response.text[:300]}")
+
+
+def _unreachable(url: str, attempts: int, failure):
+    detail = (
+        f"transport error: {failure}"
+        if isinstance(failure, TransportError)
+        # A preempted or restarting model answers 5xx for minutes: retried, not a verdict on the episode.
+        else f"HTTP {failure.status}: {failure.text[:200]}"
+    )
+    raise StudentError(f"{url} unreachable after {attempts} attempts ({detail})")
 
 
 class ReplayStudent(StudentClient):

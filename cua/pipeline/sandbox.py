@@ -4,12 +4,14 @@ import io
 import json
 import logging
 import os
+import signal
 import subprocess
 import tarfile
 import time
 from pathlib import Path
 
 import docker
+
 from cua.settings import SANDBOX
 
 logger = logging.getLogger(__name__)
@@ -17,9 +19,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMAGE = "repo-pipeline-sandbox:latest"
 CONTAINER_TIMEOUT_SECONDS = 1800  # 30 minutes
 EXEC_TIMEOUT_SECONDS = 300  # 5 minutes per command
-# Above this base64 size an http_json payload is streamed into the container as a file (Docker
-# archive API) instead of being embedded in the exec command line, which would otherwise overflow
-# the kernel argv limit ("argument list too long") — hit by a large pre_session storage_state.
+# Past this size the payload streams in as a file: a longer exec argv trips the kernel's "argument list too long".
 HTTP_INLINE_MAX = 100_000
 
 
@@ -37,19 +37,14 @@ def _parse_size(s) -> int:
 
 
 def _safe_parallel(mem_total_bytes: int, requested: int, per_bytes: int, reserve_bytes: int) -> int:
-    """How many sandboxes fit in RAM: floor((MemTotal - reserve) / per_sandbox), clamped to
-    [1, requested]. Unknown memory (<=0) leaves `requested` untouched — never makes it worse."""
+    """How many sandboxes fit in RAM, clamped to [1, requested]; unknown memory leaves `requested` untouched."""
     if mem_total_bytes <= 0 or per_bytes <= 0:
         return requested
     return max(1, min(requested, int((mem_total_bytes - reserve_bytes) / per_bytes)))
 
 
 def safe_parallel_sandboxes(requested: int, container_mem_limit: str | None = None) -> int:
-    """Clamp concurrent-sandbox count so peak RAM — parallel * (mem cap + RAM-backed tmpfs) —
-    fits the Docker VM, leaving SANDBOX_VM_RESERVE for the daemon and co-running stacks. This is
-    the guard against VM memory over-subscription (e.g. 3 * 3g on a 7.7g VM), which thrashes the
-    whole VM and strangles every sandbox's exec throughput. Returns `requested` unchanged if the
-    VM's memory can't be read, so it can never make a working setup worse."""
+    """Clamp concurrent sandboxes so peak RAM fits the Docker VM; unreadable VM memory leaves `requested` unchanged."""
     try:
         mem_total = docker.from_env().info().get("MemTotal", 0)
     except Exception as e:
@@ -68,12 +63,7 @@ def safe_parallel_sandboxes(requested: int, container_mem_limit: str | None = No
 
 
 class ShellSandbox:
-    """Everything derivable from `exec_command` + `put_bytes`, shared by every sandbox backend.
-
-    A backend supplies the transport (`exec_command`, `put_bytes`, `copy_out`, `start`, `stop`,
-    `remaining_seconds`); the driver-facing surface below is transport-independent, so the browser
-    driver behaves identically in a local container and on a remote host.
-    """
+    """Everything derivable from `exec_command` + `put_bytes`, shared by every sandbox backend."""
 
     def read_file(self, path: str) -> str:
         stdout, stderr, exit_code = self.exec_command(f"cat '{path}'")
@@ -90,12 +80,8 @@ class ShellSandbox:
             raise OSError(f"Cannot write {path}: {stderr}")
 
     def start_background(self, command: str, log_path: str) -> tuple[str, str, int]:
-        """Start a long-lived process that survives across exec calls.
-
-        Each exec runs in an independent shell, so a plainly-backgrounded process dies with it.
-        `setsid` + full stdio detachment re-parents it to PID 1, where it keeps running until the
-        sandbox is destroyed. Used for the agent-capture app server and the browser driver.
-        """
+        """Start a long-lived process that survives across exec calls."""
+        # Each exec runs its own shell, so only setsid plus full stdio detachment re-parents the process to PID 1.
         escaped = command.replace("'", "'\\''")
         return self.exec_command(
             f"setsid nohup bash -c '{escaped}' > '{log_path}' 2>&1 < /dev/null & echo $!",
@@ -112,22 +98,14 @@ class ShellSandbox:
         return "OPEN" in stdout
 
     def http_json(self, method: str, url: str, payload: dict | None = None, timeout: int = 120) -> dict:
-        """One JSON request to a sandbox-local HTTP server, returning the parsed response.
-
-        The payload travels base64-encoded through the exec shell so arbitrary text (quotes,
-        newlines, unicode in agent thoughts) survives without quoting issues, in a single exec.
-        """
+        """One JSON request to a sandbox-local HTTP server, returning the parsed response."""
+        # base64 through the exec shell, so quotes, newlines and unicode in agent thoughts survive one exec unquoted.
         tmp_path = None
         if payload is not None:
             raw = json.dumps(payload).encode()
             encoded = base64.b64encode(raw).decode()
             if len(encoded) > HTTP_INLINE_MAX:
-                # Large payload (e.g. a big pre_session storage_state): stream it in as a file so it
-                # never touches the exec argv, then curl from the file and clean up. The file MUST
-                # live on the overlay fs (/workspace), NOT in /tmp: /tmp is a tmpfs mount and
-                # docker put_archive (put_bytes) extracts into the container's overlay layer, not
-                # into runtime tmpfs mounts — so a /tmp target lands in the overlay's hidden /tmp and
-                # is invisible to the exec'd curl (curl then exits 26, "error reading file").
+                # /workspace, not /tmp: put_archive writes the overlay layer, which a tmpfs mount hides from curl.
                 tmp_path = f"/workspace/.httpreq_{base64.urlsafe_b64encode(os.urandom(9)).decode()}.json"
                 self.put_bytes(tmp_path, raw)
                 cmd = (
@@ -148,8 +126,8 @@ class ShellSandbox:
             raise ConnectionError(f"http_json {method} {url} failed (exit {exit_code}): {stderr[:300]}")
         try:
             return json.loads(stdout)
-        except json.JSONDecodeError:
-            raise ConnectionError(f"http_json {method} {url}: non-JSON response: {stdout[:300]}")
+        except json.JSONDecodeError as err:
+            raise ConnectionError(f"http_json {method} {url}: non-JSON response: {stdout[:300]}") from err
 
     def __enter__(self):
         return self
@@ -161,11 +139,9 @@ class ShellSandbox:
 class DockerSandbox(ShellSandbox):
     def __init__(self, image=DEFAULT_IMAGE, platform=None, container_timeout=CONTAINER_TIMEOUT_SECONDS):
         self.image = image
-        # Set for images that only exist for a non-host architecture (the Selenium image
-        # is linux/amd64-only); None lets Docker pick the host-native variant.
+        # Only for an image that exists for a non-host architecture; None lets Docker pick the host-native variant.
         self.platform = platform
-        # Agent-capture sessions (stage 6 agent mode) hold one container across many tasks and
-        # need longer than the default 30 minutes; everything else keeps the default.
+        # Agent capture holds one container across many tasks and needs longer than the default.
         self.container_timeout = container_timeout
         self.client = docker.from_env()
         self.container = None
@@ -180,11 +156,7 @@ class DockerSandbox(ShellSandbox):
         create_kwargs = dict(
             image=self.image,
             name=f"sandbox_{safe_name}_{int(time.time())}",
-            # Self-expiring + auto-removing: the container's main process sleeps exactly the
-            # container timeout, then exits, and Docker removes it. Host-side cleanup (stop()
-            # in finally blocks) is the normal path, but it never runs when the pipeline
-            # process is SIGKILLed or crashes — this guarantees no orphan outlives its
-            # timeout even with a dead owner.
+            # Self-expiring and auto-removing, so a SIGKILLed owner cannot leak the container past its timeout.
             command=["sleep", str(self.container_timeout)],
             auto_remove=True,
             mem_limit=SANDBOX.mem_limit,
@@ -193,19 +165,12 @@ class DockerSandbox(ShellSandbox):
             shm_size=SANDBOX.shm_size,
             nano_cpus=int(SANDBOX.cpus * 1_000_000_000),
             cap_drop=["ALL"],
-            # Grant back ONLY the file-ownership/permission caps that dependency installs need:
-            # npm/pnpm/yarn extract tarballs preserving ownership (fchown) and run postinstall
-            # scripts that chmod/chown — with cap_drop=ALL these die with "EPERM: operation not
-            # permitted, fchown", leaving node_modules empty so the dev binary is "not found" and
-            # the app reads as NO_BOOT. These caps are container-local; the dangerous ones
-            # (SYS_ADMIN, NET_ADMIN, SYS_PTRACE, MKNOD, …) stay dropped, and no-new-privileges +
-            # ephemeral + resource caps + no host bind-mounts keep isolation strong.
+            # Dependency installs fchown and chmod; without these caps node_modules lands empty and boot fails.
             cap_add=["CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "SETUID", "SETGID"],
             security_opt=["no-new-privileges:true"],
             tmpfs={"/tmp": f"size={SANDBOX.tmp_size}"},
             detach=True,
-            # /workspace is writable (not read-only for the whole container
-            # because we need to clone and install deps)
+            # No read_only: /workspace has to stay writable for the clone and the dependency install.
         )
         if self.platform:
             create_kwargs["platform"] = self.platform
@@ -236,10 +201,7 @@ class DockerSandbox(ShellSandbox):
             raise RuntimeError("Sandbox container not started")
 
         try:
-            # docker-py's exec_run has no timeout, so enforce it in-container with
-            # coreutils `timeout` (SIGTERM at `timeout`s, SIGKILL 10s later). Without
-            # this a hung command (e.g. a stuck browser) blocks until the 30-min
-            # container timeout. A timed-out command exits 124.
+            # docker-py's exec_run has no timeout, so coreutils `timeout` enforces one in-container; it exits 124.
             exec_result = self.container.exec_run(
                 ["timeout", "-k", "10", str(timeout), "bash", "-c", command],
                 workdir="/workspace",
@@ -260,11 +222,7 @@ class DockerSandbox(ShellSandbox):
             return "", str(e), 1
 
     def put_bytes(self, container_path: str, data: bytes):
-        """Stream raw bytes into the container via the Docker archive (tar) API.
-
-        Unlike write_file/exec_command, the payload never crosses the exec command line, so it is
-        immune to the kernel argv limit — the path for content too large to pass as an argument
-        (e.g. a big pre_session storage_state in http_json)."""
+        """Stream raw bytes into the container through the Docker archive API, never across the exec command line."""
         self._check_timeout()
         if self.container is None:
             raise RuntimeError("Sandbox container not started")
@@ -280,9 +238,7 @@ class DockerSandbox(ShellSandbox):
             raise OSError(f"put_archive failed for {container_path}")
 
     def list_files(self, pattern: str = "*", directory: str = "/workspace") -> list[str]:
-        # Prune node_modules / .git before matching: an installed repo holds thousands of vendored
-        # package.json files that no caller wants, and the `head -500` cap would otherwise be spent
-        # on them — silently dropping the real project files (the app's own package.json included).
+        # Prune node_modules and .git first: thousands of vendored package.json files would spend the head -500 cap.
         stdout, _, exit_code = self.exec_command(
             f"find '{directory}' -maxdepth 5 \\( -name node_modules -o -name .git \\) -prune -o "
             f"-name '{pattern}' -type f -print 2>/dev/null | head -500"
@@ -297,8 +253,7 @@ class DockerSandbox(ShellSandbox):
         host_dir = Path(host_path)
         host_dir.mkdir(parents=True, exist_ok=True)
 
-        # `docker cp <container>:<dir>/. <host>` copies the directory contents
-        # directly into host_dir.
+        # The trailing `/.` copies the directory CONTENTS into host_dir rather than the directory itself.
         try:
             subprocess.run(
                 ["docker", "cp", f"{self.container_id}:{container_path}/.", str(host_dir)],
@@ -375,11 +330,7 @@ class DockerSandbox(ShellSandbox):
 
 
 def install_sigterm_handler():
-    """pkill sends SIGTERM, which by default terminates Python WITHOUT running finally
-    blocks — leaking every live sandbox until its self-expiry reaps it. Converting to
-    SystemExit lets the normal cleanup paths run on graceful restarts. Best-effort:
-    SIGKILL and crashes are covered by the containers' auto_remove self-expiry instead."""
-    import signal
+    """Turn SIGTERM into SystemExit so a pkill'd run still runs the finally blocks that stop its sandboxes."""
 
     def _terminate(signum, frame):
         raise SystemExit(143)
@@ -388,16 +339,11 @@ def install_sigterm_handler():
 
 
 def build_sandbox_mcp_server(sandbox: DockerSandbox, server_name: str = "sandbox"):
-    """Build an in-process MCP server whose tools execute inside `sandbox`'s
-    Docker container. Returns (server, allowed_tool_names) for use with
-    ClaudeAgentOptions(mcp_servers={server_name: server}, allowed_tools=...).
-
-    The DockerSandbox methods are blocking (docker-py), so each tool runs them
-    in an executor to keep the event loop responsive when stages run concurrent
-    workers.
-    """
+    """An in-process MCP server whose tools run inside `sandbox`, as (server, allowed_tool_names)."""
+    # lazy: keeps the SDK out of the import graph of the callers that never build a server
     from claude_agent_sdk import create_sdk_mcp_server, tool
 
+    # docker-py blocks, so every tool hops to an executor and leaves the event loop free for concurrent workers.
     async def _run(func, *args):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, func, *args)

@@ -118,6 +118,7 @@ def resolve_hf_token() -> str | None:
 
 
 def _hf_get(url: str, token: str | None, stream: bool = False):
+    # lazy: requests is an optional extra, and only the gated-dataset source reaches the hub.
     import requests
 
     headers = {"Authorization": f"Bearer {token}"} if token else {}

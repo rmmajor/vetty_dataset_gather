@@ -1,4 +1,4 @@
-"""Provider-agnostic remote job lifecycle — rent, upload, run detached, pull, ALWAYS destroy — whose five layers of teardown are listed in docs/architecture.md."""
+"""Provider-agnostic remote job lifecycle: rent, upload, run detached, pull, and ALWAYS destroy."""
 
 import asyncio
 import logging
@@ -76,7 +76,7 @@ def _run_job(provider, cfg, job, *, enable_safety: bool = True) -> int:
             _pull_logs(provider, instance, cfg, job.results_dest(cfg))
             if not ok:
                 logger.error(f"Remote {job.name} reported FAILED — see ./{job.results_dest(cfg)}/{_LOG_FILE}")
-                # Selection is deterministic, so without this a retry re-rents the same host that just failed the workload.
+                # Selection is deterministic, so without this a retry re-rents the host that just failed.
                 state.record_bad_offer(offer.id, f"{job.name} reported FAILED on this host")
                 _rescue(provider, instance, cfg, job)
                 return 1
@@ -107,7 +107,7 @@ def _rescue(provider, instance, cfg, job) -> None:
 
 
 def cleanup(provider, cfg: RemoteTrainConfig, *, sweep_all: bool = False) -> int:
-    """Destroy abandoned instances, idempotently: records whose owning run is dead, or with `sweep_all` every box carrying our label."""
+    """Destroy abandoned instances idempotently: those whose owning run is dead, or with `sweep_all` all of ours."""
     targets: dict = {}
     skipped_live: list = []
     for record in state.read_instances():
@@ -145,11 +145,8 @@ def cleanup(provider, cfg: RemoteTrainConfig, *, sweep_all: bool = False) -> int
     return 0 if all_ok else 1
 
 
-# ----- teardown primitives -----
-
-
 def _owned_by_us(provider, instance, cfg) -> bool:
-    """The ownership gate every teardown path passes through: refuse only on POSITIVE evidence of a foreign label, since the account is shared."""
+    """The ownership gate every teardown passes: refuse only on POSITIVE evidence of a foreign label."""
     try:
         live = provider.live_label(instance)
     except Exception as e:
@@ -180,7 +177,7 @@ def _guaranteed_destroy(provider, instance, cfg) -> bool:
 
 def _install_signal_handlers(provider, instance, cfg) -> None:
     def handler(signum, frame):
-        # The detached remote job outlives this supervisor, so keep_on_signal trades a possible orphan for hours of paid work.
+        # The detached job outlives this supervisor, so keep_on_signal trades a possible orphan for paid work.
         if cfg.keep_on_signal:
             logger.warning(
                 f"Signal {signum} received — LEAVING instance {instance.id} running so the detached "
@@ -220,7 +217,7 @@ def _start_watchdog(provider, instance, cfg, stop: threading.Event, job=None) ->
 
 
 def _sweep_orphans(provider, cfg) -> None:
-    """Pre-run sweep that auto-destroys ONLY a recorded instance whose owning run is gone; a live sibling's box and any unrecorded box are reported, never killed."""
+    """Pre-run sweep that destroys ONLY a recorded instance whose owning run is gone; anything else is reported."""
     orphans = {str(r["id"]) for r in state.read_instances() if not state.owner_alive(r)}
     live_siblings = {str(r["id"]) for r in state.read_instances() if state.owner_alive(r)}
 
@@ -249,9 +246,6 @@ def _sweep_orphans(provider, cfg) -> None:
         state.clear_instance(gone)  # recorded instance is already gone
 
 
-# ----- run steps -----
-
-
 def _remote_script(cfg, body: str) -> str:
     wd = cfg.remote_workdir
     return (
@@ -272,7 +266,7 @@ def _launch(provider, instance, cfg, body: str) -> None:
     _, err, code = provider.exec(instance, write_cmd, timeout=60)
     if code != 0:
         raise ProviderError(f"Failed to write remote run script: {err[:200]}")
-    # The ssh client may never return for a detached child, so the STATUS sentinel below is the only proof the job started.
+    # The ssh client may never return for a detached child, so the STATUS sentinel is the only proof it started.
     launch = f"cd {wd} && setsid nohup bash {_RUN_SCRIPT} </dev/null >/dev/null 2>&1 & echo launched"
     try:
         provider.exec(instance, launch, timeout=20)
@@ -352,9 +346,6 @@ def _notify(message: str) -> None:
         asyncio.run(_notifier.send_telegram_message(token, chat_id, message))
     except Exception as e:
         logger.error(f"notify failed: {e}")
-
-
-# ----- no-cost self-test (teardown guarantee is the central assertion) -----
 
 
 class _SmokeEnv:

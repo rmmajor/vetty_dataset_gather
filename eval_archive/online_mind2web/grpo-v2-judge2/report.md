@@ -12,7 +12,7 @@ Success is over the SCORED episodes (4 verified of 34); site-blocked / unreachab
 | label | `grpo-v2-judge2` |
 | started (UTC) | 2026-08-27T22:33:07.908100+00:00 |
 | finished (UTC) | 2026-08-27T22:54:05.356817+00:00 |
-| endpoint | `https://roman-maior-mknssh-2025--cua-serve-server.us-east.modal.direct/v1` |
+| endpoint | `https://<modal-workspace>--cua-serve-server.us-east.modal.direct/v1` |
 | model | `cua-student-lora` |
 | adapter / checkpoint | `(none declared)` |
 | task source | `online_mind2web` — 300 tasks across live third-party websites (Online-Mind2Web, COLM 2025) |

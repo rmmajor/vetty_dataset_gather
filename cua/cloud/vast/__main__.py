@@ -1,4 +1,4 @@
-"""CLI for provider-pluggable remote jobs on rented GPUs, installed as `cua-remote`; every subcommand is documented in docs/architecture.md."""
+"""CLI for provider-pluggable remote jobs on rented GPUs, installed as `cua-remote`."""
 
 import argparse
 import logging
@@ -99,7 +99,7 @@ def release_cmd(args) -> int:
 
 
 def _add_common(p, notify=None) -> None:
-    """The flags every subcommand shares; `notify` is the help text of --notify (argparse.SUPPRESS hides it) and None omits the flag."""
+    """The flags every subcommand shares; `notify` is the --notify help text, and None omits the flag entirely."""
     p.add_argument("--config", default="remote_train.yaml", help="Path to remote_train.yaml")
     p.add_argument("--provider", default=None, choices=sorted(PROVIDERS), help="Compute provider")
     p.add_argument("--gpu", default=None, help="GPU name substring filter (e.g. A100)")

@@ -1,4 +1,4 @@
-"""Scripted (no-LLM) end-to-end check of auth-flow capture: register in a sandboxed app, read the emailed code in the browser webmail, verify, reset by link, and reuse a captured session."""
+"""Scripted (no-LLM) end-to-end check of auth-flow capture: register, verify by emailed code, reset, and reuse."""
 
 import imaplib
 import json
@@ -13,7 +13,7 @@ from cua.pipeline.instrumentation import RESULTS_DIR
 from cua.pipeline.sandbox import DockerSandbox
 from cua.pipeline.smoke._harness import run_checks
 
-# The six-digit code and the reset link the stub app mails, read over IMAP because no LLM reads them off the screen here.
+# The six-digit code and reset link the stub app mails, read over IMAP because no LLM reads them off a screen.
 CODE_PATTERN = re.compile(r"\b(\d{6})\b")
 RESET_LINK_PATTERN = re.compile(r"http://127\.0\.0\.1:3000/reset\?token=[0-9a-f]+")
 
@@ -190,7 +190,7 @@ def _ref_for(snapshot: str, needle: str, role: str = None) -> int:
 
 
 def _read_latest_mail(stack, address: str, pattern: re.Pattern, what: str) -> str:
-    """Poll the mailbox over IMAP for `pattern` in the newest message; the LLM teacher reads this from the screenshot instead."""
+    """Poll the mailbox over IMAP for `pattern` in the newest message, where the LLM teacher would read a screen."""
     for _ in range(20):
         try:
             mailbox = imaplib.IMAP4("127.0.0.1", stack.host_imap_port)
@@ -438,7 +438,7 @@ def check_reset_link_in_message_iframe() -> list[str]:
 
 
 def check_reset_link_verifies() -> list[str]:
-    """Webmail clients sandbox message-body links against navigation, so the agent reads the link and navigates to it."""
+    """Webmail clients sandbox body links against navigation, so the agent reads the link and navigates to it."""
     reset_url = _read_latest_mail(SESSION.stack, SESSION.reset_address, RESET_LINK_PATTERN, "reset link")
     done = SESSION.client.act(
         {

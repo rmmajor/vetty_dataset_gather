@@ -61,11 +61,7 @@ def _collect_metrics(sandbox) -> TrialResults:
 
 
 async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
-    """Agent-mode stage 5: gate on what agent capture actually needs — the repo's app boots in
-    the sandbox and renders a non-trivial UI through the browser driver. No instrumentation is
-    injected and no tests run, so the entire legacy `no_capture` failure class (instrumentation
-    hooks not firing) cannot occur here. Repos whose tests only target public URLs are rejected:
-    agent capture drives locally booted apps (real-site trajectories are Path A's job)."""
+    """Agent-mode stage 5: does the repo's app boot in the sandbox and render a non-trivial UI to the driver?"""
     repo_name = repo["full_name"]
 
     if repo.get("current_stage", 0) >= 5:
@@ -85,8 +81,7 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
 
     profile = resolve_profile(deep_analysis.get("test_framework"), deep_analysis.get("framework_language"))
 
-    # Always the default Playwright image: agent capture never runs the repo's tests, and the
-    # browser driver needs the /ms-playwright browsers that only this image ships.
+    # Always the default Playwright image: the driver needs the /ms-playwright browsers only this image ships.
     sandbox = DockerSandbox()
     try:
         await run_blocking(sandbox.start, repo_name)
@@ -95,8 +90,7 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
         if exit_code != 0:
             raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
 
-        # start_app owns the dependency install now: it picks the repo's own package manager
-        # (npm/pnpm/yarn) in the app's actual dir, which a blind root `npm install` got wrong.
+        # start_app owns the dependency install: it picks the repo's own package manager in the app's actual dir.
         app_url = await run_blocking(driver_session.start_app, sandbox, profile)
         if app_url is None:
             app_log, _, _ = await run_blocking(sandbox.exec_command, f"tail -20 {driver_session.APP_LOG} 2>/dev/null")
@@ -147,9 +141,7 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
 
 
 async def trial_single_repo(registry: RepoRegistry, repo: dict):
-    """POC trial: run a few instrumented tests and gate on capture. Raises QualityReject for
-    deterministic quality failures (no tests / no usable capture) and RetryableFailure for infra
-    (clone failure); run_repo turns infra into retries, anything else into a categorized rejection."""
+    """Replay-mode stage 5: run a few instrumented tests and gate on whether they captured anything usable."""
     repo_name = repo["full_name"]
 
     if repo.get("current_stage", 0) >= 5:
@@ -180,8 +172,7 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
 
         await run_blocking(setup_repo_instrumentation, sandbox, profile)
 
-        # Start the repo's own app (if it bundles one) so its E2E tests have something to drive —
-        # the single biggest no_capture cause. None when there's no app / Playwright self-manages.
+        # E2E tests with nothing serving is the single biggest no_capture cause; None when Playwright self-manages.
         app_spec = await run_blocking(app_runner.detect_app_start, sandbox, profile)
         await run_blocking(app_runner.build_app, sandbox, app_spec)
 
@@ -219,16 +210,13 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
 
         metrics = await run_blocking(_collect_metrics, sandbox)
         total = passed + failed
-        # pass_rate informs ranking only; the gate is capture-based (a test that performs actions
-        # then fails an assertion still produced a valid trajectory).
+        # pass_rate ranks only: a test that acted and then failed an assertion still produced a valid trajectory.
         metrics.pass_rate = (passed / total) if total else (1.0 if metrics.valid_bounding_boxes else 0.0)
         metrics.notes = f"code-driven trial: {len(test_files)} test files found, ran up to {MAX_TRIAL_FILES}"
         weighted = metrics.weighted_score
 
         if metrics.valid_bounding_boxes < 1 or metrics.screenshots_captured < 1:
-            # Persist the tail of the test output so "why pass_rate=0" (app-needed vs install
-            # failed vs instrumentation broke) is diagnosable after the container is gone — the
-            # feedback loop for tuning app-start and selection. The container is ephemeral.
+            # Persisted because the container is ephemeral: this tail is the only evidence of why nothing was captured.
             tail = "\n".join("\n".join(trial_outputs).splitlines()[-40:])[-4000:]
             metrics.notes += f"\n--- test output tail ---\n{tail}"
             raise QualityReject(
@@ -243,7 +231,8 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
 
         rlog.info(
             f"weighted={weighted:.2f} bboxes={metrics.valid_bounding_boxes} "
-            f"actions={metrics.total_actions_captured} traj={metrics.trajectory_count_estimate} pass_rate={metrics.pass_rate:.0%}"
+            f"actions={metrics.total_actions_captured} traj={metrics.trajectory_count_estimate} "
+            f"pass_rate={metrics.pass_rate:.0%}"
         )
         registry.update_status(
             repo_name,

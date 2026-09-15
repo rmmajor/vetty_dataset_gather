@@ -1,10 +1,17 @@
-"""Run the unchanged `python -m cua.sft` convert+train on a Modal GPU, leaving the adapter on a volume the serve app mounts."""
+"""Run the unchanged `python -m cua.sft` convert and train on a Modal GPU, leaving the adapter on a volume."""
 
-# Variants are configs, not forks: `modal run cua/cloud/modal/train.py --config config_sft_v2_conservative.yaml --run-name sft-v2`.
+# Variants are configs, not forks: `modal run cua/cloud/modal/train.py --config config_sft_v2_conservative.yaml`.
+import json
 import os
 import pathlib
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 
 import modal
+import yaml
+from PIL import Image
 
 from cua.cloud.modal.common import (
     CODE_ROOT,
@@ -18,6 +25,14 @@ from cua.cloud.modal.common import (
     outputs,
     trajectories,
     with_package,
+)
+from cua.prompt.effects import downscale_prev
+from cua.prompt.format import (
+    GROUNDING_SYSTEM_PROMPT,
+    SYSTEM_PROMPT,
+    build_grounding_observation,
+    build_step_messages,
+    build_step_observation,
 )
 from cua.settings import CLOUD, MAX_PIXELS_DEFAULT
 from cua.sft.recipe import convert_command, train_command
@@ -75,14 +90,6 @@ def train(
     extra_train_args: list = None,
     skip_audit: bool = False,
 ):
-    import json
-    import shutil
-    import subprocess
-    import sys
-    from pathlib import Path
-
-    import yaml
-
     traj_dir = Path(DATA_MOUNT) / data_subdir
     if not traj_dir.is_dir() or not any(traj_dir.iterdir()):
         raise RuntimeError(
@@ -161,24 +168,12 @@ def train(
     memory=16384,
 )
 def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
-    """CPU-only: tokenize one two-image sft3 step and one grounding example through ms-swift's template and report the image-pad and label counts."""
-    import json
-
-    from PIL import Image
-
+    """CPU-only: tokenize one two-image step and one grounding example, and report their image-pad and label counts."""
     # env-read: ms-swift's template reads MAX_PIXELS from the env, so it is written here and read back
     max_pixels = os.environ.setdefault("MAX_PIXELS", str(MAX_PIXELS_DEFAULT))
+    # lazy: ms-swift is installed only in the image, and reads MAX_PIXELS as the line above sets it
     from swift.model import get_model_processor
     from swift.template import get_template
-
-    from cua.prompt.effects import downscale_prev
-    from cua.prompt.format import (
-        GROUNDING_SYSTEM_PROMPT,
-        SYSTEM_PROMPT,
-        build_grounding_observation,
-        build_step_messages,
-        build_step_observation,
-    )
 
     tmp = pathlib.Path("/tmp/encode_check")
     tmp.mkdir(exist_ok=True)
@@ -200,7 +195,8 @@ def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
     step.append(
         {
             "role": "assistant",
-            "content": "<think>Clicking Save worked: a banner is visible. I reload to confirm.</think>\naction: click(<ref>(500, 500)</ref>, button=left)",
+            "content": "<think>Clicking Save worked: a banner is visible. I reload to confirm.</think>\n"
+            "action: click(<ref>(500, 500)</ref>, button=left)",
         }
     )
     grounding = build_step_messages(GROUNDING_SYSTEM_PROMPT, build_grounding_observation('the "Save" button', str(cur)))

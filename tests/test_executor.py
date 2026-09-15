@@ -1,4 +1,4 @@
-from cua.rl.executor import (
+from cua.student.executor import (
     MISSING_THOUGHT_PLACEHOLDER,
     control_index,
     normalize_keys,

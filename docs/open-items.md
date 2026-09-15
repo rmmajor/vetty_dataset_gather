@@ -20,11 +20,10 @@ Two things checked and ruled out: no system sleep events, and the Docker VM hold
 resident (its 11.67 GB is an allocation ceiling, not committed memory — lowering that slider
 helps far less than it appears).
 
-**Fix:** free ~3 GB of genuinely resident memory on the host — idle Claude sessions (~2.1 GB
-across 9 processes), PyCharm, Chrome, Discord. Restart with
-`scratchpad/keepalive.sh`, which retries the whole wave sequence up to 24 times. Note that a
-supervisor script does NOT survive the kill: it is the parent of the heavy process tree and dies
-with it.
+**Fix:** free ~3 GB of genuinely resident memory on the host — idle agent sessions (~2.1 GB
+across 9 processes), the IDE, the browser, the chat client. Then restart the capture wave from an
+operator-side keepalive loop that re-runs the whole wave sequence up to 24 times. Note that such a
+supervisor does NOT survive the kill: it is the parent of the heavy process tree and dies with it.
 
 ## 2. 506 trajectories sit in `unverified`
 
@@ -32,9 +31,10 @@ The convert report skips them, but the bucket mixes two very different things: t
 the agent genuinely failed, and trajectories that were captured but never got a verifier verdict
 (a killed wave, an aborted run). The second kind is recoverable for the cost of one verifier call.
 
-`scratchpad/finalize_orphans.py` does exactly this and rescued 20 of 29 on its first run. It only
-covers `site_*` dirs — `repo_*` captures need stage 6's own metadata path, and running the
-public-site finalizer over them would write `source_repo: public:<name>` and corrupt provenance.
+An operator-side finalizer that re-verified the orphan half did exactly this and rescued 20 of 29
+on its first run. It only covered `site_*` dirs — `repo_*` captures need stage 6's own metadata
+path, and running the public-site finalizer over them would write `source_repo: public:<name>` and
+corrupt provenance. The pass has never been folded into the repository as a corpus pass.
 
 **Fix:** split the bucket before quoting any yield figure; finalize the orphan half.
 
@@ -85,14 +85,14 @@ the merge timestamp.
   container time for 14 trajectories.
 - **~364-task re-capture sweep** — previously-failed tasks that resume now re-opens. Wave 6 of the
   overnight script runs it with `CAPTURE_MAX_ATTEMPTS=1`; most are known captcha/OAuth walls.
-- **Disposable-email domain** — see `superpowers/specs/2026-06-28-post-gather-sft-todo.md`.
+- **Disposable-email domain** — see `docs/design/2026-06-28-post-gather-sft-todo.md`.
   A cheap domain with catch-all forwarding unblocks teable, scribbles, outline-wiki and likely a
   share of the mainstream set, while keeping the burner-only invariant intact.
 - **`sites.registry.SOURCE_CONFIGS`** is still a hardcoded 2-entry list and only *warns* on an
   unknown site name; it should adopt `sites.registry.known_site_configs` / `resolve_named_sites`
   so the human lane cannot silently drop a named site either.
-- **`stage6_generate._teacher_capture_complete`** (`:169`, `:339`) still gates on
-  `_is_valid_trajectory`, so the repo lane retains the "a failed task counts as recorded" bug that
+- **`stage6_generate._teacher_capture_complete`** still gates on
+  `is_valid_trajectory`, so the repo lane retains the "a failed task counts as recorded" bug that
   was fixed for the public lanes. Left alone deliberately: that lane has its own
   `AGENT_MAX_CONSECUTIVE_FAILS` semantics and re-capture there reboots a whole repo sandbox.
 - **`think_generator.render_action_nl`** has no `confirm`/`handoff` branch, so the polish prompt
@@ -144,7 +144,7 @@ zero-variance-group share and the LoRA-B dead-run detector.
    selected tasks, watching ms-swift's `frac_reward_zero_std` and the LoRA-B ratio, costs ~$5 and
    de-risks the full run. Kill any run whose B-norm is under 10% of the SFT adapter's after ~10 steps.
 4. **Budget is now the binding constraint, not the harness.** Remaining free credits are roughly
-   $15 (bombaleylo2) + $4 (mknssh) after the sweep; a 50-step run plus a 150-task before/after eval
+   $19 across the two Modal workspaces after the sweep; a 50-step run plus a 150-task before/after eval
    does not fit. Either shorten the run, or accept that the next honest before/after needs funding
    beyond the free tier. Never bill beyond the free credits.
 5. **Measure with enough episodes.** n≈34 scored at ~10% success is ±8 pp; a real delta needs ~150

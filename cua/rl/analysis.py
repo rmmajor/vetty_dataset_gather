@@ -11,9 +11,9 @@ from pathlib import Path
 
 import numpy as np
 
-# A GRPO adapter whose LoRA-B norm stays under this share of the SFT adapter's after ~10 steps learned nothing — kill the run.
+# A GRPO adapter whose LoRA-B norm stays under this share of the SFT adapter's after ~10 steps learned nothing.
 DEAD_RUN_B_RATIO = 0.10
-# Endings that measure the harness rather than the policy; counting them as failures would push a task out of the band for free.
+# Endings that measure the harness, not the policy: counting them as failures pushes a task out of the band.
 HARNESS_REASONS = {"harness_error", "abandoned", "skipped", "step_error"}
 
 
@@ -48,7 +48,7 @@ def lora_norms(path):
 
 
 def load_rollouts(path):
-    """rollouts.jsonl when the run finished, else the episode.json files it already wrote, so a run stopped early is still analysable."""
+    """rollouts.jsonl when the run finished, else the episode.json files, so a run stopped early still analyses."""
     path = Path(path)
     if path.is_file():
         return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]

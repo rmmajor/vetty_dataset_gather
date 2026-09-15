@@ -1,4 +1,4 @@
-"""The merged bootable-gate CLI: both subcommands parse, the shared constants are defined once, and importing it touches no database."""
+"""The merged bootable-gate CLI: both subcommands parse, the constants are defined once, no database is opened."""
 
 import contextlib
 import io
@@ -13,7 +13,7 @@ from cua.pipeline.tools import gate_tools
 MODULE_PATH = Path(gate_tools.__file__)
 SOURCE = MODULE_PATH.read_text()
 
-# Both proven-good outcomes that only print on failure, so the report's error paths are exercised, not just the happy one.
+# Both proven-good outcomes only print on failure, so the report's error paths are exercised as well.
 PROBE_OUTCOMES = {
     "acme/agentapp": (True, "bootable app: react + dev script"),
     "acme/brokenapp": (False, "test-suite only (e2e tooling, no app framework)"),
@@ -127,7 +127,7 @@ def test_the_hard_reject_rule_is_the_only_drop_rule():
 
 
 def test_validate_reports_every_bucket_end_to_end():
-    """The whole `validate` path over a known mix, so the report's 3-tuple unpacking cannot regress into a ValueError."""
+    """The whole `validate` path over a known mix, so the report's 3-tuple unpacking cannot regress."""
     with tempfile.TemporaryDirectory(prefix="gate_tools_validate_") as tmp:
         root = Path(tmp)
         db_path = build_fake_registry(root)
@@ -182,7 +182,7 @@ def test_validate_never_writes_to_the_registry():
 
 
 def test_importing_the_module_opens_no_database():
-    """The import sweep runs anywhere, so a module-level sqlite3.connect would break it outside a checkout with pipeline_data/."""
+    """The import sweep runs anywhere, so a module-level sqlite3.connect would break it outside a checkout."""
     probe = (
         "import sqlite3;"
         "opened=[];"

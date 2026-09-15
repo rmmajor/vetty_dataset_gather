@@ -40,7 +40,7 @@ def run_episode(policy, task, pool, sample_k, run_ctx, cfg):
             episode = Episode(task, worker, slot, sample_k, run_ctx, cfg)
             observation = episode.reset()
         except Exception as e:
-            # A precondition refusal skips a task, a dead sandbox is a harness error, and neither may kill a batch of hundreds.
+            # A precondition refusal skips a task and a dead sandbox is a harness error; neither kills the batch.
             reason = "skipped" if isinstance(e, RuntimeError) else "harness_error"
             episode_id = getattr(episode, "episode_id", f"{task['task_id']}__i{run_ctx.iteration:03d}__k{sample_k:02d}")
             logger.warning(f"{episode_id}: episode did not start ({reason}): {str(e)[:200]}")

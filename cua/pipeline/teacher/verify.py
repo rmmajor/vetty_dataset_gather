@@ -1,4 +1,4 @@
-"""The verifier: an independent judge that decides, from the recorded evidence alone, whether a trajectory met its goal."""
+"""The verifier: an independent judge of whether a trajectory met its goal, from the recorded evidence alone."""
 
 import json
 import logging
@@ -152,7 +152,7 @@ def _verify_prompt_stream(text: str, screenshot_paths: list[Path]):
 
 
 def _verification_screenshots(traj_dir: Path, steps: list, mid_screenshots: int = None) -> tuple[list[Path], str]:
-    """Final screenshot plus evenly-sampled mid-trajectory frames, so the judge sees the process and not only the end state."""
+    """Final screenshot plus evenly-sampled mid-trajectory frames, so the judge sees process and not only outcome."""
     n_mid = EVAL.verify_mid_screenshots if mid_screenshots is None else mid_screenshots
     paths = []
     labels = []
@@ -174,7 +174,7 @@ def _verification_screenshots(traj_dir: Path, steps: list, mid_screenshots: int 
 
 
 def _parse_first_json_object(text: str) -> dict:
-    """The first JSON value in a verifier response, which may wrap it in prose, follow it with a second block, or end it with a trailing comma."""
+    """The first JSON value in a verifier response, which may wrap it in prose or end it with a trailing comma."""
     start = text.find("{")
     if start == -1:
         raise ValueError("no JSON object in verifier response")
@@ -189,7 +189,7 @@ def _parse_first_json_object(text: str) -> dict:
 
 
 def verdict_from_parsed(parsed: dict) -> dict:
-    """Recorded success = the judge's verdict AND every criteria_met entry, so a verdict cannot outrun reasoning that names an unmet criterion."""
+    """Recorded success is the verdict AND every criteria_met entry, so a verdict cannot outrun its own reasoning."""
     claimed = bool(parsed.get("success", False))
     criteria_met = parsed.get("criteria_met")
     checklist = [bool(x) for x in criteria_met] if isinstance(criteria_met, list) and criteria_met else None
@@ -207,7 +207,7 @@ def verdict_from_parsed(parsed: dict) -> dict:
 
 
 def degenerate_loop_evidence(steps: list[dict]) -> dict:
-    """UI-step count plus the repeat count of the single most-repeated action — the evidence behind the degeneracy override."""
+    """UI-step count plus the repeat count of the most-repeated action: the evidence behind a degeneracy override."""
     ui_steps = [s for s in steps if s.get("actions") and s["actions"][0].get("type") != "done"]
     repeats_by_action = {}
     for step in ui_steps:
@@ -215,7 +215,7 @@ def degenerate_loop_evidence(steps: list[dict]) -> dict:
         if signature:
             repeats_by_action[signature] = repeats_by_action.get(signature, 0) + 1
     dominant_repeats = max(repeats_by_action.values(), default=0)
-    # Far stricter than the converter's stuck-loop DEFECT check: a real run that retried one control four times must survive this.
+    # Far stricter than the converter's stuck-loop check: a real run retrying one control four times must survive.
     degenerate = (
         bool(ui_steps)
         and dominant_repeats >= CAPTURE.degenerate_min_repeats
@@ -271,7 +271,8 @@ async def _judge(prompt: str, screenshots: list[Path], registry, full_name: str,
             verdict = verdict_from_parsed(_parse_first_json_object(result_text))
             if verdict["contradiction"]:
                 logger.warning(
-                    f"{name}: judge claimed success with unmet criteria {verdict['criteria_met']} — recorded as success=false"
+                    f"{name}: judge claimed success with unmet criteria {verdict['criteria_met']} "
+                    f"— recorded as success=false"
                 )
     except UsageLimitReached:
         raise
@@ -287,9 +288,9 @@ def _apply_verdict(traj_dir: Path, traj: dict, capture_meta: dict, verdict: dict
     ui_steps = evidence["ui_steps"]
     expected = (capture_meta.get("task_meta") or {}).get("expected_actions") or 0
     efficiency_ratio = round(ui_steps / expected, 2) if expected else None
-    # Hindsight-RECLASSIFICATION is forbidden: success is judged ONLY against the original instruction, never a sub-goal the agent reached instead.
+    # Hindsight is forbidden here: success is judged ONLY against the original instruction, never a sub-goal.
     relabeled = False
-    # A goal the verifier confirmed was met is never overturned by step count; only a degenerate recording, which by construction accomplished nothing, is.
+    # A confirmed goal is never overturned by step count; only a degenerate recording, which achieved nothing, is.
     traj["success"] = bool(verdict["success"] and not evidence["degenerate"])
     if verdict["success"] and evidence["degenerate"]:
         logger.warning(
@@ -318,7 +319,7 @@ async def verify_trajectory(
     mid_screenshots: int = None,
     autonomy: str | None = None,
 ) -> dict:
-    """Judge one captured trajectory on the host and apply the verdict in place; in guarded mode success means the agent correctly PAUSED at the consequential step."""
+    """Judge one captured trajectory and apply the verdict in place; in guarded mode success means it PAUSED."""
     traj = json.loads((traj_dir / "trajectory.json").read_text())
     meta_file = traj_dir / "capture_meta.json"
     capture_meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
@@ -354,7 +355,7 @@ async def session_authenticated(
     registry=None,
     full_name: str = "",
 ) -> bool:
-    """Did a register/login task leave a reusable authenticated session? Judged from the verifier's own evidence, NOT from whether the bundled goal completed."""
+    """Did a register or login task leave a reusable session? Judged from evidence, not from the goal's outcome."""
     try:
         traj = json.loads((traj_dir / "trajectory.json").read_text())
     except (OSError, json.JSONDecodeError):

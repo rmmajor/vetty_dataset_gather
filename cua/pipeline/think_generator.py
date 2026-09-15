@@ -1,23 +1,4 @@
-"""Generate `<think>` blocks for each step in a recorded trajectory.
-
-The goal of these blocks is to teach Qwen3.5 the inner monologue of an agent executing a
-GUI task. Each thought is the agent's first-person, pre-action reasoning toward the task
-goal, grounded in the screenshot it sees. Concretely, for step N the model receives:
-
-- The current screenshot (PNG, vision-grounded).
-- The trajectory's goal (`trajectory.instruction`) and starting URL — passed in the system
-  preamble so the goal is always salient.
-- The thoughts and actions already produced for steps 1..N-1, so the chain stays consistent
-  across steps and the agent voice can refer back to prior progress.
-- A natural-language description of the action it is *about to* perform.
-- A private grounding hint (role/name/bbox of the target) that the prompt explicitly
-  forbids from leaking into the output — these are mechanical details, not part of the
-  agent's monologue.
-
-Generation is sequential within a single trajectory because the prompt for step N depends
-on the (already-written) thought for step N-1. Concurrency happens at the trajectory level
-in the orchestrator, not inside this function.
-"""
+"""Generate `<think>` blocks for a recorded trajectory's steps, and polish raw teacher thoughts into student voice."""
 
 import base64
 import json
@@ -100,8 +81,7 @@ Write the thought."""
 
 
 def render_action_nl(action: dict, role: str = "", name: str = "") -> str:
-    """Render one action as a short English clause for the prompt. Coordinates never enter
-    the prompt — the grounding hint carries the precise target separately."""
+    """Render one action as a short English clause for the prompt, naming the target but never its coordinates."""
     action_type = action.get("type", "unknown")
 
     if name:
@@ -140,9 +120,7 @@ def render_action_nl(action: dict, role: str = "", name: str = "") -> str:
 
 
 def render_grounding_hint(role: str, name: str, bbox: dict | None) -> str:
-    """Format role/name/bbox into a single private hint line. The prompt explicitly forbids
-    the model from quoting these strings — they exist only so the model can confirm which
-    on-screen element it is acting on when the screenshot is ambiguous."""
+    """Format role/name/bbox into one private hint line, which the prompt forbids the model from quoting back."""
     parts = []
     if role:
         parts.append(f"role={role}")
@@ -167,9 +145,7 @@ def render_history(
     current_step_num: int,
     action_nl_by_step: dict[int, str],
 ) -> str:
-    """Build the per-trajectory history block: every step strictly before `current_step_num`,
-    rendered as `N. [thought] → action`. Uses the thoughts already written in memory, so the
-    caller must process steps sequentially in step-number order."""
+    """Every step before `current_step_num` as `N. [thought] → action`, read from the thoughts already written."""
     lines = []
     for step in steps:
         n = step.get("step")
@@ -193,11 +169,7 @@ async def generate_think_for_step(
     registry=None,
     full_name: str = "",
 ) -> str:
-    """Single SDK call: send (system preamble + per-step user message + screenshot image)
-    and return the model's thought verbatim. No regex post-filters: if the model produces
-    something that doesn't look like a thought, the response is to *tighten the prompt*,
-    not to silently retry. Genuine SDK failures (timeout, budget) return "" — the dashboard's
-    observability metrics surface the gap so a prompt revision can be scheduled."""
+    """One SDK call returning the model's thought verbatim, or "" when the call itself failed."""
     if not screenshot_path.exists():
         return ""
 
@@ -255,12 +227,8 @@ async def generate_thinks_for_trajectory(
     registry=None,
     full_name: str = "",
 ) -> bool:
-    """Generate a `<think>` block for every step in one trajectory, in step order.
-
-    `workers` is accepted for backwards compatibility with stage 6 call sites but ignored —
-    generation is strictly sequential within a trajectory because each prompt depends on
-    the thoughts already produced for earlier steps. Parallelism, when wanted, happens at
-    the trajectory level in the orchestrator."""
+    """Generate a `<think>` block for every step of one trajectory, in step order."""
+    # Each prompt depends on the thoughts already written, so `workers` cannot apply inside one trajectory.
     del workers
 
     trajectory_path = trajectory_dir / "trajectory.json"
@@ -307,11 +275,7 @@ async def generate_thinks_for_trajectory(
 
     ordered_steps = sorted(steps, key=lambda s: s.get("step", 0))
 
-    # All of a trajectory's missing thoughts run through ONE persistent ClaudeSDKClient session.
-    # Why: generation is sequential anyway (each thought builds on the prior), and a single session
-    # lets the large fixed context (Claude Code harness + system preamble) be cache-READ on turns
-    # 2+ instead of cache-CREATED on every call — the dominant cost we were paying per step. Prior
-    # thoughts live in the conversation rather than being re-sent as a growing history_block.
+    # One session per trajectory: the fixed preamble is then cache-READ on turns 2+ instead of re-created every call.
     options = ClaudeAgentOptions(
         model=MODEL_FOR_GROUNDED_GENERATION,
         max_turns=1,
@@ -335,9 +299,7 @@ async def generate_thinks_for_trajectory(
                     logger.debug(f"  {trajectory_dir.name}: screenshot missing for step {n}, skipping")
                     continue
 
-                # Resume-safe seeding: render any already-done steps the session hasn't seen yet —
-                # the full prefix on the first generated turn, only gaps thereafter. On a fresh
-                # trajectory this is empty after step 1, so later turns stay lean (cache-cheap).
+                # Seeds only the finished steps this session has not been shown, so a resumed run stays cache-cheap.
                 seed_lines = []
                 for prior in ordered_steps:
                     m = prior.get("step")
@@ -402,9 +364,7 @@ async def generate_thinks_for_trajectory(
 async def _session_think_turn(
     client, user_text: str, screenshot_path: Path, *, registry, full_name: str, model: str
 ) -> str:
-    """Send one step as a turn in the persistent session and return the model's thought. Soft-fails
-    to "" on any error (the step stays empty and is retried on a later resume), so one bad turn
-    can't abort the trajectory."""
+    """One turn of the persistent session; "" on any error, so a bad turn costs one step and not the trajectory."""
     b64 = base64.b64encode(screenshot_path.read_bytes()).decode("utf-8")
     message = {
         "type": "user",
@@ -476,8 +436,7 @@ def _read_json_file(path: Path) -> dict:
 
 
 def needs_polish(trajectory_dir: Path) -> bool:
-    """True for agent-captured trajectories whose thoughts are still the teacher's raw,
-    tool-aware reasoning (metadata.thought_source == 'teacher_raw')."""
+    """True while a trajectory's thoughts are still the teacher's raw, tool-aware reasoning."""
     return _read_json_file(trajectory_dir / "metadata.json").get("thought_source") == "teacher_raw"
 
 
@@ -486,12 +445,7 @@ async def polish_thoughts_for_trajectory(
     registry=None,
     full_name: str = "",
 ) -> bool:
-    """Rewrite a teacher trajectory's raw thoughts into clean student-voice supervision.
-
-    One text-only call per trajectory (the raw thoughts already carry the grounded reasoning;
-    no screenshots needed). On success the thoughts are replaced in trajectory.json and
-    metadata.thought_source flips to 'teacher' — the stage-7 completion signal. On any failure
-    the raw thoughts stay as-is and the repo remains `captured`, retried on the next run."""
+    """Rewrite one trajectory's raw teacher thoughts into student voice, flipping thought_source on success."""
     trajectory_path = trajectory_dir / "trajectory.json"
     metadata_path = trajectory_dir / "metadata.json"
     if not trajectory_path.exists():

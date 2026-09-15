@@ -1,17 +1,4 @@
-"""Single entry point for every Claude Agent SDK call in the pipeline.
-
-Before this, each stage hand-rolled the same `async for message in query(...)` loop and threw
-away the `ResultMessage` telemetry (turns, cost, tokens). `run_agent` centralizes that loop so:
-
-  * every call records one `agent_calls` row (turns / cost / tokens / subtype) for the dashboard,
-  * a non-success result is classified (`error_max_turns` -> MAX_TURNS, else SDK_ERROR) and, when
-    `raise_on_error` is set, surfaced as a `RetryableFailure` so the retry wrapper can recover it
-    instead of mislabeling it a quality rejection.
-
-Stages whose agent call is critical (scoring, deep analysis) set `raise_on_error=True`. Stages
-with a graceful per-item fallback (instruction / think generation) leave it False and use whatever
-text came back.
-"""
+"""The one entry point for a Claude Agent SDK call that is also metered: one `agent_calls` ledger row per call."""
 
 import asyncio
 import logging
@@ -42,14 +29,8 @@ async def run_agent(
     raise_on_error: bool = False,
     timeout_s: float = SDK.query_timeout_s,
 ) -> str:
-    """Run one agent query, record telemetry, and return the model's text result.
-
-    ``capture_assistant_fallback`` keeps the last assistant message so a result that arrives in the
-    final turn (rather than as a tool-free ``ResultMessage.result``) is still recovered.
-    """
-    # Subscription rate limit: never reject a repo for quota. Bail before the call if the shared
-    # tracker already saw the limit, and turn a hard 429 into UsageLimitReached (which the retry
-    # wrapper re-raises, so the repo stays in its input status and resumes next run).
+    """Run one agent query, record its telemetry row, and return the model's text result."""
+    # Bailing before the call keeps a quota-exhausted stage from rejecting repos it never actually tried.
     if rate_limit_tracker.limit_reached():
         raise UsageLimitReached(f"usage limit reached before {purpose or 'agent call'}")
 
@@ -77,18 +58,11 @@ async def run_agent(
     except UsageLimitReached:
         raise
     except TimeoutError:
-        # Wedged CLI subprocess: abandon the call (no ResultMessage arrived, so no telemetry row)
-        # and return whatever partial text exists. For the teacher this is a soft stop — its own
-        # finally block has already finalized the partial trajectory; for verify/think the caller
-        # falls back exactly as it does for an empty result.
+        # A wedged CLI subprocess is a soft stop: no ResultMessage arrived, so there is no telemetry row to record.
         logger.warning(f"agent[{purpose}] {full_name} exceeded {timeout_s}s — abandoning the call")
         return result_text or last_assistant_text
     except Exception as e:
-        # Budget is INFORMATIONAL ONLY — it must NEVER reject a repo or discard a trajectory.
-        # The SDK surfaces a per-call budget cap as an exception ("...Reached maximum budget").
-        # Treat it as a soft stop: return whatever was produced (the teacher's partial
-        # trajectory is already finalized by its own finally block). Runaway protection comes
-        # from max_turns + the per-task action cap, not from dollars.
+        # Budget is informational only: runaway protection is max_turns and the per-task action cap, never dollars.
         if "maximum budget" in str(e).lower():
             logger.info(
                 f"agent[{purpose}] {full_name} reached its per-call budget cap "

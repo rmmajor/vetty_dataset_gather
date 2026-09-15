@@ -31,7 +31,24 @@ version adds rows and never reshapes the table.
 | `ci_low` / `ci_high` | 95 % Wilson interval, filled by `--fill-ci`; never hand-written |
 | `judge_model` / `judge_prompt_sha` | provenance for any LLM-adjudicated metric |
 | `harness_commit` / `config_hash` | provenance for the run itself |
+| `artifacts_path` | where the run's raw records were written |
+| `artifacts_availability` | whether a reader of this repository can actually open them |
 | `status` | `done`, `pending`, `running`, `planned`, `failed`, `superseded` |
+
+`artifacts_availability` exists because most `artifacts_path` values point at gitignored working
+directories, so a path alone does not say whether the evidence survives a fresh clone:
+
+- **`committed`** — the records are in this repository, under `eval_archive/` or a tracked `docs/`
+  file. Reproducible by anyone who clones it.
+- **`external:vetty`** — the run was recorded in the companion `vetty` repository; the number is
+  auditable there, not here.
+- **`local-only`** — the records are in a gitignored working directory (`eval_runs/`,
+  `eval_results/`, `results/`, `rl_runs/`, `output/`, `trajectories/`) or a local-only note. They
+  exist on the machine that ran the eval and nowhere else, so quoting the row outside this project
+  means quoting an unauditable number. A bare `results/*` path on a `qa-bench-refapp` row names the
+  companion `vetty` repository's results directory, on the machine that ran the benchmark; it is
+  classified `local-only` here because nothing about it is auditable from this repository.
+- empty — no artefacts were recorded for the row (typically a `planned` row).
 
 `status` carries meaning that a value alone cannot:
 

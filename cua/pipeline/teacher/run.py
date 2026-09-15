@@ -69,11 +69,11 @@ def _teacher_options(server, allowed: list[str]) -> ClaudeAgentOptions:
 
 
 async def _finalize_recording(client: DriverClient, task: dict, state: dict, final_text: str, capture_session: bool):
-    """Land the trajectory and final screenshot on disk even when the teacher ran out of turns or budget without calling task_complete."""
+    """Land the trajectory and final screenshot on disk even when the teacher never called task_complete."""
     if not state["completed"]:
         state["agent_outcome"] = state["agent_outcome"] or "unreported"
         state["agent_summary"] = state["agent_summary"] or (final_text or "").strip()[:400]
-    # Capture the authenticated session BEFORE finish closes the context, so a register/login trajectory's login is reusable by later pre_session tasks.
+    # Captured BEFORE finish closes the context, so a register or login trajectory's session is reusable.
     if capture_session:
         try:
             state["storage_state"] = await run_blocking(client.storage_state)
@@ -104,7 +104,7 @@ async def run_teacher_task(
     persona: dict | None = None,
     task_style: str = "",
 ) -> dict:
-    """Run one task end-to-end and return its state record; `autonomy`/`auth_mode`/`env` pick the operating mode and every argument defaults to the autonomous repo capture."""
+    """Run one task end-to-end and return its state record, in the mode `autonomy`, `auth_mode` and `env` pick."""
     persona = persona or default_persona()
     state = _task_state(task, registry, full_name, autonomy, auth_mode, env)
     # A lane's provisioned credential always wins over the persona's fallback under the same key.

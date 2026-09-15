@@ -1,4 +1,4 @@
-"""SSH tunnel resource for remote jobs: -R exposes the Mac env service to the box, -L brings the box's serve port here; supervised like autossh."""
+"""SSH tunnel for remote jobs: -R exposes the Mac env service to the box, -L brings its serve port here."""
 
 import logging
 import subprocess
@@ -58,7 +58,8 @@ class SshTunnel:
                 break
             attempt += 1
             logger.warning(
-                f"ssh tunnel exited (rc={self.proc.poll() if self.proc else 'spawn-failed'}); restarting in {min(60, 5 * attempt)}s"
+                f"ssh tunnel exited (rc={self.proc.poll() if self.proc else 'spawn-failed'}); "
+                f"restarting in {min(60, 5 * attempt)}s"
             )
             self.sleep(min(60, 5 * attempt))
 

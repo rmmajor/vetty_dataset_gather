@@ -1,10 +1,4 @@
-"""Per-repo, per-stage logging context and a live progress tracker.
-
-Under `--workers 10` the stage loggers interleave lines from many repos. `repo_logger(stage, name)`
-prefixes every line with `[stage N][owner/repo]` so each line is attributable and greppable, and
-`StageProgress` emits a running `done/total` summary after each repo so the operator can see, mid-run,
-what passed / was rejected / is retrying and how many trajectories landed.
-"""
+"""Per-repo, per-stage logging context and a live progress tracker, so interleaved worker output stays attributable."""
 
 import logging
 
@@ -22,8 +16,7 @@ def repo_logger(stage: int, repo_name: str) -> logging.LoggerAdapter:
 
 
 class StageProgress:
-    """Live counters for one stage run. Mutated from the per-repo coroutines; safe without locks
-    because asyncio runs them on a single thread (counter updates never await mid-update)."""
+    """Live counters for one stage run, mutated without locks from the per-repo coroutines on the one event loop."""
 
     def __init__(self, stage: int, total: int):
         self.stage = stage

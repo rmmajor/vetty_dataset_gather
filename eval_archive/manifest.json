@@ -1,6 +1,6 @@
 {
-  "generated_for": "SFT v1 (Qwen/Qwen3.5-9B + LoRA r64/a128, 3 epochs, 5477 train examples)",
-  "adapter": "cua-outputs:/sft-v1/adapter (Modal); local copy models/cua-sft-v1/",
+  "generated_for": "the archived eval artefacts behind the figures in the root README",
+  "headline_round": "SFT v1 (Qwen/Qwen3.5-9B + LoRA r64/a128, 3 epochs, 5477 train examples); adapter on the cua-outputs volume at sft-v1/adapter",
   "screenspot": {
     "dataset": "rootsautomation/ScreenSpot",
     "split": "test",
@@ -38,23 +38,23 @@
   "files": [
     {
       "path": "README.md",
-      "bytes": 3438,
-      "sha256": "0e6a93ced2a9fa93a2ebd451e6c202ac1ba1266050fd08f377cc3195ed3a8858"
+      "bytes": 4113,
+      "sha256": "3a815a64b02a4a67656aacccfdd45fae51e6d70b7e803a7cbdedb07faf89dc41"
     },
     {
       "path": "online_mind2web/README.md",
-      "bytes": 2181,
-      "sha256": "aff7a1b622ad116e7499ec105729d3f26dd4300ced0ddfcf7fbe883ce3ceef66"
+      "bytes": 2170,
+      "sha256": "6cc256d15644d0dacf8e6027a17c878f9a02dd9afa4e37d5592a92c0a086a255"
     },
     {
       "path": "online_mind2web/after/report.md",
-      "bytes": 16335,
-      "sha256": "ffc7839e8df6c23083fddcdab11d83b7e7c4f404fe1fe31f3ecf2b4777811b73"
+      "bytes": 16338,
+      "sha256": "aa23263e6ec5a9bdb7dd4d1eb2c9d91587f638f62b06c3043da1d6dcbe588646"
     },
     {
       "path": "online_mind2web/after/results.json",
-      "bytes": 98315,
-      "sha256": "f8a6657fd64f587b7a988ebede037508b83545547c8aedc5fa2a40f3d96380c3"
+      "bytes": 98318,
+      "sha256": "4c29dea39f23cc75e9766989e80654eec36e75cdfa544dfa92fe02f535ad1255"
     },
     {
       "path": "online_mind2web/after/run.log",
@@ -63,13 +63,13 @@
     },
     {
       "path": "online_mind2web/baseline/report.md",
-      "bytes": 16238,
-      "sha256": "1335e6ef8d5297ca991cd4fc22577f4c4b32c744d11c306ca62141c21d0bec8e"
+      "bytes": 16241,
+      "sha256": "bd8cd67e13ea6414b50a2fb67cdf48e79ff8860ffa56fd23446c3df649c28dbc"
     },
     {
       "path": "online_mind2web/baseline/results.json",
-      "bytes": 134779,
-      "sha256": "bbe11cd0479146df65e65aa020837da942b4fa7ee686067dcca2fbac5ae01e8e"
+      "bytes": 134782,
+      "sha256": "a4be7b48a1b367d086f209499655118bb3490d098595a3b95f944e7b26c42d0d"
     },
     {
       "path": "online_mind2web/baseline/run.log",
@@ -78,33 +78,33 @@
     },
     {
       "path": "online_mind2web/grpo-v2-judge2/report.md",
-      "bytes": 16041,
-      "sha256": "b1811eda4806451c8bc07d399f48fe6bb7707e018fe8d9b57e81a758153074bf"
+      "bytes": 16035,
+      "sha256": "6b882cedf706a2eecf76b244f79e418beb131f08c180e5ed3e274a5d7e2d4e46"
     },
     {
       "path": "online_mind2web/grpo-v2-judge2/results.json",
-      "bytes": 95514,
-      "sha256": "6bf0e4098616061a6f00c65b2e1a528ea6504dd36fb99adef39a8d2079e7c9b1"
+      "bytes": 95508,
+      "sha256": "d0eed81e4e9b704a87ba10d36c1e4da09ed427a4ef55a5089bd979feb43fb6db"
     },
     {
       "path": "online_mind2web/qwen-base-judge2/report.md",
-      "bytes": 16184,
-      "sha256": "188202f961828cd2f242abf19699452c7e97af897a3d0f4964aa7e8a6c174bde"
+      "bytes": 16190,
+      "sha256": "0a7ac65cad00ed49e922afbca29d9e6838de83462c7f31c48a80a79ceab80bae"
     },
     {
       "path": "online_mind2web/qwen-base-judge2/results.json",
-      "bytes": 125089,
-      "sha256": "7398fb36abf96236d4ef18d28d0fb7f320184e53304cbec2ed270b9f84cecc93"
+      "bytes": 125095,
+      "sha256": "151bd2696acfb16fc689a16bc8dc12e775c2fd21a43ef6bd65055eadc9851fdc"
     },
     {
       "path": "online_mind2web/sft-v1-judge2/report.md",
-      "bytes": 16064,
-      "sha256": "c55b1cdb791457d2b6f11aa43417191b4712a33b03c0fb16322981a78552c5fe"
+      "bytes": 16070,
+      "sha256": "05cfd0ce88cb2b4d50d5bc7a9977235413e25791d47ed06763cc0c31e2f0d9aa"
     },
     {
       "path": "online_mind2web/sft-v1-judge2/results.json",
-      "bytes": 94684,
-      "sha256": "174325f088fd7886d66d49422345e7149cdc6ec78a3c0f3edeaf987a030e6860"
+      "bytes": 94690,
+      "sha256": "92675918feee5945562f3ece301e09d980a11f014186251a02bffcf5e60c434f"
     },
     {
       "path": "online_mind2web/tasks_pinned_50.jsonl",

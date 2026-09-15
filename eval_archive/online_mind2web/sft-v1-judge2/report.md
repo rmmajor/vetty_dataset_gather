@@ -12,7 +12,7 @@ Success is over the SCORED episodes (3 verified of 32); site-blocked / unreachab
 | label | `sft-v1-judge2` |
 | started (UTC) | 2026-08-27T21:50:32.797154+00:00 |
 | finished (UTC) | 2026-08-27T22:05:49.810686+00:00 |
-| endpoint | `https://bombaleylo2--cua-serve-server.us-east.modal.direct/v1` |
+| endpoint | `https://<modal-workspace>--cua-serve-server.us-east.modal.direct/v1` |
 | model | `cua-student-lora` |
 | adapter / checkpoint | `(none declared)` |
 | task source | `online_mind2web` — 300 tasks across live third-party websites (Online-Mind2Web, COLM 2025) |

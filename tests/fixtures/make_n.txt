@@ -1,5 +1,5 @@
 ===== help =====
-grep -E '^[a-zA-Z_-]+:.*?## .*$'  Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $1, $2}'
+grep -E '^[A-Za-z0-9_-]+:.*?## .*$'  Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $1, $2}'
 
 ===== setup =====
 pip install -e ".[path_a]"
@@ -137,12 +137,13 @@ python -m cua.pipeline.smoke.corpus_audit
 python -m cua.pipeline.smoke.instruction_style
 python -m cua.pipeline.smoke.outcome_relabel
 python experiments/render_registry.py --check
+python -m cua.settings --check
 python -m tests.regression_fixtures check
 ruff check .
 ruff format --check .
-python scripts/check_comments.py .
-python scripts/check_env_reads.py . --allow cua/settings.py
-python scripts/check_nested_imports.py . --report-only
+python scripts/check_comments.py . --quiet --pending 
+python scripts/check_env_reads.py . --quiet --allow cua/settings.py
+python scripts/check_nested_imports.py . --quiet --pending 
 <make> test-student-eval EVAL_ARGS=--no-judge
 python -m cua.eval.student_smoke --no-judge
 
@@ -346,12 +347,15 @@ python experiments/render_registry.py
 ===== registry-check =====
 python experiments/render_registry.py --check
 
+===== conventions-check =====
+python -m cua.settings --check
+
 ===== lint =====
 ruff check .
 ruff format --check .
-python scripts/check_comments.py .
-python scripts/check_env_reads.py . --allow cua/settings.py
-python scripts/check_nested_imports.py . --report-only
+python scripts/check_comments.py . --quiet --pending 
+python scripts/check_env_reads.py . --quiet --allow cua/settings.py
+python scripts/check_nested_imports.py . --quiet --pending 
 
 ===== fmt =====
 ruff format .

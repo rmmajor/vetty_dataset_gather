@@ -11,7 +11,7 @@ FIRST_PARTY = ("cua", "tests")
 
 
 def load(name):
-    """A test module, or None when only an OPTIONAL third-party dependency is missing; a missing first-party module still raises."""
+    """A test module, or None when only an OPTIONAL third-party dependency is missing."""
     try:
         return importlib.import_module(f"tests.{name}")
     except ModuleNotFoundError as error:

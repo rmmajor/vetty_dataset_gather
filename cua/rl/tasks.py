@@ -1,4 +1,4 @@
-"""Build / check / list the RL task suite from the site registries, keeping it disjoint from anything ever trained on."""
+"""Build, check and list the RL task suite from the site registries, disjoint from anything ever trained on."""
 
 import argparse
 import hashlib
@@ -194,7 +194,7 @@ CANDIDATES_PATH = Path(__file__).parent / "rl_tasks_candidates.json"
 
 
 def build_candidates(frontier_path, base_suite_path, trajectories_dir, seen_config, max_expected=12):
-    """Sweep pool for frontier selection: the frontier registry plus the base suite's short train tasks, all forced into train."""
+    """Sweep pool for frontier selection: the frontier registry plus the base suite's short train tasks."""
     registry = json.loads(Path(frontier_path).read_text())
     config = registry.get("_config", {})
     exclude_sites = set(config.get("exclude_sites", []))
@@ -267,7 +267,8 @@ def main():
         Path(args.out).write_text(json.dumps(suite, indent=1))
         print(
             f"built {len(suite['tasks'])} candidates ({suite['excluded_trained']} excluded as trained-on, "
-            f"{len(suite['dropped_unoracled'])} base tasks dropped without an oracle); sha {suite['suite_sha256'][:12]} -> {args.out}"
+            f"{len(suite['dropped_unoracled'])} base tasks dropped without an oracle); "
+            f"sha {suite['suite_sha256'][:12]} -> {args.out}"
         )
         for p in problems:
             print(f"  - {p}")

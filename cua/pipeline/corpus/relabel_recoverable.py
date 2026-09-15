@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 PROPOSE_BUDGET_USD = 0.10
 RELABEL_REPORT = Path("relabel_report.md")
 
-# The June failure mode: a proposal that reads as a browsing procedure instead of a user goal ("navigate to the compress page").
+# The June failure mode: a proposal that reads as a browsing procedure instead of as a user goal.
 NOT_GOAL_SHAPED = re.compile(
     r"^(navigate|go to|open|visit|click|scroll|attempt|try to|load)\b|screenshot|\bstep\b", re.IGNORECASE
 )
@@ -104,7 +104,7 @@ def _append_done_step(traj_dir: Path, proposal: str):
 
 
 class RelabelPass(CorpusPass):
-    """Propose a goal for what a partial run finished, re-judge it with the SAME verifier, and keep it only on a fresh success."""
+    """Propose a goal for what a partial run finished, re-judge it with the SAME verifier, and keep only a success."""
 
     name = "relabel"
     workers = 2

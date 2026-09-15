@@ -1,4 +1,4 @@
-"""Docker-only end-to-end check of the RL harness: static page + scripted policy through Episode and the HTTP service, no LLM."""
+"""Docker-only end-to-end check of the RL harness: a static page and a scripted policy, with no LLM."""
 
 import base64
 import json
@@ -63,7 +63,10 @@ def discover_coords(client, needles):
 def script(coords):
     (nx, ny), (gx, gy) = coords["Your name"], coords["Greet"]
     return [
-        f'<think>I will type my name into the field.</think>\naction: click(<ref>({nx}, {ny})</ref>, button=left)\naction: type("Smokey")',
+        (
+            f"<think>I will type my name into the field.</think>\n"
+            f'action: click(<ref>({nx}, {ny})</ref>, button=left)\naction: type("Smokey")'
+        ),
         "this is not an action",
         f"<think>Submitting the greeting.</think>\naction: click(<ref>({gx}, {gy})</ref>, button=left)",
         "<think>Checking below the fold.</think>\naction: scroll(<ref>(640, 360)</ref>, scrollX=0, scrollY=300)",

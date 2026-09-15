@@ -58,12 +58,32 @@ Any key starting with `_` is documentation. Loaders ignore it, so a new one need
 | `provisioning` | login-gated lanes | `logingated`, `probe_capturable` | how an account is obtained: `open_signup`, `email_verify`, `phone`, `invite`, `paid`, ... The autonomous lane attempts only `open_signup` / `email_verify` |
 | `skip_capture` | no | `public`, `probe_sandbox` | `true` drops the site from `load_sites`; `--sites <name>` still runs it, so a dud can be re-probed |
 | `skip_reason` | with `skip_capture` | operators | why it was skipped; `probe_sandbox --mark` writes both |
+| `probe` | no | operators | the recorded verdict of the last reachability probe of this site (see below) |
 | `task_style` | no | proposer, teacher, verifier | a `TEACHER_STYLE_BLOCKS` / `VERIFY_STYLE_RULES` key, e.g. `search`, `qa_verify` |
 | `autonomy` | no | `public` | `autonomous` (default) or `guarded` — guarded gets confirm/handoff and is never given secrets |
 | `auth_mode` | no | `public` | `none` (default) or `pre_session` — start signed in from a saved session |
 | `burner_account_id` | when auth is needed | `public` | id into `credentials/burner_accounts.json`; an unregistered id fails the site closed |
 | `storage_state_ref` | with `pre_session` | `public` | name of `credentials/storage_state/<ref>.json`; a missing file fails the site closed |
 | `note` | no | operators | curation prose about this one site |
+
+### The `probe` block
+
+Curation evidence, not configuration: no loader reads it, and `probe_sandbox --mark` writes only
+`skip_capture` / `skip_reason`. An operator who probes a registry before authoring tasks records the
+verdict here so the next reader can tell a site that was never reachable from one that has since
+changed posture, and so `skip_capture: true` carries its reason in machine-readable form.
+`cua/pipeline/sites/public_sites_actions_ua.json` carries one on every site; `docs/ua-coverage.md`
+reports the totals derived from them.
+
+| key | meaning |
+| --- | --- |
+| `checked` | ISO date of the probe |
+| `http_status` | status the host returned to the host-side HTTP probe (`lanes/probe_capturable`) |
+| `headless` | what the sandbox browser saw: `renders` or `blocked` (`lanes/probe_sandbox`) |
+| `interactive_elements` | affordance count in that headless render; a handful means a wall or a splash, not an app |
+| `block_signature` | with `headless: blocked`, the WAF/challenge marker that identified the wall |
+| `headed` | verdict of a re-probe in a headed browser, where one was run |
+| `headed_interactive_elements` | affordance count of that headed render; far above the headless count means the site is a human-provisioning candidate, not a dud |
 
 `autonomy` / `auth_mode` / `burner_account_id` / `storage_state_ref` are what
 `lanes/public._resolve_site_auth` reads, fail-closed: a site that needs auth without a vetted burner

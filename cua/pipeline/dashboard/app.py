@@ -1,12 +1,4 @@
-"""Trajectory dashboard — landing page.
-
-Cross-corpus exploratory view. Per-path breakdowns live on the Path A / Path B subpages;
-this page answers the "what does the corpus look like overall?" question with raw
-distributions: outcome split, steps/actions per trajectory, action-type mix, domain spread,
-source breakdown, recording timeline.
-
-Run: `make dashboard`  →  http://localhost:8501
-"""
+"""Trajectory dashboard landing page: the cross-corpus exploratory view, served by `make dashboard`."""
 
 import streamlit as st
 

@@ -1,16 +1,4 @@
-"""Per-repo stage runner with retry-on-infra.
-
-Stages no longer reject directly. Their `core_fn(registry, repo)` does the work and signals the
-outcome by what it raises:
-
-  * returns normally  -> passed (it set the repo's passed status itself; may return a trajectory count)
-  * raises QualityReject -> the repo genuinely failed a gate; terminal, never retried
-  * raises RetryableFailure (or any other Exception) -> infra / flakiness; retried up to PIPELINE.max_retries,
-    then rejected with the infra category so it stays distinguishable and re-queueable.
-
-Centralizing this here means every stage gets identical retry, single-point registry writes, and
-inline reject/retry logging for free.
-"""
+"""Per-repo stage runner: a stage signals its outcome by what it raises, and this applies the retry policy."""
 
 import asyncio
 import logging

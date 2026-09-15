@@ -1,18 +1,4 @@
-"""Stage 7 — supervision finalize.
-
-Decoupled from capture (stage 6): captures land fast and robustly; this stage finishes the
-per-step `<think>` supervision afterwards over the captured corpus. Two paths, by provenance:
-
-  * agent-captured trajectories arrive with the teacher's raw, tool-aware reasoning in every
-    step — those get POLISHED (one text-only call per trajectory) into clean student-voice
-    thoughts, flipping metadata.thought_source from `teacher_raw` to `teacher`;
-  * replay trajectories arrive with empty thoughts — those get GENERATED step-by-step from
-    the screenshots (the original vision path).
-
-A captured repo is marked `completed` once every trajectory is finalized; if some remain (a
-transient SDK stall, a rate limit), the repo simply stays `captured` and is picked up again
-next run — it is never rejected, because the trajectories themselves are already good.
-"""
+"""Stage 7, supervision finalize: polish or generate every captured trajectory's thoughts, and never reject."""
 
 import asyncio
 import json
@@ -33,10 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def thoughts_complete(repo_traj_dir: Path) -> bool:
-    """True when every generatable step (has an action and an on-disk screenshot) in every
-    trajectory of this repo has a thought AND no trajectory still carries raw (unpolished)
-    teacher reasoning. Steps with a missing screenshot can't be generated, so they don't block
-    completion."""
+    """True when every step that COULD carry a thought has one and no trajectory still holds raw teacher reasoning."""
     task_dirs = list(repo_traj_dir.glob("task_*")) if repo_traj_dir.exists() else []
     if not task_dirs:
         return False
@@ -79,8 +62,7 @@ async def think_for_repo(registry: RepoRegistry, repo: dict):
             # Teacher trajectory: raw reasoning is already present — one text-only polish call.
             await polish_thoughts_for_trajectory(task_dir, registry=registry, full_name=repo_name)
         else:
-            # Replay trajectory: thoughts are empty — generate from screenshots through one
-            # persistent session (see think_generator), sequential within a trajectory.
+            # Replay trajectory: thoughts are empty, so they are generated from the screenshots instead.
             await generate_thinks_for_trajectory(task_dir, registry=registry, full_name=repo_name)
 
     if thoughts_complete(traj_dir):

@@ -1,16 +1,16 @@
-"""Everything that must match for two runs to be comparable, plus the diagnosis for a run measured in the wrong space."""
+"""What must match for two runs to be comparable, plus the diagnosis for a run measured in the wrong space."""
 
 import subprocess
 
-from cua.eval.student.blocks import BLOCK_SIGNATURES, BLOCK_SIGNATURES_VERSION
+from cua.eval.blocks import BLOCK_SIGNATURES, BLOCK_SIGNATURES_VERSION
 from cua.eval.student.config import EvalConfig
-from cua.eval.student.episode import COORD_SPACE_RANGE, COORD_SPACE_SUSPECT
 from cua.eval.student.grammar import ACTION_VERBS
 from cua.pipeline.llm_config import MODEL_FOR_REASONING
 from cua.prompt.format import HISTORY_WINDOW, PREV_IMAGE_SIZE, PROMPT_FORMAT_VERSION
 from cua.settings import EVAL
+from cua.student.executor import COORD_SPACE_RANGE, COORD_SPACE_SUSPECT
 
-# A before/after pair MAY differ here: an sft-v1/v2 checkpoint answers in viewport_abs, so each side is measured in its own convention.
+# A before/after pair MAY differ here: an sft-v1/v2 checkpoint answers in viewport_abs, each side in its own space.
 EXPECTED_TO_DIFFER_KEYS = ("coord_space",)
 # Provenance, not harness settings — these can never make a delta unattributable.
 PARITY_EXEMPT_KEYS = ("git_commit", "task_source_description", "level_distribution") + EXPECTED_TO_DIFFER_KEYS

@@ -211,7 +211,7 @@ class RepoRegistry:
         self.conn.close()
 
     def _candidate_row(self, repo_data: dict, now: str) -> tuple:
-        """One discovered repo as the INSERT_CANDIDATE_SQL row, with topics JSON-encoded and the demo/domain labels derived."""
+        """One discovered repo as an INSERT_CANDIDATE_SQL row, with topics JSON-encoded and its labels derived."""
         topics = repo_data.get("topics", [])
         if isinstance(topics, list):
             topics = json.dumps(topics)
@@ -241,7 +241,7 @@ class RepoRegistry:
             row = self._candidate_row(repo_data, datetime.now(UTC).isoformat())
             cursor = self.conn.execute(INSERT_CANDIDATE_SQL, row)
             self.conn.commit()
-            # conn.total_changes is cumulative across the connection, so only the per-statement rowcount distinguishes an insert from an ignored duplicate.
+            # conn.total_changes is cumulative, so only the per-statement rowcount tells an insert from a duplicate.
             return cursor.rowcount > 0
         except sqlite3.IntegrityError:
             return False
@@ -263,7 +263,7 @@ class RepoRegistry:
         return self._priority_ordered(query, params, limit)
 
     def _drain_ordered(self, query: str, params: list, limit) -> list[dict]:
-        """Stage >=4 selection: deep_score first (NULL→0 at stage 4's own input, where the richness term then dominates), so drag-and-drop / editor / data-grid apps reach capture before plain click+type ones."""
+        """Stage >=4 selection, deep_score first, so richer apps reach capture before plain click-and-type ones."""
         query += DRAIN_ORDER_SQL
         if limit:
             query += " LIMIT ?"
@@ -271,7 +271,7 @@ class RepoRegistry:
         return [dict(row) for row in self.conn.execute(query, params).fetchall()]
 
     def _priority_ordered(self, query: str, params: list, limit) -> list[dict]:
-        """Stage <4 selection: query priority, then a domain round-robin so scoring sees a varied spread instead of top-N of one type."""
+        """Stage <4 selection: query priority, then a domain round-robin so scoring sees a varied spread."""
         query += PRIORITY_ORDER_SQL
         rows = [dict(row) for row in self.conn.execute(query, params).fetchall()]
         if not limit or len(rows) <= limit:
@@ -327,7 +327,7 @@ class RepoRegistry:
         self.conn.commit()
 
     def reject(self, full_name: str, stage: int, reason: str, category=None, **extra_fields):
-        """Terminal rejection; ``category`` records why it failed (distinct from the stage-scoped status) and ``**extra_fields`` persists the scores behind it, which the dashboard needs to tune thresholds."""
+        """Terminal rejection, recording why it failed and persisting the scores behind it for the dashboard."""
         rejected_status = STAGE_TO_REJECTED_STATUS.get(stage)
         if rejected_status is None:
             raise ValueError(f"No rejection status for stage {stage}")
@@ -338,7 +338,7 @@ class RepoRegistry:
         self.update_status(full_name, rejected_status.value, stage, **fields)
 
     def record_retry(self, full_name: str, stage: int, category, reason: str, attempt: int):
-        """Note a transient failure to be retried: the repo keeps its stage-input status (so a re-run still selects it after a crash) and only retry_count moves."""
+        """Note a transient failure: the repo keeps its stage-input status and only retry_count moves."""
         input_status = STAGE_TO_INPUT_STATUS.get(stage)
         if input_status is None:
             raise ValueError(f"No input status for stage {stage}")
@@ -398,7 +398,7 @@ class RepoRegistry:
         return None
 
     def get_repos_by_status(self, statuses: list[str]) -> list[dict]:
-        """All repos whose status is in ``statuses`` — the cross-stage selector for operations that do not fit get_repos_for_stage's single-input-status shape."""
+        """All repos whose status is in ``statuses``, the cross-stage selector get_repos_for_stage cannot express."""
         if not statuses:
             return []
         placeholders = ",".join("?" * len(statuses))
@@ -449,11 +449,11 @@ class RepoRegistry:
             result[stage] = row["count"]
         return result
 
-    # Stage -> the column holding its gate score, so a re-queue can target rejections a lowered threshold would now accept.
+    # Stage -> the column holding its gate score, so a re-queue can target what a lowered threshold now accepts.
     STAGE_SCORE_COLUMN = {3: "shallow_total", 4: "deep_score", 5: "trial_score"}
 
     def _rejection_clause(self, stage: int, before: str, cats, min_score) -> tuple[str, list]:
-        """The WHERE clause and parameters selecting one stage's rejections, narrowed by timestamp, failure category and stored gate score."""
+        """The WHERE clause and parameters selecting one stage's rejections, narrowed by time, category and score."""
         rejected_status = STAGE_TO_REJECTED_STATUS.get(stage)
         where = ["status = ?"]
         params: list = [rejected_status.value]
@@ -472,7 +472,7 @@ class RepoRegistry:
         return " AND ".join(where), params
 
     def _requeue_stage(self, stage: int, clause: str, params: list) -> int:
-        """Move one stage's matching rejections back to its input status, clearing the reason, category and retry count."""
+        """Move one stage's matching rejections back to its input status, clearing reason, category and retries."""
         cursor = self.conn.execute(
             f"UPDATE repos SET status = ?, current_stage = ?, filter_reason = NULL, "
             f"failure_category = NULL, retry_count = 0 WHERE {clause}",
@@ -483,7 +483,7 @@ class RepoRegistry:
     def reset_rejected(
         self, stage: int = None, before: str = None, category_in=None, min_score: float = None, dry_run: bool = False
     ) -> int:
-        """Re-queue rejected repos to a stage's input status so the now-fixed stage retries them, narrowed by ``before`` (stale code), ``category_in`` (infra/flaky) or ``min_score`` (a lowered gate, which requires ``stage``); returns the count, and ``dry_run`` counts without writing."""
+        """Re-queue rejected repos to a stage's input status, narrowed by ``before``, category or score."""
         if min_score is not None and stage is None:
             raise ValueError("min_score requires an explicit stage")
         stages = [stage] if stage is not None else sorted(STAGE_TO_REJECTED_STATUS.keys())
@@ -521,7 +521,7 @@ class RepoRegistry:
         return {row["description"]: row["repos"].split(",") for row in rows}
 
     def count_total_trajectories(self, status: str = None) -> int:
-        """Sum trajectory_count over repos in a status (default completed = trainable; CAPTURED counts verified-on-disk trajectories still pending stage-7 finalize)."""
+        """Sum trajectory_count over repos in a status; CAPTURED counts verified trajectories still awaiting stage 7."""
         row = self.conn.execute(
             "SELECT COALESCE(SUM(trajectory_count), 0) as total FROM repos WHERE status = ?",
             (status or RepoStatus.COMPLETED.value,),

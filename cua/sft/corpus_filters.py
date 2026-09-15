@@ -42,7 +42,7 @@ def absurd_keypress_indices(steps):
 
 
 def waste_step_indices(steps, radius_px=WASTE_CLICK_RADIUS_PX, lookback=WASTE_LOOKBACK_STEPS):
-    """Indices of PURE single-click steps that merely retry a recent click; a step's own click is recorded after it is checked."""
+    """Indices of PURE single-click steps that merely retry a recent click, each checked before it is recorded."""
     waste = set()
     recent = []
     for i, step in enumerate(steps):
@@ -58,7 +58,7 @@ def waste_step_indices(steps, radius_px=WASTE_CLICK_RADIUS_PX, lookback=WASTE_LO
 
 
 def maybe_synthesize_done_step(trajectory, trajectory_dir, capture_meta):
-    """Terminal supervision for agent trajectories recorded before the driver emitted `done` steps; without one the model never learns to STOP."""
+    """Terminal supervision for trajectories recorded before `done` steps existed, which nothing else teaches."""
     steps = trajectory.get("steps", [])
     if any(a.get("type") == "done" for s in steps for a in s.get("actions", [])):
         return

@@ -1,4 +1,4 @@
-"""Volumes, mount points, the first-party image layers and the periodic volume commit shared by the Modal train and GRPO lanes."""
+"""Volumes, mounts, image layers and the periodic volume commit the Modal train and GRPO lanes share."""
 
 import pathlib
 import threading
@@ -42,7 +42,7 @@ def with_package(image, env=None, files=()):
 
 
 def commit_periodically(volume, every_s):
-    """Commit `volume` every `every_s` from a daemon thread so a killed run keeps its checkpoints; set the returned event to stop."""
+    """Commit `volume` from a daemon thread so a killed run keeps its checkpoints; set the returned event to stop."""
     stop = threading.Event()
 
     def loop():

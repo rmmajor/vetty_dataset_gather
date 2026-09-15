@@ -12,7 +12,7 @@ from cua.trajectory.io import TrajectoryDir
 
 
 class PolishPass(CorpusPass):
-    """Resumable by construction: a polished trajectory's thought_source flips to 'teacher', which `needs_polish` then skips."""
+    """Resumable by construction: polishing flips thought_source to 'teacher', which `needs_polish` then skips."""
 
     name = "polish"
 

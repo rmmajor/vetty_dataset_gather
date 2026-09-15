@@ -1,4 +1,4 @@
-"""Episode reward = weighted components − penalties; weights, grade multipliers and the efficiency slope per lane live in reward_config.json."""
+"""Episode reward is weighted components minus penalties, with every weight and slope in reward_config.json."""
 
 import json
 from pathlib import Path

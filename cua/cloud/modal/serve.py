@@ -3,6 +3,7 @@
 # A second lane is env vars, not a fork: `CUA_SERVE_APP=... CUA_EVAL_SECRET=... modal deploy cua/cloud/modal/serve.py`.
 import os
 import pathlib
+import subprocess
 
 import modal
 
@@ -28,12 +29,12 @@ hf_cache = modal.Volume.from_name("cua-hf-cache", create_if_missing=True)
 vllm_cache = modal.Volume.from_name("cua-vllm-cache", create_if_missing=True)
 outputs = modal.Volume.from_name("cua-outputs", create_if_missing=True)
 
-# Pinned to CUDA 12.4.1 + vLLM 0.28.0: this lane only serves, so it shares the SFT lane's CUDA, not the RL column's 12.8.
+# Pinned to CUDA 12.4.1 and vLLM 0.28.0: this lane only serves, so it shares the SFT lane's CUDA, not the RL one.
 image = (
     modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
     .uv_pip_install("vllm==0.28.0", "huggingface_hub[hf_transfer]")
-    # Baked at deploy time because the container re-imports this module, where every read above would resolve differently.
+    # Baked at deploy time: the container re-imports this module, where every read above resolves differently.
     .env(
         {
             "HF_HUB_ENABLE_HF_TRANSFER": "1",
@@ -65,6 +66,7 @@ warm_image = (
 )
 def warm_cache(model: str = MODEL):
     """Populate the weight cache on CPU so the GPU container starts against a warm volume."""
+    # lazy: huggingface_hub is installed only in the image; this module must import no `cua` package either
     import huggingface_hub
 
     path = huggingface_hub.snapshot_download(
@@ -99,8 +101,6 @@ def warm(model: str = MODEL):
 class Server:
     @modal.enter()
     def start(self):
-        import subprocess
-
         # vLLM reads VLLM_API_KEY from the env; passing --api-key would print the secret into Modal's logs.
         if not os.environ.get("VLLM_API_KEY"):  # env-read: no cua package in this image
             raise RuntimeError("VLLM_API_KEY missing — the cua-eval secret is not attached")

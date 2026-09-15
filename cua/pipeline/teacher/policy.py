@@ -164,7 +164,7 @@ def render_credentials_line(secret_keys: list[str]) -> str:
 
 
 def render_mail_line(webmail_url: str, webmail_preauthed: bool) -> str:
-    """The inbox the teacher reads verification and reset mail in: pre-authed sandbox webmail, or a disposable one it signs into itself."""
+    """The inbox the teacher reads its mail in: pre-authed sandbox webmail, or a disposable one it signs into."""
     if not webmail_url:
         return ""
     if webmail_preauthed:
@@ -173,7 +173,7 @@ def render_mail_line(webmail_url: str, webmail_preauthed: bool) -> str:
             "— a confirmation link/code at sign-up, or a password-reset message — `navigate` there, "
             "open the newest message, use its link or code, and return.\n"
         )
-    # Realistic email handling IS the skill: a disposable inbox takes a minute and can land in spam, so waiting, refreshing and re-requesting are recorded browser actions.
+    # Realistic email handling IS the skill, so waiting, refreshing and re-requesting are recorded browser actions.
     return (
         f"- You have your own email inbox at {webmail_url}. If — and only if — a step needs an "
         "email (a sign-up confirmation, or a password reset), `navigate` there, sign in with your "
@@ -212,7 +212,7 @@ def render_mode_block(
     webmail_preauthed: bool = True,
     persona: dict | None = None,
 ) -> str:
-    """The teacher's RESOURCES and stop condition for this lane, never a procedure, always closing with the disposable identity."""
+    """The teacher's RESOURCES and stop condition for this lane, never a procedure to follow."""
     identity_block = render_identity_block(persona, secret_keys)
     if autonomy == "guarded":
         return GUARDED_MODE_BLOCK + identity_block

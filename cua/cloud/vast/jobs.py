@@ -1,4 +1,4 @@
-"""Job registry — WHAT runs on the rented box: `train` fine-tunes, `eval` benchmarks, `grpo` runs RL against the Mac env service, `serve` serves the student."""
+"""Job registry, the WHAT that runs on a rented box: `train`, `eval`, `grpo` against the Mac env service, `serve`."""
 
 import contextlib
 import hashlib
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class RemoteJob:
-    """Contract for anything the lifecycle can run on a box: five questions, and `JOBS` is the registry it is selected from."""
+    """Contract for anything the lifecycle can run on a box: five questions, answered once per `JOBS` entry."""
 
     name: str = "base"
 
@@ -225,7 +225,7 @@ def _upload_code(provider, instance, cfg, files):
 
 
 def upload_package(provider, instance, cfg):
-    """The whole installable package plus the files an editable install reads, minus anything gitignored, so no manifest can go stale."""
+    """The installable package plus what an editable install reads, minus gitignored paths: no manifest to go stale."""
     wd = cfg.remote_workdir
     provider.exec(instance, f"mkdir -p {wd}/cua", timeout=60)
     provider.upload(instance, "cua/", f"{wd}/cua/", exclude=gitignored_excludes())
@@ -298,7 +298,7 @@ class GrpoJob(RemoteJob):
             return [json.loads(line).get("task_id") for line in f if line.strip()]
 
     def assert_tasks_served(self, base_url, task_ids) -> None:
-        """A task the service does not serve 404s on reset and the plugin turns that into a fabricated reward 0.0, so catch it before renting."""
+        """A task the service does not serve becomes a fabricated reward 0.0, so catch it before renting a box."""
         try:
             with urllib.request.urlopen(f"{base_url}/tasks", timeout=15) as resp:
                 served = {t.get("task_id") for t in json.loads(resp.read().decode()).get("tasks", [])}
@@ -370,7 +370,7 @@ class GrpoJob(RemoteJob):
             provider.exec(instance, f"echo {phase} > {wd}/PHASE_ACK", timeout=30)
         if self.polls % max(1, cfg.collect_every_polls) == 0:
             try:
-                # rl_output/, not latest/: `latest` appears only after swift exits, so every mid-run checkpoint died with the box.
+                # rl_output/, not latest/: `latest` appears only after swift exits, so checkpoints died with the box.
                 provider.download(instance, f"{wd}/rl_output/", str(self.run_dir / "rl_output") + "/")
                 logger.info(f"pulled in-progress checkpoints to {self.run_dir / 'rl_output'}")
             except Exception as e:
@@ -457,13 +457,15 @@ class ServeJob(RemoteJob):
             merge = shlex.join(build_merge_command(self.rl))
             return (
                 "pip install -q --break-system-packages uv && uv venv /workspace/merge-env --python 3.12 -q && "
-                ". /workspace/merge-env/bin/activate && uv pip install -q -e '/workspace[rl]' -c /workspace/constraints/rl-modal.txt torchvision && \\\n"
+                ". /workspace/merge-env/bin/activate && uv pip install -q -e '/workspace[rl]' "
+                "-c /workspace/constraints/rl-modal.txt torchvision && \\\n"
                 f"  {merge} && deactivate && \\\n"
                 f"  {serve}"
             )
         # A uv venv over the image's site-packages keeps its torch/CUDA while sidestepping Debian's unremovable pins.
         return (
-            "pip install -q --break-system-packages uv && uv venv --system-site-packages /workspace/venv && . /workspace/venv/bin/activate && \\\n"
+            "pip install -q --break-system-packages uv && uv venv --system-site-packages /workspace/venv && "
+            ". /workspace/venv/bin/activate && \\\n"
             "  uv pip install -q -e '.[rl]' -c constraints/rl-modal.txt && \\\n"
             f"  MAX_PIXELS={self.rl['max_pixels']} {shlex.join(deploy)}"
         )

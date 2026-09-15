@@ -1,4 +1,4 @@
-"""The Claude teacher that records trajectories: the tools it acts through, the policy it is given, its run loop and the verifier that judges the result."""
+"""The Claude teacher that records trajectories: its tools, its policy, its run loop and the verifier that judges it."""
 
 from cua.pipeline.teacher.policy import (
     SECRET_KEY_DESC,

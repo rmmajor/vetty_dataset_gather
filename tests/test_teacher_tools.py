@@ -1,4 +1,4 @@
-"""The teacher's tool registry: the exact tool set per autonomy, and the schema invariants the recorded supervision depends on."""
+"""The teacher's tool registry: the exact tool set per autonomy, and the schema invariants supervision needs."""
 
 from cua.pipeline.teacher.tools import (
     AUTONOMOUS_TOOLS,

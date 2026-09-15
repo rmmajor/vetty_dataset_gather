@@ -1,6 +1,6 @@
 # Ukrainian web coverage
 
-`repo_pipeline/public_sites_actions_ua.json` — a curated registry of Ukrainian websites and
+`cua/pipeline/sites/public_sites_actions_ua.json` — a curated registry of Ukrainian websites and
 Ukrainian-language user tasks for computer-use-agent trajectory capture.
 
 It exists to back a specific novelty claim: **no open CUA dataset has meaningful Ukrainian web
@@ -10,8 +10,8 @@ or the interaction conventions of the Ukrainian market (Nova Poshta branch picku
 Рахунок» loyalty pricing, phone-first registration, OLX haggling by message).
 
 The file uses the same schema as `public_sites_actions_logingated.json` and
-`public_sites_actions_indie.json`, and loads through `public_capture.load_sites` and
-`capture_logingated.load_sites` with no code changes.
+`public_sites_actions_indie.json`, so it loads through `cua.pipeline.sites.registry.load_sites` —
+the one loader every capture lane shares — with no code changes.
 
 ## Headline numbers
 
@@ -68,7 +68,7 @@ today on `phone`-gated sites.
 ## Probe results
 
 Every host was probed live on 2026-08-26, twice: once over HTTP with a browser-like User-Agent
-(reusing the WAF/challenge signatures in `repo_pipeline/probe_capturable.py`), then again in the
+(reusing the WAF/challenge signatures in `cua/pipeline/lanes/probe_capturable.py`), then again in the
 Playwright Chromium the capture lane actually drives. The browser probe is the one that counts —
 several hosts that answered plain `curl` happily still refuse a real automated browser, and one
 (`decathlon.ua`) did the opposite.
@@ -157,7 +157,7 @@ Reachable, but deliberately left out:
 ## Reproducing the probe
 
 ```bash
-python -m repo_pipeline.probe_capturable --config repo_pipeline/public_sites_actions_ua.json \
+python -m cua.pipeline.lanes.probe_capturable --config cua/pipeline/sites/public_sites_actions_ua.json \
     --provisioning email_verify,phone --dry-run
 ```
 

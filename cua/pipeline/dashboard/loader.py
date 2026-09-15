@@ -1,11 +1,4 @@
-"""Trajectory corpus loader.
-
-Walks `trajectories/` (both `task_*/` flat and `repo_*/task_*/` nested layouts), tolerantly
-loads `trajectory.json` + `metadata.json` + `capture_meta.json` from each task dir, and returns
-two long-form pandas DataFrames plus a list of human-readable warnings for any file that was
-skipped or had to be defaulted. Every file load is wrapped in try/except — the dashboard must
-never crash on a malformed trajectory.
-"""
+"""Trajectory corpus loader: walk `trajectories/`, tolerantly read each task dir, and return two long-form frames."""
 
 import json
 import math
@@ -201,9 +194,7 @@ def load_corpus(traj_root: Path) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]
         viewport_w = int(viewport.get("width") or 1280)
         viewport_h = int(viewport.get("height") or 720)
 
-        # `trajectory.json` is the post-stage-6 source of truth for instruction (Claude can
-        # generate it after the test ran). Older `metadata.json` files predate this and
-        # carry an empty instruction — prefer the trajectory's copy when metadata is empty.
+        # `trajectory.json` is the post-stage-6 source of truth: older metadata.json files carry an empty instruction.
         effective_instruction = metadata.instruction or trajectory.instruction or ""
 
         metadata_row = metadata.model_dump()
@@ -291,11 +282,7 @@ def summarize_warnings(warnings: list[str], limit: int = 20) -> str:
     return head + f"\n- … and {len(warnings) - limit} more"
 
 
-# ---------- Registry (pipeline_data/registry.db) loaders -----------------------------------
-# The corpus loader above reads finished trajectories from disk; these read the funnel state
-# (every repo and why it was rejected) for the Rejections page. Read-only, tolerant of an
-# absent DB or a pre-migration schema (returns an empty frame instead of raising).
-
+# Funnel state rather than finished trajectories, read-only and tolerant of an absent or pre-migration database.
 _SHALLOW_DIMS = [
     "production_complexity",
     "ui_difficulty",
@@ -341,13 +328,11 @@ def _read_sql(db_path: Path, query: str) -> pd.DataFrame:
 
 
 def load_registry(db_path: Path) -> pd.DataFrame:
-    """One row per repo from the registry, with shallow/deep score JSON expanded into
-    `sc_<dim>` / `da_<field>` columns so the score-distribution charts can read them directly."""
+    """One row per repo, with the shallow and deep score JSON expanded into `sc_<dim>` / `da_<field>` columns."""
     df = _read_sql(db_path, "SELECT * FROM repos")
     if df.empty:
         return df
-    # Guarantee the columns the Rejections page reads, even against a registry that predates the
-    # failure-taxonomy migration (the dashboard reads read-only and never migrates).
+    # Supplied here because the dashboard never migrates: a registry predating the failure taxonomy lacks them.
     if "failure_category" not in df.columns:
         df["failure_category"] = None
     if "retry_count" not in df.columns:

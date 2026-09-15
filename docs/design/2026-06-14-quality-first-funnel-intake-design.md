@@ -55,7 +55,7 @@ Pivot queries from "has Playwright tests" to "is a bootable interactive app":
   `topic:self-hosted`, `topic:low-code`, `topic:cms`, `topic:headless-cms`, `topic:crm`,
   `topic:erp`, `topic:dashboard`, `topic:admin-panel`, `topic:project-management`, `topic:kanban`,
   `topic:e-commerce`, `topic:web-app`. Topics surface *apps*, not test suites.
-- **Curated seed list** — `cua/pipeline/curated_apps.json`: a list of `owner/name` of known-good
+- **Curated seed list** (not implemented) — a `curated_apps.json` of `owner/name` of known-good
   bootable apps, injected directly as `discovered` (bypassing search). Bootstrap from (a) the ~19
   repos that already produced trajectories (proven-good) and (b) a hand-picked self-hostable set.
   The file is data; it is extended over time.

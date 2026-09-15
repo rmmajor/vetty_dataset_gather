@@ -10,7 +10,7 @@ from cua.pipeline.registry import RepoRegistry
 
 logger = logging.getLogger(__name__)
 
-# The Search API caps a query at 1000 results, so a broad query is partitioned by `stars:` buckets and then, if still over the cap, recursively by immutable `created:` dates — see iter_windows().
+# The Search API caps a query at 1000 results, so a broad query is partitioned by stars and then by dates.
 PER_QUERY_CAP = 1000
 STAR_THRESHOLDS = [5, 10, 20, 50, 100, 200, 500, 1000]
 GITHUB_EPOCH = date(2008, 1, 1)
@@ -18,7 +18,7 @@ DEFAULT_STAR_FLOOR = 5
 
 QUERIES_PATH = Path(__file__).with_name("github_queries.json")
 _QUERY_SETS = json.loads(QUERIES_PATH.read_text())
-# Selenium queries mirror the Playwright set category-for-category but are pinned to language:Python, the only Selenium instrumentation that exists.
+# Selenium queries mirror the Playwright set but are pinned to language:Python, the only Selenium hook there is.
 SELENIUM_SEARCH_QUERIES = _QUERY_SETS["selenium"]
 SEARCH_QUERIES = _QUERY_SETS["playwright"] + SELENIUM_SEARCH_QUERIES
 
@@ -75,13 +75,13 @@ def extract_repo_data(repo, source_query):
 
 
 def _search_total(github_client, query: str) -> int:
-    """Match count for a query; PyGithub clamps `.totalCount` to the 1000 ceiling, so exactly PER_QUERY_CAP means "split further"."""
+    """Match count for a query; `.totalCount` clamps at 1000, so exactly PER_QUERY_CAP means "split further"."""
     wait_for_rate_limit(github_client)
     return github_client.search_repositories(query=query).totalCount
 
 
 def _star_bucket_fragments(star_floor: int) -> list[str]:
-    """Descending `stars:` fragments down to star_floor (['stars:>=1000', 'stars:500..999', ..., 'stars:5..9']), highest first."""
+    """Descending `stars:` fragments down to star_floor, highest bucket first."""
     thresholds = sorted({t for t in STAR_THRESHOLDS if t > star_floor} | {star_floor})
     fragments = []
     for idx, low in enumerate(thresholds):
@@ -94,7 +94,7 @@ def _star_bucket_fragments(star_floor: int) -> list[str]:
 
 
 def _created_windows(github_client, query: str, low: date, high: date):
-    """Yield `query` plus `created:` sub-windows under the cap, bisecting [low, high]; created_at is immutable, so windows are stable across re-runs."""
+    """Yield `query` plus `created:` sub-windows under the cap; created_at is immutable, so windows are stable."""
     windowed = f"{query} created:{low.isoformat()}..{high.isoformat()}"
     total = _search_total(github_client, windowed)
     if total < PER_QUERY_CAP:
@@ -112,7 +112,7 @@ def _created_windows(github_client, query: str, low: date, high: date):
 
 
 def iter_windows(github_client, base_query: str, star_floor: int = DEFAULT_STAR_FLOOR):
-    """Yield sub-queries of base_query each under the cap, so paginating all of them covers every match down to star_floor."""
+    """Yield sub-queries of base_query each under the cap, so paginating all of them covers every match."""
     today = date.today()
 
     if "stars:" in base_query:
@@ -123,7 +123,7 @@ def iter_windows(github_client, base_query: str, star_floor: int = DEFAULT_STAR_
             yield from _created_windows(github_client, base_query, GITHUB_EPOCH, today)
         return
 
-    # `{base} stars:>=floor` is exactly the union of the per-bucket queries, so one probe of it replaces a probe per bucket at identical coverage.
+    # `{base} stars:>=floor` is exactly the union of the per-bucket queries, so one probe replaces one per bucket.
     floor_query = f"{base_query} stars:>={star_floor}"
     floor_total = _search_total(github_client, floor_query)
     if floor_total == 0:
@@ -144,7 +144,7 @@ def iter_windows(github_client, base_query: str, star_floor: int = DEFAULT_STAR_
 
 
 def _paginate_window(github_client, registry, window_query: str, source_query: str) -> tuple[int, int]:
-    """Page through one bounded window recording every repo, returning (found, new); source_query is the base query, not the windowed form."""
+    """Page through one bounded window recording every repo, as (found, new); source_query is the base query."""
     found = 0
     new = 0
     wait_for_rate_limit(github_client)

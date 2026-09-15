@@ -1,4 +1,4 @@
-"""The `run` entrypoint: turn flags into an EvalConfig, source the model specs, score every arm and write the comparison."""
+"""The `run` entrypoint: flags into an EvalConfig, the model specs sourced, every arm scored, the comparison written."""
 
 import argparse
 import sys

@@ -1,30 +1,12 @@
-"""Test-framework strategy registry.
-
-The pipeline supports more than one browser-test framework. Rather than scatter
-`if framework == "playwright"` branches across the stages, every framework-specific
-decision (how to install deps, which instrumentation file to inject, how to invoke the
-test runner, which action names count as interactive) lives in a `FrameworkProfile`.
-Stages resolve a profile from the `(test_framework, framework_language)` pair recorded
-during deep analysis and drive their behaviour from it. Adding a framework (e.g.
-Cypress) is a new entry here plus its instrumentation file — no stage edits.
-
-The trajectory output contract is identical across profiles; only the capture mechanism
-differs (see the matching file in `instrumentation/`).
-"""
+"""Test-framework strategy registry: every framework-specific capture decision lives in a `FrameworkProfile`."""
 
 from dataclasses import dataclass
 
-# The Playwright image is built arch-native (fast on Apple Silicon). The Selenium image
-# is linux/amd64-only — Chrome/chromedriver for Linux exist only for x86_64 — so it runs
-# natively on x86_64 hosts and under emulation on arm64.
+# The Selenium image is linux/amd64-only, because Chrome and chromedriver for Linux exist only for x86_64.
 SANDBOX_IMAGE = "repo-pipeline-sandbox:latest"
 SANDBOX_IMAGE_SELENIUM = "repo-pipeline-sandbox-selenium:latest"
 
-# Shared pytest invocation: Selenium-Python and Playwright-Python both run under pytest,
-# so they share the same command shape. {repo_name}/{test_name_prefix}/{framework}/
-# {framework_language} are filled by the stage; <test_file> is a placeholder the agent
-# substitutes for the chosen file. FRAMEWORK/FRAMEWORK_LANGUAGE let the in-sandbox recorder
-# self-describe the capture_meta.json it writes.
+# `<test_file>` is a placeholder the agent substitutes; the FRAMEWORK vars let the in-sandbox recorder self-describe.
 _ENV_PREFIX = (
     'cd /workspace/repo && TRAJECTORY_DIR=/workspace/results SOURCE_REPO="{repo_name}" '
     'TEST_NAME_PREFIX="{test_name_prefix}" FRAMEWORK="{framework}" '
@@ -61,8 +43,7 @@ PROFILES: dict[str, FrameworkProfile] = {
         install_commands=(
             "cd {repo_dir} && pip3 install -r requirements.txt --break-system-packages 2>&1 || true",
             "cd {repo_dir} && pip3 install pytest-playwright pytest-timeout --break-system-packages 2>&1",
-            # Repos pin their own Playwright version; fetch the matching browser so it
-            # doesn't mismatch the one baked into the base image.
+            # Repos pin their own Playwright version, so fetch the matching browser instead of the image's baked one.
             "cd {repo_dir} && python3 -m playwright install chromium 2>&1 || true",
         ),
         injection_kind="python_conftest",
@@ -70,7 +51,8 @@ PROFILES: dict[str, FrameworkProfile] = {
         test_globs=("test_*.py", "*_test.py"),
         test_command_single=_PYTEST_SINGLE,
         test_command_suite=_PYTEST_SUITE,
-        setup_note="A conftest.py with instrumentation has been placed in the test directory; it sets the viewport itself, so no config changes are needed.",
+        setup_note="A conftest.py with instrumentation has been placed in the test directory; "
+        "it sets the viewport itself, so no config changes are needed.",
         action_vocabulary=(
             "click",
             "fill",
@@ -100,7 +82,10 @@ PROFILES: dict[str, FrameworkProfile] = {
         test_globs=("*.spec.ts", "*.test.ts", "*.spec.js", "*.test.js"),
         test_command_single=_PW_TS_SINGLE,
         test_command_suite=_PW_TS_SUITE,
-        setup_note="Instrumentation is already fully wired: every test file's `@playwright/test` import has been redirected to /workspace/repo/instrumented-fixture, which overrides the `page` fixture and locks the 1280x720 viewport itself. Do NOT edit imports or playwright.config — just pick a promising test file and run it.",
+        setup_note="Instrumentation is already fully wired: every test file's `@playwright/test` import has been "
+        "redirected to /workspace/repo/instrumented-fixture, which overrides the `page` fixture and locks the "
+        "1280x720 viewport itself. Do NOT edit imports or playwright.config — just pick a promising test file "
+        "and run it.",
         action_vocabulary=(
             "click",
             "fill",
@@ -131,7 +116,9 @@ PROFILES: dict[str, FrameworkProfile] = {
         test_globs=("test_*.py", "*_test.py"),
         test_command_single=_PYTEST_SINGLE,
         test_command_suite=_PYTEST_SUITE,
-        setup_note="A conftest.py with Selenium instrumentation has been placed in the test directory. It locks the viewport to 1280x720 via CDP and captures coordinates from getBoundingClientRect, so no config changes are needed. Chrome and a matching chromedriver are already on PATH in the image.",
+        setup_note="A conftest.py with Selenium instrumentation has been placed in the test directory. It locks the "
+        "viewport to 1280x720 via CDP and captures coordinates from getBoundingClientRect, so no config changes are "
+        "needed. Chrome and a matching chromedriver are already on PATH in the image.",
         action_vocabulary=(
             "click",
             "send_keys",
@@ -150,11 +137,7 @@ _DEFAULT_PROFILE = PROFILES["playwright-ts"]
 
 
 def resolve_profile(test_framework: str | None, framework_language: str | None) -> FrameworkProfile:
-    """Map the deep-analysis (test_framework, framework_language) pair to a profile.
-
-    Unknown / missing values fall back to playwright-ts, preserving the historical
-    default before Selenium support existed.
-    """
+    """The profile for a (test_framework, framework_language) pair, falling back to playwright-ts."""
     fw = (test_framework or "").strip().lower()
     lang = (framework_language or "").strip().lower()
 
@@ -165,10 +148,7 @@ def resolve_profile(test_framework: str | None, framework_language: str | None) 
     return _DEFAULT_PROFILE
 
 
-# (framework, language) pairs we have a working capture hook for. The playwright-ts profile
-# also handles JavaScript (its test_globs match *.spec.js / *.test.js and the fixture re-export
-# works for JS), so javascript is listed even though the profile's primary `language` is
-# typescript. Extend this when adding a framework/language (alongside its profile + hook).
+# The playwright-ts profile also handles JavaScript, so javascript is listed though its `language` is typescript.
 SUPPORTED_COMBOS = frozenset(
     {
         ("playwright", "python"),
@@ -180,23 +160,14 @@ SUPPORTED_COMBOS = frozenset(
 
 
 def is_supported_profile(test_framework: str | None, framework_language: str | None) -> bool:
-    """True iff the (framework, language) pair has a real capture hook.
-
-    Unlike `resolve_profile` (which silently falls back to playwright-ts for unknown inputs),
-    this returns False for unsupported combinations — e.g. Java Playwright or non-Python
-    Selenium — so stage 4 can reject them up front instead of burning a sandbox on a run that
-    has no instrumentation hook and is guaranteed to produce no capture.
-    """
+    """True only for a (framework, language) pair with a real capture hook, so stage 4 can reject the rest."""
     fw = (test_framework or "").strip().lower()
     lang = (framework_language or "").strip().lower()
     return (fw, lang) in SUPPORTED_COMBOS
 
 
 def all_interactive_actions() -> set[str]:
-    """Union of every profile's interactive action vocabulary, lowercased.
-
-    Used by stage 4 deep scoring to count interactive actions regardless of framework.
-    """
+    """Union of every profile's interactive action vocabulary, lowercased."""
     actions: set[str] = set()
     for profile in PROFILES.values():
         actions.update(a.lower() for a in profile.action_vocabulary)

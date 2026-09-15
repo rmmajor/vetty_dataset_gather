@@ -82,7 +82,7 @@ After analysis, output your findings as a JSON object with EXACTLY these fields:
 ```
 
 Output ONLY the JSON at the end of your analysis.
-"""
+"""  # noqa: E501
 
 
 def can_self_host(analysis: DeepAnalysis) -> bool:
@@ -114,11 +114,7 @@ def compute_deep_score(analysis: DeepAnalysis) -> int:
     found_interactive = {a.lower() for a in analysis.action_types} & all_interactive_actions()
     score += min(len(found_interactive), 3)
 
-    # Bootability — the dominant axis. Agent capture (the primary trajectory source) needs the
-    # repo's own app serving inside the sandbox: a dev server / webServer / docker-compose is
-    # exactly what start_app can boot. A suite that only targets a public URL has nothing for
-    # the agent to drive (hard-gated below); one needing an external backend we cannot provide
-    # is penalized.
+    # Bootability is the dominant axis: without the repo's own app serving, the teacher has nothing to drive.
     bootable = can_self_host(analysis)
     if bootable:
         score += 3
@@ -129,14 +125,8 @@ def compute_deep_score(analysis: DeepAnalysis) -> int:
 
 
 def fit_veto(analysis: DeepAnalysis, shallow_scores: dict | None) -> str | None:
-    """Return a rejection reason if this repo is an obvious bad fit for the trajectory dataset,
-    else None. The SAME predicate guards stage 4 going forward and the retroactive prune_unfit
-    cleanup, so a toy is rejected by identical logic whether analyzed now or before the veto
-    existed. Generic + env-tunable: every rule reads a threshold; none hardcodes a repo name.
-
-    The deterministic rules are a cheap, unambiguous backstop; the model's holistic ``good_fit``
-    verdict (filled by the stage-4 prompt, or by judge_fit over a stored analysis) is the main gate
-    and catches boilerplates / course repos / login-walled apps that the raw numbers rate highly."""
+    """Why this repo is an obvious bad fit for the trajectory dataset, or None."""
+    # The same predicate guards stage 4 and the retroactive --prune-unfit pass, so both reject a toy alike.
     if schemas.CAPTURE_MODE == "agent":
         if PIPELINE.stage4_min_est_trajectories > 0 and (
             analysis.estimated_trajectories < PIPELINE.stage4_min_est_trajectories
@@ -172,16 +162,14 @@ Static analysis already gathered:
 
 Decide based on the evidence above. Output ONLY this JSON, nothing else:
 {{"good_fit": <bool>, "veto_reason": "<short reason if good_fit is false, else empty string>"}}
-"""
+"""  # noqa: E501
 
 
 async def judge_fit(
     registry: RepoRegistry, repo: dict, analysis: DeepAnalysis, shallow_scores: dict | None
 ) -> tuple[bool, str]:
-    """Holistic, text-only 'is this a good fit?' verdict over an ALREADY-computed analysis — no
-    clone, no sandbox. Renders the same judgment the stage-4 prompt now produces inline, for repos
-    analyzed before that verdict existed (used by prune_unfit). Parse failure → (True, "") so a
-    flaky call never wrongly prunes; the deterministic fit_veto rules still apply on top."""
+    """Text-only good-fit verdict over an already-computed analysis, with no clone and no sandbox."""
+    # A parse failure answers (True, ""), so a flaky call can never prune a repo the deterministic rules would keep.
     summary = ", ".join(f"{k}={v}" for k, v in (shallow_scores or {}).items()) or "(none)"
     prompt = FIT_VERDICT_PROMPT.format(
         repo_name=repo["full_name"],
@@ -211,9 +199,7 @@ async def judge_fit(
 
 
 async def analyze_single_repo(registry: RepoRegistry, repo: dict):
-    """Static deep analysis of one repo's test suite. Raises QualityReject on a low deep score
-    (carrying the analysis so it persists for the dashboard) or RetryableFailure on infra/flaky
-    failures; run_repo turns those into retries or a categorized terminal rejection."""
+    """Static deep analysis of one repo in a sandbox, rejecting it on a low deep score or a fit veto."""
     repo_name = repo["full_name"]
 
     if repo.get("current_stage", 0) >= 4:
@@ -267,9 +253,7 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
         if analysis is None:
             raise RetryableFailure(FailureCategory.PARSE_FAILED, "failed to parse deep analysis")
 
-        # Replay mode runs the repo's own tests, so frameworks with no capture hook (e.g. Java
-        # Playwright, non-Python Selenium) are rejected before burning a stage-5 sandbox. Agent
-        # mode never runs the tests — the framework is irrelevant to capture there.
+        # Only replay mode runs the repo's own tests, so only there does a missing capture hook decide anything.
         if schemas.CAPTURE_MODE == "replay" and not is_supported_profile(
             analysis.test_framework, analysis.framework_language
         ):
@@ -280,9 +264,7 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
                 deep_score=0,
             )
 
-        # Agent mode hard gate: nothing bootable AND the suite targets a public site means the
-        # sandbox will never have an app for the teacher to drive — guaranteed stage-5 reject,
-        # cheaper to decide here from the static analysis.
+        # A guaranteed stage-5 reject, decided here from the static analysis instead of from a booted sandbox.
         if schemas.CAPTURE_MODE == "agent" and analysis.tests_public_url and not can_self_host(analysis):
             raise QualityReject(
                 FailureCategory.QUALITY_GATE,
@@ -294,10 +276,7 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
         deep_score = compute_deep_score(analysis)
         rlog.info(f"deep_score={deep_score}, tests={analysis.test_case_count}, actions={analysis.action_types}")
 
-        # Fit veto — the decisive "is this worth capturing at all?" gate. Runs before the numeric
-        # threshold so an obvious toy/boilerplate/login-wall is rejected here (cheaply) instead of
-        # surviving to a stage-5 boot or stage-6 capture. The model's good_fit verdict came back in
-        # the analysis JSON; fit_veto folds it together with the deterministic backstops.
+        # Before the numeric threshold, so a toy or a login-wall never survives to a stage-5 boot on its scores.
         if reason := fit_veto(analysis, shallow_scores_dict):
             raise QualityReject(
                 FailureCategory.QUALITY_GATE,
@@ -358,10 +337,7 @@ async def run_deep_analyze(
 
     async def process_with_semaphore(repo):
         nonlocal cost_estimate
-        # Guards live INSIDE the semaphore: all repo coroutines are gathered up front, so a check
-        # placed before `async with` is evaluated by every coroutine while cost_estimate is still
-        # ~0 — they all pass it, then queue past the gate, and the budget cap never fires. Re-checked
-        # here under the semaphore, the cap sees the cost accrued by already-finished repos and stops.
+        # Inside the semaphore, not before it: gathered coroutines all read cost_estimate ~0 and race past the cap.
         async with semaphore:
             if rate_limit_tracker.limit_reached():
                 return

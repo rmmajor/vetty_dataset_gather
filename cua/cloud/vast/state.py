@@ -1,4 +1,4 @@
-"""Crash-safe list of the instances this machine owns, each stamped with its owning pid, so teardown survives a hard process death."""
+"""Crash-safe list of the instances this machine owns, each stamped with its owning pid to survive a hard death."""
 
 import json
 import logging
@@ -42,7 +42,8 @@ def read_instances() -> list:
 
 
 def owner_alive(record) -> bool:
-    """Is the run that recorded this instance still running? `pid: null` is the released sentinel; an UNKNOWN owner counts as alive because a leaked box is reclaimable and a destroyed live job is not."""
+    """Is the run that recorded this instance still running? `pid: null` is the released sentinel."""
+    # An UNKNOWN owner counts as alive: a leaked box is reclaimable later, where a destroyed live job is not.
     if "pid" in record and record["pid"] is None:
         return False
     pid = record.get("pid")

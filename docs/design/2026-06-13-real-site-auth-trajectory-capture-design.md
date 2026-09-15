@@ -54,10 +54,10 @@ not the execution environment.
 
 ## Components
 
-Designed generic-over-special-case per the repo's CLAUDE.md rules: auth is JSON config keyed by
+Designed generic-over-special-case per `docs/conventions.md`: auth is JSON config keyed by
 site + a strategy/provider registry, never hardcoded site checks.
 
-### 1. `InboxProvider` (new) — `cua/pipeline/inbox.py`
+### 1. `InboxProvider` (new) — shipped as `cua/pipeline/mailtm.py` + `cua/pipeline/mail_service.py`
 Interface: `get_message(alias, since, match=...) -> Message | None`, `extract_code(msg)`,
 `extract_link(msg)`. Concrete impl reads **one catch-all mailbox** (IMAP or Gmail API) and
 filters by the `To:` alias, so a single mailbox backs unlimited per-task aliases. Backend
@@ -67,7 +67,7 @@ Exposed to the teacher as a `check_email(alias)` tool. The harness (not the mode
 fetch + code/link extraction and returns the result as a tool message; the model then types the
 code or navigates the link, keeping it as genuine CUA grounding.
 
-### 2. Identity generator (new) — `cua/pipeline/identity.py`
+### 2. Identity generator (new) — shipped as `cua/pipeline/persona.py`
 Per task: `cua+<uuid>@ourdomain` (uuid4 minted at task start on the host), a generated password,
 and synthetic profile fields (name/username/DOB) for registration forms. The minted identity is
 recorded in the task state so a re-run can reuse or regenerate it deterministically.
@@ -85,7 +85,7 @@ plus a new `auth` task type (the `auth` category already exists in `registry.py:
   (`pipeline_data/account_pool.json`, gitignored), reused for repeatable login-gated tasks.
   This splits the one-time register skill from the repeatable login skill.
 
-### 4. Secret handling (changed) — `agent_capture.py` type tool
+### 4. Secret handling (changed) — `cua/pipeline/teacher/tools.py` type tool
 Add `secret: true` to the type-tool args. When set, `trajectory.json` stores the text as
 `<password>` (placeholder) and the windowed text history masks it; the masked screenshot +
 action sequence still teach "type into the password field, click sign in." Throwaway email may
@@ -110,7 +110,7 @@ but unused until a target needs it. Attended runs launch the driver **headed on 
 unattended runs keep the in-container headless path. Both speak the same driver HTTP protocol so
 the teacher/verifier are unchanged.
 
-### 7. Capture lane (changed) — `public_capture.py`
+### 7. Capture lane (changed) — `cua/pipeline/lanes/public.py`
 Auth-enabled site entries flow through the same `capture_site` machinery. The non-destructive
 curation comment in `public_sites.json` is amended: register/login permitted, real
 purchases/bookings still forbidden. Verifier judges a **stable authenticated end-state**
@@ -138,7 +138,7 @@ host: generate identity (alias, password, profile)
    ending with the book visible on the user's shelf (or username in the header).
 2. `trajectory.json` has `success: true` (verifier verdict), no verbatim password
    (placeholder only), `capture_source == "agent"`.
-3. `cua/sft/legacy_train_qwen.py convert` counts it; `make audit-corpus` stays at **0 failing**.
+3. `python -m cua.sft convert` counts it; `make audit-corpus` stays at **0 failing**.
 4. The `check_email` loop demonstrably read a real verification message from the catch-all
    mailbox.
 5. Thoughts describe **user intent** ("I need an account to save books, so I'm registering"),

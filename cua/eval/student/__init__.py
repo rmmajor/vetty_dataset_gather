@@ -1,5 +1,6 @@
 """Episode runner that measures a served computer-use model on real browser tasks, before vs after fine-tuning."""
 
+from cua.eval.blocks import BLOCK_SIGNATURES, BLOCK_SIGNATURES_VERSION, detect_block
 from cua.eval.student.backends import (
     BROWSER_BACKENDS,
     STUDENT_BACKENDS,
@@ -10,7 +11,6 @@ from cua.eval.student.backends import (
     StudentError,
     build_student,
 )
-from cua.eval.student.blocks import BLOCK_SIGNATURES, BLOCK_SIGNATURES_VERSION, detect_block
 from cua.eval.student.cli import main
 from cua.eval.student.config import (
     EVAL_RUNS_DIR,
@@ -19,19 +19,7 @@ from cua.eval.student.config import (
     EvalConfig,
     step_cap_for,
 )
-from cua.eval.student.episode import (
-    ACTION_TO_DRIVER,
-    COORD_SPACE_RANGE,
-    COORD_SPACE_SUSPECT,
-    COORD_SPACES,
-    NO_THINK_PLACEHOLDER,
-    action_coordinates,
-    driver_payload,
-    outside_coord_space,
-    outside_viewport,
-    run_episode,
-    scale_action,
-)
+from cua.eval.student.episode import run_episode
 from cua.eval.student.fingerprint import (
     EXPECTED_TO_DIFFER_KEYS,
     PARITY_EXEMPT_KEYS,
@@ -52,14 +40,26 @@ from cua.eval.student.grammar import (
     parse_student_output,
 )
 from cua.eval.student.metrics import compute_metrics
-from cua.eval.student.observation import (
+from cua.eval.student.report import render_comparison, render_report
+from cua.eval.student.run import judge_episode, judge_run, load_run, run_eval
+from cua.student.executor import (
+    ACTION_TO_DRIVER,
+    COORD_SPACE_RANGE,
+    COORD_SPACE_SUSPECT,
+    COORD_SPACES,
+    NO_THINK_PLACEHOLDER,
+    action_coordinates,
+    driver_payload,
+    outside_coord_space,
+    outside_viewport,
+    scale_action,
+)
+from cua.student.observation import (
     DEFAULT_OBSERVATION,
     OBSERVATION_FORMATS,
     build_student_messages,
     observed_effect,
 )
-from cua.eval.student.report import render_comparison, render_report
-from cua.eval.student.run import judge_episode, judge_run, load_run, run_eval
 
 __all__ = [
     "ACTION_BUILDERS",

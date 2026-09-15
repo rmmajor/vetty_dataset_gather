@@ -31,7 +31,7 @@ from cua.sft.health import (
     print_corpus_overview,
     scan_examples_for_secrets,
 )
-from cua.trajectory.actions import format_action_for_training, normalize_trajectory_actions
+from cua.trajectory.actions import TERMINAL_TYPES, format_action_for_training, normalize_trajectory_actions
 from cua.trajectory.io import CAPTURE_META_FILE, METADATA_FILE, TRAJECTORY_FILE, iter_trajectory_dirs, load_json
 
 REPORT_COUNTERS = (
@@ -89,7 +89,7 @@ def _empty_step_stats():
 
 
 def _write_prev_image(trajectory_dir, steps, index, prev_dir):
-    """Downscaled previous-step screenshot for example `index`; None on step 0, without prev_dir, or a missing source."""
+    """Downscaled previous-step screenshot for `index`; None on step 0, without prev_dir, or a missing source."""
     if index == 0 or prev_dir is None:
         return None
     source = Path(trajectory_dir) / steps[index - 1]["screenshot"]
@@ -118,7 +118,7 @@ def _count_target_actions(stats, actions):
         action_type = action.get("type", "?")
         stats["target_actions"][action_type] = stats["target_actions"].get(action_type, 0) + 1
         # Any terminal stop verb is stop-supervision — wall demos legitimately end in handoff.
-        if action_type in ("done", "handoff", "confirm"):
+        if action_type in TERMINAL_TYPES:
             stats["done_emitted"] = True
 
 

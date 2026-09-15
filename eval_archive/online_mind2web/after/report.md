@@ -12,7 +12,7 @@ Success is over the SCORED episodes (10 verified of 34); site-blocked / unreacha
 | label | `after` |
 | started (UTC) | 2026-08-27T06:36:51.602340+00:00 |
 | finished (UTC) | 2026-08-27T07:01:29.984998+00:00 |
-| endpoint | `https://roman-yu-major--cua-serve-server.us-east.modal.direct/v1` |
+| endpoint | `https://<modal-workspace>--cua-serve-server.us-east.modal.direct/v1` |
 | model | `cua-student-lora` |
 | adapter / checkpoint | `(none declared)` |
 | task source | `online_mind2web` — 300 tasks across live third-party websites (Online-Mind2Web, COLM 2025) |

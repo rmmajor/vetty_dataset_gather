@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 def find_trajectory_dirs(root: Path) -> list[Path]:
-    """Path B nested (`repo_*/task_*`) plus Path A flat (`task_*`) only — deliberately NOT the corpus-wide walk, since this generator has no prompt for the site_* lanes."""
+    """Path B nested (`repo_*/task_*`) plus Path A flat (`task_*`) only, deliberately not the corpus-wide walk."""
     dirs: list[Path] = []
     for repo_dir in sorted(root.glob("repo_*")):
         if not repo_dir.is_dir():
@@ -54,7 +54,7 @@ def find_trajectory_dirs(root: Path) -> list[Path]:
 
 
 def is_path_b(traj_dir: Path) -> bool:
-    """Path B trajectories live under a `repo_*` parent; Path A trajectories sit directly under the trajectories root."""
+    """Path B trajectories live under a `repo_*` parent; Path A trajectories sit directly under the root."""
     return traj_dir.parent.name.startswith("repo_")
 
 
@@ -79,7 +79,7 @@ def sample_trajectories(dirs: list[Path], n: int) -> list[Path]:
 
 
 def repo_dict_from_metadata(metadata: dict) -> dict:
-    """The minimal `repo` dict the instruction generator expects, from metadata.json — the only durable source on disk here."""
+    """The minimal `repo` dict the instruction generator expects, read from the only durable source on disk."""
     full_name = metadata.get("source_repo") or ""
     return {
         "full_name": full_name,
@@ -142,7 +142,7 @@ async def regenerate_one(
 
 
 async def _regenerate_thoughts_in_memory(trajectory: dict, capture_meta: dict, traj_dir: Path) -> None:
-    """Fill every `step['thought']` in step order, so the prompt for step N sees the thoughts just written for 1..N-1."""
+    """Fill every `step['thought']` in step order, so step N's prompt sees the thoughts just written for 1..N-1."""
     steps = trajectory.get("steps", [])
     if not steps:
         return
@@ -188,7 +188,7 @@ async def _regenerate_thoughts_in_memory(trajectory: dict, capture_meta: dict, t
 
 
 def render_report(summaries: list[dict]) -> str:
-    """A Markdown old-vs-new report: one section per trajectory, instruction diff first, then a per-step thought table."""
+    """A Markdown old-vs-new report: one section per trajectory, instruction diff first, then a thought table."""
     lines: list[str] = []
     lines.append("# Supervision regeneration smoke report")
     lines.append("")

@@ -1,28 +1,12 @@
 """Report imports nested inside a function or class body, except those marked by a `# lazy:` comment above them."""
 
-import argparse
 import ast
-import os
 import sys
-from pathlib import Path
 
-SKIP_DIRS = {"eval_archive", "experiments", "docs", ".superpowers", "__pycache__", "build", "dist", "node_modules"}
+from _paths import add_pending, build_parser, python_files, report
+
 NESTING_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 LAZY_MARKER = "# lazy:"
-
-
-def python_files(paths):
-    """Every .py file under the given files or directories, with generated, vendored and hidden trees pruned."""
-    found = []
-    for raw in paths:
-        path = Path(raw)
-        if path.is_file():
-            found.append(path)
-            continue
-        for directory, subdirs, filenames in os.walk(path):
-            subdirs[:] = sorted(name for name in subdirs if name not in SKIP_DIRS and not name.startswith("."))
-            found.extend(Path(directory) / name for name in filenames if name.endswith(".py"))
-    return sorted(found)
 
 
 def nested_import_nodes(node, nested=False):
@@ -38,31 +22,35 @@ def nested_import_nodes(node, nested=False):
 def file_findings(path):
     """Every (line, source) nested import in this file that carries no `# lazy:` marker."""
     lines = path.read_text(encoding="utf-8").splitlines()
+    nodes = nested_import_nodes(ast.parse("\n".join(lines)))
+    owner = {number: node for node in nodes for number in range(node.lineno, node.end_lineno + 1)}
     findings = []
-    for node in nested_import_nodes(ast.parse("\n".join(lines))):
-        marker = lines[node.lineno - 2].strip() if node.lineno >= 2 else ""
+    for node in nodes:
+        # One marker covers the whole contiguous run of nested imports below it, so a sorted block needs one comment.
+        probe = node.lineno - 1
+        while probe >= 1 and probe in owner:
+            probe = owner[probe].lineno - 1
+        marker = lines[probe - 1].strip() if probe >= 1 else ""
         if not marker.startswith(LAZY_MARKER):
             findings.append((node.lineno, lines[node.lineno - 1].strip()))
     return findings
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Report nested imports that carry no `# lazy:` marker")
-    parser.add_argument("paths", nargs="+", help="Files or directories to scan")
-    parser.add_argument("--report-only", action="store_true", help="Print findings and exit 0")
+    parser = build_parser("Report nested imports that carry no `# lazy:` marker")
+    add_pending(parser)
     args = parser.parse_args(argv)
-    total = 0
-    for path in python_files(args.paths):
+    files = python_files(args.paths)
+    lines_by_path = {}
+    for path in files:
         try:
             findings = file_findings(path)
         except (SyntaxError, UnicodeDecodeError) as error:
-            print(f"{path}:1: unreadable ({error})")
+            lines_by_path[path] = [f"{path}:1: unreadable ({error})"]
             continue
-        for number, source in findings:
-            print(f"{path}:{number}: nested import: {source}")
-        total += len(findings)
-    print(f"check_nested_imports: {total} unmarked nested import(s)")
-    return 1 if total and not args.report_only else 0
+        if findings:
+            lines_by_path[path] = [f"{path}:{number}: nested import: {source}" for number, source in findings]
+    return report("check_nested_imports", lines_by_path, len(files), args)
 
 
 if __name__ == "__main__":

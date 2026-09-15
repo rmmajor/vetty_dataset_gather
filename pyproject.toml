@@ -84,15 +84,17 @@ cua = ["**/*.json", "**/*.js", "**/*.ts", "**/*.sql", "**/*.md"]
 line-length = 120
 target-version = "py311"
 # *.md: ruff 0.16 formats Python blocks inside Markdown, which would put README.md and the eval_compare.md fixture under the format gate.
-extend-exclude = ["eval_archive", "experiments", "docs", ".superpowers", "*.md"]
+extend-exclude = ["eval_archive", "experiments", "docs", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ISC"]
-# Temporary: E501/B904/B023 lift in the comment and cleanup phases; UP042 in the pipeline phase (a StrEnum renders registry values differently).
-ignore = ["E501", "B904", "B023", "UP042"]
+# UP042 stays because a StrEnum renders registry values differently; E501 and B904 are clean tree-wide.
+ignore = ["UP042"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["cua", "tests"]
+# The repository's own `docker/` directory would otherwise make isort read the Docker SDK as first-party.
+known-third-party = ["docker"]
 
 # Empty on purpose: the formatter runs at its defaults, so its style is the repo style.
 [tool.ruff.format]

@@ -1,4 +1,4 @@
-"""One corpus pass: it names its candidates and what to do with one, and inherits the walk, the dry run, the concurrency, the resume and the report."""
+"""One corpus pass names its candidates and what to do with one, and inherits the walk, dry run, resume and report."""
 
 import asyncio
 import logging
@@ -16,7 +16,7 @@ USAGE_LIMIT_MESSAGE = "usage limit reached — untouched candidates remain selec
 
 @dataclass
 class Outcome:
-    """What one `apply` did: `note` is the status the tally counts, `detail` whatever the pass's own report row needs."""
+    """What one `apply` did: `note` is the status the tally counts, `detail` whatever the report row needs."""
 
     changed: bool
     note: str = ""

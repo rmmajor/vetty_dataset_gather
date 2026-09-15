@@ -1,10 +1,4 @@
-"""Yield page — stage-5 capture yield, sliced by framework, with the failure logs.
-
-Reads pipeline_data/registry.db. "Reached stage 5" = a repo that either cleared the trial
-(validated → captured → completed) or was rejected at trial. The headline number is how many of
-those actually captured. The no_capture table shows the persisted tail of each failed test run so
-"why pass_rate=0" (app-needed vs install-failed vs instrumentation-broke) is diagnosable.
-"""
+"""Yield page: stage-5 capture yield by framework, with the persisted tail of each failed run."""
 
 import json
 

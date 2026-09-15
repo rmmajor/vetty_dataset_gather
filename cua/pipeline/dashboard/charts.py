@@ -1,10 +1,4 @@
-"""Pure plotly figure builders. No Streamlit calls in this module.
-
-Every chart here is a plain distribution / count / scatter — no thresholds, no green/red
-target bands, no scoring. Each function takes a (possibly filtered) DataFrame and returns
-a `plotly.graph_objects.Figure`. Empty / missing-data inputs are caught up front and routed
-to a small grey "no data" placeholder figure instead of raising.
-"""
+"""Pure plotly figure builders: one plain distribution, count or scatter per function, and no Streamlit calls."""
 
 import pandas as pd
 import plotly.express as px
@@ -53,9 +47,6 @@ def empty_state_fig(message: str) -> go.Figure:
         xaxis={"visible": False}, yaxis={"visible": False}, margin={"l": 10, "r": 10, "t": 10, "b": 10}, height=220
     )
     return fig
-
-
-# ---------- Per-trajectory distributions ---------------------------------------------------
 
 
 def steps_per_traj_hist(traj_df: pd.DataFrame) -> go.Figure:
@@ -134,9 +125,6 @@ def instruction_length_hist(traj_df: pd.DataFrame) -> go.Figure:
     )
     fig.update_layout(xaxis_title="characters", yaxis_title="trajectories", bargap=0.05, height=320, showlegend=False)
     return fig
-
-
-# ---------- Outcome / categorical ----------------------------------------------------------
 
 
 def success_pie(traj_df: pd.DataFrame) -> go.Figure:
@@ -331,9 +319,6 @@ def recorded_timeline(traj_df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-# ---------- Reasoning / thought distributions ----------------------------------------------
-
-
 def thought_length_hist(step_df: pd.DataFrame) -> go.Figure:
     if step_df.empty:
         return empty_state_fig("no steps")
@@ -371,9 +356,6 @@ def thought_presence_bar(step_df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-# ---------- Click coordinates --------------------------------------------------------------
-
-
 def click_heatmap(step_df: pd.DataFrame, *, viewport_w: int = VIEWPORT[0], viewport_h: int = VIEWPORT[1]) -> go.Figure:
     coord_steps = step_df.dropna(subset=["x", "y"])
     if coord_steps.empty:
@@ -395,9 +377,6 @@ def click_heatmap(step_df: pd.DataFrame, *, viewport_w: int = VIEWPORT[0], viewp
         yaxis={"range": [viewport_h, 0]},
     )
     return fig
-
-
-# ---------- Element / capture_meta panels --------------------------------------------------
 
 
 def element_role_bar(step_df: pd.DataFrame) -> go.Figure:
@@ -532,10 +511,7 @@ def dom_change_pie(step_df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-# ---------- Rejection analysis (registry.db) -----------------------------------------------
-# These read the funnel-state frames from loader.load_registry / load_agent_calls, not the
-# trajectory corpus. They are the data the operator tunes pipeline parameters from.
-
+# Funnel state, not the trajectory corpus: this is the data an operator tunes the pipeline's gates from.
 _PASS_REJECT_COLORS = {"passed": "#2ca02c", "rejected": "#d62728"}
 
 
@@ -584,8 +560,7 @@ def failure_category_bar(repos_df: pd.DataFrame) -> go.Figure:
 def score_dim_bar(
     repos_df: pd.DataFrame, value_col: str, outcome_col: str, title: str, threshold: float | None = None
 ) -> go.Figure:
-    """Grouped bar of a 1-5 (or deep) score, split passed vs rejected, with the gate threshold
-    drawn as a reference line — the core chart for tuning a gate."""
+    """Grouped bar of one score split passed vs rejected, with the gate threshold drawn as a reference line."""
     if repos_df.empty or value_col not in repos_df.columns:
         return empty_state_fig("no data")
     sub = repos_df[repos_df[value_col].notna()]
@@ -682,9 +657,7 @@ def agent_subtype_bar(calls_df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-# ---------- Token usage (registry.db agent_calls) ------------------------------------------
-# The four token columns, in stack order (cache below, billed output on top), with display labels.
-# cache_*_tokens are absent on calls recorded before the cache-token telemetry fix and read as 0.
+# Stack order, cache below and billed output on top; calls recorded before the cache telemetry fix read as 0.
 _TOKEN_COLS = ["cache_read_tokens", "cache_creation_tokens", "input_tokens", "output_tokens"]
 _TOKEN_LABELS = {
     "cache_read_tokens": "cache read",
@@ -701,8 +674,7 @@ _TOKEN_COLORS = {
 
 
 def token_frame(calls_df: pd.DataFrame) -> pd.DataFrame:
-    """agent_calls with the four token columns coerced to numeric (0 for missing/old rows) plus a
-    `total_tokens` column. Lets the page compute totals without reasoning about absent columns."""
+    """agent_calls with the four token columns coerced to numeric and a `total_tokens` column added."""
     df = calls_df.copy()
     for col in _TOKEN_COLS:
         if col not in df.columns:
@@ -734,10 +706,7 @@ def avg_tokens_by_stage_bar(calls_df: pd.DataFrame) -> go.Figure:
     return _tokens_by_stage(calls_df, "mean", "Average tokens per call by stage (stacked by kind)")
 
 
-# ---------- Capture yield (registry.db) ----------------------------------------------------
-# Repos that reached stage 5 either cleared the trial (validated → captured → completed) or were
-# rejected at trial. Yield = passed / reached, sliced by framework — the headline health metric
-# for whether app-start + selection are working.
+# Yield is passed over reached for everything that got to stage 5: the headline app-start and selection metric.
 _TRIAL_PASSED_STATUSES = {"validated", "captured", "completed"}
 
 

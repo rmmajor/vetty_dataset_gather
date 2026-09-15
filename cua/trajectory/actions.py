@@ -14,6 +14,7 @@ class ActionSpec:
     format_training: Callable
     summary: Callable
     decode: Callable = None
+    terminal: bool = False
 
 
 def _format_point(action):
@@ -42,7 +43,8 @@ def _format_keypress(action):
 
 
 def _format_scroll(action):
-    return f"action: scroll(<ref>({action['x']}, {action['y']})</ref>, scrollX={action['scroll_x']}, scrollY={action['scroll_y']})"
+    point = f"<ref>({action['x']}, {action['y']})</ref>"
+    return f"action: scroll({point}, scrollX={action['scroll_x']}, scrollY={action['scroll_y']})"
 
 
 def _format_navigate(action):
@@ -202,15 +204,17 @@ ACTION_SPECS = {
     "drag": ActionSpec(_format_drag, _summary_drag, _decode_drag),
     "navigate": ActionSpec(_format_navigate, _summary_navigate, _quoted_decoder("navigate", "url")),
     "wait": ActionSpec(_format_bare, _summary_type_only, _bare_decoder("wait")),
-    "done": ActionSpec(_format_bare, _summary_type_only, _bare_decoder("done")),
+    "done": ActionSpec(_format_bare, _summary_type_only, _bare_decoder("done"), terminal=True),
     "screenshot": ActionSpec(_format_bare, _summary_type_only, _bare_decoder("screenshot")),
-    "handoff": ActionSpec(_format_handoff, _summary_handoff, _decode_handoff),
-    "confirm": ActionSpec(_format_confirm, _summary_confirm, _decode_confirm),
+    "handoff": ActionSpec(_format_handoff, _summary_handoff, _decode_handoff, terminal=True),
+    "confirm": ActionSpec(_format_confirm, _summary_confirm, _decode_confirm, terminal=True),
     # An observation the watchdog records, never a verb the student may emit, so it has no decoder.
     "approval_event": ActionSpec(_format_bare, _summary_type_only),
 }
 # An unregistered type still renders, so a new producer verb reaches the corpus report instead of crashing convert.
 DEFAULT_SPEC = ActionSpec(_format_bare, _summary_type_only)
+# The verbs that stop a run: convert counts them as stop-supervision, the executor cuts the step after them.
+TERMINAL_TYPES = frozenset(name for name, spec in ACTION_SPECS.items() if spec.terminal)
 
 KEY_CANON = {
     k.lower(): k

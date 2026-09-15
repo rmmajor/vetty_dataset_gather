@@ -28,7 +28,7 @@ SFT_FLAG_MAP = {
     "freeze_vit": "--freeze_vit",
     "output_dir": "--output_dir",
 }
-# Config keys that are environment, not flags (train_model exports them); everything else unmapped is forwarded as --key value.
+# Config keys that are environment, not flags; everything else unmapped is forwarded as --key value.
 SFT_ENV_KEYS = ("max_pixels",)
 MAX_PIXELS_ENV = "MAX_PIXELS"
 
@@ -38,13 +38,13 @@ def _cli_value(value):
 
 
 def yaml_to_cli_args(flag_map, config, passthrough=False):
-    """Config -> argv: passthrough forwards every key in config order (unmapped ones verbatim), else only mapped non-None keys."""
+    """Config -> argv: passthrough forwards every key in config order, else only the mapped non-None keys."""
     keys = list(config) if passthrough else [key for key in flag_map if config.get(key) is not None]
     return [arg for key in keys for arg in (flag_map.get(key, f"--{key}"), _cli_value(config[key]))]
 
 
 def build_sft_command(config, dataset=None, val_dataset=None, passthrough_args=None):
-    """The swift sft argv for a config: mapped keys via SFT_FLAG_MAP, unmapped keys forwarded verbatim, then passthrough."""
+    """The swift sft argv for a config: mapped keys via SFT_FLAG_MAP, then unmapped keys forwarded verbatim."""
     merged = {key: value for key, value in config.items() if key not in SFT_ENV_KEYS}
     if dataset:
         merged["dataset"] = dataset

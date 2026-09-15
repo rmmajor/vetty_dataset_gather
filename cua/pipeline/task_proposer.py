@@ -1,14 +1,4 @@
-"""Propose user-intent tasks for an app booted in the sandbox.
-
-One Claude call per repo, grounded in what the app actually is: the homepage screenshot +
-interactive-element snapshot from the live app, the README, and the repo's test sources as
-feature hints (tests document what the app can do — they are hints here, not the generator).
-
-The output is the dataset's difficulty/diversity lever: tasks must be phrased as genuine user
-goals (never QA assertions), skew long-horizon (most need 8+ actions), and mix action kinds
-(typing/forms mandatory, scroll/drag where the UI affords them). The teacher agent in
-The teacher then pursues each task in the live app.
-"""
+"""Propose user-intent tasks for an app booted in the sandbox: one Claude call per repo, grounded in the live app."""
 
 import json
 import logging
@@ -89,10 +79,7 @@ Output ONLY a JSON object (no markdown fence, no prose):
             "expected_actions": <int>, "action_kinds": ["click", "type", ...]}}, ...]}}"""
 
 
-# Opt-in block (auth-flow capture): lifts the "no email verification" restriction, asks for the
-# account/auth flows the agent can now complete end-to-end (it has a disposable inbox it opens in
-# the browser), and has the proposer CLASSIFY each task's auth need so login appears organically —
-# a minority of trajectories — rather than as a forced prefix on every one.
+# Classifying each task's auth need makes login appear organically, in a minority of tasks, not as a forced prefix.
 _AUTH_FLOW_BLOCK = """
 EMAIL-BASED FLOWS ARE ENABLED for this run. The agent has its own disposable email address and a \
 webmail inbox it can open in the browser. OVERRIDING the "no email verification" guidance above:
@@ -116,9 +103,7 @@ Do NOT invent account flows if the app has no visible sign-up or login.
 _AUTH_VALUES = {"none", "account", "login", "register"}
 
 
-# Opt-in block (search-goal capture): steers proposals toward constrained info-seeking journeys —
-# the Online-Mind2Web-shaped distribution the action-UI corpus lacks. Difficulty must live in the
-# CONSTRAINT SET (dates, prices, filters, superlatives), never in procedural phrasing.
+# Difficulty has to live in the constraint set (dates, prices, filters, superlatives), never in procedural phrasing.
 _SEARCH_GOAL_BLOCK = """
 THIS SITE IS FOR INFO-SEEKING / CONSTRAINED-SEARCH TASKS. Override the long-horizon-app guidance
 above where it conflicts: most tasks must be goal-phrased SEARCH JOURNEYS whose difficulty lives in
@@ -133,7 +118,7 @@ checkable state (the matching result/quote/details screen). No purchases, no che
 quote/summary screen, no account creation.
 """
 
-# Opt-in block (qa_verify capture): test-objective voice, change-then-re-check tasks — the shape the goal-phrased corpus lacks.
+# Opt-in block (qa_verify capture): test-objective voice, and change-then-re-check tasks.
 _QA_VERIFY_BLOCK = """
 THIS SITE IS FOR QA-VERIFICATION TASKS. OVERRIDING the "never test/QA voice" rules above for this
 site only: every task is a TEST OBJECTIVE, not a user goal. Phrase each instruction as a short
@@ -158,10 +143,7 @@ tasks (this range replaces the count above).
 _STYLE_BLOCKS = {"search": _SEARCH_GOAL_BLOCK, "qa_verify": _QA_VERIFY_BLOCK}
 
 
-# Opt-in block (known-account capture): the app already has a working, pre-verified login and there
-# is NO readable inbox in the sandbox (its mail leaves to a cloud provider, or it's a demo account).
-# So the proposer must NOT generate registration / email-verification / reset-via-email / invite-via-
-# email tasks — they can never be completed without an inbox — and should focus on signed-in usage.
+# With no readable inbox, registration and email-verification tasks could never be completed, so none are asked for.
 _KNOWN_ACCOUNT_BLOCK = """
 YOU ALREADY HAVE A WORKING ACCOUNT for this app and can sign in with it. There is NO email inbox \
 available in this environment, so any flow that depends on reading an email CANNOT be completed.
@@ -179,8 +161,7 @@ email-INVITATION tasks, or anything else that needs to read an email — there i
 """
 
 
-# Affordance count -> a hard quota line in the proposal prompt. Generic: a new sophistication
-# signal is a new entry here (and a counter in the driver's /affordances), not new prompt code.
+# A new sophistication signal is a new entry here plus a counter in the driver's /affordances, never new prompt code.
 _AFFORDANCE_QUOTAS = {
     "draggables": "- The page has {n} draggable elements: at least 1 task MUST require dragging "
     "(reorder, move between columns, drop onto a target).\n",
@@ -200,8 +181,7 @@ _AFFORDANCE_QUOTAS = {
 
 
 def render_avoid(avoid_instructions: list[str] | None) -> str:
-    """A prompt block listing tasks already captured for this app, so the proposer covers NEW
-    ground instead of regenerating them. Empty when nothing is covered yet (repo lane's default)."""
+    """A prompt block of what this app already has captured, so the proposer covers new ground."""
     if not avoid_instructions:
         return ""
     lines = "\n".join(f"- {a.strip()}" for a in avoid_instructions[:40] if a and a.strip())
@@ -244,9 +224,8 @@ def _image_prompt_stream(text: str, screenshot_b64: str | None):
 
 
 def parse_proposal(text: str) -> dict | None:
-    """Extract {"app_health": {...}, "tasks": [...]} from the model output. Returns None when
-    unparseable — the stage treats that as a retryable condition, not a content filter. A
-    bare task array (older prompt shape) still parses, with health assumed usable."""
+    """The model output's {"app_health": ..., "tasks": [...]}, or None, which the stage retries."""
+    # A bare task array, the older prompt shape, still parses, with health assumed usable.
     obj_start = text.find("{")
     arr_start = text.find("[")
     raw = None
@@ -284,9 +263,7 @@ def parse_proposal(text: str) -> dict | None:
                 "auth": auth,
             }
         )
-    # register/login tasks must run FIRST: they MINT the account whose captured session the later
-    # "account" tasks reuse (auth_mode=pre_session). Stable sort preserves the proposer's order
-    # within each bucket.
+    # register/login first: they MINT the account whose captured session the later "account" tasks reuse.
     tasks.sort(key=lambda t: {"register": 0, "login": 1}.get(t["auth"], 2))
     health = raw.get("app_health") if isinstance(raw.get("app_health"), dict) else {"usable": True, "notes": ""}
     return {"app_health": health, "tasks": tasks}
@@ -306,11 +283,8 @@ async def propose_tasks(
     inbox: bool = True,
     task_style: str = "",
 ) -> dict | None:
-    """Returns {"app_health": {"usable", "notes"}, "tasks": [...]} or None on SDK/parse failure
-    (retryable). An unusable app comes back as usable=False with an empty task list — the
-    caller rejects the repo without spending a single teacher call. `auth_flow=True` enables auth
-    task classification; `inbox=False` (a known pre-verified account, no readable sandbox inbox)
-    switches to the known-account block so no email-dependent tasks are proposed."""
+    """The proposal, or None on SDK/parse failure; an unusable app comes back usable=False with no tasks."""
+    # inbox=False means no readable sandbox inbox, so the known-account block replaces the email-flow one.
     n_tasks = n_tasks or PIPELINE.tasks_per_repo
     affordances_block, affordance_quotas = render_affordances(affordances)
     prompt_text = PROPOSE_PROMPT.format(
@@ -333,8 +307,7 @@ async def propose_tasks(
             _image_prompt_stream(prompt_text, screenshot_b64),
             ClaudeAgentOptions(
                 model=MODEL_FOR_REASONING,
-                # A long prompt (style/auth blocks) can push the JSON past one turn; the budget cap,
-                # not the turn count, is what bounds cost here.
+                # The budget cap, not the turn count, bounds cost here: a long prompt can push the JSON past one turn.
                 max_turns=6,
                 max_budget_usd=PIPELINE.task_propose_budget_usd,
                 permission_mode="bypassPermissions",

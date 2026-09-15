@@ -1,28 +1,32 @@
 # Evaluation archive
 
-Raw artefacts behind every number quoted in the root `README.md` for the SFT v1 checkpoint.
-Committed deliberately: `eval_results/` and `eval_runs/` are gitignored, so without this directory
-the figures in the README would have no reproducible backing once the working tree is cleaned.
+Raw artefacts behind the evaluation figures quoted in the root `README.md`. Committed deliberately:
+`eval_results/` and `eval_runs/` are gitignored, so without this directory those figures would have
+no reproducible backing once the working tree is cleaned. Later rounds are recorded in the
+experiment registry instead, each row naming its own `artifacts_path` and `artifacts_availability`.
 
-Checkpoint: `Qwen/Qwen3.5-9B` + LoRA r64/alpha128, 3 epochs, 5,477 train examples (616 val) from
-456 trajectories, 2,055 optimizer steps at effective batch 8. Adapter lives on the Modal volume
-`cua-outputs` at `sft-v1/adapter`.
+`manifest.json` carries the headline figures plus a sha256 and byte count for every file here, so a
+silent edit to an archived record is detectable.
 
 ## What is here
 
 | path | what |
 | --- | --- |
 | `screenspot_sft_v1/before.json` | 300 per-sample grounding records, base model (`normalized_1000`) |
-| `screenspot_sft_v1/after.json` | 300 per-sample grounding records, LoRA (`viewport_abs`) |
-| `screenspot_sft_v1/comparison.json` | rendered side-by-side summary |
+| `screenspot_sft_v1/after.json` | 300 per-sample grounding records, SFT v1 LoRA (`viewport_abs`) |
+| `screenspot_sft_v1/comparison.json` | rendered side-by-side summary of those two |
+| `screenspot_grpo_v2/*.json` | the same grounding harness over the served base, SFT v1 (merged and LoRA) and GRPO v2 arms |
 | `online_mind2web/baseline/` | 50-episode agentic run, base model: `results.json`, `report.md`, `run.log` |
-| `online_mind2web/after/` | same 50 episodes, LoRA |
-| `manifest.json` | headline figures + sha256 of every file here |
+| `online_mind2web/after/` | the same 50 episodes, SFT v1 LoRA |
+| `online_mind2web/*-judge2/` | base / SFT v1 / GRPO v2 re-measured on one criteria-first judge |
+| `online_mind2web/tasks_*.jsonl` | the pinned task sets every run above drew from (see that directory's README) |
 
 Each `results.json` carries the full harness fingerprint — dataset revision, judge model, step-cap
-policy, temperature, coordinate space — which is what makes a before/after pair comparable at all.
+policy, temperature, coordinate space, egress — which is what makes a before/after pair comparable
+at all. Served endpoint hostnames are recorded as `<modal-workspace>`: the workspace a run happened
+to be deployed in is not part of the measurement.
 
-## Headline figures
+## Headline figures (SFT v1, first round)
 
 | metric | before | after |
 | --- | ---: | ---: |
@@ -32,7 +36,9 @@ policy, temperature, coordinate space — which is what makes a before/after pai
 | ScreenSpot parse rate | 94.7% | 97.0% |
 
 Quote the **audited** Online-Mind2Web figures. Two of the ten verified successes are confirmed judge
-false positives — see `docs/decisions/judge-consistency-audit.md`.
+false positives — see `docs/decisions/judge-consistency-audit.md`. The ScreenSpot row was measured
+under a superseded protocol that resized the `viewport_abs` arm's inputs; the root `README.md`
+explains why it does not stand as a regression.
 
 ## What is NOT here
 

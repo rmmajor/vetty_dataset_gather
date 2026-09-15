@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Host-only sidecar: every copy_out overwrites capture_meta.json, so a retry counter kept there resets.
 ATTEMPTS_FILE = "capture_attempts.json"
-# The burner address is masked at TYPE time but the teacher names it in thought text, so it is not evidence of a masking failure.
+# The burner address is masked at TYPE time, so the teacher naming it in a thought is not a masking failure.
 LEAK_EXEMPT_KEYS = frozenset({"email"})
 
 
@@ -114,7 +114,7 @@ async def copy_out_site(sandbox, results_dir: str, site_dir: Path) -> None:
 
 async def record_capture(state: dict, task: dict, *, sandbox, site_dir: Path, label: str) -> dict:
     """Copy one finished task's recording out of the container and log what the teacher did."""
-    # Per task, not per site: teacher turns stall under rate-limit waits, and a container timeout mid-task must cost only this task.
+    # Per task, not per site, so a container timeout mid-task costs only that task and not the whole site.
     await copy_out_site(sandbox, RESULTS_DIR, site_dir)
     logger.info(f"[{label}] task '{task['id']}': {state['actions']} actions, outcome={state['agent_outcome']}")
     return state
@@ -199,7 +199,7 @@ async def finalize_tasks(
         recorded = is_valid_trajectory(traj_dir) if require_valid else traj_dir.exists()
         if not recorded:
             continue
-        # `states.get` , not `[...]`: an orphan from an interrupted run has no state and the verifier falls back to capture_meta.
+        # `states.get`, not `[...]`: an orphan from an interrupted run has no state, so the verifier reads capture_meta.
         verdict = await verify_and_finalize(traj_dir, site, task, states.get(task["id"]), registry)
         leaked = False
         if secrets:
