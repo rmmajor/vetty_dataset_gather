@@ -32,6 +32,7 @@ from cua.sft.health import (
     scan_examples_for_secrets,
 )
 from cua.trajectory.actions import format_action_for_training, normalize_trajectory_actions
+from cua.trajectory.io import iter_trajectory_dirs
 
 REPORT_COUNTERS = (
     "trajectories",
@@ -256,7 +257,7 @@ def _record_counts(report, trajectory, metadata, capture_meta, source, examples,
 def ingest_corpus(input_path, output_path, include_replay, meandering_mode, exclude_waste_steps):
     """One pass over every trajectory directory, applying the shared trainability gate and the target filters."""
     result = IngestResult()
-    trajectory_dirs = sorted(d for d in input_path.glob("**/task_*") if d.is_dir() and (d / "trajectory.json").exists())
+    trajectory_dirs = list(iter_trajectory_dirs(input_path))
     print(f"Found {len(trajectory_dirs)} trajectory directories")
 
     for traj_dir in trajectory_dirs:

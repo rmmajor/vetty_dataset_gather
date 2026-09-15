@@ -14,7 +14,6 @@ the original files byte-for-byte.
 
 import argparse
 import asyncio
-import json
 import logging
 import re
 import sys
@@ -27,6 +26,7 @@ from cua.pipeline.agent_runner import run_agent
 from cua.pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
 from cua.pipeline.sdk_runner import UsageLimitReached
 from cua.settings import CAPTURE
+from cua.trajectory.io import TrajectoryDir, iter_trajectory_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -55,21 +55,13 @@ If the run finished nothing a user would ask for, reply exactly NONE.
 Reply with ONLY the instruction text (or NONE)."""
 
 
-def _load(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
-        return {}
-
-
 def find_candidates(corpus_dir: Path) -> list[dict]:
     candidates = []
-    for traj_dir in sorted(corpus_dir.glob("**/task_*")):
-        if not (traj_dir / "trajectory.json").exists():
-            continue
-        traj = _load(traj_dir / "trajectory.json")
-        meta = _load(traj_dir / "metadata.json")
-        cmeta = _load(traj_dir / "capture_meta.json")
+    for traj_dir in iter_trajectory_dirs(corpus_dir):
+        recorded = TrajectoryDir.load(traj_dir)
+        traj = recorded.trajectory
+        meta = recorded.metadata
+        cmeta = recorded.capture_meta
         if traj.get("success"):
             continue
         if meta.get("excluded_reason") or cmeta.get("excluded_reason"):
@@ -92,11 +84,10 @@ def find_candidates(corpus_dir: Path) -> list[dict]:
 def find_orphans(corpus_dir: Path) -> list[Path]:
     """Agent captures that were never judged at all (no capture_meta.verifier)."""
     orphans = []
-    for traj_dir in sorted(corpus_dir.glob("**/task_*")):
-        if not (traj_dir / "trajectory.json").exists():
-            continue
-        meta = _load(traj_dir / "metadata.json")
-        cmeta = _load(traj_dir / "capture_meta.json")
+    for traj_dir in iter_trajectory_dirs(corpus_dir):
+        recorded = TrajectoryDir.load(traj_dir)
+        meta = recorded.metadata
+        cmeta = recorded.capture_meta
         if meta.get("excluded_reason") or cmeta.get("excluded_reason"):
             continue
         if (meta.get("capture_source") or "agent") != "agent":
@@ -143,8 +134,8 @@ async def propose_instruction(candidate: dict) -> tuple[str | None, str]:
 
 def _append_done_step(traj_dir: Path, proposal: str):
     """Terminal stop supervision for a relabeled run, mirroring convert's synthesized-done shape."""
-    traj_file = traj_dir / "trajectory.json"
-    traj = _load(traj_file)
+    recorded = TrajectoryDir.load(traj_dir)
+    traj = recorded.trajectory
     steps = traj.get("steps", [])
     if any(a.get("type") == "done" for s in steps for a in s.get("actions", [])):
         return
@@ -162,7 +153,7 @@ def _append_done_step(traj_dir: Path, proposal: str):
         }
     )
     traj["total_steps"] = len(steps)
-    traj_file.write_text(json.dumps(traj, indent=2))
+    recorded.save_trajectory()
 
 
 async def apply_one(candidate: dict, report_rows: list) -> str:
@@ -175,15 +166,15 @@ async def apply_one(candidate: dict, report_rows: list) -> str:
 
     proposal, reject_reason = await propose_instruction(candidate)
     if proposal is None:
-        meta = _load(meta_file)
-        meta["relabel_attempted"] = f"hindsight_v2_rejected: {reject_reason[:120]}"
-        meta_file.write_text(json.dumps(meta, indent=2))
+        rejected = TrajectoryDir.load(traj_dir)
+        rejected.metadata["relabel_attempted"] = f"hindsight_v2_rejected: {reject_reason[:120]}"
+        rejected.save_metadata()
         report_rows.append((traj_dir, "no_proposal", reject_reason))
         return "no_proposal"
 
-    traj = _load(traj_file)
-    traj["instruction"] = proposal
-    traj_file.write_text(json.dumps(traj, indent=2))
+    proposed = TrajectoryDir.load(traj_dir)
+    proposed.trajectory["instruction"] = proposal
+    proposed.save_trajectory()
     try:
         verdict = await verify_trajectory(traj_dir, full_name=f"relabel:{traj_dir.name}")
     except UsageLimitReached:
@@ -194,16 +185,17 @@ async def apply_one(candidate: dict, report_rows: list) -> str:
     if not verdict.get("final_success"):
         for path, blob in snapshots.items():
             path.write_bytes(blob)
-        meta = _load(meta_file)
-        meta["relabel_attempted"] = "hindsight_v2_rejected: verifier declined the relabeled goal"
-        meta_file.write_text(json.dumps(meta, indent=2))
+        # Loaded only after the restore, so the rejection lands on the ORIGINAL metadata, not the proposed one.
+        declined = TrajectoryDir.load(traj_dir)
+        declined.metadata["relabel_attempted"] = "hindsight_v2_rejected: verifier declined the relabeled goal"
+        declined.save_metadata()
         report_rows.append((traj_dir, "verifier_rejected", proposal))
         return "verifier_rejected"
 
     _append_done_step(traj_dir, proposal)
-    cmeta = _load(cmeta_file)
-    verifier = cmeta.get("verifier") or {}
-    meta = _load(meta_file)
+    accepted = TrajectoryDir.load(traj_dir)
+    verifier = accepted.capture_meta.get("verifier") or {}
+    meta = accepted.metadata
     meta.update(
         {
             "instruction": proposal,
@@ -213,12 +205,11 @@ async def apply_one(candidate: dict, report_rows: list) -> str:
             "success": True,
             "efficiency": verifier.get("efficiency"),
             "efficiency_ratio": verifier.get("efficiency_ratio"),
-            # The thoughts still pursue the ORIGINAL goal (naming sub-goals the new instruction drops);
-            # marking them raw sends them through the polish pass, which rewrites against the new goal.
+            # The thoughts still pursue the ORIGINAL goal, so marking them raw sends them through the polish pass.
             "thought_source": "teacher_raw",
         }
     )
-    meta_file.write_text(json.dumps(meta, indent=2))
+    accepted.save_metadata()
     report_rows.append((traj_dir, "relabeled", proposal))
     logger.info(f"  {traj_dir.name}: relabeled -> {proposal!r}")
     return "relabeled"

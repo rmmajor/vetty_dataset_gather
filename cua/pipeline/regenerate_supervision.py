@@ -29,13 +29,13 @@ from cua.pipeline.think_generator import (
     render_grounding_hint,
     render_history,
 )
+from cua.trajectory.io import load_json, write_json
 
 logger = logging.getLogger(__name__)
 
 
 def find_trajectory_dirs(root: Path) -> list[Path]:
-    """Collect every trajectory dir under `root` that has a trajectory.json. Walks both
-    layouts: Path B nested (`repo_*/task_*`) and Path A flat (`task_*`)."""
+    """Path B nested (`repo_*/task_*`) plus Path A flat (`task_*`) only — deliberately NOT the corpus-wide walk, since this generator has no prompt for the site_* lanes."""
     dirs: list[Path] = []
     for repo_dir in sorted(root.glob("repo_*")):
         if not repo_dir.is_dir():
@@ -94,25 +94,12 @@ async def regenerate_one(
     do_instructions: bool,
     do_thoughts: bool,
 ) -> tuple[dict, dict]:
-    """Run the new generators against one trajectory entirely in memory.
-
-    Returns (summary, new_trajectory): `summary` describes what changed for the report;
-    `new_trajectory` is the post-regeneration trajectory dict ready to be written back to
-    disk (caller decides whether to persist, based on --dry-run).
-    """
+    """(report summary, regenerated trajectory) — entirely in memory; the caller decides whether to persist it."""
     trajectory_path = traj_dir / "trajectory.json"
     with open(trajectory_path) as f:
         trajectory = json.load(f)
 
-    metadata: dict = {}
-    metadata_path = traj_dir / "metadata.json"
-    if metadata_path.exists():
-        try:
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-        except Exception:
-            metadata = {}
-
+    metadata = load_json(traj_dir / "metadata.json")
     capture_meta = _load_capture_meta(traj_dir)
     test_source = _load_test_source(traj_dir)
     path_b = is_path_b(traj_dir)
@@ -285,8 +272,7 @@ async def amain(args: argparse.Namespace) -> int:
         summaries.append(summary)
 
         if not args.dry_run:
-            with open(traj_dir / "trajectory.json", "w") as f:
-                json.dump(new_trajectory, f, indent=2)
+            write_json(traj_dir / "trajectory.json", new_trajectory)
 
     report = render_report(summaries)
     if args.dry_run or args.report_path:

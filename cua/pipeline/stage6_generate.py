@@ -22,6 +22,8 @@ from cua.pipeline.schemas import FailureCategory, QualityReject, RepoStatus, Ret
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 from cua.pipeline.task_proposer import propose_tasks
 from cua.settings import CAPTURE, PIPELINE
+from cua.trajectory.io import load_json, write_json
+from cua.trajectory.schema import metadata_from
 
 logger = logging.getLogger(__name__)
 
@@ -880,8 +882,7 @@ async def _enrich_metadata(
     registry=None,
     thought_source: str = "generated",
 ):
-    """Fill the trajectory-level aggregate / provenance fields in metadata.json from the
-    captured trajectory + capture_meta. Best-effort: never raise into the generation flow."""
+    """Fill metadata.json's aggregate / provenance fields from the capture; best-effort, never raising into the flow."""
     try:
         traj_file = traj_dir / "trajectory.json"
         meta_file = traj_dir / "metadata.json"
@@ -891,54 +892,66 @@ async def _enrich_metadata(
         with open(traj_file) as f:
             traj = json.load(f)
         capture_meta = _load_capture_meta(traj_dir)
+        metadata = load_json(meta_file)
+        task_type = await classify_task_type(traj, capture_meta, registry=registry, full_name=repo.get("full_name", ""))
 
-        metadata = {}
-        if meta_file.exists():
-            try:
-                with open(meta_file) as f:
-                    metadata = json.load(f)
-            except Exception:
-                metadata = {}
-
-        steps = traj.get("steps", [])
-        steps_meta = capture_meta.get("steps", {})
-        action_hist, role_hist, n_nav, valid_bbox_ratio, n_console = _aggregate(steps, steps_meta)
-
-        metadata["instruction"] = traj.get("instruction", metadata.get("instruction", ""))
-        metadata["total_steps"] = len(steps)
-        metadata["domain"] = repo.get("domain") or RepoRegistry.classify_domain(
-            repo.get("description"), repo.get("topics")
+        metadata.update(
+            _enrichment_fields(
+                traj, capture_meta, metadata, repo, profile, instruction_was_generated, thought_source, task_type
+            )
         )
-        metadata["website"] = _host(traj.get("start_url", ""))
-        metadata["framework"] = profile.test_framework
-        metadata["framework_language"] = profile.language
-        metadata["source_query"] = repo.get("source_query") or ""
-        metadata["repo_stars"] = repo.get("stars", 0) or 0
-        metadata["action_type_histogram"] = action_hist
-        metadata["element_role_histogram"] = role_hist
-        metadata["length_bucket"] = _length_bucket(len(steps))
-        metadata["n_navigations"] = n_nav
-        metadata["valid_bbox_ratio"] = valid_bbox_ratio
-        metadata["n_console_errors"] = n_console
-        metadata["instruction_source"] = "generated" if instruction_was_generated else "human"
-        metadata["thought_source"] = thought_source
-        metadata["capture_source"] = "agent" if thought_source.startswith("teacher") else "replay"
-        verifier = capture_meta.get("verifier") or {}
-        if verifier:
-            metadata["efficiency"] = verifier.get("efficiency")
-            metadata["efficiency_ratio"] = verifier.get("efficiency_ratio")
-            metadata["relabeled"] = verifier.get("relabeled", False)
-        metadata["dedup_hash"] = _dedup_hash(steps)
-        metadata["task_type"] = await classify_task_type(
-            traj, capture_meta, registry=registry, full_name=repo.get("full_name", "")
-        )
-
-        with open(meta_file, "w") as f:
-            json.dump(metadata, f, indent=2)
+        write_json(meta_file, metadata)
     except UsageLimitReached:
         raise
     except Exception as e:
         logger.warning(f"Metadata enrichment failed for {traj_dir.name}: {e}")
+
+
+def _enrichment_fields(
+    traj: dict,
+    capture_meta: dict,
+    metadata: dict,
+    repo: dict,
+    profile,
+    instruction_was_generated: bool,
+    thought_source: str,
+    task_type: str,
+) -> dict:
+    """The trajectory-level aggregates and provenance stage 6 writes over whatever the recorder already left on disk."""
+    steps = traj.get("steps", [])
+    action_hist, role_hist, n_nav, valid_bbox_ratio, n_console = _aggregate(steps, capture_meta.get("steps", {}))
+    verifier = capture_meta.get("verifier") or {}
+    verdict_fields = (
+        {
+            "efficiency": verifier.get("efficiency"),
+            "efficiency_ratio": verifier.get("efficiency_ratio"),
+            "relabeled": verifier.get("relabeled", False),
+        }
+        if verifier
+        else {}
+    )
+    return metadata_from(
+        instruction=traj.get("instruction", metadata.get("instruction", "")),
+        total_steps=len(steps),
+        domain=repo.get("domain") or RepoRegistry.classify_domain(repo.get("description"), repo.get("topics")),
+        website=_host(traj.get("start_url", "")),
+        framework=profile.test_framework,
+        framework_language=profile.language,
+        source_query=repo.get("source_query") or "",
+        repo_stars=repo.get("stars", 0) or 0,
+        action_type_histogram=action_hist,
+        element_role_histogram=role_hist,
+        length_bucket=_length_bucket(len(steps)),
+        n_navigations=n_nav,
+        valid_bbox_ratio=valid_bbox_ratio,
+        n_console_errors=n_console,
+        instruction_source="generated" if instruction_was_generated else "human",
+        thought_source=thought_source,
+        capture_source="agent" if thought_source.startswith("teacher") else "replay",
+        **verdict_fields,
+        dedup_hash=_dedup_hash(steps),
+        task_type=task_type,
+    )
 
 
 async def run_generate(

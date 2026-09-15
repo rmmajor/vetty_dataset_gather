@@ -15,20 +15,14 @@ from pathlib import Path
 from cua.pipeline.corpus_audit import is_trainable
 from cua.pipeline.sdk_runner import UsageLimitReached
 from cua.pipeline.think_generator import needs_polish, polish_thoughts_for_trajectory
+from cua.trajectory.io import iter_trajectory_dirs
 
 logger = logging.getLogger(__name__)
 
 
 def find_polish_targets(corpus_dir: Path, include_untrainable: bool = False) -> list[Path]:
     # Only trainable dirs by default — polishing unverified rejects buys nothing until a salvage pass promotes them.
-    return sorted(
-        d
-        for d in corpus_dir.glob("**/task_*")
-        if d.is_dir()
-        and (d / "trajectory.json").exists()
-        and needs_polish(d)
-        and (include_untrainable or is_trainable(d))
-    )
+    return [d for d in iter_trajectory_dirs(corpus_dir) if needs_polish(d) and (include_untrainable or is_trainable(d))]
 
 
 async def run_pass(

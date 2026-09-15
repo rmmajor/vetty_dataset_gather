@@ -29,6 +29,7 @@ from cua.prompt.effects import downscale_prev, step_effects
 from cua.prompt.format import PREV_IMAGE_SIZE, history_entries_for_step
 from cua.settings import PIPELINE
 from cua.trajectory.actions import format_action_summary
+from cua.trajectory.io import TrajectoryDir, iter_trajectory_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -82,24 +83,17 @@ Output ONLY a JSON array of {n} strings — the rewritten thought for each step 
 in step order. No markdown fence, no prose."""
 
 
-def _load(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
 def needs_relabel(traj_dir: Path) -> bool:
-    return _load(traj_dir / "metadata.json").get("thought_source") != THOUGHT_SOURCE
+    return TrajectoryDir.load(traj_dir).metadata.get("thought_source") != THOUGHT_SOURCE
 
 
 def find_targets(corpus_dir: Path, max_steps: int | None = None) -> list[Path]:
     """Trainable, not-yet-relabeled trajectory dirs in sorted order; --max-steps bounds their length."""
     targets = []
-    for traj_dir in sorted(corpus_dir.glob("**/task_*")):
-        if not (traj_dir / "trajectory.json").exists() or not needs_relabel(traj_dir) or not is_trainable(traj_dir):
+    for traj_dir in iter_trajectory_dirs(corpus_dir):
+        if not needs_relabel(traj_dir) or not is_trainable(traj_dir):
             continue
-        if max_steps is not None and len(_load(traj_dir / "trajectory.json").get("steps", [])) > max_steps:
+        if max_steps is not None and len(TrajectoryDir.load(traj_dir).trajectory.get("steps", [])) > max_steps:
             continue
         targets.append(traj_dir)
     return targets
@@ -216,9 +210,9 @@ def write_relabel(
     backup = traj_dir / BACKUP_NAME
     if not backup.exists():
         backup.write_bytes(original_bytes)
-    (traj_dir / "trajectory.json").write_text(json.dumps(trajectory, indent=2))
-    metadata_path = traj_dir / "metadata.json"
-    metadata = _load(metadata_path)
+    recorded = TrajectoryDir.load(traj_dir)
+    recorded.save_trajectory(trajectory)
+    metadata = recorded.metadata
     metadata["thought_source"] = THOUGHT_SOURCE
     metadata["outcome_relabel"] = {
         "date": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -226,7 +220,7 @@ def write_relabel(
         "windows": windows,
         "unchanged_windows": unchanged_windows,
     }
-    metadata_path.write_text(json.dumps(metadata, indent=2))
+    recorded.save_metadata()
 
 
 async def relabel_trajectory(traj_dir: Path, call_llm=llm_call, apply: bool = False) -> dict:
@@ -237,7 +231,7 @@ async def relabel_trajectory(traj_dir: Path, call_llm=llm_call, apply: bool = Fa
     steps = trajectory.get("steps", [])
     if not steps:
         return {"status": "empty", "windows": 0, "unchanged_windows": 0, "changes": []}
-    effects = step_effects(traj_dir, steps, _load(traj_dir / "capture_meta.json"))
+    effects = step_effects(traj_dir, steps, TrajectoryDir.load(traj_dir).capture_meta)
     windows = step_windows(len(steps))
     unchanged_windows = 0
     changes = []
@@ -283,7 +277,7 @@ def estimate_cost(targets: list[Path]) -> dict:
     """Window/image/token counts for the given targets priced at the module's list-price knobs."""
     trajectories = steps = windows = images = 0
     for traj_dir in targets:
-        n_steps = len(_load(traj_dir / "trajectory.json").get("steps", []))
+        n_steps = len(TrajectoryDir.load(traj_dir).trajectory.get("steps", []))
         if not n_steps:
             continue
         trajectories += 1

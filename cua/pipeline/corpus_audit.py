@@ -16,7 +16,7 @@ Exit code 1 when any trainable trajectory fails or a corpus_health.json gate is 
 export: `python -m cua.pipeline.corpus_audit trajectories/` (or `make audit-corpus`).
 """
 
-# Stdlib-only on purpose, so verify_pattern_scan imports the predicates from here.
+# Pydantic-free on purpose: the Modal and Vast train lanes install no pydantic and reach this module through cua.sft.convert.
 import argparse
 import json
 import re
@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 from cua.trajectory import VIEWPORT
+from cua.trajectory.io import TrajectoryDir, iter_trajectory_dirs, load_json
 
 LOOP_RUN_LIMIT = 3
 HEALTH_CONFIG_NAME = "corpus_health.json"
@@ -68,13 +69,6 @@ def _action_signature(step: dict) -> tuple:
         for a in step.get("actions", [])
         if a.get("type") not in _CONTROL_TYPES
     )
-
-
-def _load_json(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
 
 
 def max_identical_run(steps) -> int:
@@ -235,8 +229,9 @@ def corpus_metrics(trajectory_dirs) -> dict:
         "outcome_relabeled": 0,
     }
     for traj_dir in trajectory_dirs:
-        steps = _load_json(traj_dir / "trajectory.json").get("steps", [])
-        metadata = _load_json(traj_dir / "metadata.json")
+        recorded = TrajectoryDir.load(traj_dir)
+        steps = recorded.trajectory.get("steps", [])
+        metadata = recorded.metadata
         counts["trainable_trajectories"] += 1
         counts["qa_verify_trajectories"] += in_qa_verify_voice(metadata)
         counts["outcome_relabeled"] += metadata.get("thought_source") == OUTCOME_RELABEL_SOURCE
@@ -257,8 +252,9 @@ def corpus_metrics(trajectory_dirs) -> dict:
 
 def audit_trajectory(traj_dir: Path) -> list[str]:
     """Defects for one trajectory; empty list means clean."""
-    trajectory = _load_json(traj_dir / "trajectory.json")
-    capture_meta = _load_json(traj_dir / "capture_meta.json")
+    recorded = TrajectoryDir.load(traj_dir)
+    trajectory = recorded.trajectory
+    capture_meta = recorded.capture_meta
     steps = trajectory.get("steps", [])
     defects = []
 
@@ -278,10 +274,9 @@ def audit_trajectory(traj_dir: Path) -> list[str]:
                     limit = VIEWPORT[0] if key == "x" else VIEWPORT[1]
                     if not (0 <= action[key] <= limit):
                         defects.append(f"step {step.get('step')}: {key}={action[key]} outside viewport")
-        if not (traj_dir / step.get("screenshot", "")).exists():
+        if not recorded.screenshot_path(step).exists():
             defects.append(f"step {step.get('step')}: missing screenshot")
-        # Watchdog approval-event steps are observations (event + empty actions) with no thought by
-        # design; every ACTION step must still carry one.
+        # Watchdog approval-event steps are observations with no thought by design; every ACTION step must carry one.
         if step.get("actions") and not (step.get("thought") or "").strip():
             defects.append(f"step {step.get('step')}: empty thought")
 
@@ -300,10 +295,7 @@ def audit_trajectory(traj_dir: Path) -> list[str]:
 
 def is_trainable(traj_dir: Path) -> bool:
     """Same gate as `python -m cua.sft convert` (default, no --include-replay), via the shared `trainability`."""
-    trajectory = _load_json(traj_dir / "trajectory.json")
-    metadata = _load_json(traj_dir / "metadata.json")
-    capture_meta = _load_json(traj_dir / "capture_meta.json")
-    return trainability(trajectory, metadata, capture_meta, traj_dir.name) is None
+    return TrajectoryDir.load(traj_dir).is_trainable()
 
 
 def default_health_config() -> Path:
@@ -316,9 +308,7 @@ def run_audit(corpus_dir: Path, health_config: Path | None = None, skip_health_g
     trainable_failures = 0
     trainable_dirs = []
     skipped = 0
-    for traj_dir in sorted(corpus_dir.glob("**/task_*")):
-        if not (traj_dir / "trajectory.json").exists():
-            continue
+    for traj_dir in iter_trajectory_dirs(corpus_dir):
         if not is_trainable(traj_dir):
             skipped += 1
             continue
@@ -347,7 +337,7 @@ def run_audit(corpus_dir: Path, health_config: Path | None = None, skip_health_g
     )
 
     health_path = health_config or default_health_config()
-    violations = corpus_health_violations(metrics, _load_json(health_path)) if health_path.is_file() else []
+    violations = corpus_health_violations(metrics, load_json(health_path)) if health_path.is_file() else []
     if not health_path.is_file():
         print(f"corpus health gate: SKIPPED — no thresholds file at {health_path}")
     elif violations:

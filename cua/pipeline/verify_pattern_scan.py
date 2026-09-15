@@ -14,17 +14,11 @@ from cua.pipeline.corpus_audit import (
     is_trainable,
     navigate_after_save,
 )
+from cua.trajectory.io import TrajectoryDir, iter_trajectory_dirs
 
 PAGINATION_TEXT = re.compile(r"\b(page \d|next page|pagination|paginat|load more|show more)\b", re.I)
 RELOGIN_MIN_GAP = 5
 LONG_ROUTE_STEPS = 25
-
-
-def _load(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
-        return {}
 
 
 def scan(corpus: Path) -> dict:
@@ -42,11 +36,12 @@ def scan(corpus: Path) -> dict:
         done_after_verify=0,
         wall_demos=0,
     )
-    for traj_dir in sorted(corpus.glob("**/task_*")):
-        if not (traj_dir / "trajectory.json").exists() or not is_trainable(traj_dir):
+    for traj_dir in iter_trajectory_dirs(corpus):
+        if not is_trainable(traj_dir):
             continue
-        traj = _load(traj_dir / "trajectory.json")
-        meta = _load(traj_dir / "metadata.json")
+        recorded = TrajectoryDir.load(traj_dir)
+        traj = recorded.trajectory
+        meta = recorded.metadata
         steps = traj.get("steps", [])
         if not steps:
             continue

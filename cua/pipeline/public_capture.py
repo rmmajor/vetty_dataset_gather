@@ -38,6 +38,8 @@ from cua.pipeline.task_proposer import propose_tasks
 from cua.pipeline.think_generator import needs_polish, polish_thoughts_for_trajectory
 from cua.settings import CAPTURE, PIPELINE
 from cua.trajectory import VIEWPORT
+from cua.trajectory.io import write_json
+from cua.trajectory.schema import metadata_from
 
 logger = logging.getLogger(__name__)
 
@@ -107,38 +109,38 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
     risks = [
         a.get("risk_category", "") for s in traj["steps"] for a in s.get("actions", []) if a.get("type") == "confirm"
     ]
-    metadata = {
-        "task_id": traj["task_id"],
-        "instruction": traj["instruction"],
-        "start_url": traj["start_url"],
-        "total_steps": traj["total_steps"],
-        "success": traj["success"],
-        "website": urlparse(site["start_url"]).netloc,
-        "domain": site.get("domain", "public_web"),
-        "framework": "agent",
-        "capture_source": "agent",
-        "instruction_source": task.get("instruction_source", "curated"),
-        "thought_source": "teacher_raw",
-        "task_type": "other",
-        "difficulty": task.get("difficulty", "medium"),
-        "efficiency": verifier.get("efficiency"),
-        "efficiency_ratio": verifier.get("efficiency_ratio"),
-        "relabeled": verifier.get("relabeled", False),
-        "viewport": {"width": VIEWPORT[0], "height": VIEWPORT[1]},
-        "source_repo": f"public:{site['name']}",
-        "autonomy": task_meta.get("autonomy", "autonomous"),
-        "auth_mode": task_meta.get("auth_mode", "none"),
-        "task_style": task_meta.get("task_style", ""),
-        "risk_category": risks[-1] if risks else "",
+    metadata = metadata_from(
+        task_id=traj["task_id"],
+        instruction=traj["instruction"],
+        start_url=traj["start_url"],
+        total_steps=traj["total_steps"],
+        success=traj["success"],
+        website=urlparse(site["start_url"]).netloc,
+        domain=site.get("domain", "public_web"),
+        framework="agent",
+        capture_source="agent",
+        instruction_source=task.get("instruction_source", "curated"),
+        thought_source="teacher_raw",
+        task_type="other",
+        difficulty=task.get("difficulty", "medium"),
+        efficiency=verifier.get("efficiency"),
+        efficiency_ratio=verifier.get("efficiency_ratio"),
+        relabeled=verifier.get("relabeled", False),
+        viewport={"width": VIEWPORT[0], "height": VIEWPORT[1]},
+        source_repo=f"public:{site['name']}",
+        autonomy=task_meta.get("autonomy", "autonomous"),
+        auth_mode=task_meta.get("auth_mode", "none"),
+        task_style=task_meta.get("task_style", ""),
+        risk_category=risks[-1] if risks else "",
         # Replay manifest: what an eval/deploy harness must reconstruct for these actions to be valid.
-        "preconditions": {
+        preconditions={
             "requires_session": task_meta.get("auth_mode") == "pre_session",
             "session_ref": site.get("storage_state_ref", ""),
             "start_url": traj["start_url"],
             "env": task_meta.get("env", "live"),
         },
-    }
-    (traj_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+    )
+    write_json(traj_dir / "metadata.json", metadata)
 
     attempts = record_capture_attempt(traj_dir, "success" if traj["success"] else "failed")
     if not traj["success"] and attempts >= CAPTURE.max_attempts:

@@ -13,12 +13,12 @@ trajectory_prewall.json; the old verdict stays in capture_meta untouched.
 """
 
 import argparse
-import json
 import logging
 import sys
 from pathlib import Path
 
 from cua.eval.student import BLOCK_SIGNATURES
+from cua.trajectory.io import TrajectoryDir, iter_trajectory_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +38,6 @@ HANDOFF_THOUGHT = (
 )
 
 
-def _load(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
-        return {}
-
-
 def _match_block(text: str) -> str | None:
     for name, pattern in BLOCK_SIGNATURES:
         if pattern.search(text or ""):
@@ -54,9 +47,10 @@ def _match_block(text: str) -> str | None:
 
 def analyze(traj_dir: Path) -> dict | None:
     """Wall-demo plan for one dir, or None when it is not a blocked-run candidate."""
-    traj = _load(traj_dir / "trajectory.json")
-    meta = _load(traj_dir / "metadata.json")
-    cmeta = _load(traj_dir / "capture_meta.json")
+    recorded = TrajectoryDir.load(traj_dir)
+    traj = recorded.trajectory
+    meta = recorded.metadata
+    cmeta = recorded.capture_meta
     if traj.get("success") or meta.get("wall_demo") or meta.get("relabeled_from"):
         return None
     if meta.get("excluded_reason") or cmeta.get("excluded_reason"):
@@ -101,9 +95,7 @@ def analyze(traj_dir: Path) -> dict | None:
 
 def find_candidates(corpus_dir: Path) -> tuple[list[dict], list[dict]]:
     plans, skipped = [], []
-    for traj_dir in sorted(corpus_dir.glob("**/task_*")):
-        if not (traj_dir / "trajectory.json").exists():
-            continue
+    for traj_dir in iter_trajectory_dirs(corpus_dir):
         plan = analyze(traj_dir)
         if plan is None:
             continue
@@ -134,10 +126,10 @@ def select_within_cap(plans: list[dict], max_examples: int) -> list[dict]:
 
 def apply_plan(plan: dict):
     traj_dir = plan["dir"]
-    traj_file = traj_dir / "trajectory.json"
+    recorded = TrajectoryDir.load(traj_dir)
     backup = traj_dir / "trajectory_prewall.json"
     if not backup.exists():
-        backup.write_bytes(traj_file.read_bytes())
+        backup.write_bytes((traj_dir / "trajectory.json").read_bytes())
 
     traj = plan["trajectory"]
     steps = traj["steps"][: plan["kept"]]
@@ -157,22 +149,19 @@ def apply_plan(plan: dict):
     traj["steps"] = steps
     traj["total_steps"] = len(steps)
     traj["success"] = True
-    traj_file.write_text(json.dumps(traj, indent=2))
+    recorded.save_trajectory(traj)
 
-    # The old verdict graded the UNTRIMMED run; carrying its efficiency over would let a 4-step
-    # wall demo be subsampled as "meandering" and inflate the corpus meandering share.
-    cmeta_file = traj_dir / "capture_meta.json"
-    cmeta = _load(cmeta_file)
+    # The old verdict graded the UNTRIMMED run, so carrying its efficiency over would subsample a 4-step demo as meandering.
+    cmeta = recorded.capture_meta
     if cmeta.get("verifier"):
         cmeta["verifier"] = {
             **cmeta["verifier"],
             "efficiency": WALL_DEMO_EFFICIENCY,
             "efficiency_before_trim": cmeta["verifier"].get("efficiency"),
         }
-        cmeta_file.write_text(json.dumps(cmeta, indent=2))
+        recorded.save_capture_meta()
 
-    meta_file = traj_dir / "metadata.json"
-    meta = _load(meta_file)
+    meta = recorded.metadata
     meta.update(
         {
             "wall_demo": True,
@@ -183,7 +172,7 @@ def apply_plan(plan: dict):
             "efficiency_ratio": None,
         }
     )
-    meta_file.write_text(json.dumps(meta, indent=2))
+    recorded.save_metadata()
     logger.info(f"  {traj_dir.name}: wall demo ({plan['kind']}, {plan['verb']}, {len(steps)} steps)")
 
 

@@ -18,6 +18,7 @@ from cua.pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
 from cua.pipeline.relabel_recoverable import NOT_GOAL_SHAPED
 from cua.pipeline.sdk_runner import UsageLimitReached
 from cua.settings import PIPELINE
+from cua.trajectory.io import TrajectoryDir, iter_trajectory_dirs
 
 logger = logging.getLogger(__name__)
 
@@ -90,13 +91,6 @@ class StyleMode:
     budget_usd: float = REWRITE_BUDGET_USD
     max_share: float | None = None
     dry_run_previews: bool = False
-
-
-def _load(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
-        return {}
 
 
 def is_procedure_flavored(instruction: str) -> bool:
@@ -186,16 +180,14 @@ STYLE_MODES: dict[str, StyleMode] = {
 
 def find_targets(corpus_dir: Path, mode: StyleMode) -> list[Path]:
     """Trainable dirs the mode selects, in sorted order; already-styled dirs count against the mode's cap."""
-    trainable = [
-        d for d in sorted(corpus_dir.glob("**/task_*")) if (d / "trajectory.json").exists() and is_trainable(d)
-    ]
+    trainable = [d for d in iter_trajectory_dirs(corpus_dir) if is_trainable(d)]
     styled = 0
     targets = []
     for traj_dir in trainable:
-        meta = _load(traj_dir / "metadata.json")
-        if mode.already_styled(meta):
+        recorded = TrajectoryDir.load(traj_dir)
+        if mode.already_styled(recorded.metadata):
             styled += 1
-        elif mode.selects(_load(traj_dir / "trajectory.json"), meta):
+        elif mode.selects(recorded.trajectory, recorded.metadata):
             targets.append(traj_dir)
     if mode.max_share is not None:
         targets = targets[: max(int(mode.max_share * len(trainable)) - styled, 0)]
@@ -204,21 +196,19 @@ def find_targets(corpus_dir: Path, mode: StyleMode) -> list[Path]:
 
 def write_rewrite(traj_dir: Path, mode: StyleMode, old: str, new: str) -> None:
     """Update the instruction where convert reads it (trajectory.json) and keep metadata.json consistent."""
-    traj_file = traj_dir / "trajectory.json"
-    traj = _load(traj_file)
-    traj["instruction"] = new
-    traj_file.write_text(json.dumps(traj, indent=2))
-    meta_file = traj_dir / "metadata.json"
-    meta = _load(meta_file)
+    recorded = TrajectoryDir.load(traj_dir)
+    recorded.trajectory["instruction"] = new
+    recorded.save_trajectory()
+    meta = recorded.metadata
     meta.update(
         {"instruction": new, mode.provenance_key: meta.get(mode.provenance_key) or old, "instruction_style": mode.tag}
     )
-    meta_file.write_text(json.dumps(meta, indent=2))
+    recorded.save_metadata()
 
 
 async def rewrite_one(traj_dir: Path, mode: StyleMode, apply: bool) -> tuple[str, str, str]:
     """(status, old, new) — status is rewritten | unchanged | empty | unparseable; writes only when apply is set."""
-    traj = _load(traj_dir / "trajectory.json")
+    traj = TrajectoryDir.load(traj_dir).trajectory
     old = traj.get("instruction", "")
     text = await run_agent(
         mode.build_prompt(traj),
@@ -310,7 +300,7 @@ def main():
     else:
         targets = find_targets(args.corpus, mode)
         for traj_dir in targets:
-            instr = _load(traj_dir / "trajectory.json").get("instruction", "")
+            instr = TrajectoryDir.load(traj_dir).trajectory.get("instruction", "")
             print(f"{traj_dir.relative_to(args.corpus)}: {instr[:140]}")
         print(f"\n{len(targets)} instructions selected for mode {mode.tag}")
     sys.exit(0)
