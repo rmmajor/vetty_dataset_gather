@@ -1,0 +1,6370 @@
+{
+  "_comment": "Curated UKRAINIAN-WEB action sites (thesis novelty claim: no open CUA corpus — Mind2Web, WebArena, WebVoyager, GAIA, WebLINX — has meaningful .ua coverage). Same schema as public_sites_actions_logingated.json / _indie.json, loadable by public_capture.load_sites and capture_logingated.load_sites unchanged. Every `instruction` is a terse Ukrainian-language user GOAL, never a step-by-step procedure — the agent works out the route. `probe` records what each host actually returned on the date checked: `headless` is the verdict from the Playwright Chromium the autonomous lane uses, `headed` (where recorded) from a real browser window like the human-provisioning lane. Sites whose headless verdict is `blocked` carry skip_capture so the default sweep passes them over; name them explicitly (--sites <name>) to route them through the human-provisioned lane, which cleared 15 of the 19 (the other 4 were not retested headed). Banks and financial institutions are excluded by the project's safety spec. `provisioning` is a curated difficulty hint, not a probed fact — only reachability and WAF posture were probed.",
+  "sites": [
+    {
+      "name": "rozetka",
+      "start_url": "https://rozetka.com.ua/ua/",
+      "domain": "marketplace",
+      "category": "retail-marketplace",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "kukhonnyi-kombain",
+          "instruction": "Знайди і вибери якісний кухонний комбайн на Розетці та поклади його в кошик.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-smartfony",
+          "instruction": "Порівняй два смартфони до 20 000 грн і залиш той, у якого краща камера.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "holodylnyk-no-frost",
+          "instruction": "Підбери холодильник No Frost шириною до 60 см, який є в наявності.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "komplekt-do-noutbuka",
+          "instruction": "Набери комплект до нового ноутбука — сумку, мишку і подовжувач — і доведи кошик до вибору доставки.",
+          "difficulty": "hard",
+          "expected_actions": 26,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "navushnyky-vidhuky",
+          "instruction": "Обери бездротові навушники з високим рейтингом і почитай, що пишуть у відгуках про шумозаглушення.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "type"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "spysok-bazhan",
+          "instruction": "Додай три подарунки до списку бажань, щоб потім скинути його рідним.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "vidstezhyty-zamovlennya",
+          "instruction": "Подивись, де зараз моє замовлення і коли його привезуть.",
+          "difficulty": "medium",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "znyzhka-pylosos",
+          "instruction": "Знайди серед акцій пилосос зі знижкою понад 30% і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "samovyviz-kyiv",
+          "instruction": "Оформи телевізор із самовивозом із магазину Розетки в Києві.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pytannya-pro-garantiyu",
+          "instruction": "Спитай продавця про гарантію на кавомашину.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "bonusy-perevirty",
+          "instruction": "Перевір, скільки в мене бонусів і на що їх можна витратити.",
+          "difficulty": "easy",
+          "expected_actions": 7,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "povernennya-tovaru",
+          "instruction": "Оформи повернення товару з попереднього замовлення.",
+          "difficulty": "hard",
+          "expected_actions": 17,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 491
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "prom",
+      "start_url": "https://prom.ua/",
+      "domain": "marketplace",
+      "category": "retail-marketplace",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kanctovary-shkolyaru",
+          "instruction": "Набери канцтоварів школяру — рюкзак, зошити і пенал — в один кошик.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "sadovi-mebli",
+          "instruction": "Знайди перевіреного продавця садових меблів з доставкою по Україні.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "chokhol-na-telefon",
+          "instruction": "Замов чохол на телефон з доставкою у відділення Нової пошти.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-multivarky",
+          "instruction": "Порівняй ціни на однакову мультиварку в кількох продавців і вибери найвигіднішу.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "spytaty-pro-rozmir",
+          "instruction": "Спитай продавця, чи є ця куртка в розмірі M.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zalyshyty-vidhuk",
+          "instruction": "Залиш відгук про куплений товар.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "status-zamovlen",
+          "instruction": "Перевір статус моїх замовлень у кабінеті.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "bezkoshtovna-dostavka",
+          "instruction": "Підбери настільну лампу з безкоштовною доставкою і оплатою при отриманні.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 153
+      }
+    },
+    {
+      "name": "olx",
+      "start_url": "https://www.olx.ua/uk/",
+      "domain": "classifieds",
+      "category": "classifieds-c2c",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "potorhuvatysya",
+          "instruction": "Поторгуйся на ОЛХ з людиною, яка продає велосипед, і збий ціну.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "orenda-kvartyry-lviv",
+          "instruction": "Знайди однокімнатну квартиру в оренду у Львові до 12 000 грн і збережи кілька варіантів.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "prodaty-velosyped",
+          "instruction": "Вистав на продаж дитячий велосипед за 1500 гривень.",
+          "difficulty": "hard",
+          "expected_actions": 26,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "vzhyvanyi-iphone",
+          "instruction": "Підбери вживаний iPhone у Києві з доставкою ОЛХ і напиши продавцю.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pidpyska-na-poshuk",
+          "instruction": "Підпишись на новинки за пошуком «дитяче ліжечко» у Харкові.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "robota-barista",
+          "instruction": "Знайди роботу бариста в Одесі з частковою зайнятістю і відгукнись.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "cina-pralnoi-mashyny",
+          "instruction": "Подивись, скільки зараз просять за вживану пральну машину LG у моєму місті.",
+          "difficulty": "easy",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dyvany-v-obrane",
+          "instruction": "Додай три оголошення про дивани в обране.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "skarga-na-shakhraia",
+          "instruction": "Поскаржся на оголошення, яке виглядає як шахрайське.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pidnyaty-ogoloshennya",
+          "instruction": "Онови ціну в моєму оголошенні і підніми його в пошуку.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 145
+      }
+    },
+    {
+      "name": "kasta",
+      "start_url": "https://kasta.ua/",
+      "domain": "marketplace",
+      "category": "retail-marketplace",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "krosivky-rozmir",
+          "instruction": "Підбери кросівки 42 розміру до 2000 грн і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zymova-kurtka",
+          "instruction": "Знайди зимову куртку зі знижкою і подивись, чи є вона в моєму розмірі.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "obrane-plattya",
+          "instruction": "Додай кілька суконь в обране, щоб порівняти потім.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "dytiachyi-odyah",
+          "instruction": "Набери дитячого одягу на весну в кошик.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "primirka-dostavka",
+          "instruction": "Оформи замовлення з приміркою у відділенні.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "rozprodazh-znyzhky",
+          "instruction": "Подивись, що зараз є на розпродажі в чоловічому взутті до 1000 грн.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 509
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "shafa",
+      "start_url": "https://shafa.ua/",
+      "domain": "classifieds",
+      "category": "classifieds-c2c",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "vzhyvana-sukniya",
+          "instruction": "Знайди вживану сукню свого розміру в гарному стані і напиши продавчині.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "prodaty-odyah",
+          "instruction": "Вистав на продаж светр, який мені став замалий.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "filtr-brend-cina",
+          "instruction": "Підбери взуття конкретного бренду до 800 грн у Києві.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dodaty-v-obrane",
+          "instruction": "Збери в обране кілька зимових пальт, щоб вибрати з них одне.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pidpysatysya-na-prodavcya",
+          "instruction": "Підпишись на продавчиню, у якої гарний вибір сумок.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 158
+      }
+    },
+    {
+      "name": "hotline",
+      "start_url": "https://hotline.ua/",
+      "domain": "price-comparison",
+      "category": "retail-marketplace",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kombain-porivnyaty-ciny",
+          "instruction": "Знайди, де найдешевше купити кухонний комбайн, який мені сподобався.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pralna-mashyna-filtr",
+          "instruction": "Підбери пральну машину з завантаженням від 8 кг і подивись найкращі пропозиції магазинів.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-televizory",
+          "instruction": "Постав два телевізори поруч і порівняй їхні характеристики.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vidhuky-pro-magazyn",
+          "instruction": "Почитай відгуки про магазин, перш ніж у ньому щось замовляти.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "spysok-obranogo",
+          "instruction": "Збережи кілька моделей ноутбуків, щоб повернутися до них пізніше.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "padinnya-ciny",
+          "instruction": "Подивись, як змінювалася ціна на смартфон за останні місяці.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 3409
+      }
+    },
+    {
+      "name": "epicentrk",
+      "start_url": "https://epicentrk.ua/",
+      "domain": "home-improvement",
+      "category": "retail-marketplace",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "laminat-na-kimnatu",
+          "instruction": "Порахуй і набери ламінат на кімнату 20 квадратів разом з підкладкою.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "farba-dlya-stin",
+          "instruction": "Підбери фарбу для стін у ванній і додай потрібний інструмент.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "sadovi-roslyny",
+          "instruction": "Набери саджанців і добрив для весняної посадки.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-u-misto",
+          "instruction": "Оформи доставку будівельних матеріалів у Полтаву на конкретну дату.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "nayavnist-u-magazyni",
+          "instruction": "Перевір, чи є ця мікрохвильова піч в Епіцентрі біля мене.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "instrumenty-nabir",
+          "instruction": "Збери базовий набір інструментів для дому в кошик.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-tyzhnya",
+          "instruction": "Подивись, які товари для дому зараз за акцією, і візьми щось корисне.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 247
+      }
+    },
+    {
+      "name": "comfy",
+      "start_url": "https://comfy.ua/",
+      "domain": "electronics",
+      "category": "retail-electronics",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "kavomashyna-vybir",
+          "instruction": "Вибери кавомашину до 15 000 грн з капучинатором і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kredyt-na-tehniku",
+          "instruction": "Подивись, на які умови розстрочки можна взяти пральну машину.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-pylosos",
+          "instruction": "Порівняй два роботи-пилососи і залиш кращий.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "samovyviz-magazyn",
+          "instruction": "Замов навушники з самовивозом із найближчого магазину Комфі.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "aksesuary-do-telefonu",
+          "instruction": "Добери до телефона захисне скло і чохол.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 200,
+        "interactive_elements": 0,
+        "block_signature": "request unsuccessful. incapsula"
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (request unsuccessful. incapsula); not retested in a real browser window — human-provisioned lane untried"
+    },
+    {
+      "name": "foxtrot",
+      "start_url": "https://www.foxtrot.com.ua/",
+      "domain": "electronics",
+      "category": "retail-electronics",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "televizor-diagonal",
+          "instruction": "Підбери телевізор діагоналлю 55 дюймів зі Смарт ТВ і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "mikrohvylivka-akciya",
+          "instruction": "Знайди мікрохвильову піч за акцією і подивись, коли її привезуть.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-holodylnyky",
+          "instruction": "Порівняй два холодильники за характеристиками і вибери тихіший.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "nabir-dlya-kukhni",
+          "instruction": "Набери техніку на нову кухню — плиту, витяжку і посудомийку.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Доведи замовлення чайника до вибору способу доставки й оплати.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vidhuky-pro-model",
+          "instruction": "Почитай відгуки про цю модель ноутбука, перш ніж брати.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 848
+      }
+    },
+    {
+      "name": "allo",
+      "start_url": "https://allo.ua/",
+      "domain": "electronics",
+      "category": "retail-electronics",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "smartfon-do-15000",
+          "instruction": "Підбери смартфон до 15 000 грн з хорошою батареєю і додай у кошик.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-modeli",
+          "instruction": "Порівняй дві моделі смартфонів і залиш ту, що з більшою пам'яттю.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "navushnyky-obrane",
+          "instruction": "Збережи кілька бездротових навушників в обране.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "planshet-dytyni",
+          "instruction": "Вибери планшет дитині до 8000 грн і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "obmin-stary-telefon",
+          "instruction": "Дізнайся, скільки дадуть за мій старий телефон при обміні на новий.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-viddilennya",
+          "instruction": "Оформи замовлення павербанка з доставкою у відділення.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 3100
+      }
+    },
+    {
+      "name": "moyo",
+      "start_url": "https://www.moyo.ua/",
+      "domain": "electronics",
+      "category": "retail-electronics",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "noutbuk-dlya-navchannya",
+          "instruction": "Підбери ноутбук для навчання до 25 000 грн і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "aksesuary-dodaty",
+          "instruction": "Добери до ноутбука сумку і бездротову мишку.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-monitory",
+          "instruction": "Порівняй два монітори і вибери той, що з вищою частотою.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "akciya-znyzhka",
+          "instruction": "Знайди щось корисне для дому серед акційних товарів і додай у кошик.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kredyt-rozstrochka",
+          "instruction": "Подивись умови розстрочки на телевізор.",
+          "difficulty": "easy",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 3058
+      }
+    },
+    {
+      "name": "jysk",
+      "start_url": "https://jysk.ua/",
+      "domain": "furniture",
+      "category": "retail-home",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "matrac-pidibraty",
+          "instruction": "Підбери матрац 160 на 200 середньої жорсткості і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "postil-nabir",
+          "instruction": "Набери постільну білизну і подушки на двоспальне ліжко.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "shafa-v-nayavnosti",
+          "instruction": "Перевір, чи є ця шафа в магазині ЮСК біля мене.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "sadovi-mebli-komplekt",
+          "instruction": "Збери комплект садових меблів на балкон.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Доведи замовлення крісла до вибору доставки.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 378
+      }
+    },
+    {
+      "name": "intertop",
+      "start_url": "https://intertop.ua/",
+      "domain": "footwear",
+      "category": "retail-fashion",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "cholovichi-cherevyky",
+          "instruction": "Підбери чоловічі зимові черевики 43 розміру і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-vzuttya",
+          "instruction": "Знайди жіночі туфлі зі знижкою в моєму розмірі.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "obrane-krosivky",
+          "instruction": "Збережи кілька пар кросівок в обране, щоб вибрати потім.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "nayavnist-u-magazyni",
+          "instruction": "Перевір, чи є ці чоботи в магазині Інтертоп у Києві.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-primirka",
+          "instruction": "Оформи замовлення взуття з приміркою при отриманні.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 92
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "makeup",
+      "start_url": "https://makeup.com.ua/",
+      "domain": "beauty",
+      "category": "retail-beauty",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "dohlyad-za-shkiroyu",
+          "instruction": "Набери базовий догляд за сухою шкірою обличчя — очищення, тонік і крем.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "tonalnyi-vidtinok",
+          "instruction": "Підбери тональний крем потрібного відтінку і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "parfumy-podarunok",
+          "instruction": "Вибери парфуми в подарунок до 1500 грн і додай святкове пакування.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-shampuni",
+          "instruction": "Порівняй два шампуні від лупи за складом і відгуками.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "aktsii-nabory",
+          "instruction": "Подивись, які подарункові набори зараз за акцією, і візьми один.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-zamovlennya",
+          "instruction": "Доведи замовлення косметики до вибору доставки Новою поштою.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 916
+      }
+    },
+    {
+      "name": "eva",
+      "start_url": "https://eva.ua/ua/",
+      "domain": "beauty",
+      "category": "retail-beauty",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "pobutova-khimiya",
+          "instruction": "Набери побутової хімії на місяць — пральний порошок, засіб для миття і губки.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dohlyad-volossya",
+          "instruction": "Підбери догляд за фарбованим волоссям і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "bonusy-eva",
+          "instruction": "Перевір, скільки в мене балів на картці EVA MOL.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "akciyi-tyzhnya",
+          "instruction": "Подивись акції тижня і візьми щось із засобів гігієни.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "magazyn-poruch",
+          "instruction": "Знайди найближчий магазин EVA і подивись його графік.",
+          "difficulty": "easy",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 2158
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "watsons",
+      "start_url": "https://www.watsons.ua/",
+      "domain": "beauty",
+      "category": "retail-beauty",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "dohlyad-nabir",
+          "instruction": "Набери косметику для щоденного догляду і поклади в кошик.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vitaminy-pidibraty",
+          "instruction": "Підбери вітаміни для імунітету і додай у кошик.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-brend",
+          "instruction": "Знайди улюблений бренд зі знижкою і візьми щось із його засобів.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Доведи замовлення до вибору відділення для доставки.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 0,
+        "block_signature": "you don't have permission to access",
+        "headed": "renders",
+        "headed_interactive_elements": 751
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (you don't have permission to access); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "aromateque",
+      "start_url": "https://aromateque.com.ua/",
+      "domain": "beauty",
+      "category": "retail-beauty",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "nishevi-parfumy",
+          "instruction": "Підбери нішеві парфуми з деревними нотами і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "probnyk-zamovyty",
+          "instruction": "Візьми пробник аромату, щоб спочатку спробувати.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "podarunkovyi-nabir",
+          "instruction": "Вибери подарунковий набір для чоловіка до 3000 грн.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Доведи замовлення до вибору способу доставки.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 662
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "decathlon",
+      "start_url": "https://www.decathlon.ua/",
+      "domain": "sport",
+      "category": "retail-sport",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "nabir-dlya-begu",
+          "instruction": "Набери екіпірування для бігу — кросівки, футболку і пляшку для води.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "velosyped-pidibraty",
+          "instruction": "Підбери міський велосипед до 12 000 грн і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "turystychne-sporyadzhennya",
+          "instruction": "Збери спорядження для походу на вихідні — намет, спальник і рюкзак.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "nayavnist-magazyn",
+          "instruction": "Перевір, чи є ці гантелі в магазині Декатлон у Києві.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dytiacha-forma",
+          "instruction": "Підбери дитині форму для футбольної секції.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 683
+      }
+    },
+    {
+      "name": "silpo",
+      "start_url": "https://silpo.ua/",
+      "domain": "grocery",
+      "category": "grocery-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "produkty-dlya-borshchu",
+          "instruction": "Набери продуктів для борщу в Сільпо.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kosyk-na-tyzhden",
+          "instruction": "Набери базовий продуктовий кошик на тиждень для двох.",
+          "difficulty": "hard",
+          "expected_actions": 28,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-vlasnyi-rakhunok",
+          "instruction": "Подивись, що зараз зі знижкою по Власному Рахунку, і візьми молочку.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "dostavka-na-zavtra",
+          "instruction": "Оформи доставку продуктів додому на завтра зранку.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zminyty-magazyn",
+          "instruction": "Переключись на магазин біля мого дому і перевір, чи є там свіжа риба.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "balansy-bonusy",
+          "instruction": "Перевір, скільки в мене балів на Власному Рахунку.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "gotovi-stravy",
+          "instruction": "Замов готових страв з кулінарії на вечерю.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "tort-na-svyato",
+          "instruction": "Вибери торт на день народження і додай його в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 1307
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "atb",
+      "start_url": "https://www.atbmarket.com/",
+      "domain": "grocery",
+      "category": "grocery-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "akcijnyi-kosyk",
+          "instruction": "Набери продуктів з акційного каталогу АТБ приблизно на 500 гривень.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-sogodni",
+          "instruction": "Оформи доставку продуктів АТБ додому на сьогодні.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "magazyn-poruch",
+          "instruction": "Знайди найближчий магазин АТБ і подивись, до котрої він працює.",
+          "difficulty": "easy",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dytiache-kharchuvannya",
+          "instruction": "Набери дитячого харчування і підгузків у кошик.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vse-na-shashlyk",
+          "instruction": "Набери все на шашлик — м'ясо, вугілля і соуси.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "katalog-znyzhok",
+          "instruction": "Подивись, що подешевшало цього тижня в каталозі.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 521
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "varus",
+      "start_url": "https://varus.ua/",
+      "domain": "grocery",
+      "category": "grocery-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "kosyk-snidanok",
+          "instruction": "Набери продуктів на сніданки на тиждень.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "fruty-ovochi",
+          "instruction": "Набери свіжих овочів і фруктів у кошик.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Оформи доставку продуктів на завтра ввечері.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "akciyi-varus",
+          "instruction": "Подивись акції і додай у кошик щось із бакалії зі знижкою.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vlasna-torgova-marka",
+          "instruction": "Набери продуктів власної торгової марки Варус.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 1509
+      }
+    },
+    {
+      "name": "novus",
+      "start_url": "https://novus.zakaz.ua/",
+      "domain": "grocery",
+      "category": "grocery-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "kosyk-vecheri",
+          "instruction": "Набери продуктів на вечерю для сім'ї з трьох.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "syry-i-vyno",
+          "instruction": "Набери сирну тарілку і щось до неї.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-interval",
+          "instruction": "Оформи доставку і вибери зручний інтервал часу.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-katalog",
+          "instruction": "Подивись, що зараз зі знижкою, і візьми щось із молочки.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 182
+      }
+    },
+    {
+      "name": "megamarket",
+      "start_url": "https://megamarket.ua/",
+      "domain": "grocery",
+      "category": "grocery-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "kosyk-produktiv",
+          "instruction": "Набери продуктів додому на кілька днів.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kulinariya-zamovyty",
+          "instruction": "Замов готових страв з кулінарії МегаМаркету.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Оформи доставку продуктів на зручний час.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "akciyi-tyzhnya",
+          "instruction": "Подивись акції тижня і додай щось у кошик.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 738
+      }
+    },
+    {
+      "name": "fora",
+      "start_url": "https://fora.ua/",
+      "domain": "grocery",
+      "category": "grocery-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "shvydkyi-kosyk",
+          "instruction": "Набери продуктів на швидку вечерю.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-fora",
+          "instruction": "Оформи доставку з Фори додому.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-fora",
+          "instruction": "Подивись, що зараз за акцією, і візьми щось у кошик.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "magazyn-poruch",
+          "instruction": "Знайди магазин Фора біля мене і перевір графік роботи.",
+          "difficulty": "easy",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 1273
+      }
+    },
+    {
+      "name": "zakaz",
+      "start_url": "https://zakaz.ua/",
+      "domain": "grocery",
+      "category": "grocery-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "vybraty-supermarket",
+          "instruction": "Вибери супермаркет з доставкою на мою адресу і набери продуктів.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-magazyny",
+          "instruction": "Порівняй, у якому супермаркеті дешевше набрати той самий кошик.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-adresa",
+          "instruction": "Вкажи адресу доставки і подивись, які магазини туди возять.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kosyk-na-tyzhden",
+          "instruction": "Набери продуктовий кошик на тиждень і доведи до оформлення.",
+          "difficulty": "hard",
+          "expected_actions": 26,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 199
+      }
+    },
+    {
+      "name": "okwine",
+      "start_url": "https://okwine.ua/",
+      "domain": "alcohol",
+      "category": "retail-specialty",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "vyno-do-vecheri",
+          "instruction": "Підбери червоне сухе вино до м'ясної вечері до 500 грн.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "podarunok-viski",
+          "instruction": "Вибери віскі в подарунок і додай подарункову упаковку.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "magazyn-poruch",
+          "instruction": "Знайди магазин OKWINE біля мене і перевір, чи є там це вино.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Доведи замовлення до вибору доставки.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 729
+      }
+    },
+    {
+      "name": "glovo",
+      "start_url": "https://glovoapp.com/ua/uk/",
+      "domain": "food-delivery",
+      "category": "food-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "zamovyty-picu",
+          "instruction": "Замов піцу додому з найближчого закладу.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "sushi-na-vecheryu",
+          "instruction": "Замов суші на вечерю на двох.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "produkty-z-supermarketu",
+          "instruction": "Замов продукти з супермаркету через Glovo.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kava-i-desert",
+          "instruction": "Замов каву і десерт з кав'ярні поруч.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-restorany",
+          "instruction": "Подивись, у яких закладах зараз є знижки, і вибери щось на обід.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "aptechne-zamovlennya",
+          "instruction": "Замов ліки з аптеки через доставку.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 93
+      }
+    },
+    {
+      "name": "bolt-food",
+      "start_url": "https://food.bolt.eu/uk-UA/",
+      "domain": "food-delivery",
+      "category": "food-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "obid-zamovyty",
+          "instruction": "Замов обід з ресторану поруч.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "veganske-menyu",
+          "instruction": "Знайди веганські страви в доставці і замов щось із них.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-zaklady",
+          "instruction": "Подивись заклади зі знижками і вибери вечерю.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "samovyviz",
+          "instruction": "Замов їжу на самовивіз, щоб забрати самому.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 49
+      }
+    },
+    {
+      "name": "sushi-master",
+      "start_url": "https://sushi-master.ua/",
+      "domain": "food-delivery",
+      "category": "food-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "sety-rolliv",
+          "instruction": "Замов сет ролів на компанію з чотирьох.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dodaty-napoi",
+          "instruction": "Добери до замовлення напої і соуси.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-adresa",
+          "instruction": "Оформи доставку на мою адресу на конкретний час.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "aktsii-sushi",
+          "instruction": "Подивись акції і візьми сет за вигіднішою ціною.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 68
+      }
+    },
+    {
+      "name": "dominos",
+      "start_url": "https://dominos.ua/",
+      "domain": "food-delivery",
+      "category": "food-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "pica-z-dobavkamy",
+          "instruction": "Замов піцу і додай до неї додаткові інгредієнти.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dvi-pizzy-akciya",
+          "instruction": "Візьми дві піци за акцією і додай напій.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Оформи доставку піци на мою адресу.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "samovyviz-zaklad",
+          "instruction": "Замов піцу на самовивіз із найближчої піцерії.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 60
+      }
+    },
+    {
+      "name": "novaposhta",
+      "start_url": "https://novaposhta.ua/",
+      "domain": "logistics",
+      "category": "logistics-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "vidstezhyty-posylku",
+          "instruction": "Подивись, де зараз моя посилка і коли вона буде у відділенні.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porakhuvaty-vartist",
+          "instruction": "Порахуй, скільки коштуватиме відправити коробку 5 кг з Києва до Львова.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znaity-viddilennya",
+          "instruction": "Знайди відділення Нової пошти біля мене, яке працює у неділю.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "poshtomat-poruch",
+          "instruction": "Знайди найближчий поштомат, куди влізе коробка з взуттям.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "oformyty-vidpravlennya",
+          "instruction": "Оформи відправлення посилки другові в Одесу.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "zminyty-adresu-dostavky",
+          "instruction": "Переадресуй посилку на інше відділення.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "mizhnarodna-dostavka",
+          "instruction": "Дізнайся, як відправити посилку до Польщі і скільки це коштує.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "moyi-vidpravlennya",
+          "instruction": "Перевір мої відправлення в кабінеті і знайди те, що ще не забрали.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 354
+      }
+    },
+    {
+      "name": "ukrposhta",
+      "start_url": "https://www.ukrposhta.ua/ua",
+      "domain": "logistics",
+      "category": "logistics-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "vidstezhyty-lyst",
+          "instruction": "Відстеж, де зараз мій лист за номером.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "tarify-porakhuvaty",
+          "instruction": "Порахуй вартість відправлення бандеролі 2 кг по Україні.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znaity-indeks",
+          "instruction": "Дізнайся поштовий індекс за адресою.",
+          "difficulty": "easy",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "viddilennya-grafik",
+          "instruction": "Знайди відділення Укрпошти біля мене і подивись графік роботи.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "mizhnarodne-vidpravlennya",
+          "instruction": "Дізнайся, як відправити посилку за кордон і що не можна класти.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "peredplata-vydannya",
+          "instruction": "Оформи передплату на газету на пів року.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 316
+      }
+    },
+    {
+      "name": "delivery-auto",
+      "start_url": "https://www.delivery-auto.com/uk-UA",
+      "domain": "logistics",
+      "category": "logistics-delivery",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "vidstezhyty-vantazh",
+          "instruction": "Подивись, де їде мій вантаж.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "rozrahunok-vartosti",
+          "instruction": "Порахуй доставку палети з Дніпра до Харкова.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znaity-sklad",
+          "instruction": "Знайди найближчий склад Делівері і подивись, коли він працює.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "oformyty-zayavku",
+          "instruction": "Залиш заявку на виклик кур'єра.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 461
+      }
+    },
+    {
+      "name": "autoria",
+      "start_url": "https://auto.ria.com/uk/",
+      "domain": "auto-classifieds",
+      "category": "classifieds-auto",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "pidibraty-avto-do-10k",
+          "instruction": "Підбери авто до 10 тисяч доларів на механіці, не старше 2012 року.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "perevirty-vin",
+          "instruction": "Перевір авто за VIN-кодом, перш ніж їхати дивитися.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zberegty-poshuk",
+          "instruction": "Збережи пошук універсалів у Києві, щоб отримувати нові оголошення.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "napysaty-prodavcyu",
+          "instruction": "Напиши продавцю і спитай, чи торг доречний.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "porivnyaty-dva-avto",
+          "instruction": "Порівняй два однакові авто різних років і вибери вигідніше.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "prodaty-avto",
+          "instruction": "Вистав своє авто на продаж.",
+          "difficulty": "hard",
+          "expected_actions": 28,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "serednya-cina-modeli",
+          "instruction": "Дізнайся, скільки зараз коштує ця модель на ринку.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "obrane-avto",
+          "instruction": "Додай кілька авто в обране, щоб показати дружині.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "filtr-elektro",
+          "instruction": "Підбери електромобіль із запасом ходу від 300 км.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 784
+      }
+    },
+    {
+      "name": "domria",
+      "start_url": "https://dom.ria.com/uk/",
+      "domain": "realty-classifieds",
+      "category": "classifieds-realty",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kvartyra-v-orendu",
+          "instruction": "Знайди двокімнатну квартиру в оренду в Києві до 20 тисяч.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kupyty-kvartyru",
+          "instruction": "Підбери квартиру на продаж у новобудові з ремонтом.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zberegty-poshuk",
+          "instruction": "Збережи пошук, щоб не пропустити нові варіанти.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "zvyazatysya-z-vlasnykom",
+          "instruction": "Напиши власнику квартири і спитай, чи можна з тваринами.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "podaty-ogoloshennya",
+          "instruction": "Вистав свою квартиру в оренду.",
+          "difficulty": "hard",
+          "expected_actions": 26,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "perevirena-nerukhomist",
+          "instruction": "Подивись тільки перевірені оголошення без посередників.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "rayony-na-karti",
+          "instruction": "Подивись на карті, які квартири здаються біля метро.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "drag"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 365
+      }
+    },
+    {
+      "name": "lun",
+      "start_url": "https://lun.ua/",
+      "domain": "realty",
+      "category": "classifieds-realty",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "novobudova-vybraty",
+          "instruction": "Підбери новобудову в Києві зі здачею цього року.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "orenda-kvartyry",
+          "instruction": "Знайди квартиру в оренду біля роботи і збережи кілька варіантів.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "karta-rayoniv",
+          "instruction": "Подивись на карті, у якому районі спокійніше жити з дітьми.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "drag"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-zhk",
+          "instruction": "Порівняй два житлові комплекси за ціною і термінами.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zastroynyk-perevirka",
+          "instruction": "Дізнайся, що відомо про забудовника цього ЖК.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt"
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); not retested in a real browser window — human-provisioned lane untried"
+    },
+    {
+      "name": "infocar",
+      "start_url": "https://infocar.ua/",
+      "domain": "auto-catalog",
+      "category": "classifieds-auto",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "cina-novogo-avto",
+          "instruction": "Дізнайся, скільки коштує нова версія цієї моделі в салоні.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-komplektacii",
+          "instruction": "Порівняй дві комплектації одного авто.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znaity-avtosalon",
+          "instruction": "Знайди офіційний автосалон цієї марки у моєму місті.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vidhuky-vlasnykiv",
+          "instruction": "Почитай відгуки власників про цю модель.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 182
+      }
+    },
+    {
+      "name": "workua",
+      "start_url": "https://www.work.ua/",
+      "domain": "jobs",
+      "category": "jobs-recruiting",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "znaity-robotu-kyiv",
+          "instruction": "Знайди роботу бухгалтера в Києві з віддаленим форматом.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vidguknutysya-vakansiya",
+          "instruction": "Відгукнись на вакансію, яка мені підходить.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "stvoryty-rezyume",
+          "instruction": "Створи резюме, щоб роботодавці могли мене знайти.",
+          "difficulty": "hard",
+          "expected_actions": 30,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "zberegty-vakansii",
+          "instruction": "Збережи кілька вакансій, щоб відгукнутися пізніше.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pidpyska-na-vakansii",
+          "instruction": "Підпишись на нові вакансії за моїм пошуком.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "zarplaty-po-profesii",
+          "instruction": "Дізнайся, скільки зараз платять на моїй посаді.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "robota-bez-dosvidu",
+          "instruction": "Знайди роботу для студента без досвіду з гнучким графіком.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pro-kompaniyu",
+          "instruction": "Подивись, що це за компанія і які в неї ще вакансії.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 244
+      }
+    },
+    {
+      "name": "djinni",
+      "start_url": "https://djinni.co/",
+      "domain": "jobs-it",
+      "category": "jobs-recruiting",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "vakansii-python",
+          "instruction": "Знайди вакансії Python-розробника з зарплатою від 3000 доларів.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zapovnyty-profil",
+          "instruction": "Заповни профіль кандидата, щоб мене бачили рекрутери.",
+          "difficulty": "hard",
+          "expected_actions": 26,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "vidpravyty-zayavku",
+          "instruction": "Відгукнись на вакансію і напиши коротке супровідне.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "zberegty-vakansiyu",
+          "instruction": "Збережи вакансію в закладки.",
+          "difficulty": "easy",
+          "expected_actions": 8,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "zarplatna-statystyka",
+          "instruction": "Подивись зарплатну статистику по моїй спеціальності.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 32
+      }
+    },
+    {
+      "name": "jooble",
+      "start_url": "https://ua.jooble.org/",
+      "domain": "jobs",
+      "category": "jobs-recruiting",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "poshuk-vakansii",
+          "instruction": "Знайди вакансії водія в Дніпрі і подивись найсвіжіші.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pidpyska-poshuk",
+          "instruction": "Підпишись на розсилку вакансій за моїм запитом.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "filtr-viddalena",
+          "instruction": "Відбери тільки віддалені вакансії з повною зайнятістю.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 182
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "kabanchik",
+      "start_url": "https://kabanchik.ua/",
+      "domain": "services",
+      "category": "services-marketplace",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "zamovyty-elektryka",
+          "instruction": "Замов електрика, щоб полагодити розетки в квартирі.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "prybyrannya-kvartyry",
+          "instruction": "Замов прибирання двокімнатної квартири на суботу.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znaity-repetytora",
+          "instruction": "Знайди репетитора з математики для восьмикласника.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-vykonavciv",
+          "instruction": "Порівняй кількох майстрів за відгуками і вибери одного.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "perevezennya-mebliv",
+          "instruction": "Замов вантажників, щоб перевезти меблі.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 582
+      }
+    },
+    {
+      "name": "busfor",
+      "start_url": "https://busfor.ua/",
+      "domain": "bus-tickets",
+      "category": "travel-tickets",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kvytok-kyiv-lviv",
+          "instruction": "Купи квиток на автобус Київ — Львів на п'ятницю ввечері.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "mizhnarodnyi-reis",
+          "instruction": "Знайди автобус до Варшави на наступний тиждень.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vybraty-misce",
+          "instruction": "Вибери місце біля вікна в автобусі.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "rozklad-reisiv",
+          "instruction": "Подивись, о котрій ходять автобуси до Одеси.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "povernuty-kvytok",
+          "instruction": "Дізнайся, як повернути куплений квиток.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 0,
+        "block_signature": "captcha-delivery.com"
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (captcha-delivery.com); not retested in a real browser window — human-provisioned lane untried"
+    },
+    {
+      "name": "infobus",
+      "start_url": "https://infobus.eu/ua",
+      "domain": "bus-tickets",
+      "category": "travel-tickets",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kvytok-do-polshchi",
+          "instruction": "Купи квиток на автобус до Польщі на вихідні.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-pereviznykiv",
+          "instruction": "Порівняй рейси різних перевізників і вибери найзручніший.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "bahazh-dodaty",
+          "instruction": "Додай до квитка додатковий багаж.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "rozklad-marshrutu",
+          "instruction": "Подивись розклад автобусів на моєму маршруті.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 275
+      }
+    },
+    {
+      "name": "proizd",
+      "start_url": "https://proizd.ua/",
+      "domain": "train-tickets",
+      "category": "travel-tickets",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kvytok-na-potyag",
+          "instruction": "Купи квиток на потяг Київ — Харків на завтра.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kupe-nyzhnya-polytsya",
+          "instruction": "Візьми нижню полицю в купе на нічний потяг.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "rozklad-potyagiv",
+          "instruction": "Подивись, які потяги ходять до Ужгорода.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "nayavnist-misc",
+          "instruction": "Перевір, чи є ще місця на потяг у п'ятницю.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 81
+      }
+    },
+    {
+      "name": "uz-booking",
+      "start_url": "https://booking.uz.gov.ua/",
+      "domain": "train-tickets",
+      "category": "travel-tickets",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "kvytok-uz",
+          "instruction": "Купи квиток на потяг Укрзалізниці на потрібну дату.",
+          "difficulty": "hard",
+          "expected_actions": 22,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "rozklad-napryamku",
+          "instruction": "Подивись розклад потягів на моєму напрямку.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vybir-miscya",
+          "instruction": "Вибери конкретне місце у вагоні.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "moyi-kvytky",
+          "instruction": "Перевір свої куплені квитки в кабінеті.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 89
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "blablacar",
+      "start_url": "https://www.blablacar.com.ua/",
+      "domain": "ridesharing",
+      "category": "travel-tickets",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "znaity-poputku",
+          "instruction": "Знайди попутку з Києва до Вінниці на суботу.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zabronyuvaty-misce",
+          "instruction": "Забронюй місце в машині у водія з хорошими відгуками.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "zaproponuvaty-poizdku",
+          "instruction": "Запропонуй свою поїздку і вкажи ціну за місце.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "napysaty-vodiyu",
+          "instruction": "Напиши водієві, чи можна з великою валізою.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 200,
+        "interactive_elements": 179,
+        "block_signature": "captcha-delivery.com"
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (captcha-delivery.com); not retested in a real browser window — human-provisioned lane untried"
+    },
+    {
+      "name": "tripmydream",
+      "start_url": "https://www.tripmydream.ua/",
+      "domain": "travel-search",
+      "category": "travel-tickets",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "aviakvytky-poshuk",
+          "instruction": "Знайди дешеві авіаквитки з Києва кудись тепло на тиждень.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pidibraty-tur",
+          "instruction": "Підбери тур на двох у межах бюджету.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "gotel-znaity",
+          "instruction": "Знайди готель на три ночі з хорошим рейтингом.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pidpyska-na-znyzhky",
+          "instruction": "Підпишись на сповіщення про дешеві квитки за моїм напрямком.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 279
+      }
+    },
+    {
+      "name": "multiplex",
+      "start_url": "https://multiplex.ua/",
+      "domain": "cinema",
+      "category": "entertainment-tickets",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "kvytky-na-kino",
+          "instruction": "Купи два квитки в кіно на вечірній сеанс.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vybraty-miscya",
+          "instruction": "Вибери місця в середині залу подалі від екрана.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "rozklad-seansiv",
+          "instruction": "Подивись, що сьогодні йде в кінотеатрі біля мене.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "film-anons",
+          "instruction": "Знайди, коли виходить фільм, на який я чекаю, і подивись трейлер.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-akciyi",
+          "instruction": "Дізнайся, які зараз є акції на квитки.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zamovyty-popkorn",
+          "instruction": "Додай до квитків попкорн і напої.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 194
+      }
+    },
+    {
+      "name": "planetakino",
+      "start_url": "https://planetakino.ua/",
+      "domain": "cinema",
+      "category": "entertainment-tickets",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "kvytky-imax",
+          "instruction": "Купи квитки в IMAX на вихідні.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "rozklad-kinoteatru",
+          "instruction": "Подивись розклад сеансів у Планеті Кіно в моєму місті.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vybraty-miscya",
+          "instruction": "Вибери місця в залі так, щоб сидіти разом.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "filmy-skoro",
+          "instruction": "Подивись, які фільми скоро виходять, і додай нагадування.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 178
+      }
+    },
+    {
+      "name": "karabas",
+      "start_url": "https://karabas.com/",
+      "domain": "events",
+      "category": "entertainment-tickets",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kvytky-na-koncert",
+          "instruction": "Купи квитки на концерт українського гурту.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "afisha-mista",
+          "instruction": "Подивись, що цікавого відбувається в моєму місті цими вихідними.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kvytky-na-vystavu",
+          "instruction": "Знайди квитки на виставу в театрі і вибери місця в партері.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dytiacha-podiya",
+          "instruction": "Знайди дитячу подію на вихідні і візьми квитки.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "povernennya-kvytkiv",
+          "instruction": "Дізнайся, чи можна повернути квитки, якщо не вийде піти.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 1495
+      }
+    },
+    {
+      "name": "concert-ua",
+      "start_url": "https://concert.ua/uk/",
+      "domain": "events",
+      "category": "entertainment-tickets",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "kvytky-na-podiyu",
+          "instruction": "Купи квиток на подію, яка мене цікавить.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "afisha-filtr",
+          "instruction": "Відбери події тільки на цих вихідних у Львові.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "obrane-podii",
+          "instruction": "Додай кілька подій в обране, щоб вирішити потім.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "mistse-v-zali",
+          "instruction": "Вибери місця в залі на схемі і подивись, скільки вони коштують.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 392
+      }
+    },
+    {
+      "name": "apteka911",
+      "start_url": "https://apteka911.ua/",
+      "domain": "pharmacy",
+      "category": "health-pharmacy",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "znaity-liky-poruch",
+          "instruction": "Знайди, у якій аптеці біля мене є цей препарат і за скільки.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zabronyuvaty-liky",
+          "instruction": "Забронюй ліки в аптеці, щоб забрати ввечері.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "analogy-preparatu",
+          "instruction": "Підбери дешевший аналог цього препарату.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "aptechka-nabir",
+          "instruction": "Набери базову домашню аптечку — жарознижувальне, пластирі й антисептик.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-likiv",
+          "instruction": "Оформи доставку ліків додому.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "instrukciya-preparatu",
+          "instruction": "Почитай, як приймати цей препарат і які в нього протипоказання.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "vitaminy-dityam",
+          "instruction": "Підбери вітаміни дитині і додай у кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 547
+      }
+    },
+    {
+      "name": "tabletki",
+      "start_url": "https://tabletki.ua/",
+      "domain": "pharmacy",
+      "category": "health-pharmacy",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "porivnyaty-ciny-aptek",
+          "instruction": "Порівняй, де в місті цей препарат найдешевший.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zabronyuvaty-preparat",
+          "instruction": "Забронюй ліки в найближчій аптеці.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "analog-deshevshe",
+          "instruction": "Знайди аналог препарату з тією ж діючою речовиною.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "aptechna-karta",
+          "instruction": "Подивись на карті, які аптеки працюють цілодобово.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "drag"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 2,
+        "block_signature": "attention required! | cloudflare",
+        "headed": "renders",
+        "headed_interactive_elements": 234
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (attention required! | cloudflare); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "liki24",
+      "start_url": "https://liki24.com/uk/",
+      "domain": "pharmacy",
+      "category": "health-pharmacy",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "dostavka-likiv-dodomu",
+          "instruction": "Замов ліки з доставкою додому на завтра.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znaity-analog",
+          "instruction": "Підбери дешевший аналог і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dytiachi-liky",
+          "instruction": "Набери жарознижувальне і сироп для дитини.",
+          "difficulty": "medium",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "perevirty-nayavnist",
+          "instruction": "Перевір, чи є цей препарат у наявності і коли привезуть.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 2,
+        "block_signature": "attention required! | cloudflare",
+        "headed": "renders",
+        "headed_interactive_elements": 1766
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (attention required! | cloudflare); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "anc",
+      "start_url": "https://anc.ua/",
+      "domain": "pharmacy",
+      "category": "health-pharmacy",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "zabronyuvaty-v-apteci",
+          "instruction": "Забронюй ліки в аптеці АНЦ біля дому.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znyzhky-preparaty",
+          "instruction": "Подивись, які препарати зараз за акцією, і візьми потрібне.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dohlyad-i-gigiena",
+          "instruction": "Набери засоби гігієни і догляду в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "aptechna-karta",
+          "instruction": "Знайди найближчу аптеку АНЦ і подивись графік.",
+          "difficulty": "easy",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 299
+      }
+    },
+    {
+      "name": "docua",
+      "start_url": "https://doc.ua/",
+      "domain": "healthcare",
+      "category": "health-appointments",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "zapysatysya-do-likarya",
+          "instruction": "Запишись до терапевта на найближчий вільний час.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "znaity-likarya-za-vidhukamy",
+          "instruction": "Знайди дитячого стоматолога з хорошими відгуками в Києві.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "analizy-zapysatysya",
+          "instruction": "Запишись здати аналізи в лабораторії поруч.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "vartist-priyomu",
+          "instruction": "Дізнайся, скільки коштує прийом у цього спеціаліста.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "klinika-poruch",
+          "instruction": "Знайди клініку біля мене, яка приймає у вихідні.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 229
+      }
+    },
+    {
+      "name": "helsi",
+      "start_url": "https://helsi.me/",
+      "domain": "healthcare",
+      "category": "health-appointments",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "zapys-do-simeynogo",
+          "instruction": "Запишись до свого сімейного лікаря.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "znaity-medzaklad",
+          "instruction": "Знайди медзаклад біля мене, де є потрібний спеціаліст.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "rozklad-likarya",
+          "instruction": "Подивись, коли приймає лікар, і вибери зручний час.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "moyi-zapysy",
+          "instruction": "Перевір свої записи до лікарів.",
+          "difficulty": "easy",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 273
+      }
+    },
+    {
+      "name": "yakaboo",
+      "start_url": "https://www.yakaboo.ua/",
+      "domain": "books",
+      "category": "retail-books",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "knyga-v-koshyk",
+          "instruction": "Знайди книжку, яку мені порадили, і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pidbirka-dytyachyh",
+          "instruction": "Набери дитячих книжок на подарунок семирічному хлопчику.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "elektronna-knyga",
+          "instruction": "Купи цю книжку в електронному форматі.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "spysok-bazhan",
+          "instruction": "Додай кілька книжок до списку бажань.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "znyzhky-knyzhky",
+          "instruction": "Подивись, які книжки зараз зі знижкою, і візьми щось із українських авторів.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Доведи замовлення книжок до вибору доставки.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 2,
+        "block_signature": "attention required! | cloudflare",
+        "headed": "renders",
+        "headed_interactive_elements": 671
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (attention required! | cloudflare); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "book-ye",
+      "start_url": "https://book-ye.com.ua/",
+      "domain": "books",
+      "category": "retail-books",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "ukrainska-proza",
+          "instruction": "Підбери сучасну українську прозу і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "nayavnist-u-knygarni",
+          "instruction": "Перевір, чи є ця книжка в книгарні «Є» у Львові.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "podarunkovyi-nabir",
+          "instruction": "Збери книжковий подарунок до 800 грн.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "peredzamovlennya",
+          "instruction": "Оформи передзамовлення книжки, яка ще не вийшла.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 3067
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "starylev",
+      "start_url": "https://starylev.com.ua/",
+      "domain": "books",
+      "category": "retail-books",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "knyzhka-vydavnyctva",
+          "instruction": "Знайди новинку Видавництва Старого Лева і поклади в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dytiachi-knyzhky",
+          "instruction": "Підбери дитячі книжки за віком і додай кілька в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-oformyty",
+          "instruction": "Доведи замовлення до вибору доставки й оплати.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "avtor-knyzhky",
+          "instruction": "Подивись, що ще написав цей автор, і вибери одну книжку.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 356
+      }
+    },
+    {
+      "name": "prometheus",
+      "start_url": "https://prometheus.org.ua/",
+      "domain": "education",
+      "category": "education-mooc",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "zapysatysya-na-kurs",
+          "instruction": "Запишись на курс з фінансової грамотності.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "znaity-kurs-po-temi",
+          "instruction": "Знайди курс з української мови і подивись, що в програмі.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "prodovzhyty-navchannya",
+          "instruction": "Продовж навчання з того місця, де я зупинився.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "proyty-test",
+          "instruction": "Пройди тест у курсі і подивись результат.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "sertyfikat-otrymaty",
+          "instruction": "Перевір, чи можна отримати сертифікат за пройдений курс.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 152
+      }
+    },
+    {
+      "name": "edera",
+      "start_url": "https://www.ed-era.com/",
+      "domain": "education",
+      "category": "education-mooc",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "znaity-kurs",
+          "instruction": "Знайди безкоштовний курс для підготовки до НМТ.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zapysatysya-na-kurs",
+          "instruction": "Запишись на курс, який мені підходить.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pidruchnyk-vidkryty",
+          "instruction": "Відкрий онлайн-підручник і знайди потрібну тему.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 179
+      }
+    },
+    {
+      "name": "osvita",
+      "start_url": "https://osvita.ua/",
+      "domain": "education",
+      "category": "education-portal",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "znaity-universytet",
+          "instruction": "Знайди університет, де вчать на дизайнера, і подивись прохідні бали.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "rejtyng-vyshiv",
+          "instruction": "Подивись рейтинг вишів і вибери кілька для вступу.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kalkulyator-ball",
+          "instruction": "Порахуй свій конкурсний бал для вступу.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "kursy-ta-treningy",
+          "instruction": "Знайди курси англійської у своєму місті.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 262
+      }
+    },
+    {
+      "name": "naurok",
+      "start_url": "https://naurok.com.ua/",
+      "domain": "education",
+      "category": "education-teachers",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "znaity-material-uroku",
+          "instruction": "Знайди готову презентацію до уроку біології для 7 класу.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zavantazhyty-rozrobku",
+          "instruction": "Завантаж розробку уроку, яка мені підійшла.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "stvoryty-test",
+          "instruction": "Створи онлайн-тест для учнів із кількох питань.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "zapysatysya-na-vebinar",
+          "instruction": "Запишись на вебінар для вчителів.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 116
+      }
+    },
+    {
+      "name": "vseosvita",
+      "start_url": "https://vseosvita.ua/",
+      "domain": "education",
+      "category": "education-teachers",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "znaity-konspekt",
+          "instruction": "Знайди конспект уроку з математики для 5 класу.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dodaty-v-obrane",
+          "instruction": "Збережи кілька матеріалів, щоб використати потім.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "olimpiada-zapys",
+          "instruction": "Запиши учня на олімпіаду.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "opublikuvaty-material",
+          "instruction": "Опублікуй свою розробку уроку на платформі.",
+          "difficulty": "hard",
+          "expected_actions": 24,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 159
+      }
+    },
+    {
+      "name": "vstup-edbo",
+      "start_url": "https://vstup.edbo.gov.ua/",
+      "domain": "education",
+      "category": "education-portal",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "znaity-specialnist",
+          "instruction": "Знайди, у які виші можна вступити на комп'ютерні науки в Києві.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "konkursni-propozycii",
+          "instruction": "Подивись конкурсні пропозиції університету і бюджетні місця.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-vyshi",
+          "instruction": "Порівняй прохідні бали на одну спеціальність у двох вишах.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 40
+      }
+    },
+    {
+      "name": "diia",
+      "start_url": "https://diia.gov.ua/",
+      "domain": "public-services",
+      "category": "government-services",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "znaity-poslugu",
+          "instruction": "Знайди, як оформити допомогу при народженні дитини.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dovidka-zamovyty",
+          "instruction": "Замов довідку про несудимість онлайн.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "perevirty-status-poslugy",
+          "instruction": "Перевір, на якому етапі моя заявка.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "biznes-reyestraciya",
+          "instruction": "Дізнайся, як зареєструвати ФОП і що для цього треба.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "osvitni-serialy",
+          "instruction": "Знайди освітній серіал про цифрову грамотність і почни дивитися.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 256
+      }
+    },
+    {
+      "name": "datagovua",
+      "start_url": "https://data.gov.ua/",
+      "domain": "open-data",
+      "category": "government-open-data",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "znaity-nabir-danyh",
+          "instruction": "Знайди набір даних про заклади освіти і завантаж його.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "filtr-po-organizacii",
+          "instruction": "Відбери набори даних конкретного міністерства.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "format-danyh",
+          "instruction": "Знайди дані у форматі CSV і подивись, що в них є.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 65
+      }
+    },
+    {
+      "name": "prozorro",
+      "start_url": "https://prozorro.gov.ua/",
+      "domain": "procurement",
+      "category": "government-open-data",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "znaity-tender",
+          "instruction": "Знайди тендери на закупівлю комп'ютерної техніки.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "tender-podrobyci",
+          "instruction": "Подивись, хто виграв цей тендер і за скільки.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "filtr-po-regionu",
+          "instruction": "Відбери тендери у своїй області за останній місяць.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 115
+      }
+    },
+    {
+      "name": "clarity",
+      "start_url": "https://clarity-project.info/",
+      "domain": "company-data",
+      "category": "government-open-data",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "perevirty-kompaniyu",
+          "instruction": "Перевір компанію за назвою — хто власник і чи є борги.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "tendery-kompanii",
+          "instruction": "Подивись, які тендери вигравала ця компанія.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znaity-fop",
+          "instruction": "Знайди ФОП за прізвищем і подивись його дані.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 96
+      }
+    },
+    {
+      "name": "opendatabot",
+      "start_url": "https://opendatabot.ua/",
+      "domain": "company-data",
+      "category": "government-open-data",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "perevirka-kontragenta",
+          "instruction": "Перевір контрагента перед підписанням договору.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "monitoryng-kompanii",
+          "instruction": "Постав компанію на моніторинг, щоб знати про зміни.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "sudovi-spravy",
+          "instruction": "Подивись, чи є в цієї компанії судові справи.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "blocked",
+        "http_status": 403,
+        "interactive_elements": 3,
+        "block_signature": "cf_chl_opt",
+        "headed": "renders",
+        "headed_interactive_elements": 102
+      },
+      "skip_capture": true,
+      "skip_reason": "anti-bot wall for headless (cf_chl_opt); cleared by a real browser window — route via the human-provisioned lane"
+    },
+    {
+      "name": "youcontrol",
+      "start_url": "https://youcontrol.com.ua/",
+      "domain": "company-data",
+      "category": "government-open-data",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "dosye-kompanii",
+          "instruction": "Подивись досьє компанії за кодом ЄДРПОУ.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "perevirty-zasnovnykiv",
+          "instruction": "Дізнайся, хто засновники цієї компанії.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "zberegty-kompaniyu",
+          "instruction": "Додай компанію до списку, щоб стежити за нею.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 246
+      }
+    },
+    {
+      "name": "kyivstar",
+      "start_url": "https://kyivstar.ua/",
+      "domain": "telecom",
+      "category": "telecom-utilities",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "pidibraty-taryf",
+          "instruction": "Підбери тариф з великим інтернетом і безлімітними дзвінками.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-taryfy",
+          "instruction": "Порівняй два тарифи і вибери вигідніший.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "popovnyty-rakhunok",
+          "instruction": "Дізнайся, як поповнити рахунок і які є способи.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znaity-magazyn",
+          "instruction": "Знайди магазин Київстар біля мене.",
+          "difficulty": "easy",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dodatkova-posluga",
+          "instruction": "Підключи додатковий пакет гігабайтів.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 125
+      }
+    },
+    {
+      "name": "vodafone",
+      "start_url": "https://www.vodafone.ua/",
+      "domain": "telecom",
+      "category": "telecom-utilities",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "vybraty-taryf",
+          "instruction": "Вибери тариф для смартфона з великим пакетом інтернету.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "perevirty-pokryttya",
+          "instruction": "Перевір, чи є покриття в моєму селі.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "roumingova-posluga",
+          "instruction": "Дізнайся, скільки коштує роумінг у Польщі.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "magazyn-poruch",
+          "instruction": "Знайди найближчий магазин Vodafone.",
+          "difficulty": "easy",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 54
+      }
+    },
+    {
+      "name": "lifecell",
+      "start_url": "https://www.lifecell.ua/uk/",
+      "domain": "telecom",
+      "category": "telecom-utilities",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "pidibraty-taryf",
+          "instruction": "Підбери недорогий тариф з достатнім інтернетом.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "perenesty-nomer",
+          "instruction": "Дізнайся, як перенести свій номер до lifecell.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dodatkovi-poslugy",
+          "instruction": "Подивись, які є додаткові пакети, і підключи один.",
+          "difficulty": "hard",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 133
+      }
+    },
+    {
+      "name": "uklon",
+      "start_url": "https://uklon.com.ua/",
+      "domain": "ridehailing",
+      "category": "telecom-utilities",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "rozrahunok-poizdky",
+          "instruction": "Порахуй, скільки коштуватиме поїздка через місто.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "klas-avto",
+          "instruction": "Подивись, які є класи авто і чим вони відрізняються.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dostavka-uklon",
+          "instruction": "Дізнайся, як замовити доставку речей через Uklon.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 187
+      }
+    },
+    {
+      "name": "bolt",
+      "start_url": "https://bolt.eu/uk-ua/",
+      "domain": "ridehailing",
+      "category": "telecom-utilities",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "cina-poizdky",
+          "instruction": "Дізнайся приблизну ціну поїздки з дому в аеропорт.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "staty-vodiyem",
+          "instruction": "Подивись, що потрібно, щоб працювати водієм.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "samokaty-orenda",
+          "instruction": "Дізнайся, як орендувати самокат і скільки це коштує.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 220
+      }
+    },
+    {
+      "name": "keycrm",
+      "start_url": "https://keycrm.app/",
+      "domain": "saas-crm",
+      "category": "saas-ukrainian",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "zareyestruvaty-akaunt",
+          "instruction": "Заведи собі акаунт, щоб спробувати систему.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "stvoryty-zamovlennya",
+          "instruction": "Створи тестове замовлення в системі.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "dodaty-tovar",
+          "instruction": "Додай товар до каталогу з ціною і залишком.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "pidklyuchyty-dzherelo",
+          "instruction": "Подивись, як підключити свій інтернет-магазин до CRM.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "taryfy-porivnyaty",
+          "instruction": "Порівняй тарифи і вибери, який підійде малому магазину.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 369
+      }
+    },
+    {
+      "name": "salesdrive",
+      "start_url": "https://salesdrive.me/",
+      "domain": "saas-crm",
+      "category": "saas-ukrainian",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "probnyi-period",
+          "instruction": "Заведи пробний акаунт, щоб подивитися систему зсередини.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "mozhlyvosti-integracii",
+          "instruction": "Дізнайся, з якими службами доставки система інтегрується.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "taryfy-vybraty",
+          "instruction": "Подивись тарифи і порахуй, скільки коштуватиме на трьох користувачів.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 93
+      }
+    },
+    {
+      "name": "horoshop",
+      "start_url": "https://horoshop.ua/",
+      "domain": "saas-ecommerce",
+      "category": "saas-ukrainian",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "demo-magazynu",
+          "instruction": "Замов демо платформи, щоб подивитись, як це працює.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "shablony-dyzaynu",
+          "instruction": "Подивись готові шаблони магазинів і вибери один.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "taryfy-i-cina",
+          "instruction": "Порахуй, скільки коштуватиме магазин на рік.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 415
+      }
+    },
+    {
+      "name": "vchasno",
+      "start_url": "https://vchasno.ua/",
+      "domain": "saas-edoc",
+      "category": "saas-ukrainian",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "zareyestruvatysya",
+          "instruction": "Заведи акаунт для електронного документообігу.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "yak-pidpysaty-dokument",
+          "instruction": "Дізнайся, як підписати документ електронним підписом.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "taryfy-porivnyaty",
+          "instruction": "Порівняй тарифи і вибери підхожий для ФОПа.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 131
+      }
+    },
+    {
+      "name": "weblium",
+      "start_url": "https://weblium.com/",
+      "domain": "saas-website-builder",
+      "category": "saas-ukrainian",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "stvoryty-sait",
+          "instruction": "Створи простий сайт-візитівку зі шаблону.",
+          "difficulty": "hard",
+          "expected_actions": 26,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "zminyty-tekst-na-storinci",
+          "instruction": "Заміни текст на головній сторінці свого сайту.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "dodaty-formu-zvorotnogo",
+          "instruction": "Додай на сайт форму зворотного зв'язку.",
+          "difficulty": "hard",
+          "expected_actions": 20,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "drag"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "shablony-podyvytysya",
+          "instruction": "Подивись шаблони і вибери той, що підійде для кав'ярні.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 245
+      }
+    },
+    {
+      "name": "hostiq",
+      "start_url": "https://hostiq.ua/",
+      "domain": "hosting",
+      "category": "saas-ukrainian",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "pidibraty-hosting",
+          "instruction": "Підбери хостинг для невеликого сайту і додай у кошик.",
+          "difficulty": "medium",
+          "expected_actions": 15,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "perevirty-domen",
+          "instruction": "Перевір, чи вільний потрібний мені домен у зоні .ua.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-taryfy",
+          "instruction": "Порівняй тарифи хостингу і вибери з достатнім місцем.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 258
+      }
+    },
+    {
+      "name": "imena",
+      "start_url": "https://www.imena.ua/",
+      "domain": "domains",
+      "category": "saas-ukrainian",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "perevirty-domen",
+          "instruction": "Перевір, чи вільна доменна назва, і додай її в кошик.",
+          "difficulty": "medium",
+          "expected_actions": 14,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pidibraty-alternatyvy",
+          "instruction": "Підбери альтернативні домени, якщо потрібний зайнятий.",
+          "difficulty": "medium",
+          "expected_actions": 12,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "oformyty-reyestraciyu",
+          "instruction": "Доведи реєстрацію домену до оформлення замовлення.",
+          "difficulty": "hard",
+          "expected_actions": 18,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 575
+      }
+    },
+    {
+      "name": "ukrnet",
+      "start_url": "https://www.ukr.net/",
+      "domain": "portal",
+      "category": "media-portal",
+      "provisioning": "phone",
+      "tasks": [
+        {
+          "id": "nalashtuvaty-strichku",
+          "instruction": "Налаштуй стрічку новин під себе — прибери зайві теми.",
+          "difficulty": "hard",
+          "expected_actions": 16,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": true
+        },
+        {
+          "id": "znaity-novynu-po-temi",
+          "instruction": "Знайди новини за темою, яка мене цікавить.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "pohoda-misto",
+          "instruction": "Подивись погоду у своєму місті на порталі.",
+          "difficulty": "easy",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 447
+      }
+    },
+    {
+      "name": "suspilne",
+      "start_url": "https://suspilne.media/",
+      "domain": "media",
+      "category": "media-portal",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "regionalni-novyny",
+          "instruction": "Переключись на новини свого регіону.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "scroll",
+            "select"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "znaity-temu",
+          "instruction": "Знайди матеріали за темою, що мене цікавить.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "slukhaty-radio",
+          "instruction": "Увімкни радіо Суспільного і подивись, що зараз в ефірі.",
+          "difficulty": "medium",
+          "expected_actions": 10,
+          "action_kinds": [
+            "click",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 575
+      }
+    },
+    {
+      "name": "sinoptik",
+      "start_url": "https://ua.sinoptik.ua/",
+      "domain": "weather",
+      "category": "media-portal",
+      "provisioning": "email_verify",
+      "tasks": [
+        {
+          "id": "pogoda-na-tyzhden",
+          "instruction": "Подивись погоду у своєму місті на тиждень.",
+          "difficulty": "easy",
+          "expected_actions": 9,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "dodaty-misto",
+          "instruction": "Додай ще одне місто, щоб стежити за погодою там.",
+          "difficulty": "medium",
+          "expected_actions": 11,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        },
+        {
+          "id": "porivnyaty-mista",
+          "instruction": "Порівняй, де на вихідних буде тепліше — у Львові чи Одесі.",
+          "difficulty": "medium",
+          "expected_actions": 13,
+          "action_kinds": [
+            "click",
+            "type",
+            "scroll"
+          ],
+          "auth_required": false
+        }
+      ],
+      "probe": {
+        "checked": "2026-08-26",
+        "headless": "renders",
+        "http_status": 200,
+        "interactive_elements": 61
+      }
+    }
+  ]
+}
