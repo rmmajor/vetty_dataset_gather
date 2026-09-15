@@ -1,6 +1,8 @@
+import json
 import logging
 import time
 from datetime import date, timedelta
+from pathlib import Path
 
 from github import Github, GithubException, RateLimitExceededException
 
@@ -8,338 +10,17 @@ from cua.pipeline.registry import RepoRegistry
 
 logger = logging.getLogger(__name__)
 
-# GitHub's Search API returns at most 1000 results per query, so a broad query (sorted by
-# stars) only ever surfaces its top 1000 and the long tail is invisible. To scrape a query
-# exhaustively we partition it into sub-queries that each return <1000 results: first by
-# `stars:` buckets (down to a floor), then — for any bucket still over the cap — recursively
-# by `created:` date (immutable, arbitrarily splittable). See iter_windows().
+# The Search API caps a query at 1000 results, so a broad query is partitioned by `stars:` buckets and then, if still over the cap, recursively by immutable `created:` dates — see iter_windows().
 PER_QUERY_CAP = 1000
 STAR_THRESHOLDS = [5, 10, 20, 50, 100, 200, 500, 1000]
 GITHUB_EPOCH = date(2008, 1, 1)
 DEFAULT_STAR_FLOOR = 5
 
-SEARCH_QUERIES = [
-    # ---- Broad supersets: REMOVED 2026-06-15 ----
-    # `playwright language:{TS,JS,Python}` windowed to EVERY >=5-star playwright repo — the flood
-    # that buried the funnel in un-bootable test suites (agent mode wants bootable APPS, not repos
-    # that merely contain a test). The stage-2 bootable-app gate would reject most of them anyway,
-    # but not discovering them at all saves the discovery API budget + DB bloat + gate probes.
-    # The named-app / topic / bootable-app queries below are the agent-mode yield.
-    # ---- Real product test suites (large projects using Playwright for CI) ----
-    "playwright e2e test language:TypeScript stars:>500",
-    "playwright e2e test language:TypeScript stars:100..500",
-    "playwright e2e test language:TypeScript stars:20..100",
-    "playwright e2e test language:Python stars:>50",
-    "playwright e2e test language:Python stars:10..50",
-    "playwright test language:TypeScript stars:>50",
-    "playwright test language:Python stars:>10",
-    "playwright test language:JavaScript stars:>50",
-    "playwright test language:JavaScript stars:10..100",
-    # ---- Named production applications ----
-    "playwright test grafana",
-    "playwright test supabase",
-    "playwright test cal.com",
-    "playwright test appsmith",
-    "playwright test nocodb",
-    "playwright test tooljet",
-    "playwright test budibase",
-    "playwright test strapi",
-    "playwright test ghost",
-    "playwright test directus",
-    "playwright test payload cms",
-    "playwright test medusa",
-    "playwright test saleor",
-    "playwright test vendure",
-    "playwright test bagisto",
-    "playwright test erpnext",
-    "playwright test odoo",
-    "playwright test twenty crm",
-    "playwright test plane project",
-    "playwright test huly",
-    "playwright test outline wiki",
-    "playwright test documenso",
-    "playwright test formbricks",
-    "playwright test typebot",
-    "playwright test n8n",
-    "playwright test windmill",
-    "playwright test activepieces",
-    "playwright test teable",
-    "playwright test undb",
-    "playwright test baserow",
-    "playwright test grist",
-    "playwright test mattermost",
-    "playwright test rocket.chat",
-    "playwright test element matrix",
-    "playwright test chatwoot",
-    "playwright test zammad",
-    "playwright test freescout",
-    "playwright test rallly",
-    "playwright test cal booking",
-    "playwright test gitlab",
-    "playwright test gitea",
-    "playwright test redmine",
-    "playwright test taiga",
-    "playwright test wekan",
-    "playwright test discourse",
-    "playwright test flarum",
-    "playwright test lemmy",
-    "playwright test postiz",
-    "playwright test wordpress admin",
-    "playwright test magento",
-    "playwright test woocommerce",
-    "playwright test shopify",
-    "playwright test prestashop",
-    "playwright test nextcloud",
-    "playwright test immich",
-    "playwright test paperless",
-    # ---- Complex UI pattern queries ----
-    "playwright test data grid inline edit",
-    "playwright test rich text editor tiptap",
-    "playwright test rich text editor prosemirror",
-    "playwright test kanban board",
-    "playwright test drag drop sortable",
-    "playwright test multi-step wizard form",
-    "playwright test nested navigation sidebar",
-    "playwright test tree view",
-    "playwright test file manager upload",
-    "playwright test calendar scheduling",
-    "playwright test table pagination filter sort",
-    "playwright test dashboard charts widgets",
-    "playwright test spreadsheet cells",
-    "playwright test code editor monaco",
-    "playwright test markdown editor preview",
-    "playwright test image cropper",
-    "playwright test color picker",
-    "playwright test autocomplete combobox",
-    "playwright test date range picker",
-    "playwright test modal dialog nested",
-    "playwright test tabs accordion",
-    "playwright test virtual scroll infinite",
-    "playwright test permission role management",
-    "playwright test workflow builder",
-    "playwright test form builder",
-    "playwright test email template editor",
-    "playwright test notification center",
-    "playwright test command palette",
-    "playwright test keyboard shortcuts",
-    "playwright test context menu right click",
-    "playwright test undo redo",
-    # ---- Domain-specific (real business flows) ----
-    "playwright ecommerce checkout test",
-    "playwright shopping cart test",
-    "playwright login authentication test",
-    "playwright form submission test",
-    "playwright cms admin test",
-    "playwright dashboard test",
-    "playwright crud test",
-    "playwright search filter test",
-    "playwright booking reservation test",
-    "playwright inventory management test",
-    "playwright invoice billing test",
-    "playwright user management test",
-    "playwright settings configuration test",
-    "playwright onboarding wizard test",
-    "playwright import export csv test",
-    "playwright multi-tenant test",
-    "playwright webhook integration test",
-    "playwright api key management test",
-    "playwright audit log test",
-    # ---- Real-product domains (diversity: under-covered verticals) ----
-    "playwright fintech banking app test",
-    "playwright healthcare patient portal test",
-    "playwright project management board test",
-    "playwright analytics reporting dashboard test",
-    "playwright real estate listings test",
-    "playwright travel booking flow test",
-    "playwright social feed messaging test",
-    "playwright video streaming app test",
-    "playwright calendar scheduling app test",
-    "playwright file manager test",
-    # ---- Dependency-based (code search — finds real projects) ----
-    '"@playwright/test" filename:package.json',
-    "playwright filename:requirements.txt",
-    "pytest-playwright filename:requirements.txt",
-    '"@playwright/test" filename:playwright.config',
-    # ---- Topic-based ----
-    "topic:playwright topic:e2e-testing",
-    "topic:playwright topic:test-automation",
-    "topic:playwright-tests",
-    "topic:browser-testing playwright",
-    # ---- Self-hosted apps with Playwright CI ----
-    "playwright ci self-hosted stars:>50",
-    "playwright e2e open source app stars:>100",
-    "playwright integration test SaaS",
-    '"npx playwright test" filename:.github/workflows',
-    # ---- Bootable web apps, TEST-INDEPENDENT ----
-    # Agent capture made the funnel test-agnostic everywhere downstream of here: the boot
-    # gate boots apps (no instrumentation), the proposer grounds in README + live homepage,
-    # the teacher never runs a test. Requiring a test framework at discovery was a vestige
-    # that excluded most of the bootable-app universe. These queries admit app-shaped repos
-    # directly; stage 3's bootable-interactive-app rubric does the judging.
-    "topic:self-hosted topic:webapp",
-    "topic:self-hosted language:TypeScript stars:>30",
-    "topic:self-hosted language:JavaScript stars:>30",
-    "topic:selfhosted web stars:>20",
-    "topic:webapp topic:docker stars:>20",
-    "topic:kanban stars:>20",
-    "topic:dashboard topic:react stars:>30",
-    "topic:admin-dashboard stars:>50",
-    "topic:project-management language:TypeScript stars:>30",
-    "topic:inventory-management web stars:>10",
-    "topic:crm language:TypeScript stars:>30",
-    "topic:notes-app stars:>20",
-    "topic:todo topic:fullstack stars:>20",
-    "web app docker-compose dev language:TypeScript stars:50..500",
-    "dashboard app language:TypeScript stars:30..300 in:description",
-    '"npm run dev" filename:docker-compose.yml stars:>20',
-]
-
-# Selenium is a second trajectory source. The query set mirrors the Playwright one
-# category-for-category, but every query is constrained to language:Python because the
-# Selenium instrumentation (conftest monkey-patching) only works for Python/pytest —
-# non-Python Selenium repos would just be rejected at stage 4. Framework detection
-# (Playwright vs Selenium) happens later in stage 4.
-SELENIUM_SEARCH_QUERIES = [
-    # ---- Broad supersets: REMOVED 2026-06-15 (same flood reason as the Playwright supersets) ----
-    # `selenium language:Python` windowed to every >=5-star Python Selenium repo — almost all pure
-    # test suites, which agent mode (Node-app boot) rejects. The named/topic queries below remain.
-    # ---- Real product test suites (Python star tiers) ----
-    "selenium e2e test language:Python stars:>500",
-    "selenium e2e test language:Python stars:100..500",
-    "selenium e2e test language:Python stars:20..100",
-    "selenium e2e test language:Python stars:>50",
-    "selenium e2e test language:Python stars:10..50",
-    "selenium test language:Python stars:>50",
-    "selenium test language:Python stars:>10",
-    "selenium webdriver test language:Python stars:>50",
-    "pytest selenium language:Python stars:>10",
-    # ---- Named production applications ----
-    "selenium test grafana language:Python",
-    "selenium test supabase language:Python",
-    "selenium test cal.com language:Python",
-    "selenium test appsmith language:Python",
-    "selenium test nocodb language:Python",
-    "selenium test tooljet language:Python",
-    "selenium test budibase language:Python",
-    "selenium test strapi language:Python",
-    "selenium test ghost language:Python",
-    "selenium test directus language:Python",
-    "selenium test payload cms language:Python",
-    "selenium test medusa language:Python",
-    "selenium test saleor language:Python",
-    "selenium test vendure language:Python",
-    "selenium test bagisto language:Python",
-    "selenium test erpnext language:Python",
-    "selenium test odoo language:Python",
-    "selenium test twenty crm language:Python",
-    "selenium test plane project language:Python",
-    "selenium test huly language:Python",
-    "selenium test outline wiki language:Python",
-    "selenium test documenso language:Python",
-    "selenium test formbricks language:Python",
-    "selenium test typebot language:Python",
-    "selenium test n8n language:Python",
-    "selenium test windmill language:Python",
-    "selenium test activepieces language:Python",
-    "selenium test teable language:Python",
-    "selenium test undb language:Python",
-    "selenium test baserow language:Python",
-    "selenium test grist language:Python",
-    "selenium test mattermost language:Python",
-    "selenium test rocket.chat language:Python",
-    "selenium test element matrix language:Python",
-    "selenium test chatwoot language:Python",
-    "selenium test zammad language:Python",
-    "selenium test freescout language:Python",
-    "selenium test rallly language:Python",
-    "selenium test cal booking language:Python",
-    "selenium test gitlab language:Python",
-    "selenium test gitea language:Python",
-    "selenium test redmine language:Python",
-    "selenium test taiga language:Python",
-    "selenium test wekan language:Python",
-    "selenium test discourse language:Python",
-    "selenium test flarum language:Python",
-    "selenium test lemmy language:Python",
-    "selenium test postiz language:Python",
-    "selenium test wordpress admin language:Python",
-    "selenium test magento language:Python",
-    "selenium test woocommerce language:Python",
-    "selenium test shopify language:Python",
-    "selenium test prestashop language:Python",
-    "selenium test nextcloud language:Python",
-    "selenium test immich language:Python",
-    "selenium test paperless language:Python",
-    # ---- Complex UI pattern queries ----
-    "selenium test data grid inline edit language:Python",
-    "selenium test rich text editor tiptap language:Python",
-    "selenium test rich text editor prosemirror language:Python",
-    "selenium test kanban board language:Python",
-    "selenium test drag drop sortable language:Python",
-    "selenium test multi-step wizard form language:Python",
-    "selenium test nested navigation sidebar language:Python",
-    "selenium test tree view language:Python",
-    "selenium test file manager upload language:Python",
-    "selenium test calendar scheduling language:Python",
-    "selenium test table pagination filter sort language:Python",
-    "selenium test dashboard charts widgets language:Python",
-    "selenium test spreadsheet cells language:Python",
-    "selenium test code editor monaco language:Python",
-    "selenium test markdown editor preview language:Python",
-    "selenium test image cropper language:Python",
-    "selenium test color picker language:Python",
-    "selenium test autocomplete combobox language:Python",
-    "selenium test date range picker language:Python",
-    "selenium test modal dialog nested language:Python",
-    "selenium test tabs accordion language:Python",
-    "selenium test virtual scroll infinite language:Python",
-    "selenium test permission role management language:Python",
-    "selenium test workflow builder language:Python",
-    "selenium test form builder language:Python",
-    "selenium test email template editor language:Python",
-    "selenium test notification center language:Python",
-    "selenium test command palette language:Python",
-    "selenium test keyboard shortcuts language:Python",
-    "selenium test context menu right click language:Python",
-    "selenium test undo redo language:Python",
-    # ---- Domain-specific (real business flows) ----
-    "selenium ecommerce checkout test language:Python",
-    "selenium shopping cart test language:Python",
-    "selenium login authentication test language:Python",
-    "selenium form submission test language:Python",
-    "selenium cms admin test language:Python",
-    "selenium dashboard test language:Python",
-    "selenium crud test language:Python",
-    "selenium search filter test language:Python",
-    "selenium booking reservation test language:Python",
-    "selenium inventory management test language:Python",
-    "selenium invoice billing test language:Python",
-    "selenium user management test language:Python",
-    "selenium settings configuration test language:Python",
-    "selenium onboarding wizard test language:Python",
-    "selenium import export csv test language:Python",
-    "selenium multi-tenant test language:Python",
-    "selenium webhook integration test language:Python",
-    "selenium api key management test language:Python",
-    "selenium audit log test language:Python",
-    # ---- Dependency-based (code search — finds real projects) ----
-    "selenium filename:requirements.txt language:Python",
-    "pytest-selenium filename:requirements.txt",
-    "selenium webdriver filename:requirements.txt language:Python",
-    '"from selenium import webdriver" language:Python',
-    # ---- Topic-based ----
-    "topic:selenium topic:e2e-testing",
-    "topic:selenium topic:test-automation",
-    "topic:selenium-webdriver",
-    "topic:browser-testing selenium",
-    # ---- Self-hosted apps with Selenium CI ----
-    "selenium ci self-hosted language:Python stars:>50",
-    "selenium e2e open source app language:Python stars:>50",
-    "selenium integration test SaaS language:Python",
-    '"pytest" "selenium" filename:.github/workflows',
-]
-
-SEARCH_QUERIES = SEARCH_QUERIES + SELENIUM_SEARCH_QUERIES
+QUERIES_PATH = Path(__file__).with_name("github_queries.json")
+_QUERY_SETS = json.loads(QUERIES_PATH.read_text())
+# Selenium queries mirror the Playwright set category-for-category but are pinned to language:Python, the only Selenium instrumentation that exists.
+SELENIUM_SEARCH_QUERIES = _QUERY_SETS["selenium"]
+SEARCH_QUERIES = _QUERY_SETS["playwright"] + SELENIUM_SEARCH_QUERIES
 
 
 def wait_for_rate_limit(github_client):
@@ -394,19 +75,13 @@ def extract_repo_data(repo, source_query):
 
 
 def _search_total(github_client, query: str) -> int:
-    """Match count for a query (one search request). NOTE: PyGithub's `.totalCount` is
-    clamped to the 1000-result ceiling — a query with 1,415 true matches reports 1000.
-    That's exactly what we need: a reported count of `PER_QUERY_CAP` means "at least the
-    cap, so this window must be split further", while anything below it is the true,
-    fully-retrievable count. Callers therefore split when `>= PER_QUERY_CAP`."""
+    """Match count for a query; PyGithub clamps `.totalCount` to the 1000 ceiling, so exactly PER_QUERY_CAP means "split further"."""
     wait_for_rate_limit(github_client)
     return github_client.search_repositories(query=query).totalCount
 
 
 def _star_bucket_fragments(star_floor: int) -> list[str]:
-    """Descending `stars:` range fragments down to star_floor, e.g. floor 5 ->
-    ['stars:>=1000', 'stars:500..999', ..., 'stars:5..9']. High-star buckets first so the
-    most valuable repos are discovered earliest."""
+    """Descending `stars:` fragments down to star_floor (['stars:>=1000', 'stars:500..999', ..., 'stars:5..9']), highest first."""
     thresholds = sorted({t for t in STAR_THRESHOLDS if t > star_floor} | {star_floor})
     fragments = []
     for idx, low in enumerate(thresholds):
@@ -419,9 +94,7 @@ def _star_bucket_fragments(star_floor: int) -> list[str]:
 
 
 def _created_windows(github_client, query: str, low: date, high: date):
-    """Yield `query` augmented with `created:` date sub-windows that each match <=cap
-    repos, recursively bisecting [low, high]. created_at is immutable, so windows are
-    stable across re-runs and any interval can be split until it fits under the cap."""
+    """Yield `query` plus `created:` sub-windows under the cap, bisecting [low, high]; created_at is immutable, so windows are stable across re-runs."""
     windowed = f"{query} created:{low.isoformat()}..{high.isoformat()}"
     total = _search_total(github_client, windowed)
     if total < PER_QUERY_CAP:
@@ -439,25 +112,18 @@ def _created_windows(github_client, query: str, low: date, high: date):
 
 
 def iter_windows(github_client, base_query: str, star_floor: int = DEFAULT_STAR_FLOOR):
-    """Yield bounded sub-queries of base_query that each match <=cap repos, so paginating
-    all of them covers every match (down to star_floor when base_query doesn't already
-    constrain stars). Queries already under the cap are yielded unchanged after one probe."""
+    """Yield sub-queries of base_query each under the cap, so paginating all of them covers every match down to star_floor."""
     today = date.today()
 
     if "stars:" in base_query:
-        # Query carries its own star constraint (e.g. dependency/topic tiers) — only split
-        # by date if it still reaches the cap.
+        # Query carries its own star constraint (dependency/topic tiers), so only a date split can still be needed.
         if _search_total(github_client, base_query) < PER_QUERY_CAP:
             yield base_query
         else:
             yield from _created_windows(github_client, base_query, GITHUB_EPOCH, today)
         return
 
-    # Most queries match well under the cap once the star floor is applied. Probe the
-    # combined floor query once: if it fits, a single window covers it — avoiding a probe
-    # per star bucket (the dominant source of search requests, hence rate-limit sleeps).
-    # `{base} stars:>=floor` is exactly the union of the per-bucket queries, so coverage
-    # is identical; we only fall back to bucket + date splitting when it exceeds the cap.
+    # `{base} stars:>=floor` is exactly the union of the per-bucket queries, so one probe of it replaces a probe per bucket at identical coverage.
     floor_query = f"{base_query} stars:>={star_floor}"
     floor_total = _search_total(github_client, floor_query)
     if floor_total == 0:
@@ -478,9 +144,7 @@ def iter_windows(github_client, base_query: str, star_floor: int = DEFAULT_STAR_
 
 
 def _paginate_window(github_client, registry, window_query: str, source_query: str) -> tuple[int, int]:
-    """Page through one bounded window, recording every repo. Returns (found, new).
-    source_query is the original base query (not the windowed form) so the registry's
-    query-priority heuristic and framework attribution stay meaningful."""
+    """Page through one bounded window recording every repo, returning (found, new); source_query is the base query, not the windowed form."""
     found = 0
     new = 0
     wait_for_rate_limit(github_client)

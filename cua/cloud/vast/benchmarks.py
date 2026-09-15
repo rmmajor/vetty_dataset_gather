@@ -1,15 +1,4 @@
-"""Benchmark registry — adding an eval is a DATA entry, not a code change.
-
-A `Benchmark` declares everything the lifecycle needs to run one evaluation on a rented box:
-which harness files must land there, what to pip-install, the command to run, where results
-are written, and how to summarize them locally. Add a new eval by appending one `Benchmark`
-to `BENCHMARKS`; `jobs.py`, `lifecycle.py`, and the CLI never change (same registry idiom as
-`PROVIDERS` / cua.eval.screenspot's `PREDICTOR_BACKENDS`).
-
-`source_ref` materializes a harness that isn't on this branch yet from a git ref — ScreenSpot
-lives on the PR #12 branch until it merges, so the benchmark stays runnable without vendoring
-a copy of the file here.
-"""
+"""Benchmark registry: one `Benchmark` entry declares the files, deps, command, results dir and summarizer of an eval that runs on a rented box."""
 
 import json
 import logging
@@ -80,7 +69,15 @@ BENCHMARKS: dict = {
         files=(
             "cua/__init__.py",
             "cua/eval/__init__.py",
-            "cua/eval/screenspot.py",
+            "cua/eval/screenspot/__init__.py",
+            "cua/eval/screenspot/__main__.py",
+            "cua/eval/screenspot/cli.py",
+            "cua/eval/screenspot/config.py",
+            "cua/eval/screenspot/dataset.py",
+            "cua/eval/screenspot/predictors.py",
+            "cua/eval/screenspot/report.py",
+            "cua/eval/screenspot/scoring.py",
+            "cua/eval/screenspot/smoke.py",
             "cua/prompt/__init__.py",
             "cua/prompt/coords.py",
             "cua/prompt/effects.py",
@@ -94,19 +91,10 @@ BENCHMARKS: dict = {
         requirements=".[eval]",
         results_dir="eval_results",
         command="python -m cua.eval.screenspot run --models-config {models_yaml} --output-dir {results_dir}",
-        # NOT the harness default (os-copilot/ScreenSpot-v2): that repo is raw JSON + an image
-        # zip with no `test` split and no image column, so load_dataset() cannot read it.
-        # This fork ships real parquet with a 1272-row `test` split and a proper image column.
+        # NOT the harness default (os-copilot/ScreenSpot-v2), which load_dataset() cannot read at all.
         dataset="rootsautomation/ScreenSpot",
         split="test",
-        # Pinned explicitly even though they now match the harness defaults: these are properties
-        # of THIS dataset, and getting one wrong reports a confident wrong number rather than
-        # crashing. Both were verified against real predictions, not assumed.
-        #   xyxy            this mirror stores (x1,y1,x2,y2), not xywh.
-        #   bbox-normalized its bbox is 0-1, NOT pixels. Without it every target collapses to a
-        #                   sub-pixel box at the origin -> 0% accuracy regardless of the model.
-        # coord_space is deliberately NOT set here: it is a property of the MODEL, not the
-        # dataset, and is written per-spec by jobs.EvalJob (cfg.eval_coord_space).
+        # Properties of THIS mirror, pinned because getting one wrong reports a confident wrong number (coord_space is per MODEL, so EvalJob writes it).
         extra_args=("--bbox-format", "xyxy", "--bbox-normalized"),
         summarize=_summarize_screenspot,
     ),
@@ -120,12 +108,7 @@ def build_benchmark(name: str) -> Benchmark:
 
 
 def materialize(benchmark: Benchmark, staging: Path) -> list:
-    """[(local_path, remote_relpath)] for every harness file; missing ones fetched from `source_ref`.
-
-    The remote path keeps the DECLARED relative path, not the basename — a harness that imports a
-    package (cua.eval.screenspot -> cua.prompt.format -> cua.trajectory.actions) needs that package to land
-    at `cua/trajectory/actions.py` on the box, not flattened next to it.
-    """
+    """[(local_path, remote_relpath)] for every harness file, keeping each DECLARED relative path so an imported package lands as a package."""
     staging.mkdir(parents=True, exist_ok=True)
     pairs = []
     for name in benchmark.files:

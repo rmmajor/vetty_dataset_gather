@@ -7,8 +7,8 @@ import threading
 import time
 from pathlib import Path
 
-from cua.pipeline.agent_capture import verify_trajectory
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from cua.pipeline.teacher import verify_trajectory
 from cua.settings import RL
 
 logger = logging.getLogger(__name__)

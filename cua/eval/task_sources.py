@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
-from cua.pipeline.stage6_generate import _safe_task_id
 from cua.settings import EVAL, env_values
+from cua.trajectory.schema import safe_task_id
 
 logger = logging.getLogger(__name__)
 
@@ -311,7 +311,7 @@ def load_held_out_tasks(source: TaskSource, cfg: TaskLoadConfig) -> tuple[list[E
         if unique_id in seen:
             continue
         seen.add(unique_id)
-        if (traj_dir / f"site_{site['name']}" / f"task_{_safe_task_id(task_id)}").exists():
+        if (traj_dir / f"site_{site['name']}" / f"task_{safe_task_id(task_id)}").exists():
             captured += 1
             continue
         start_url = _normalize_url(site["start_url"])
@@ -411,4 +411,4 @@ def load_tasks_from_file(path: Path, limit: int | None = None) -> list[EvalTask]
 
 
 def episode_dir_name(task: EvalTask) -> str:
-    return f"task_{_safe_task_id(task.task_id)}"
+    return f"task_{safe_task_id(task.task_id)}"

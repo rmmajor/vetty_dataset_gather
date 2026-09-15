@@ -28,13 +28,12 @@ hf_cache = modal.Volume.from_name("cua-hf-cache", create_if_missing=True)
 vllm_cache = modal.Volume.from_name("cua-vllm-cache", create_if_missing=True)
 outputs = modal.Volume.from_name("cua-outputs", create_if_missing=True)
 
+# Pinned to CUDA 12.4.1 + vLLM 0.28.0: this lane only serves, so it shares the SFT lane's CUDA, not the RL column's 12.8.
 image = (
     modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
     .uv_pip_install("vllm==0.28.0", "huggingface_hub[hf_transfer]")
-    # Baked at deploy time: module-level env reads re-run in the container, where these are unset.
-    # APP_NAME and EVAL_SECRET are read again when the container re-imports this module, so they
-    # are baked too — otherwise a renamed lane would resolve differently there than at deploy.
+    # Baked at deploy time because the container re-imports this module, where every read above would resolve differently.
     .env(
         {
             "HF_HUB_ENABLE_HF_TRANSFER": "1",

@@ -5,7 +5,7 @@ import random
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from cua.pipeline.corpus_audit import trainability
+from cua.pipeline.corpus.audit import trainability
 from cua.prompt.coords import to_model_action
 from cua.prompt.effects import downscale_prev, effect_is_no_change, step_effects
 from cua.prompt.format import SYSTEM_PROMPT, build_step_messages, build_step_observation, history_entries_for_step
@@ -32,7 +32,7 @@ from cua.sft.health import (
     scan_examples_for_secrets,
 )
 from cua.trajectory.actions import format_action_for_training, normalize_trajectory_actions
-from cua.trajectory.io import iter_trajectory_dirs
+from cua.trajectory.io import CAPTURE_META_FILE, METADATA_FILE, TRAJECTORY_FILE, iter_trajectory_dirs, load_json
 
 REPORT_COUNTERS = (
     "trajectories",
@@ -164,24 +164,15 @@ def convert_trajectory_to_examples(
     return examples, stats
 
 
-def _read_json(path):
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
 def _load_trajectory(traj_dir, skipped):
     """A trajectory being written by a concurrent capture parses as truncated JSON; skipping it saves the run."""
     try:
-        trajectory = json.loads((traj_dir / "trajectory.json").read_text())
+        trajectory = json.loads((traj_dir / TRAJECTORY_FILE).read_text())
     except (json.JSONDecodeError, OSError) as e:
         print(f"SKIP unreadable {traj_dir}: {e}")
         skipped["unreadable"] += 1
         return None
-    return trajectory, _read_json(traj_dir / "metadata.json"), _read_json(traj_dir / "capture_meta.json")
+    return trajectory, load_json(traj_dir / METADATA_FILE), load_json(traj_dir / CAPTURE_META_FILE)
 
 
 def _is_meandering(metadata, capture_meta):
@@ -267,7 +258,7 @@ def ingest_corpus(input_path, output_path, include_replay, meandering_mode, excl
         trajectory, metadata, capture_meta = loaded
         source = metadata.get("capture_source") or ("path_a" if "mind2web" in traj_dir.name else "replay")
 
-        # The ONE trainability gate, shared with cua.pipeline.corpus_audit so they cannot drift.
+        # The ONE trainability gate, shared with cua.pipeline.corpus.audit so they cannot drift.
         skip_reason = trainability(trajectory, metadata, capture_meta, traj_dir.name, include_replay=include_replay)
         if skip_reason:
             result.skipped[skip_reason] += 1

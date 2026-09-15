@@ -90,7 +90,7 @@ site's split group so validation stays leak-free.
   page content (year dropdowns, UUIDs) and public test cards (4111…/4242…) used in test-env checkout
   tasks — all false positives. Arbitrary leaked passwords and usernames cannot be pattern-matched
   without false positives; the structural guarantee (the driver records placeholders, asserted by
-  `driver_smoke`) is their primary defense. Operator identities come from `cua.pipeline.operator_pii`.
+  `cua.pipeline.smoke.driver`) is their primary defense. Operator identities come from `cua.pipeline.operator_pii`.
 * **Corpus health (exit 2).** Thresholds in `corpus_health.json`: the regressions that produced
   sft-v1's gaps refuse to ship again. `--skip-health-gate` reports violations and writes anyway, for
   experiments only.
@@ -100,7 +100,7 @@ Booking.com-style regression at convert time instead of in a JSON file weeks lat
 
 ### Trainability is one shared function
 
-`cua.pipeline.corpus_audit.trainability` is the ONE gate, used by convert, `make audit-corpus` and
+`cua.pipeline.corpus.audit.trainability` is the ONE gate, used by convert, `make audit-corpus` and
 every corpus pass, so they cannot drift. A trajectory being written by a concurrent capture parses as
 truncated JSON; convert skips it rather than letting one half-written file kill a multi-hour training
 run after the GPU is already up.
@@ -208,6 +208,11 @@ default comfortably exceeds the longest legitimate call (a multi-turn teacher se
 observed) while staying finite. `CLAUDE_CLI_PATH` overrides the CLI the SDK spawns; unset, the
 system `claude` is preferred because the SDK's bundled CLI can lag the system install and has
 wedged on spawn, and `None` falls back to the SDK's own discovery.
+`think_generator._session_think_turn` is the third SDK path, outside `run_query` and `run_agent` and so
+outside that cap: it drives a persistent `ClaudeSDKClient` session because the one-shot `query()` the
+other two wrap cannot carry a conversation across turns, and the session exists precisely so the fixed
+harness context is cache-READ on turns 2+ rather than cache-CREATED per step (it feeds the rate-limit
+and cost trackers itself).
 `DRIVER_PLAYWRIGHT_CORE_VERSION` is pinned to the sandbox image's Playwright base (the browsers in
 `/ms-playwright` are that revision); 1.55 (>= 1.51) is what lets `storageState({indexedDB: true})`
 carry IndexedDB-based auth for SPA apps whose session cookies alone do not authenticate a reused
@@ -238,3 +243,98 @@ be served while training continues.
 
 `PERSONA_EMAIL_DOMAIN` and `PERSONA_PHONE_PREFIX` default to RFC 2606's reserved `example.com` and
 NANPA's reserved 555-01xx range: neither can reach a real person.
+
+## Remote training
+
+Two lanes rent GPUs: Modal (`cua/cloud/modal/`, primary for SFT and GRPO) and Vast.ai
+(`cua/cloud/vast/`, provider-pluggable). Neither holds any training logic — both run the unchanged
+`python -m cua.sft` / `python -m cua.rl.train` entry points, so a recipe change is never duplicated
+in the cloud layer.
+
+### The Modal lanes and their shared module
+
+`cua/cloud/modal/common.py` holds what the lanes genuinely share: the `cua-trajectories`,
+`cua-outputs` and `cua-hf-cache` volume handles, the mount points, `with_package` (the env plus the
+first-party file layers that must close an image, because `add_local_*` admits no pip step after
+it), and `commit_periodically`, which commits a volume from a daemon thread so per-epoch
+checkpoints survive a crashed or preempted run instead of landing only when the run ends. The
+`cua/` layer's `ignore=` list is `PACKAGE_IGNORE`, derived from the same source as the Vast upload
+filter below, so neither lane bakes or ships a gitignored file.
+
+`train.py` and `grpo.py` import it; `serve.py` and `merge.py` deliberately do not. Modal is invoked
+in *script* mode (`modal run cua/cloud/modal/serve.py`), where the file is imported as a top-level
+module, so Modal mounts only that single file
+(`modal/_utils/function_utils.py:get_entrypoint_mount`, `FunctionInfoType.FILE`) and the container
+re-imports it with no `cua` package on the path. `train.py` and `grpo.py` are importable there only
+because their images mount `cua/` at `/workspace` with `PYTHONPATH` set; the vLLM serve image and
+the merge image do not, so those two read their configuration from the environment (each read is
+marked) and keep their own volume handles. That is also why every env value they resolve at deploy
+time is baked into the image: the container re-import would otherwise resolve it differently.
+
+The CUDA and torch pins differ per lane on purpose: `train.py` is CUDA 12.4.1 + torch 2.6.0
+(the stack ms-swift 4.x was proven on, with torchvision 0.21.0 as its paired release), `grpo.py` is
+CUDA 12.8.1 because the vLLM/torch column resolved in `constraints/rl-modal.txt` needs it,
+`serve.py` is CUDA 12.4.1 + vLLM 0.28.0, and `merge.py` is a plain `debian_slim` with ms-swift
+4.5.2 and unpinned torch, since it only runs `swift export` once per adapter. A GRPO adapter is
+trained over MERGED SFT weights and cannot be stacked on the raw base, which is what `merge.py`
+exists for.
+
+### Teardown is five layers, not one
+
+`cua/cloud/vast/lifecycle.py` rents a GPU, waits for SSH, uploads, launches the job detached under
+a `STATUS` sentinel, polls, pulls results and ALWAYS destroys. The guarantee is defence in depth,
+because a leaked instance bills until someone notices: a `try/finally` around the whole run;
+SIGINT/SIGTERM/SIGHUP traps; a `destroy` that polls until the provider confirms the box is gone; a
+crash-safe state file (`state.py`) plus the `cleanup` orphan sweep for hard kills; and an
+independent max-runtime watchdog thread. Teardown never outranks ownership: the account is shared
+with colleagues and with concurrent agent sessions, so `_owned_by_us` refuses any instance the
+provider reports under a foreign label, and a record whose owning pid is still alive belongs to a
+sibling run and is left alone.
+
+Two failure modes are only visible in the details. The ssh client can fail to return for a detached
+child even with `setsid` and all three descriptors redirected, so its exit code proves nothing and
+the `STATUS` file the job writes is the only evidence it started. And a rejected Vast create can
+still allocate a billing contract (observed 2026-09-01: `success=False` alongside
+`new_contract=49552760`), which is why `provision` destroys the contract before raising — nothing
+later in the lifecycle can, since the caller never received an instance.
+
+### What is uploaded to a rented box
+
+`jobs.upload_package` ships the whole installable package rather than a hand-listed manifest,
+because a manifest goes stale the moment someone adds an import and the failure lands 45 minutes
+and one rental later as an ImportError on the box. The box is shared hardware, so the upload is
+filtered instead, and both lanes read that filter from one place, `cua/cloud/ignore.py`:
+`gitignored_excludes` asks git for every ignored path under `cua/`
+(`git ls-files --others --ignored --exclude-standard cua/`, bounded by a timeout) and turns each
+into an rsync `--exclude`, anchored with a leading `/` because the transfer root is the `cua`
+directory itself; `modal_ignore_patterns` re-shapes the same list as dockerignore-style globs for
+`add_local_dir(ignore=…)`. Bytecode is excluded by pattern (`__pycache__`, `*.pyc`) rather than
+enumerated, and the two gitignored site registries are excluded unconditionally — a git listing
+names only files that exist right now, while `public_sites_human.json` is written by the
+provisioning lane afterwards. That is what keeps `public_sites_human.json` /
+`public_sites_guarded.json` — burner-account and guarded-task data — out of a rented machine and out
+of an image layer alike. `download` is unfiltered: results come back whole.
+
+The remote commands carry two hard-won preambles. The CUDA images' python is externally managed
+(PEP 668) and ships no `ensurepip`, so pip needs `--break-system-packages` and `uv` builds the venv
+over the image's site-packages, keeping its torch/CUDA while sidestepping Debian's unremovable
+apt-installed pins. And the plain HuggingFace downloader pulls the 19GB base at ~0.5MB/s on a
+rented box — hours of paid GPU before the first step — while `hf_transfer` is now silently ignored
+by `huggingface_hub`, so the acceleration knob is `HF_XET_HIGH_PERFORMANCE`. The train job installs
+Modal's proven train stack explicitly and never `.[pipeline]`, which clobbered torch and left
+transformers half-imported.
+
+### The CLI and the no-cost self-test
+
+`python -m cua.cloud.vast <job>` (installed as `cua-remote`) exposes `train`, `run` (an alias whose
+`--smoke` is the self-test), `eval`, `grpo`, `serve`, `search` (a dry run that prints the cheapest
+allowed offer and rents nothing), `cleanup` (`--all` also takes boxes a sibling run may be using)
+and `release` (hands a recorded box to `cleanup` by writing the pid-null sentinel). `--provider` and
+`--benchmark` choices come straight from the `PROVIDERS` / `BENCHMARKS` registries, so a new
+provider or eval appears in the CLI with no change there.
+
+`lifecycle.SMOKE_CASES` is that self-test: each case is one `_smoke_*` function taking the shared
+scratch environment, and adding one is a function plus a registry entry. Its central assertions are
+teardown (every job type destroys its instance on the happy, exception and SIGINT paths), the
+ownership gate, the pid-based sparing of live siblings, and that the package upload carries its
+excludes. It rents nothing and runs as `make test-remote`.

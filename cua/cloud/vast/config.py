@@ -1,10 +1,4 @@
-"""Remote-training configuration: one dataclass plus a layered loader.
-
-Precedence, lowest to highest: dataclass defaults < remote_train.yaml < env vars < CLI
-flags. This mirrors `cua.sft.swift_launch.train_model`'s "load YAML, then apply non-None
-overrides" pattern. Secrets are never read from the YAML — only from env
-(`VAST_API_KEY`, `HF_TOKEN`), like `GITHUB_TOKEN`/`OPENAI_API_KEY` elsewhere in the repo.
-"""
+"""One remote-job config dataclass plus its layered loader: dataclass defaults < remote_train.yaml < env < CLI, secrets from env only."""
 
 import os
 from dataclasses import dataclass, field
@@ -22,8 +16,7 @@ class RemoteTrainConfig:
 
     gpu_name: str = ""
     min_vram_gb: int = 48
-    # bfloat16 (config.yaml torch_dtype) needs Ampere sm_80+; Turing cards (compute_cap 750,
-    # e.g. Quadro RTX 8000) are cheap but cannot run the workload. 800 = A100/A6000-class floor.
+    # bfloat16 needs Ampere sm_80+, so cheap Turing cards (compute_cap 750) cannot run the workload.
     min_compute_cap: int = 800
     # Host driver's max supported CUDA; 0 disables the filter. Images built on newer CUDA fail at engine init on older drivers.
     min_cuda_vers: float = 0.0
@@ -50,8 +43,7 @@ class RemoteTrainConfig:
     val_split: float = 0.1
     # Local trainer checkpoint dir (optimizer+scheduler+RNG) to continue from instead of step 0.
     resume_from: str = ""
-    # On SIGINT/SIGTERM/SIGHUP leave the box running so the detached job finishes; recover with
-    # `remote_train cleanup`. Off by default: an orphan bills until someone destroys it.
+    # On a signal, leave the detached job running and recover the box with `cleanup`; off by default, an orphan bills.
     keep_on_signal: bool = False
 
     benchmark: str = "screenspot"

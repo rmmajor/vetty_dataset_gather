@@ -1,9 +1,4 @@
-"""Provider-pluggable remote training (Vast.ai first).
-
-Importing this package registers every provider into `base.PROVIDERS`, so `build_provider`
-and the `--provider` CLI choices are populated. Add a provider by writing a module that
-appends its factory to `PROVIDERS` and importing it here.
-"""
+"""Provider-pluggable remote jobs: importing this package registers every provider into `base.PROVIDERS`, which populates `--provider`."""
 
 from cua.cloud.vast import (
     mock,  # noqa: F401 — registers "mock"

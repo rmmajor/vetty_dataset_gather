@@ -1,4 +1,4 @@
-# Model specs evaluated by `cua/eval/screenspot.py` / `make eval-screenspot`.
+# Model specs evaluated by `cua/eval/screenspot/` / `make eval-screenspot`.
 # Each spec is evaluated on the same dataset and the results are recorded side by side
 # (eval_results/<label>.json + comparison.json).
 #

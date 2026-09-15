@@ -4,7 +4,8 @@ Owns everything about getting an agent-drivable browser running inside a sandbox
 
   * `install_driver` writes the driver into the container and ensures playwright-core exists
     (baked /opt/driver from the image when available, runtime npm install otherwise);
-  * `start_driver` daemonizes it and waits for its port;
+  * `start_driver` daemonizes it and waits for its port, and `boot_driver` / `boot_driver_sync`
+    are the whole install + start + client triple every lane needs;
   * `start_app` boots the repo's own app daemonized (unlike `app_runner.wrap_test_command`,
     which scopes the app to a single shell, agent capture needs the app alive across many
     independent exec calls);
@@ -13,6 +14,7 @@ Owns everything about getting an agent-drivable browser running inside a sandbox
 Used by stage 5 (boot-gate probe) and stage 6 (agent capture).
 """
 
+import asyncio
 import logging
 import re
 import shlex
@@ -70,6 +72,25 @@ def start_driver(sandbox, env: dict | None = None, port: int = PIPELINE.driver_p
     if not sandbox.wait_for_port(port, PIPELINE.driver_ready_timeout):
         log_tail, _, _ = sandbox.exec_command(f"tail -20 {log_path}")
         raise DriverError(f"driver did not open port {port}; log tail: {log_tail[-400:]}")
+
+
+async def run_blocking(fn, *args):
+    """Run a blocking sandbox/driver call off the event loop so concurrent workers overlap."""
+    return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
+
+
+def boot_driver_sync(sandbox, env: dict | None = None) -> "DriverClient":
+    """Install + start the browser driver in a live sandbox and return a client for it."""
+    install_driver(sandbox)
+    start_driver(sandbox, env)
+    return DriverClient(sandbox)
+
+
+async def boot_driver(sandbox, env: dict | None = None) -> "DriverClient":
+    """`boot_driver_sync` for an async caller, each blocking leg through the executor."""
+    await run_blocking(install_driver, sandbox)
+    await run_blocking(start_driver, sandbox, env)
+    return DriverClient(sandbox)
 
 
 def _wait_for_http_port(sandbox, preferred: int, timeout: int) -> int | None:

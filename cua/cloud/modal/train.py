@@ -6,27 +6,31 @@ import pathlib
 
 import modal
 
+from cua.cloud.modal.common import (
+    CODE_ROOT,
+    DATA_MOUNT,
+    HF_CACHE_MOUNT,
+    OUT_MOUNT,
+    REPO_ROOT,
+    commit_periodically,
+    configs,
+    hf_cache,
+    outputs,
+    trajectories,
+    with_package,
+)
 from cua.settings import CLOUD, MAX_PIXELS_DEFAULT
 from cua.sft.recipe import convert_command, train_command
 
 APP_NAME = "cua-train"
 
-DATA_MOUNT = "/data"
-OUT_MOUNT = "/outputs"
-HF_CACHE_MOUNT = "/root/.cache/huggingface"
-CODE_ROOT = "/workspace"
-# Every config*.yaml ships in the image so --config picks one per run without a rebuild.
-CONFIG_DIR = pathlib.Path(__file__).resolve().parents[3]
-CONFIGS = sorted(path.name for path in CONFIG_DIR.glob("config*.yaml"))
+CONFIGS = configs()
 DEFAULT_CONFIG = "config.yaml"
 
 app = modal.App(APP_NAME)
 
-trajectories = modal.Volume.from_name("cua-trajectories", create_if_missing=True)
-outputs = modal.Volume.from_name("cua-outputs", create_if_missing=True)
-hf_cache = modal.Volume.from_name("cua-hf-cache", create_if_missing=True)
-
-image = (
+# Pinned to CUDA 12.4.1 + torch 2.6.0: the SFT stack ms-swift 4.x was proven on.
+image = with_package(
     modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
     .apt_install("git")
@@ -47,18 +51,11 @@ image = (
         "Pillow",
         "tqdm",
         "huggingface_hub[hf_transfer]",
-    )
-    # Xet backend ignores the hub/ cache this volume already holds and re-pulls 18GB; keep the old path.
+    ),
     # USE_HF sends ms-swift to HuggingFace instead of its ModelScope default, whose cache is not mounted.
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "USE_HF": "1", "PYTHONPATH": CODE_ROOT})
-    .add_local_file("corpus_health.json", f"{CODE_ROOT}/corpus_health.json")
-    .add_local_file("pyproject.toml", f"{CODE_ROOT}/pyproject.toml")
-    .add_local_dir("constraints", f"{CODE_ROOT}/constraints")
-    # Reached through PYTHONPATH, not an editable install: add_local_* must close an image, so no pip step can follow it.
-    .add_local_dir("cua", f"{CODE_ROOT}/cua", ignore=["**/__pycache__", "**/*.pyc"])
+    env={"USE_HF": "1"},
+    files=("corpus_health.json", *(REPO_ROOT / name for name in CONFIGS)),
 )
-for _name in CONFIGS:
-    image = image.add_local_file(str(CONFIG_DIR / _name), f"{CODE_ROOT}/{_name}")
 
 
 @app.function(
@@ -82,7 +79,6 @@ def train(
     import shutil
     import subprocess
     import sys
-    import threading
     from pathlib import Path
 
     import yaml
@@ -100,7 +96,7 @@ def train(
     dataset_dir = run_dir / "training_data"
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    audit = [sys.executable, "-m", "cua.pipeline.corpus_audit", str(traj_dir)]
+    audit = [sys.executable, "-m", "cua.pipeline.corpus.audit", str(traj_dir)]
     if skip_audit:
         print("skip_audit: corpus gates NOT enforced (timing smoke only)", flush=True)
     else:
@@ -130,14 +126,7 @@ def train(
     train_cmd = train_command(sys.executable, run_config, dataset_file, extra_train_args or [])
     print("+", " ".join(train_cmd), flush=True)
 
-    stop = threading.Event()
-
-    def commit_periodically():
-        while not stop.wait(CLOUD.train_commit_every_s):
-            outputs.commit()
-
-    committer = threading.Thread(target=commit_periodically, daemon=True)
-    committer.start()
+    stop = commit_periodically(outputs, CLOUD.train_commit_every_s)
     try:
         subprocess.run(train_cmd, cwd=CODE_ROOT, check=True)
     finally:

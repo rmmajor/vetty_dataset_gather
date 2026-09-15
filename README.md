@@ -10,7 +10,7 @@ Three trajectory **producers** write one trajectory format, and one converter/tr
 
 1. **Path A — GPT-5.4 CUA distillation** (`cua/path_a/recorder.py`): GPT-5.4's `computer` tool works through Mind2Web tasks in a Playwright browser (~$0.55/trajectory). Contributes a handful of trainable trajectories today.
 2. **Path B — QA repo funnel** (`cua/pipeline/orchestrator.py`, stages 1–7): finds bootable web-app repos on GitHub, boots them in Docker sandboxes, and has a Claude teacher pursue proposed user tasks through a coordinate-recording browser driver. Only a fraction of a percent of discovered repos yield trajectories, so this is a minority of the corpus.
-3. **Public-site capture lanes** (`cua/pipeline/public_capture.py` and siblings): the same teacher, driver and verifier pointed at curated registries of real public sites — login-free, search goals, and login-gated behind burner accounts. The bulk of the trainable corpus.
+3. **Public-site capture lanes** (`cua/pipeline/lanes/`, all sharing `lanes/capture_lane.py`): the same teacher, driver and verifier pointed at curated registries of real public sites — login-free, search goals, and login-gated behind burner accounts. The bulk of the trainable corpus.
 
 The data philosophy is real third-party sites over self-hosted seeded clones
 (`docs/decisions/real-sites-vs-controlled-backends.md`). The trajectory schema in
@@ -61,7 +61,7 @@ Options:
 ## Path B: QA Repo Pipeline
 
 Finds bootable web-app repos on GitHub, boots each one inside a Docker sandbox, and has a Claude
-teacher (`agent_capture.py`) pursue user tasks proposed by `task_proposer.py` through an in-container
+teacher (`teacher/`) pursue user tasks proposed by `task_proposer.py` through an in-container
 browser driver that records a screenshot and bbox-centre coordinates per action. A post-run verifier
 judges the final and sampled mid screenshots against the goal; only verified trajectories get
 `success: true`. Output lands in `trajectories/repo_<owner>_<repo>/task_*/` in the same format as every
@@ -203,18 +203,16 @@ registry.reset_rejected(stage=5)  # re-queue repos rejected at the boot gate
     ├── sandbox.py / remote_sandbox.py   # Docker container / ssh sandbox (same driver either way)
     ├── stage1_discover.py … stage7_think.py
     ├── bootable_gate.py             # Stage-2 no-LLM gate
-    ├── agent_capture.py             # Teacher loop + verify_trajectory (shared by every lane and eval)
+    ├── teacher/                     # Teacher policy + tools + run loop + verify_trajectory (shared by every lane and eval)
     ├── task_proposer.py             # Proposes user tasks for a booted app / site
     ├── driver_session.py            # Host wrapper for the in-container browser driver
     ├── sdk_runner.py / agent_runner.py  # The two Claude SDK chokepoints (timeout, ledger)
     ├── llm_config.py                # Model per purpose; no model strings elsewhere
-    ├── public_capture.py, capture_logingated.py, provision_human.py, probe_*.py   # public-site lanes
+    ├── lanes/                              # public-site lanes over one shared capture_lane.py
     ├── public_sites*.json           # Site registries (see below)
     ├── app_secrets.py, persona.py, mailtm.py, mail_service.py, operator_pii.py   # burner identities + inboxes
     ├── safety_watchdog.py           # Guarded-mode ApprovalPolicy
-    ├── corpus_audit.py, polish_pass.py, outcome_relabel.py, relabel_recoverable.py,
-    │   wall_supervision.py, instruction_style_pass.py   # corpus passes
-    ├── student_eval.py / eval_task_sources.py / site_blocks.py   # Online-Mind2Web + held-out student eval
+    ├── corpus/                             # corpus passes over one shared pass_base.py + audit.py gate
     ├── think_generator.py           # Replay-mode thought generation
     ├── notifier.py                  # Telegram reports
     ├── dashboard/                   # Read-only Streamlit corpus explorer (make dashboard)
@@ -227,6 +225,7 @@ registry.reset_rejected(stage=5)  # re-queue repos rejected at the boot gate
     ├── Dockerfile.sandbox           # Playwright base image + driver at /opt/driver
     ├── Dockerfile.sandbox-selenium  # amd64 Selenium image (replay only)
     └── docker-compose.sandbox.yml
+    cua/eval/student/, cua/eval/task_sources.py   # Online-Mind2Web + held-out student eval
     cua/rl/, cua/rl/train.py, rl_config*.yaml   # GRPO harness (frozen; see docs/decisions/grpo-v3-results.md)
     cua/cloud/vast/                    # Vast.ai lane (train / eval / grpo / serve)
     cua/cloud/modal/train.py, cua/cloud/modal/serve.py, cua/cloud/modal/merge.py, cua/cloud/modal/grpo.py   # Modal lane
@@ -235,18 +234,18 @@ registry.reset_rejected(stage=5)  # re-queue repos rejected at the boot gate
 
 ## Public-site capture lanes
 
-The bulk of the corpus. Every lane reuses `agent_capture.run_teacher_task` + `verify_trajectory` and
+The bulk of the corpus. Every lane reuses `teacher.run_teacher_task` + `verify_trajectory` and
 writes `trajectories/site_<name>/task_*/` with no registry row, so stage 7 never visits them —
 `make polish-pass` is their finalize. Capture attempts are recorded per task, so re-runs resume.
 
     make capture-public [PUBLIC_SITES=a,b] [PUBLIC_MAX_TASKS=N]   # public_sites.json, login-free
     make capture-search [SITES=a,b]                               # public_sites_search.json, search goals
     make capture-qa-verify [SITES=a,b]                            # public_sites_qa_verify.json, act → save → re-check
-    python -m cua.pipeline.capture_logingated [--sites a,b] [--parallel K]   # self-registers a mail.tm burner
+    python -m cua.pipeline.lanes.logingated [--sites a,b] [--parallel K]   # self-registers a mail.tm burner
     make provision-human SITE=<name>                              # headed host browser, a human clears the wall once
     make capture-human [SITES=a,b]                                # replay saved sessions from public_sites_human.json
-    python -m cua.pipeline.probe_capturable [--dry-run]          # HTTP WAF pre-filter → needs_human
-    python -m cua.pipeline.probe_sandbox <config.json> [--mark]  # render-probe through the sandbox browser
+    python -m cua.pipeline.lanes.probe_capturable [--dry-run]    # HTTP WAF pre-filter → needs_human
+    python -m cua.pipeline.lanes.probe_sandbox <cfg> [--mark]    # render-probe through the sandbox browser
 
 Site registries share one schema (`name`, `start_url`, `tasks[{id, instruction, difficulty,
 expected_actions, action_kinds, auth_required}]`, optional `provisioning`, `task_style`,
@@ -287,7 +286,7 @@ a 640x360 thumbnail of the previous screen plus the current 1280x720 screenshot,
 20-entry text history with harness-computed effect annotations → `<think>` + action lines. Coordinates
 are emitted in `normalized_1000` (the base model's native convention); `trajectory.json` stays in
 pixels. A grounding slice (click steps whose recorded target has role, name and bbox) is added up to
-`--grounding-share`. Trainability is one shared function (`corpus_audit.trainability`): agent
+`--grounding-share`. Trainability is one shared function (`corpus.audit.trainability`): agent
 trajectories need the verifier's `success: true`, `metadata.excluded_reason` always skips. Every convert
 prints a corpus health report and enforces the thresholds in `corpus_health.json`; a violation refuses
 the dataset.
@@ -379,7 +378,7 @@ that must not be quoted (the row stays, `notes` says why).
 | corpus-v1 | all | sft_examples | 5477 |  | done | One example per recorded step of a trainable trajectory. |
 | corpus-v1 | all | trainable_trajectories | 504 |  | done | Verified successes that became SFT examples. |
 | corpus-v1 | all | trajectories | 1068 |  | done |  |
-| corpus-v2 | all | trajectories | 1299 |  | done | Task directories recorded when the general corpus reached the 738 trainable trajectories cua-sft-v2 trained on, at 02:50 on 2026-08-31. Derived, not recorded at the time: the admission gate of cua.pipeline.corpus_audit.is_trainable was re-run over every task directory in trajectories/, each dated by the earliest of its screenshots, which the later relabel and polish passes never rewrote. Replaying that history gives the corpus as it stood at any past moment. The same reconstruction reaches 1395 recorded at the QA freeze against the 1398 registered, and reproduces the four withheld counts as 461, 76, 45 and 31 against 461, 76, 46 and 31, so the figure is accurate to a handful of directories rather than exact. |
+| corpus-v2 | all | trajectories | 1299 |  | done | Task directories recorded when the general corpus reached the 738 trainable trajectories cua-sft-v2 trained on, at 02:50 on 2026-08-31. Derived, not recorded at the time: the admission gate of cua.pipeline.corpus.audit.is_trainable was re-run over every task directory in trajectories/, each dated by the earliest of its screenshots, which the later relabel and polish passes never rewrote. Replaying that history gives the corpus as it stood at any past moment. The same reconstruction reaches 1395 recorded at the QA freeze against the 1398 registered, and reproduces the four withheld counts as 461, 76, 45 and 31 against 461, 76, 46 and 31, so the figure is accurate to a handful of directories rather than exact. |
 
 #### `online-mind2web` — osunlp/Online-Mind2Web@eacad896a84d
 
@@ -749,9 +748,10 @@ _348 registry rows: 290 done, 1 pending, 3 planned, 54 superseded. Percentages c
 
 ## Evaluation (ScreenSpot grounding)
 
-`cua/eval/screenspot.py` measures **grounding** — given a screenshot and an instruction, the
+`cua/eval/screenspot/` measures **grounding** — given a screenshot and an instruction, the
 model predicts a click point and we score whether it lands inside the target bounding box.
 It isolates *pointing* from task completion; the student eval below measures the latter.
+`docs/evaluation.md` documents the harness and its scoring conventions.
 
     make install-eval          # eval deps (GPU box)
     make eval-screenspot       # local `swift infer` lane over eval_models.yaml -> eval_results/
@@ -910,13 +910,13 @@ examples blew the 4096 limit, which is why convert emits one example per step.
 > [`eval_archive/README.md`](eval_archive/README.md). Later rounds live in the registry block above,
 > with their `artifacts_path` per row.
 
-`cua/eval/student.py` runs a served model through real browser episodes and reports whether
+`cua/eval/student/` runs a served model through real browser episodes and reports whether
 a checkpoint beat the base. **The deliverable is a delta**: every run takes `--label`, writes
 `eval_runs/<run_id>/{report.md,results.json,run.log,episodes/}`, and `compare` renders the before/after
 table plus a harness-parity check that flags any field two runs disagree on. Prompts are built by the
 same functions convert uses, the action grammar is tolerant (canonical form is its own metric),
 environment failures (`site_blocked`, `unreachable`, `harness_error`) are excluded from the scored
-denominator and reported separately, and the judge is `agent_capture.verify_trajectory` on Sonnet.
+denominator and reported separately, and the judge is `teacher.verify_trajectory` on Sonnet.
 `student_eval judge <run_dir>` scores a run recorded with `--no-judge` afterwards, without a GPU.
 
 ### First-round baseline (2026-08-26, 50 tasks)

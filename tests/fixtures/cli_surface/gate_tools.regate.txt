@@ -1,0 +1,7 @@
+positional arguments:
+  sample        Repos sampled per bucket (default: 400)
+
+options:
+  -h, --help    show this help message and exit
+  --apply       Probe every backlog repo and reject the non-bootable
+  --aggressive  Also drop soft rejects, not only hard ones

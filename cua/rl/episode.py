@@ -7,10 +7,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
+from cua.eval.student.blocks import detect_block
 from cua.pipeline.driver_session import DriverError
 from cua.pipeline.instrumentation import RESULTS_DIR
-from cua.pipeline.site_blocks import detect_block
-from cua.pipeline.stage6_generate import _safe_task_id
 from cua.prompt.format import history_entries_for_step
 from cua.rl import checks
 from cua.rl.actions import decode_step
@@ -18,6 +17,7 @@ from cua.rl.executor import control_index, to_sequence_payload, validate_actions
 from cua.rl.judge import cached_verdict, judge_success
 from cua.rl.observation import build_observation
 from cua.rl.rewards import compute_reward
+from cua.trajectory.schema import safe_task_id
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class Episode:
         self.task, self.worker, self.slot, self.k, self.ctx, self.cfg = task, worker, slot, sample_k, run_ctx, cfg
         self.client = worker.client(slot)
         self.episode_id = f"{task['task_id']}__i{run_ctx.iteration:03d}__k{sample_k:02d}"
-        self.safe_id = _safe_task_id(self.episode_id)
+        self.safe_id = safe_task_id(self.episode_id)
         self.host_dir = Path(run_ctx.out_root) / f"iter_{run_ctx.iteration:03d}" / task["task_id"] / f"k{sample_k:02d}"
         self.traj_dir = self.host_dir / f"task_{self.safe_id}"
         # Compared by registrable domain, so www./m./checkout. subdomain hops are not refused.

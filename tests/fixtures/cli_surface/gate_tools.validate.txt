@@ -1,0 +1,8 @@
+positional arguments:
+  sample                Rejected repos sampled (default: 150)
+
+options:
+  -h, --help            show this help message and exit
+  --trajectories TRAJECTORIES
+                        Corpus scanned for each repo's capture_source
+                        (default: trajectories)

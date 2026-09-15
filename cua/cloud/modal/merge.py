@@ -1,7 +1,6 @@
 """Merge a LoRA adapter into its base on Modal, so a second adapter can be served on top of it."""
 
-# A GRPO adapter is trained over MERGED SFT weights and cannot be stacked on the raw base; this
-# writes the merged checkpoint to the shared HF cache once, and modal_serve then serves it by path.
+# A GRPO adapter is trained over MERGED SFT weights and cannot be stacked on the raw base, so serve.py serves this by path.
 import os
 import pathlib
 import subprocess
@@ -21,6 +20,7 @@ outputs = modal.Volume.from_name("cua-outputs", create_if_missing=True)
 
 app = modal.App("cua-merge")
 
+# No CUDA pin and an unpinned torch: this runs `swift export` once per adapter, never a training or serving stack.
 image = (
     modal.Image.debian_slim(python_version="3.12")
     # qwen_vl_utils is a hard requirement of ms-swift's Qwen-VL template, not an optional extra.

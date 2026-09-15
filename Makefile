@@ -115,26 +115,29 @@ build-sandbox-selenium: ## Build Selenium sandbox image (linux/amd64; needed for
 test-sandbox: build-sandbox ## Test sandbox container lifecycle
 	python -m cua.pipeline.sandbox --test
 
-test-driver: ## Scripted (no-LLM) smoke test of the agent-capture browser driver
-	python -m cua.pipeline.driver_smoke
+test-driver: ## Docker-only scripted (no-LLM) smoke test of the agent-capture browser driver
+	python -m cua.pipeline.smoke.driver
+
+test-auth-flow: ## Docker-only scripted (no-LLM) check of auth-flow capture: mail stack, masked secrets, session reuse
+	python -m cua.pipeline.smoke.auth_flow
 
 test-verify-gate: ## Scripted (no-LLM/Docker/network) check that the capture success gate never rejects a verified trajectory
-	python -m cua.pipeline.verify_gate_smoke
+	python -m cua.pipeline.smoke.verify_gate
 
 test-qa-verify: ## Scripted (no-LLM/Docker/network) check that the qa_verify style reaches proposer, teacher, verifier, metadata and config
-	python -m cua.pipeline.qa_verify_smoke
+	python -m cua.pipeline.smoke.qa_verify
 
 test-rl-unit: ## Unit tests for the RL rollout harness (no Docker, no LLM)
 	python -m tests
 
 test-corpus-audit: ## Scripted (no-LLM/Docker/network) check of the shared trainability gate and audit checks
-	python -m cua.pipeline.corpus_audit_smoke
+	python -m cua.pipeline.smoke.corpus_audit
 
 test-instruction-style: ## Scripted (no-LLM/Docker/network) check of the instruction-style pass
-	python -m cua.pipeline.instruction_style_smoke
+	python -m cua.pipeline.smoke.instruction_style
 
 test-outcome-relabel: ## Scripted (no-LLM/Docker/network) check of the outcome-relabel pass
-	python -m cua.pipeline.outcome_relabel_smoke
+	python -m cua.pipeline.smoke.outcome_relabel
 
 fixtures-build: ## Rewrite the behaviour-regression fixtures under tests/fixtures/
 	python -m tests.regression_fixtures build
@@ -167,42 +170,42 @@ rl-eval: ## E3 student eval on held-out tasks (RL_ENDPOINT, RL_MODEL, RL_BASELIN
 	python -m cua.rl.eval --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) $(if $(RL_BASELINE),--baseline $(RL_BASELINE)) $(RL_ARGS)
 
 audit-corpus: ## Mechanical quality gate over trainable trajectories (exit 1 on defects)
-	python -m cua.pipeline.corpus_audit trajectories/
+	python -m cua.pipeline.corpus.audit trajectories/
 
 capture-public: ## Teacher capture on curated public sites (real-web diversity lane)
-	python -m cua.pipeline.public_capture $(if $(PUBLIC_SITES),--sites $(PUBLIC_SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
+	python -m cua.pipeline.lanes.public $(if $(PUBLIC_SITES),--sites $(PUBLIC_SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
 
 provision-human: ## Human-in-the-loop: headed browser to sign a burner into one login-gated SITE (SITE=name)
 	$(call require,SITE,set SITE=<site-name> (a site from the indie/logingated config))
 	python -m playwright install chromium
-	python -m cua.pipeline.provision_human $(SITE) $(if $(SRC_CONFIG),--config $(SRC_CONFIG))
+	python -m cua.pipeline.lanes.provision_human $(SITE) $(if $(SRC_CONFIG),--config $(SRC_CONFIG))
 
 capture-human: ## Capture tasks on human-provisioned sites (reuses saved sessions; SITES=a,b optional)
-	python -m cua.pipeline.public_capture --config cua/pipeline/sites/public_sites_human.json --no-propose $(if $(SITES),--sites $(SITES))
+	python -m cua.pipeline.lanes.public --config cua/pipeline/sites/public_sites_human.json --no-propose $(if $(SITES),--sites $(SITES))
 
 capture-search: ## Search-goal capture lane (SFT v2 gap 2: constrained info-seeking on mainstream sites)
-	python -m cua.pipeline.public_capture --config cua/pipeline/sites/public_sites_search.json $(if $(SITES),--sites $(SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
+	python -m cua.pipeline.lanes.public --config cua/pipeline/sites/public_sites_search.json $(if $(SITES),--sites $(SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
 
 capture-qa-verify: ## QA-verification capture lane (SFT v3: test-objective tasks that change, re-open/reload, then confirm on signed-in sites)
-	python -m cua.pipeline.public_capture --config cua/pipeline/sites/public_sites_qa_verify.json $(if $(SITES),--sites $(SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
+	python -m cua.pipeline.lanes.public --config cua/pipeline/sites/public_sites_qa_verify.json $(if $(SITES),--sites $(SITES)) $(if $(PUBLIC_MAX_TASKS),--max-tasks $(PUBLIC_MAX_TASKS))
 
 polish-pass: ## Stage-7 thought polish for trainable teacher_raw dirs outside the registry flow
-	python -m cua.pipeline.polish_pass trajectories/
+	python -m cua.pipeline.corpus.polish trajectories/
 
 outcome-relabel: ## Outcome-checked thought relabel over trainable dirs (dry-run by default; APPLY=1 to write; ESTIMATE=1 to price)
-	python -m cua.pipeline.outcome_relabel trajectories/ $(if $(APPLY),--apply,--dry-run) $(if $(ESTIMATE),--estimate,)
+	python -m cua.pipeline.corpus.outcome_relabel trajectories/ $(if $(APPLY),--apply,--dry-run) $(if $(ESTIMATE),--estimate,)
 
 relabel-recoverable: ## Audited hindsight-relabel pass (dry-run by default; APPLY=1 to write)
-	python -m cua.pipeline.relabel_recoverable trajectories/ $(if $(APPLY),--apply,--dry-run)
+	python -m cua.pipeline.corpus.relabel_recoverable trajectories/ $(if $(APPLY),--apply,--dry-run)
 
 wall-demos: ## Synthesize terminal wall supervision from blocked runs (dry-run by default; APPLY=1)
-	python -m cua.pipeline.wall_supervision trajectories/ $(if $(APPLY),--apply,--dry-run)
+	python -m cua.pipeline.corpus.wall_supervision trajectories/ $(if $(APPLY),--apply,--dry-run)
 
 instruction-style: ## Rewrite procedure-flavored instructions into goals (dry-run by default; APPLY=1)
-	python -m cua.pipeline.instruction_style_pass trajectories/ $(if $(APPLY),--apply,--dry-run)
+	python -m cua.pipeline.corpus.instruction_style trajectories/ $(if $(APPLY),--apply,--dry-run)
 
 instruction-qa-voice: ## Restate re-checking trajectories' instructions as QA test objectives (dry-run previews old -> new; APPLY=1 writes)
-	python -m cua.pipeline.instruction_style_pass trajectories/ --mode qa_verify $(if $(APPLY),--apply,--dry-run)
+	python -m cua.pipeline.corpus.instruction_style trajectories/ --mode qa_verify $(if $(APPLY),--apply,--dry-run)
 
 pipeline-discover: ## Stage 1: Discover QA repos on GitHub
 	$(call require,GITHUB_TOKEN)
@@ -237,6 +240,12 @@ pipeline-think: ## Stage 7: fill <think> blocks for captured repos (decoupled fr
 
 pipeline-status: ## Show pipeline registry stats
 	python -m cua.pipeline.orchestrator --status
+
+gate-validate: ## Measure the bootable-app gate's precision floor and recall (GATE_SAMPLE=N, no LLM)
+	python -m cua.pipeline.tools.gate_tools validate $(GATE_SAMPLE)
+
+gate-regate: ## Re-gate the stage-3/4 backlog through the bootable-app gate (dry-run by default; APPLY=1 to reject)
+	python -m cua.pipeline.tools.gate_tools regate $(GATE_SAMPLE) $(if $(APPLY),--apply)
 
 test-notifier: ## Test Telegram bot notification
 	python -m cua.pipeline.notifier --test

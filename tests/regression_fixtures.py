@@ -934,20 +934,23 @@ CLI_ENTRYPOINTS = (
     ("student_eval.judge", ["-m", "cua.eval.student", "judge"]),
     ("student_eval.compare", ["-m", "cua.eval.student", "compare"]),
     ("student_eval.sources", ["-m", "cua.eval.student", "sources"]),
-    ("public_capture", ["-m", "cua.pipeline.public_capture"]),
-    ("capture_logingated", ["-m", "cua.pipeline.capture_logingated"]),
-    ("provision_human", ["-m", "cua.pipeline.provision_human"]),
-    ("probe_sandbox", ["-m", "cua.pipeline.probe_sandbox"]),
-    ("probe_capturable", ["-m", "cua.pipeline.probe_capturable"]),
-    ("polish_pass", ["-m", "cua.pipeline.polish_pass"]),
-    ("relabel_recoverable", ["-m", "cua.pipeline.relabel_recoverable"]),
-    ("outcome_relabel", ["-m", "cua.pipeline.outcome_relabel"]),
-    ("wall_supervision", ["-m", "cua.pipeline.wall_supervision"]),
-    ("instruction_style_pass", ["-m", "cua.pipeline.instruction_style_pass"]),
-    ("regenerate_supervision", ["-m", "cua.pipeline.regenerate_supervision"]),
-    ("verify_pattern_scan", ["-m", "cua.pipeline.verify_pattern_scan"]),
-    ("corpus_audit", ["-m", "cua.pipeline.corpus_audit"]),
-    ("register_real_site", ["-m", "cua.pipeline.register_real_site"]),
+    ("public_capture", ["-m", "cua.pipeline.lanes.public"]),
+    ("capture_logingated", ["-m", "cua.pipeline.lanes.logingated"]),
+    ("provision_human", ["-m", "cua.pipeline.lanes.provision_human"]),
+    ("probe_sandbox", ["-m", "cua.pipeline.lanes.probe_sandbox"]),
+    ("probe_capturable", ["-m", "cua.pipeline.lanes.probe_capturable"]),
+    ("polish_pass", ["-m", "cua.pipeline.corpus.polish"]),
+    ("relabel_recoverable", ["-m", "cua.pipeline.corpus.relabel_recoverable"]),
+    ("outcome_relabel", ["-m", "cua.pipeline.corpus.outcome_relabel"]),
+    ("wall_supervision", ["-m", "cua.pipeline.corpus.wall_supervision"]),
+    ("instruction_style_pass", ["-m", "cua.pipeline.corpus.instruction_style"]),
+    ("regenerate_supervision", ["-m", "cua.pipeline.corpus.regenerate_supervision"]),
+    ("verify_pattern_scan", ["-m", "cua.pipeline.corpus.verify_pattern_scan"]),
+    ("corpus_audit", ["-m", "cua.pipeline.corpus.audit"]),
+    ("gate_tools", ["-m", "cua.pipeline.tools.gate_tools"]),
+    ("gate_tools.validate", ["-m", "cua.pipeline.tools.gate_tools", "validate"]),
+    ("gate_tools.regate", ["-m", "cua.pipeline.tools.gate_tools", "regate"]),
+    ("register_real_site", ["-m", "cua.pipeline.lanes.register_real_site"]),
     ("notifier", ["-m", "cua.pipeline.notifier"]),
     ("sandbox", ["-m", "cua.pipeline.sandbox"]),
     ("mail_service", ["-m", "cua.pipeline.mail_service"]),
@@ -963,7 +966,7 @@ NO_ARGPARSE_NOTE = (
     "captured; running it would start Docker, network or LLM work.\n"
 )
 # Named, never probed: running one of these for a --help it lacks boots Docker, the network or a capture.
-NO_ARGPARSE_ENTRYPOINTS = frozenset({"register_real_site", "notifier", "sandbox", "mail_service", "rl_smoke"})
+NO_ARGPARSE_ENTRYPOINTS = frozenset({"notifier", "sandbox", "mail_service", "rl_smoke"})
 
 
 def build_cli_surface(root: Path, corpus: Path | None) -> dict:

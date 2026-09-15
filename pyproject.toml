@@ -70,7 +70,7 @@ dev = [
 [project.scripts]
 cua-sft = "cua.sft.cli:main"
 cua-screenspot = "cua.eval.screenspot:main"
-cua-student-eval = "cua.eval.student:main"
+cua-student-eval = "cua.eval.student.cli:main"
 cua-pipeline = "cua.pipeline.orchestrator:main"
 cua-remote = "cua.cloud.vast.__main__:main"
 
@@ -88,8 +88,8 @@ extend-exclude = ["eval_archive", "experiments", "docs", ".superpowers", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ISC"]
-# Temporary: E501/B904/B023 lift in the comment and cleanup phases; ISC004/F601 when phase 7 splits student_eval.py; UP042 in the pipeline phase (a StrEnum renders registry values differently); F841 for the one side-effecting RHS at auth_flow_smoke.py:300.
-ignore = ["E501", "B904", "B023", "ISC004", "UP042", "F601", "F841"]
+# Temporary: E501/B904/B023 lift in the comment and cleanup phases; UP042 in the pipeline phase (a StrEnum renders registry values differently).
+ignore = ["E501", "B904", "B023", "UP042"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["cua", "tests"]

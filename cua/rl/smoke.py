@@ -10,9 +10,9 @@ import threading
 import urllib.request
 from pathlib import Path
 
-from cua.pipeline.corpus_audit import audit_trajectory
-from cua.pipeline.driver_smoke import TEST_PAGE
+from cua.pipeline.corpus.audit import audit_trajectory
 from cua.pipeline.instrumentation import RESULTS_DIR
+from cua.pipeline.smoke.driver import TEST_PAGE
 from cua.rl.backends import StaticPageBackend, WorkerPool
 from cua.rl.episode import EpisodeConfig
 from cua.rl.policies import ScriptedPolicy

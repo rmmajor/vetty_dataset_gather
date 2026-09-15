@@ -1,12 +1,23 @@
 """The recorded-trajectory contract every producer writes and every consumer reads."""
 
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
+
+
+def safe_task_id(task_id: str) -> str:
+    """Mirror of the driver's task-id sanitization, so host code can predict task dir names."""
+    return re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(task_id))[:120]
+
+
+def norm_instruction(text: str) -> str:
+    """An instruction reduced to its comparison form, so the same goal written twice dedups."""
+    return " ".join((text or "").lower().split())
 
 
 class TrajectoryStep(BaseModel):

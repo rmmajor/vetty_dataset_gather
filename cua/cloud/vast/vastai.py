@@ -1,20 +1,4 @@
-"""Vast.ai compute provider — shells out to the `vastai` CLI (`pip install vastai`).
-
-Implements the `ComputeProvider` contract via the official CLI, matching the repo's
-shell-out idiom (`subprocess.run` with capture/text/timeout + custom exception + audit
-logging, like `cua/pipeline/bootable_gate.py:probe_repo` and `cua.sft.swift_launch.train_model`).
-File transfer and command execution go over the instance's `ssh_host:ssh_port` using the
-private key in `cfg.ssh_key_path` (its public half must be attached to the Vast.ai account).
-
-Schema validated against `vastai` CLI 1.1.3 (2026-06): search-DSL `gpu_ram`/`disk_space`
-are GB while the raw offer `gpu_ram` field is MB (`_offer_from_raw` normalizes by /1024);
-`geolocation` is `"Country, CC"` (the trailing code is the country); reliability lives in
-`reliability2`; `verified` is often `None` even on good hosts, so the query gates on
-`reliability` + `disk_space` rather than `verified=true`. The disk gate matters: large
-models (e.g. 27B ≈ 54GB of weights) won't fit hosts with tiny `disk_space`. Field reads
-stay tolerant (`.get` with fallbacks); re-confirm with `make remote-train-dry` if the CLI
-version changes.
-"""
+"""Vast.ai provider: the `ComputeProvider` contract over the `vastai` CLI and ssh/rsync, with its CLI-schema assumptions documented in docs/architecture.md."""
 
 import json
 import logging
@@ -52,6 +36,11 @@ def offer_query(cfg) -> str:
     query += f" cuda_vers >= {cfg.min_cuda_vers}" if cfg.min_cuda_vers else ""
     # Vast's query DSL takes underscores for spaces; a raw "H100 SXM" breaks the parser.
     return query + (f" gpu_name={cfg.gpu_name.replace(' ', '_')}" if cfg.gpu_name else "")
+
+
+def rsync_argv(ssh, source, destination, exclude=()) -> list:
+    """The rsync command line for one transfer; each `exclude` pattern is rsync syntax relative to the source root."""
+    return ["rsync", "-az", "-e", ssh, *(f"--exclude={pattern}" for pattern in exclude), source, destination]
 
 
 class VastAIProvider(ComputeProvider):
@@ -103,9 +92,7 @@ class VastAIProvider(ComputeProvider):
         if isinstance(result, dict):
             instance_id = str(result.get("new_contract") or result.get("id") or "")
         if isinstance(result, dict) and result.get("success") is False:
-            # A rejected create can STILL have allocated a contract (observed 2026-09-01:
-            # success=False alongside new_contract=49552760, which was billing until destroyed by
-            # hand). Raising without destroying it leaks a rented box, so tear it down first.
+            # A rejected create can STILL have allocated a billing contract, so tear it down before raising.
             if instance_id:
                 logger.warning(
                     f"Vast.ai create reported failure but allocated contract "
@@ -133,12 +120,7 @@ class VastAIProvider(ComputeProvider):
         return result.stdout.strip()
 
     def _attach_ssh_key(self, instance_id: str, pub: str) -> None:
-        """Attach our key to THIS instance.
-
-        Team-scoped API keys cannot register account-wide keys (Vast: "Team SSH keys are not
-        supported"), so we attach per-instance — which is tighter anyway, and keeps a shared
-        team account free of one-off keys. The onstart hook above is the fallback.
-        """
+        """Attach our key to THIS instance, since a team-scoped API key cannot register an account-wide one; the onstart hook is the fallback."""
         try:
             self._cli(["attach", "ssh", str(instance_id), pub])
             logger.info(f"Attached local SSH key to instance {instance_id}")
@@ -181,8 +163,8 @@ class VastAIProvider(ComputeProvider):
             raise ProviderError(f"ssh exec timed out after {timeout or _CLI_TIMEOUT}s: {command[:120]}") from e
         return r.stdout, r.stderr, r.returncode
 
-    def upload(self, instance, local_path, remote_path) -> None:
-        self._rsync(instance, local_path, remote_path, upload=True)
+    def upload(self, instance, local_path, remote_path, *, exclude=()) -> None:
+        self._rsync(instance, local_path, remote_path, upload=True, exclude=exclude)
 
     def download(self, instance, remote_path, local_path) -> None:
         self._rsync(instance, remote_path, local_path, upload=False)
@@ -192,9 +174,7 @@ class VastAIProvider(ComputeProvider):
     def destroy(self, instance) -> bool:
         for attempt in range(1, 6):
             try:
-                # `-y` is NOT optional: without it the CLI stops at an interactive confirmation,
-                # reads EOF, prints "Aborted." and still EXITS 0 — i.e. a silent no-op that looks
-                # like success and leaks a running (billing) instance.
+                # `-y` is NOT optional: without it the CLI exits 0 having done nothing, leaking a billing instance.
                 self._cli(["destroy", "instance", instance.id, "-y"])
             except ProviderError as e:
                 logger.warning(f"destroy call failed (attempt {attempt}): {e}")
@@ -253,12 +233,12 @@ class VastAIProvider(ComputeProvider):
             f"{instance.ssh_user}@{instance.ssh_host}",
         ]
 
-    def _rsync(self, instance, src, dst, *, upload) -> None:
+    def _rsync(self, instance, src, dst, *, upload, exclude=()) -> None:
         key = os.path.expanduser(self.cfg.ssh_key_path)
         ssh = "ssh -p {port} -i {key} {opts}".format(port=instance.ssh_port, key=key, opts=" ".join(_SSH_OPTS))
         remote_side = f"{instance.ssh_user}@{instance.ssh_host}:{dst if upload else src}"
-        args = ["rsync", "-az", "-e", ssh]
-        args += [src, remote_side] if upload else [remote_side, dst]
+        source, destination = (src, remote_side) if upload else (remote_side, dst)
+        args = rsync_argv(ssh, source, destination, exclude)
         logger.info(f"rsync {'up' if upload else 'down'}: {src} -> {dst}")
         try:
             r = subprocess.run(args, capture_output=True, text=True, timeout=3600)
@@ -328,9 +308,7 @@ class VastAIProvider(ComputeProvider):
             raise ProviderError(f"vastai {' '.join(args[:2])} timed out after {_CLI_TIMEOUT}s") from e
         if r.returncode != 0:
             raise ProviderError(f"vastai {' '.join(args[:2])} failed: {r.stderr.strip()[:300]}")
-        # A vastai subcommand that hits an interactive confirmation with no TTY prints "Aborted."
-        # and STILL exits 0. Treat that as the failure it is, so no caller can mistake a no-op
-        # for success (this is how a destroy silently left a billing instance alive).
+        # A subcommand that hits a confirmation prompt with no TTY prints "Aborted." and STILL exits 0.
         if "Aborted." in r.stdout:
             raise ProviderError(
                 f"vastai {' '.join(args[:2])} aborted at an interactive prompt (exit 0, no action taken) "

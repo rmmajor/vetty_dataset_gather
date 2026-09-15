@@ -66,6 +66,8 @@ RLHF_FLAG_MAP = {
     "report_to": "--report_to",
     "output_dir": "--output_dir",
 }
+# Every server this driver starts binds the box's loopback only; the trainer and the eval tunnel reach them there.
+LOOPBACK = "127.0.0.1"
 DEPLOY_FLAG_MAP = {
     "merged_model": "--model",
     "template": "--template",
@@ -82,7 +84,7 @@ ROLLOUT_FIXED = [
     "--use_gym_env",
     "true",
     "--host",
-    "127.0.0.1",
+    LOOPBACK,
 ]
 RLHF_FIXED = [
     "--rlhf_type",
@@ -92,7 +94,7 @@ RLHF_FIXED = [
     "--vllm_mode",
     "server",
     "--vllm_server_host",
-    "127.0.0.1",
+    LOOPBACK,
     "--vllm_server_pass_dataset",
     "true",
     "--vllm_enable_lora",
@@ -100,7 +102,7 @@ RLHF_FIXED = [
     "--use_gym_env",
     "true",
 ]
-DEPLOY_FIXED = ["--infer_backend", "vllm", "--host", "127.0.0.1"]
+DEPLOY_FIXED = ["--infer_backend", "vllm", "--host", LOOPBACK]
 PHASE_FILE, ACK_FILE = "PHASE", "PHASE_ACK"
 
 
@@ -109,8 +111,7 @@ def load_rl_config(path="rl_config.yaml"):
 
 
 def build_merge_command(cfg):
-    # --exist_ok: a merge killed mid-write leaves a dir without config.json, which our own guard lets
-    # through and swift export then refuses — a failed attempt would poison every retry.
+    # --exist_ok: without it a merge killed mid-write poisons every retry, since swift export refuses the half-written dir.
     return [
         "swift",
         "export",
@@ -166,7 +167,7 @@ def build_vllm_serve_command(cfg, adapters=None):
         "--served-model-name",
         "cua-student",
         "--host",
-        "127.0.0.1",
+        LOOPBACK,
         "--port",
         str(cfg["compute"]["serve_port"]),
         "--max-model-len",
@@ -313,7 +314,7 @@ class PhaseDriver:
     def serve_phase(self, phase, adapters=None):
         proc = self.launcher(build_deploy_command(self.cfg, adapters), env=self.device_env("rollout"))
         try:
-            self.wait_healthy(f"http://127.0.0.1:{self.cfg['compute']['serve_port']}/v1/models")
+            self.wait_healthy(f"http://{LOOPBACK}:{self.cfg['compute']['serve_port']}/v1/models")
             self.set_phase(phase)
             self.wait_for_ack(phase)
         finally:
@@ -346,7 +347,7 @@ class PhaseDriver:
     def train_phase(self):
         rollout = self.launcher(build_rollout_command(self.cfg), env=self.device_env("rollout"))
         try:
-            if not self.wait_healthy(f"http://127.0.0.1:{self.cfg['rollout_port']}/health/"):
+            if not self.wait_healthy(f"http://{LOOPBACK}:{self.cfg['rollout_port']}/health/"):
                 print("[cua.rl.train] rollout server never became healthy", flush=True)
                 return 1
             self.set_phase("TRAINING")

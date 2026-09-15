@@ -2,7 +2,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -10,25 +9,27 @@ from claude_agent_sdk import ClaudeAgentOptions
 
 from cua.pipeline import app_runner, app_secrets, driver_session, mail_service, schemas
 from cua.pipeline._processing import run_repo
-from cua.pipeline.agent_capture import run_teacher_task, verify_trajectory
 from cua.pipeline.agent_runner import run_agent
+from cua.pipeline.driver_session import boot_driver, run_blocking
 from cua.pipeline.frameworks import resolve_profile
 from cua.pipeline.instrumentation import REPO_DIR, RESULTS_DIR, setup_repo_instrumentation
+from cua.pipeline.lanes.capture_lane import copy_out_site, is_valid_trajectory
 from cua.pipeline.llm_config import MODEL_FOR_CLASSIFICATION, MODEL_FOR_GROUNDED_GENERATION
 from cua.pipeline.logging_utils import StageProgress, repo_logger
 from cua.pipeline.registry import RepoRegistry
 from cua.pipeline.sandbox import DockerSandbox
 from cua.pipeline.schemas import FailureCategory, QualityReject, RepoStatus, RetryableFailure
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from cua.pipeline.sites.registry import load_proposed_tasks
 from cua.pipeline.task_proposer import propose_tasks
+from cua.pipeline.teacher import run_teacher_task, verify_trajectory
 from cua.settings import CAPTURE, PIPELINE
-from cua.trajectory.io import load_json, write_json
-from cua.trajectory.schema import metadata_from
+from cua.trajectory.io import CAPTURE_META_FILE, load_json, write_json
+from cua.trajectory.schema import metadata_from, safe_task_id
 
 logger = logging.getLogger(__name__)
 
 SUITE_RUN_TIMEOUT = 480  # seconds; partial capture on timeout is fine for trajectory mining
-ATTEMPTS_FILE = "capture_attempts.json"
 
 INSTRUCTION_PROMPT = """You are reading an automated browser test for a web application.
 Your job is to write a one-sentence INSTRUCTION describing what user-facing scenario the
@@ -81,78 +82,8 @@ Target elements (role: name): {elements}
 Reply with ONLY the single category word."""
 
 
-async def _run(fn, *args):
-    """Run a blocking DockerSandbox call off the event loop so concurrent workers overlap."""
-    return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
-
-
-def _is_valid_trajectory(traj_dir: Path) -> bool:
-    """A captured trajectory is usable if it has at least one action with real coordinates and
-    every referenced screenshot exists on disk."""
-    trajectory_file = traj_dir / "trajectory.json"
-    if not trajectory_file.exists():
-        return False
-    try:
-        traj = json.loads(trajectory_file.read_text())
-    except (json.JSONDecodeError, OSError):
-        return False
-    steps = traj.get("steps", [])
-    if not steps:
-        return False
-    has_valid_coords = any(
-        any(a.get("x", 0) > 0 or a.get("y", 0) > 0 for a in step.get("actions", [])) for step in steps
-    )
-    screenshots_exist = all((traj_dir / step.get("screenshot", "")).exists() for step in steps)
-    return has_valid_coords and screenshots_exist
-
-
 def _has_valid_trajectories(repo_traj_dir: Path) -> bool:
-    return repo_traj_dir.exists() and any(_is_valid_trajectory(d) for d in repo_traj_dir.glob("task_*/"))
-
-
-def capture_attempts(traj_dir: Path) -> int:
-    """How many finalized capture attempts this trajectory has already cost."""
-    try:
-        return int(json.loads((traj_dir / ATTEMPTS_FILE).read_text()).get("attempts", 0))
-    except (OSError, ValueError, TypeError):
-        return 0
-
-
-def record_capture_attempt(traj_dir: Path, outcome: str) -> int:
-    """Count one finalized capture attempt against this trajectory's retry bound."""
-    # Host-only sidecar: every copy_out overwrites capture_meta.json, so a counter kept there resets.
-    attempts = capture_attempts(traj_dir) + 1
-    (traj_dir / ATTEMPTS_FILE).write_text(json.dumps({"attempts": attempts, "last_outcome": outcome}, indent=2))
-    return attempts
-
-
-def capture_verdict(traj_dir: Path) -> str | None:
-    """A recorded trajectory's settled verdict, or None when the verifier never judged it."""
-    try:
-        if "verifier" not in json.loads((traj_dir / "capture_meta.json").read_text()):
-            return None
-        succeeded = json.loads((traj_dir / "trajectory.json").read_text()).get("success")
-    except (OSError, ValueError):
-        return None
-    return "success" if succeeded else "failed"
-
-
-def is_capture_exhausted(traj_dir: Path) -> bool:
-    """A recorded trajectory that failed verification and has no attempts left."""
-    return capture_verdict(traj_dir) == "failed" and capture_attempts(traj_dir) >= CAPTURE.max_attempts
-
-
-def is_capture_settled(traj_dir: Path) -> bool:
-    """Whether task-level resume must leave this recorded trajectory alone."""
-    if not _is_valid_trajectory(traj_dir):
-        return False
-    # A None verdict is an interrupted run's orphan awaiting finalization, not a failure to re-capture.
-    return capture_verdict(traj_dir) != "failed" or is_capture_exhausted(traj_dir)
-
-
-def _safe_task_id(task_id: str) -> str:
-    """Mirror of the driver's task-id sanitization, so host code can predict task dir names."""
-    return re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(task_id))[:120]
+    return repo_traj_dir.exists() and any(is_valid_trajectory(d) for d in repo_traj_dir.glob("task_*/"))
 
 
 def _use_discovered(account_index: int, ratio: float) -> bool:
@@ -168,50 +99,34 @@ def _use_discovered(account_index: int, ratio: float) -> bool:
     return account_index % step == 0
 
 
-def _load_proposed_tasks(repo_traj_dir: Path) -> list[dict] | None:
-    proposals_file = repo_traj_dir / "proposed_tasks.json"
-    if not proposals_file.exists():
-        return None
-    try:
-        return json.loads(proposals_file.read_text()).get("tasks") or None
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def _agent_capture_complete(repo_traj_dir: Path) -> bool:
-    """Task-level resume: capture is complete only when EVERY proposed task has a valid
-    recording on disk. A repo-level any-valid check forfeited the unrun tail of the task
-    list whenever a run died mid-repo. Legacy dirs without a persisted proposal fall back
-    to the old any-valid semantics."""
-    tasks = _load_proposed_tasks(repo_traj_dir)
+def _teacher_capture_complete(repo_traj_dir: Path) -> bool:
+    """Capture is complete only when EVERY proposed task has a valid recording on disk."""
+    tasks = load_proposed_tasks(repo_traj_dir)
+    # A repo-level any-valid check forfeited the unrun tail of the task list whenever a run died mid-repo.
     if tasks is None:
         return _has_valid_trajectories(repo_traj_dir)
-    return all(_is_valid_trajectory(repo_traj_dir / f"task_{_safe_task_id(t['id'])}") for t in tasks)
+    return all(is_valid_trajectory(repo_traj_dir / f"task_{safe_task_id(t['id'])}") for t in tasks)
 
 
 async def _capture_suite(rlog, repo: dict, profile, repo_traj_dir: Path, test_name_prefix: str):
-    """Run the instrumented test suite in a sandbox and copy results to repo_traj_dir. Raises
-    RetryableFailure on clone/copy infra errors. NOT idempotent (re-running re-captures from
-    scratch) — generate_for_repo guards this behind a resume check so it is skipped when valid
-    captures already exist on disk."""
+    """Run the instrumented test suite in a sandbox and copy results to repo_traj_dir."""
+    # NOT idempotent: re-running re-captures from scratch, so generate_for_repo guards it behind a resume check.
     repo_name = repo["full_name"]
     sandbox = DockerSandbox(image=profile.sandbox_image, platform=profile.sandbox_platform)
     try:
-        await _run(sandbox.start, repo_name)
+        await run_blocking(sandbox.start, repo_name)
 
-        _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
+        _, stderr, exit_code = await run_blocking(sandbox.clone_repo, repo_name, repo.get("default_branch"))
         if exit_code != 0:
             raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
 
-        await _run(setup_repo_instrumentation, sandbox, profile)
+        await run_blocking(setup_repo_instrumentation, sandbox, profile)
 
         # Start the repo's bundled app (if any) so the suite has something to drive; mirrors stage 5.
-        app_spec = await _run(app_runner.detect_app_start, sandbox, profile)
-        await _run(app_runner.build_app, sandbox, app_spec)
+        app_spec = await run_blocking(app_runner.detect_app_start, sandbox, profile)
+        await run_blocking(app_runner.build_app, sandbox, app_spec)
 
-        # Run the full instrumented test suite directly (no agent — install/wiring/viewport are
-        # all handled in code). Whatever the suite executes is captured to /workspace/results;
-        # a timeout just yields partial trajectories, which is fine.
+        # No agent here: install/wiring/viewport are handled in code, and a timeout just yields partial trajectories.
         suite_cmd = profile.test_command_suite.format(
             repo_name=repo_name,
             test_name_prefix=test_name_prefix,
@@ -219,16 +134,16 @@ async def _capture_suite(rlog, repo: dict, profile, repo_traj_dir: Path, test_na
             framework_language=profile.language,
         )
         suite_cmd = app_runner.wrap_test_command(suite_cmd, app_spec)
-        out, err, code = await _run(sandbox.exec_command, suite_cmd, SUITE_RUN_TIMEOUT)
+        out, err, code = await run_blocking(sandbox.exec_command, suite_cmd, SUITE_RUN_TIMEOUT)
         rlog.info(f"suite run exit={code}; {(out or err)[-300:].strip()[:300]}")
 
         repo_traj_dir.mkdir(parents=True, exist_ok=True)
         try:
-            await _run(sandbox.copy_out, "/workspace/results", str(repo_traj_dir))
+            await run_blocking(sandbox.copy_out, "/workspace/results", str(repo_traj_dir))
         except Exception as e:
             raise RetryableFailure(FailureCategory.SANDBOX_ERROR, f"copy results failed: {str(e)[:200]}")
     finally:
-        await _run(sandbox.stop)
+        await run_blocking(sandbox.stop)
 
 
 def _read_app_context(sandbox) -> tuple[str, str]:
@@ -258,116 +173,177 @@ def _read_app_context(sandbox) -> tuple[str, str]:
     return readme[:4000], "\n\n".join(test_hints)
 
 
+async def _boot_repo_app(sandbox, repo: dict, profile, mail_env: dict | None) -> str:
+    """Clone the repo into the sandbox, start its app and return the URL the teacher will drive."""
+    _, stderr, exit_code = await run_blocking(sandbox.clone_repo, repo["full_name"], repo.get("default_branch"))
+    if exit_code != 0:
+        raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
+    # No blind root `npm install`: start_app installs in the app's own dir, and a pre-install buries _find_app_dir under vendored package.json files.
+    app_url = await run_blocking(driver_session.start_app, sandbox, profile, mail_env)
+    if app_url is None:
+        log_tail, _, _ = await run_blocking(sandbox.exec_command, f"tail -15 {driver_session.APP_LOG} 2>/dev/null")
+        raise QualityReject(
+            FailureCategory.NO_CAPTURE,
+            f"app did not boot for agent capture; app log tail: {log_tail[-300:]}",
+        )
+    return app_url
+
+
+async def _propose(rlog, registry, sandbox, client, repo: dict, app_url: str, repo_traj_dir: Path, mail: dict) -> list:
+    """This repo's task list: a persisted proposal on resume, else the proposer grounded in the LIVE app."""
+    # A persisted proposal costs no LLM call AND keeps the task set stable, which is what makes task-level resume meaningful.
+    tasks = load_proposed_tasks(repo_traj_dir)
+    if tasks is not None:
+        rlog.info(f"resuming persisted proposal: {len(tasks)} tasks")
+        return tasks
+
+    probe = await run_blocking(client.session, "context_probe", app_url)
+    homepage_screenshot = await run_blocking(client.screenshot_b64)
+    try:
+        affordances = await run_blocking(client.affordances)
+    except Exception:
+        affordances = {}
+    await run_blocking(client.finish, "probe", "")
+    await run_blocking(sandbox.exec_command, f"rm -rf {RESULTS_DIR}/task_context_probe")
+
+    readme, test_hints = await run_blocking(_read_app_context, sandbox)
+    proposal = await propose_tasks(
+        repo,
+        probe.get("snapshot", ""),
+        homepage_screenshot,
+        readme,
+        test_hints,
+        registry=registry,
+        affordances=affordances,
+        auth_flow=mail["auth_flow"],
+        inbox=(mail["known"] is None),
+    )
+    if proposal is None:
+        raise RetryableFailure(FailureCategory.SDK_ERROR, "task proposal failed or unparseable")
+    health = proposal.get("app_health") or {}
+    if not health.get("usable", True) or not proposal["tasks"]:
+        # The app booted but cannot host real tasks (dead backend, error content) — reject before one teacher call is spent.
+        raise QualityReject(
+            FailureCategory.NO_CAPTURE,
+            f"proposer judged app unusable: {health.get('notes', 'no tasks proposed')[:200]}",
+        )
+    repo_traj_dir.mkdir(parents=True, exist_ok=True)
+    (repo_traj_dir / "proposed_tasks.json").write_text(json.dumps(proposal, indent=2))
+    rlog.info(
+        f"proposed {len(proposal['tasks'])} tasks for {app_url} "
+        f"(health: {health.get('notes', 'ok')[:80]}): "
+        + "; ".join(t["instruction"][:60] for t in proposal["tasks"][:4])
+        + " ..."
+    )
+    return proposal["tasks"]
+
+
+def _task_auth(task: dict, mail: dict, captured_session, account_index: int) -> dict | None:
+    """The teacher's auth kwargs for one task, or None when a known account makes the task impossible."""
+    auth = task.get("auth", "none") if mail["auth_flow"] else "none"
+    known, repo_name = mail["known"], mail["repo_name"]
+    # A known account is already registered and has no inbox, so a register task cannot be done and must not be relabeled either.
+    if known and auth == "register":
+        return None
+    acct_email = known["email"] if known else mail_service.scenario_address(repo_name, "account")
+    acct_password = known["password"] if known else mail_service.scenario_password(repo_name, "account")
+    acct_creds = {"email": acct_email, "password": acct_password}
+    # Only a generated account needs the webmail: a known account is pre-verified and its mail may never reach GreenMail.
+    acct_mail = None if known else {"url": mail["webmail_url"], "address": acct_email, "password": "qa"}
+    wiring = {"auth_mode": "none", "secrets": None, "mail_config": None, "auth_config": None, "capture_session": False}
+    if auth in ("register", "login"):
+        wiring.update(auth_mode="login", capture_session=True, secrets=acct_creds, mail_config=acct_mail)
+    elif auth == "account":
+        if captured_session is not None and not _use_discovered(account_index, PIPELINE.auth_discovered_ratio):
+            session_config = {"auth_mode": "pre_session", "storage_state": captured_session}
+            wiring.update(auth_mode="pre_session", auth_config=session_config)
+        else:
+            wiring.update(auth_mode="discovered", secrets=acct_creds, mail_config=acct_mail)
+    wiring["uses_account"] = auth == "account"
+    return wiring
+
+
+async def _revive_app(rlog, sandbox, app_url: str, profile, mail_env: dict | None, task_id: str) -> str | None:
+    """The URL to drive this task, restarting the shared dev server first when it stopped answering."""
+    # The server can die mid-session (unhandled error, OOM, a deploy action), after which every remaining task fails on CONNECTION_REFUSED.
+    if driver_session.app_is_up(sandbox, app_url):
+        return app_url
+    rlog.warning(f"app at {app_url} unresponsive before task '{task_id}'; restarting")
+    return await run_blocking(driver_session.start_app, sandbox, profile, mail_env)
+
+
+async def _run_task(rlog, client, task: dict, app_url: str, repo_name: str, registry, wiring: dict):
+    """Run the teacher on one task, returning (state, unproductive); only a usage-limit stop propagates."""
+    try:
+        state = await run_teacher_task(
+            client,
+            task,
+            app_url,
+            registry=registry,
+            full_name=repo_name,
+            auth_mode=wiring["auth_mode"],
+            secrets=wiring["secrets"],
+            auth_config=wiring["auth_config"],
+            mail_config=wiring["mail_config"],
+            capture_session=wiring["capture_session"],
+        )
+    except UsageLimitReached:
+        raise
+    except Exception as e:
+        # One task's blown budget, SDK error or browser crash must never discard the repo's other captures.
+        rlog.warning(
+            f"task '{task['id']}' aborted ({type(e).__name__}: {str(e)[:120]}); keeping prior captures and continuing"
+        )
+        return None, True
+    rlog.info(
+        f"task '{task['id']}': {state['actions']} actions, auth={wiring['auth_mode']}, "
+        f"outcome={state['agent_outcome'] or 'none'}"
+    )
+    return state, (state.get("agent_outcome") or "") == "failed"
+
+
+async def _copy_out_repo(sandbox, repo_traj_dir: Path, repo_name: str, note: str) -> None:
+    """Best-effort copy-out: a failed copy must never cost a capture the recordings already on disk."""
+    try:
+        await copy_out_site(sandbox, RESULTS_DIR, repo_traj_dir)
+    except Exception as e:
+        logger.warning(f"{note} failed for {repo_name}: {e}")
+
+
+async def _mail_wiring(repo_name: str) -> tuple[dict, dict | None]:
+    """The repo's auth-flow context and the app env that reaches it, bringing the shared mail stack up when it is on."""
+    auth_flow = PIPELINE.auth_flow_capture
+    context = {"auth_flow": auth_flow, "repo_name": repo_name, "known": None, "webmail_url": ""}
+    if not auth_flow:
+        return context, None
+    context["known"] = app_secrets.known_account(repo_name)
+    stack = await run_blocking(mail_service.ensure_mail_stack)
+    context["webmail_url"] = stack.webmail_url
+    # Dummy auth secrets ride along with the SMTP env: most auth apps throw at startup without JWT_SECRET / NEXTAUTH_URL.
+    return context, {**mail_service.mail_env_for_app(stack), **app_secrets.boot_env_secrets()}
+
+
 async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo_traj_dir: Path):
-    """Agent capture for one repo: boot its app, propose user tasks, run the teacher on each,
-    and copy whatever was recorded out to the host — even on usage-limit aborts, so partial
-    sessions resume instead of being lost."""
+    """Agent capture for one repo: boot its app, propose user tasks, run the teacher on each, copy out."""
     repo_name = repo["full_name"]
-    # Default Playwright image regardless of the repo's own framework: the teacher never runs
-    # the repo's tests, and the browser driver needs this image's /ms-playwright browsers.
+    # Always the default Playwright image: the teacher never runs the repo's tests and the driver needs this image's /ms-playwright browsers.
     sandbox = DockerSandbox(container_timeout=CAPTURE.container_timeout)
     captured_anything = False
-    # Auth-flow capture: bring up the shared mail stack and attach this sandbox to it, so the app's
-    # verification/reset mail lands in GreenMail and the agent can read it through Roundcube.
-    auth_flow = PIPELINE.auth_flow_capture
-    mail_stack = await _run(mail_service.ensure_mail_stack) if auth_flow else None
-    # App env for auth-flow capture: SMTP pointed at GreenMail + dummy auth secrets (JWT_SECRET,
-    # NEXTAUTH_URL, ...) most auth apps need just to boot. Without the latter a Next/Express auth
-    # app throws at startup before the agent ever sees it.
-    mail_env = {**mail_service.mail_env_for_app(mail_stack), **app_secrets.boot_env_secrets()} if auth_flow else None
-    known = app_secrets.known_account(repo_name) if auth_flow else None
+    mail, mail_env = await _mail_wiring(repo_name)
     try:
-        await _run(sandbox.start, repo_name)
-        if auth_flow:
-            await _run(mail_service.attach_sandbox, sandbox.client, sandbox.container)
+        await run_blocking(sandbox.start, repo_name)
+        if mail["auth_flow"]:
+            await run_blocking(mail_service.attach_sandbox, sandbox.client, sandbox.container)
+        app_url = await _boot_repo_app(sandbox, repo, profile, mail_env)
+        client = await boot_driver(sandbox)
+        tasks = await _propose(rlog, registry, sandbox, client, repo, app_url, repo_traj_dir, mail)
 
-        _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
-        if exit_code != 0:
-            raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
-
-        # No blind root `npm install` here: start_app owns the dependency install (it detects the
-        # repo's own package manager and installs in the app's dir), exactly as the stage-5 boot
-        # gate does. A pre-install would populate node_modules *before* detection runs, and the
-        # thousands of vendored package.json files starve app-dir detection (see _find_app_dir),
-        # making a repo that booted in stage 5 falsely fail to boot here.
-        app_url = await _run(driver_session.start_app, sandbox, profile, mail_env)
-        if app_url is None:
-            log_tail, _, _ = await _run(sandbox.exec_command, f"tail -15 {driver_session.APP_LOG} 2>/dev/null")
-            raise QualityReject(
-                FailureCategory.NO_CAPTURE,
-                f"app did not boot for agent capture; app log tail: {log_tail[-300:]}",
-            )
-
-        await _run(driver_session.install_driver, sandbox)
-        await _run(driver_session.start_driver, sandbox)
-        client = driver_session.DriverClient(sandbox)
-
-        # Task list: reuse a persisted proposal on resume (no LLM, and the task set stays
-        # stable across runs so task-level resume is meaningful); otherwise ground the
-        # proposer in the LIVE app and persist what it returns.
-        tasks = _load_proposed_tasks(repo_traj_dir)
-        if tasks is None:
-            probe = await _run(client.session, "context_probe", app_url)
-            homepage_snapshot = probe.get("snapshot", "")
-            homepage_screenshot = await _run(client.screenshot_b64)
-            try:
-                affordances = await _run(client.affordances)
-            except Exception:
-                affordances = {}
-            await _run(client.finish, "probe", "")
-            await _run(sandbox.exec_command, f"rm -rf {RESULTS_DIR}/task_context_probe")
-
-            readme, test_hints = await _run(_read_app_context, sandbox)
-            proposal = await propose_tasks(
-                repo,
-                homepage_snapshot,
-                homepage_screenshot,
-                readme,
-                test_hints,
-                registry=registry,
-                affordances=affordances,
-                auth_flow=auth_flow,
-                inbox=(known is None),
-            )
-            if proposal is None:
-                raise RetryableFailure(FailureCategory.SDK_ERROR, "task proposal failed or unparseable")
-            health = proposal.get("app_health") or {}
-            if not health.get("usable", True) or not proposal["tasks"]:
-                # The app booted but cannot host real tasks (dead backend, error content) —
-                # reject BEFORE spending a single teacher call on it.
-                raise QualityReject(
-                    FailureCategory.NO_CAPTURE,
-                    f"proposer judged app unusable: {health.get('notes', 'no tasks proposed')[:200]}",
-                )
-            tasks = proposal["tasks"]
-            repo_traj_dir.mkdir(parents=True, exist_ok=True)
-            (repo_traj_dir / "proposed_tasks.json").write_text(json.dumps(proposal, indent=2))
-            rlog.info(
-                f"proposed {len(tasks)} tasks for {app_url} "
-                f"(health: {health.get('notes', 'ok')[:80]}): "
-                + "; ".join(t["instruction"][:60] for t in tasks[:4])
-                + " ..."
-            )
-        else:
-            rlog.info(f"resuming persisted proposal: {len(tasks)} tasks")
-
-        # Tasks share one app server (state accumulates realistically) but each gets a fresh
-        # browser context, so login/session state never leaks between trajectories.
-        #
-        # Auth-mode distribution (so login is NOT skewed onto every trajectory):
-        #   - register/login tasks (the proposer orders these FIRST) sign in / create the account
-        #     and, on success, MINT the captured session below.
-        #   - "account" tasks (an ordinary action behind login) mostly start ALREADY signed in via
-        #     that captured session (auth_mode=pre_session) — no login ritual recorded; a minority
-        #     (AUTH_DISCOVERED_RATIO) start signed out with creds and log in only when blocked.
-        #   - "none" tasks never touch auth.
-        # One app account per run (`scenario_address(repo_name, "account")`): the register task
-        # creates it, every later auth task reuses that same address/password.
+        # Tasks share one app server so state accumulates realistically, but each gets a fresh browser context.
         captured_session = None
         account_index = 0
         consecutive_fails = 0
         for i, task in enumerate(tasks):
-            if _is_valid_trajectory(repo_traj_dir / f"task_{_safe_task_id(task['id'])}"):
+            if is_valid_trajectory(repo_traj_dir / f"task_{safe_task_id(task['id'])}"):
                 rlog.info(f"task '{task['id']}': already recorded, skipping")
                 continue
             if rate_limit_tracker.limit_reached():
@@ -378,100 +354,25 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                     f"stopping after {i} of {len(tasks)} tasks"
                 )
                 break
-            # App-health gate: the shared server can crash mid-session (an unhandled error, OOM,
-            # a deploy action that kills the dev server), after which every remaining task fails
-            # with CONNECTION_REFUSED. Probe and restart before the task so the list isn't wasted.
-            if not driver_session.app_is_up(sandbox, app_url):
-                rlog.warning(f"app at {app_url} unresponsive before task '{task['id']}'; restarting")
-                restarted = await _run(driver_session.start_app, sandbox, profile, mail_env)
-                if restarted is None:
-                    rlog.warning(f"app restart failed; stopping after {i} of {len(tasks)} tasks")
-                    break
-                app_url = restarted
-            # Set before the task runs: a mid-task abort (usage limit, SDK crash) must still
-            # copy whatever steps the driver already recorded for this task.
+            app_url = await _revive_app(rlog, sandbox, app_url, profile, mail_env, task["id"])
+            if app_url is None:
+                rlog.warning(f"app restart failed; stopping after {i} of {len(tasks)} tasks")
+                break
+            # Set before the task runs: a mid-task abort must still copy the steps the driver already recorded.
             captured_anything = True
-            # Per-task isolation: ONE task's failure — a blown per-task budget (the long, hard
-            # tasks we most want are the priciest), an SDK error, or a browser crash — must
-            # NEVER discard the repo's already-captured trajectories. The repo is judged on
-            # what it captured, in post-processing. Only a global usage-limit stop propagates.
-            # Per-task auth wiring (see the distribution comment above). The account is either a
-            # pre-existing KNOWN login (demo/seeded account — pre-verified, no inbox needed) or a
-            # generated disposable address whose verification mail the agent reads in the webmail.
-            # Auth tasks type the creds as masked <secret:...>; pre_session tasks instead get the
-            # captured storage_state injected and no creds.
-            auth = task.get("auth", "none") if auth_flow else "none"
-            if known and auth == "register":
-                # The account already exists and is verified, and there is no inbox to complete a
-                # NEW registration — so a register task can't be done. Skip it rather than relabel
-                # (its instruction still says "register", which would mismatch a login and fail).
+            wiring = _task_auth(task, mail, captured_session, account_index)
+            if wiring is None:
                 rlog.info(f"task '{task['id']}': skipping register task (known account, no inbox)")
                 continue
-            acct_email = known["email"] if known else mail_service.scenario_address(repo_name, "account")
-            acct_password = known["password"] if known else mail_service.scenario_password(repo_name, "account")
-            acct_creds = {"email": acct_email, "password": acct_password}
-            # A generated account must read its verification mail in the webmail; a known account is
-            # already verified, so no inbox is wired (its mail may not even reach GreenMail).
-            acct_mail = None if known else {"url": mail_stack.webmail_url, "address": acct_email, "password": "qa"}
-
-            task_secrets = task_mail = task_authcfg = None
-            auth_mode = "none"
-            capture_session = False
-            if auth in ("register", "login"):
-                auth_mode = "login"
-                capture_session = True
-                task_secrets = acct_creds
-                task_mail = acct_mail
-            elif auth == "account":
-                if captured_session is not None and not _use_discovered(account_index, PIPELINE.auth_discovered_ratio):
-                    auth_mode = "pre_session"
-                    task_authcfg = {"auth_mode": "pre_session", "storage_state": captured_session}
-                else:
-                    auth_mode = "discovered"
-                    task_secrets = acct_creds
-                    task_mail = acct_mail
-                account_index += 1
-            unproductive = False
-            try:
-                state = await run_teacher_task(
-                    client,
-                    task,
-                    app_url,
-                    registry=registry,
-                    full_name=repo_name,
-                    auth_mode=auth_mode,
-                    secrets=task_secrets,
-                    auth_config=task_authcfg,
-                    mail_config=task_mail,
-                    capture_session=capture_session,
-                )
-                rlog.info(
-                    f"task '{task['id']}': {state['actions']} actions, auth={auth_mode}, "
-                    f"outcome={state['agent_outcome'] or 'none'}"
-                )
-                unproductive = (state.get("agent_outcome") or "") == "failed"
-                # A successful register/login mints the session every later pre_session task reuses.
-                # Only on a CLAIMED-complete run, so a half-finished login can't inject a logged-out
-                # session that makes pre_session tasks start broken.
-                if capture_session and state.get("storage_state") and state.get("agent_outcome") == "completed":
-                    captured_session = state["storage_state"]
-                    rlog.info(f"captured auth session from '{task['id']}' for pre_session reuse")
-            except UsageLimitReached:
-                raise
-            except Exception as e:
-                rlog.warning(
-                    f"task '{task['id']}' aborted ({type(e).__name__}: {str(e)[:120]}); "
-                    f"keeping prior captures and continuing"
-                )
-                unproductive = True
+            account_index += 1 if wiring.pop("uses_account") else 0
+            state, unproductive = await _run_task(rlog, client, task, app_url, repo_name, registry, wiring)
+            minted = (state or {}).get("storage_state") and state.get("agent_outcome") == "completed"
+            # Only a CLAIMED-complete login mints the reusable session, so a half-finished one cannot make pre_session tasks start broken.
+            if wiring["capture_session"] and minted:
+                captured_session = state["storage_state"]
+                rlog.info(f"captured auth session from '{task['id']}' for pre_session reuse")
             consecutive_fails = consecutive_fails + 1 if unproductive else 0
-            # Incremental copy-out: teacher turns can be slow under rate-limit waits, and a
-            # container-timeout mid-task must never cost the tasks already recorded.
-            repo_traj_dir.mkdir(parents=True, exist_ok=True)
-            try:
-                await _run(sandbox.copy_out, RESULTS_DIR, str(repo_traj_dir))
-            except Exception as e:
-                logger.warning(f"incremental copy_out failed for {repo_name}: {e}")
+            await _copy_out_repo(sandbox, repo_traj_dir, repo_name, "incremental copy_out")
             if consecutive_fails >= CAPTURE.max_consecutive_fails:
                 rlog.warning(
                     f"early-abort: {consecutive_fails} consecutive unproductive tasks "
@@ -480,12 +381,8 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                 break
     finally:
         if captured_anything:
-            repo_traj_dir.mkdir(parents=True, exist_ok=True)
-            try:
-                await _run(sandbox.copy_out, RESULTS_DIR, str(repo_traj_dir))
-            except Exception as e:
-                logger.warning(f"final copy_out after agent capture failed for {repo_name}: {e}")
-        await _run(sandbox.stop)
+            await _copy_out_repo(sandbox, repo_traj_dir, repo_name, "final copy_out after agent capture")
+        await run_blocking(sandbox.stop)
 
 
 def _excluded(traj_dir: Path, reason: str):
@@ -506,16 +403,16 @@ def _excluded(traj_dir: Path, reason: str):
         metadata_file.write_text(json.dumps(metadata, indent=2))
 
 
-async def _postprocess_agent_capture(rlog, registry, repo, repo_traj_dir: Path) -> tuple[list[Path], int]:
-    """Verify every captured trajectory (idempotent: already-verified dirs are skipped), then
-    apply the per-repo diversity cap. Returns (valid_dirs_for_metadata, verified_count)."""
+async def _postprocess_teacher_capture(rlog, registry, repo, repo_traj_dir: Path) -> tuple[list[Path], int]:
+    """Verify every captured trajectory then apply the per-repo cap; returns (valid_dirs, verified_count)."""
+    # Idempotent: a dir that already carries a verifier verdict is skipped, so a resumed run re-judges nothing.
     trajectory_dirs = sorted(repo_traj_dir.glob("task_*/")) if repo_traj_dir.exists() else []
     valid_dirs = []
     for traj_dir in trajectory_dirs:
-        if not _is_valid_trajectory(traj_dir):
+        if not is_valid_trajectory(traj_dir):
             continue
         valid_dirs.append(traj_dir)
-        capture_meta = _load_capture_meta(traj_dir)
+        capture_meta = load_json(traj_dir / CAPTURE_META_FILE)
         if "verifier" in capture_meta:
             continue
         verdict = await verify_trajectory(traj_dir, registry=registry, full_name=repo["full_name"])
@@ -524,8 +421,7 @@ async def _postprocess_agent_capture(rlog, registry, repo, repo_traj_dir: Path) 
             f"{' (relabeled)' if verdict.get('relabeled') else ''} — {verdict.get('reasoning', '')[:100]}"
         )
 
-    # Dedup + cap among verified-successful trajectories: identical action-shape duplicates are
-    # excluded, then the longest AGENT_MAX_KEPT_PER_REPO survive (length is the scarce resource).
+    # Dedup + cap among the verified: identical action shapes are excluded, then the longest survive, length being the scarce resource.
     verified = []
     for traj_dir in valid_dirs:
         traj = json.loads((traj_dir / "trajectory.json").read_text())
@@ -549,6 +445,62 @@ async def _postprocess_agent_capture(rlog, registry, repo, repo_traj_dir: Path) 
     return valid_dirs, kept
 
 
+async def _capture_for_repo(rlog, registry, repo: dict, profile, repo_traj_dir: Path, capture_mode: str, prefix: str):
+    """Capture this repo in the configured mode, or skip when a prior run already recorded everything."""
+    # Agent mode resumes at TASK granularity (_capture_agent skips recorded tasks and reuses the persisted proposal); replay resumes per repo.
+    if capture_mode == "agent":
+        if _teacher_capture_complete(repo_traj_dir):
+            rlog.info(f"resuming: all proposed tasks already recorded ({repo_traj_dir.name}), skipping capture")
+            return
+        rlog.info("agent capture: booting app + running teacher tasks")
+        await _capture_agent(rlog, registry, repo, profile, repo_traj_dir)
+    elif _has_valid_trajectories(repo_traj_dir):
+        rlog.info(f"resuming: valid trajectories already on disk ({repo_traj_dir.name}), skipping capture")
+    else:
+        rlog.info("replay capture: running instrumented test suite")
+        await _capture_suite(rlog, repo, profile, repo_traj_dir, prefix)
+
+
+async def _instructions_for_replay(rlog, registry, repo: dict, repo_traj_dir: Path) -> tuple[list, dict]:
+    """Fill in a generated instruction for every replay recording that has none, returning (valid_dirs, generated)."""
+    trajectory_dirs = list(repo_traj_dir.glob("task_*/")) if repo_traj_dir.exists() else []
+    valid_dirs: list = []
+    instruction_generated: dict = {}
+    for traj_dir in trajectory_dirs:
+        trajectory_file = traj_dir / "trajectory.json"
+        if not is_valid_trajectory(traj_dir):
+            continue
+        with open(trajectory_file) as f:
+            traj = json.load(f)
+        valid_dirs.append(traj_dir)
+        instruction_generated[traj_dir] = not traj.get("instruction")
+        if not traj.get("instruction"):
+            traj["instruction"] = await generate_instruction(
+                traj,
+                load_json(traj_dir / CAPTURE_META_FILE),
+                repo=repo,
+                test_source=load_test_source(traj_dir),
+                registry=registry,
+            )
+            with open(trajectory_file, "w") as f:
+                json.dump(traj, f, indent=2)
+    rlog.info(f"{len(valid_dirs)} valid trajectories from {len(trajectory_dirs)} total")
+    if not valid_dirs:
+        raise QualityReject(FailureCategory.NO_CAPTURE, "no valid trajectories produced")
+    return valid_dirs, instruction_generated
+
+
+def _deep_analysis(repo: dict) -> dict:
+    """The repo's stage-4 analysis as a dict, tolerating the raw JSON string the registry stores."""
+    raw = repo.get("deep_analysis")
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
 async def generate_for_repo(
     registry: RepoRegistry,
     repo: dict,
@@ -562,84 +514,27 @@ async def generate_for_repo(
 
     capture_mode = capture_mode or schemas.CAPTURE_MODE
     rlog = repo_logger(6, repo_name)
-
-    deep_analysis = {}
-    if repo.get("deep_analysis"):
-        try:
-            deep_analysis = (
-                json.loads(repo["deep_analysis"]) if isinstance(repo["deep_analysis"], str) else repo["deep_analysis"]
-            )
-        except (json.JSONDecodeError, TypeError):
-            pass
-
+    deep_analysis = _deep_analysis(repo)
     profile = resolve_profile(deep_analysis.get("test_framework"), deep_analysis.get("framework_language"))
     test_name_prefix = repo_name.replace("/", "_")
     repo_traj_dir = trajectory_base_dir / f"repo_{test_name_prefix}"
 
-    # Resume: a prior run may have captured some-but-not-all proposed tasks before dying.
-    # Agent mode resumes at TASK granularity (_capture_agent skips tasks already on disk and
-    # reuses the persisted proposal); capture is skipped entirely only when every proposed
-    # task has a valid recording. Replay keeps the repo-level any-valid check.
-    if capture_mode == "agent":
-        if _agent_capture_complete(repo_traj_dir):
-            rlog.info(f"resuming: all proposed tasks already recorded ({repo_traj_dir.name}), skipping capture")
-        else:
-            rlog.info("agent capture: booting app + running teacher tasks")
-            await _capture_agent(rlog, registry, repo, profile, repo_traj_dir)
-    elif _has_valid_trajectories(repo_traj_dir):
-        rlog.info(f"resuming: valid trajectories already on disk ({repo_traj_dir.name}), skipping capture")
-    else:
-        rlog.info("replay capture: running instrumented test suite")
-        await _capture_suite(rlog, repo, profile, repo_traj_dir, test_name_prefix)
+    await _capture_for_repo(rlog, registry, repo, profile, repo_traj_dir, capture_mode, test_name_prefix)
 
-    # ---- Post-capture processing. Idempotent, so it runs identically on a fresh capture or a
-    # resumed one. Agent mode: verify + dedup/cap (instructions came from the task proposer).
-    # Replay mode: generate instructions where missing. ----
+    # Post-capture processing is idempotent, so it runs identically on a fresh capture or a resumed one.
     if capture_mode == "agent":
-        valid_dirs, valid_count = await _postprocess_agent_capture(rlog, registry, repo, repo_traj_dir)
+        valid_dirs, valid_count = await _postprocess_teacher_capture(rlog, registry, repo, repo_traj_dir)
         instruction_generated = {d: True for d in valid_dirs}
         thought_source = "teacher_raw"
         rlog.info(f"{valid_count} verified trajectories from {len(valid_dirs)} captured")
         if valid_count == 0:
             raise QualityReject(FailureCategory.NO_CAPTURE, "no verified trajectories produced")
     else:
-        trajectory_dirs = list(repo_traj_dir.glob("task_*/")) if repo_traj_dir.exists() else []
-        valid_dirs = []
-        instruction_generated = {}
+        valid_dirs, instruction_generated = await _instructions_for_replay(rlog, registry, repo, repo_traj_dir)
+        valid_count = len(valid_dirs)
         thought_source = "generated"
 
-        for traj_dir in trajectory_dirs:
-            trajectory_file = traj_dir / "trajectory.json"
-            if not _is_valid_trajectory(traj_dir):
-                continue
-            with open(trajectory_file) as f:
-                traj = json.load(f)
-            valid_dirs.append(traj_dir)
-
-            if not traj.get("instruction"):
-                test_source = _load_test_source(traj_dir)
-                instruction = await generate_instruction(
-                    traj,
-                    _load_capture_meta(traj_dir),
-                    repo=repo,
-                    test_source=test_source,
-                    registry=registry,
-                )
-                traj["instruction"] = instruction
-                instruction_generated[traj_dir] = True
-                with open(trajectory_file, "w") as f:
-                    json.dump(traj, f, indent=2)
-            else:
-                instruction_generated[traj_dir] = False
-
-        valid_count = len(valid_dirs)
-        rlog.info(f"{valid_count} valid trajectories from {len(trajectory_dirs)} total")
-        if valid_count == 0:
-            raise QualityReject(FailureCategory.NO_CAPTURE, "no valid trajectories produced")
-
-    # Think blocks are NOT generated here — that is the separate, resumable stage 7 (think). Keeping
-    # the per-step think generation out of capture means a think-gen stall can never block or fail a
-    # capture: trajectories + instructions + metadata land, and the repo is marked `captured`.
+    # Think blocks belong to the separate resumable stage 7, so a think-gen stall can never block or fail a capture.
     for traj_dir in valid_dirs:
         await _enrich_metadata(
             traj_dir,
@@ -671,6 +566,27 @@ def _element_label(step: dict, step_meta: dict) -> str:
     return role or ""
 
 
+def _action_summary(trajectory: dict, capture_meta: dict | None) -> str:
+    """The recorded actions rendered for the prompt's weakest signal, the disambiguation line."""
+    steps_meta = (capture_meta or {}).get("steps", {})
+    summary = []
+    for step in trajectory.get("steps", [])[:10]:
+        label = _element_label(step, steps_meta.get(str(step.get("step")), {}))
+        for action in step.get("actions", []):
+            action_type = action.get("type", "")
+            if action_type == "click":
+                summary.append(f"click {label}" if label else "click")
+            elif action_type == "type":
+                target = f" into {label}" if label else ""
+                summary.append(f'type "{action.get("text", "")[:30]}"{target}')
+            elif action_type == "keypress":
+                keys = action.get("keys", []) or []
+                summary.append(f"press {'+'.join(keys)}" if keys else "press a key")
+            else:
+                summary.append(f"{action_type} {label}".strip())
+    return ", ".join(summary[:10]) or "(no actions recorded)"
+
+
 async def generate_instruction(
     trajectory: dict,
     capture_meta: dict | None = None,
@@ -678,57 +594,24 @@ async def generate_instruction(
     test_source: str = "",
     registry=None,
 ) -> str:
-    """Generate an intent-level instruction for one trajectory.
-
-    Inputs in order of signal strength: the test function NAME (`task_id`), the
-    `test_source` (function body + docstring), the `repo` name+description, and finally
-    the recorded action sequence (used only when the upstream signals are uninformative).
-    The prompt is explicit that action enumeration is a failure mode; whatever Sonnet
-    returns is what lands on `trajectory.instruction` — no regex post-filters.
-
-    Falls back to a `task_id`-derived placeholder ONLY on genuine SDK failure (timeout,
-    budget exhaustion). The fallback is a safety net for infrastructure, not for
-    second-guessing the model's content.
-    """
+    """An intent-level instruction for one trajectory, from the test name, its source, the repo and the actions."""
     steps = trajectory.get("steps", [])
     test_name = trajectory.get("task_id", "unknown")
     if not steps:
         return f"Verify the {test_name.replace('_', ' ')} behavior."
 
-    steps_meta = (capture_meta or {}).get("steps", {})
-    action_summary = []
-    for step in steps[:10]:
-        label = _element_label(step, steps_meta.get(str(step.get("step")), {}))
-        for action in step.get("actions", []):
-            action_type = action.get("type", "")
-            if action_type == "click":
-                action_summary.append(f"click {label}" if label else "click")
-            elif action_type == "type":
-                target = f" into {label}" if label else ""
-                action_summary.append(f'type "{action.get("text", "")[:30]}"{target}')
-            elif action_type == "keypress":
-                keys = action.get("keys", []) or []
-                action_summary.append(f"press {'+'.join(keys)}" if keys else "press a key")
-            else:
-                action_summary.append(f"{action_type} {label}".strip())
-
-    action_str = ", ".join(action_summary[:10]) or "(no actions recorded)"
-
     repo = repo or {}
-    repo_name = repo.get("full_name") or repo.get("name") or "(repository not identified)"
-    repo_description = (repo.get("description") or "").strip() or "(no description)"
     test_source_block = (
         test_source.strip()
         if test_source and test_source.strip()
         else "(test source unavailable — rely on the test name and actions)"
     )
-
     prompt = INSTRUCTION_PROMPT.format(
-        repo_name=repo_name,
-        repo_description=repo_description,
+        repo_name=repo.get("full_name") or repo.get("name") or "(repository not identified)",
+        repo_description=(repo.get("description") or "").strip() or "(no description)",
         test_name=test_name,
         test_source=test_source_block,
-        action_summary=action_str,
+        action_summary=_action_summary(trajectory, capture_meta),
     )
 
     try:
@@ -741,7 +624,7 @@ async def generate_instruction(
                 permission_mode="bypassPermissions",
             ),
             registry=registry,
-            full_name=(repo or {}).get("full_name", ""),
+            full_name=repo.get("full_name", ""),
             stage=6,
             purpose="instruction",
             raise_on_error=False,
@@ -749,28 +632,16 @@ async def generate_instruction(
     except UsageLimitReached:
         raise
     except Exception as e:
+        # The task_id fallback is a safety net for SDK infrastructure failures, never a second guess at the model's content.
         logger.warning(f"Instruction generation failed: {e}")
         return f"Verify the {test_name.replace('_', ' ')} behavior."
 
     return result_text.strip() or f"Verify the {test_name.replace('_', ' ')} behavior."
 
 
-def _load_capture_meta(traj_dir: Path) -> dict:
-    p = traj_dir / "capture_meta.json"
-    if not p.exists():
-        return {}
-    try:
-        with open(p) as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _load_test_source(traj_dir: Path, max_chars: int = 2000) -> str:
-    """Read the cached test function source (written by the instrumentation conftest at
-    recording time) sitting next to trajectory.json. Returns "" for older trajectories
-    that pre-date the capture; the instruction prompt has an explicit fallback path for
-    that case so a missing source is not fatal — just lower signal."""
+def load_test_source(traj_dir: Path, max_chars: int = 2000) -> str:
+    """The test function source the instrumentation conftest cached next to trajectory.json, or ""."""
+    # Trajectories predating that capture have none, and the instruction prompt has a fallback for it.
     p = traj_dir / "test_source.txt"
     if not p.exists():
         return ""
@@ -891,7 +762,7 @@ async def _enrich_metadata(
 
         with open(traj_file) as f:
             traj = json.load(f)
-        capture_meta = _load_capture_meta(traj_dir)
+        capture_meta = load_json(traj_dir / CAPTURE_META_FILE)
         metadata = load_json(meta_file)
         task_type = await classify_task_type(traj, capture_meta, registry=registry, full_name=repo.get("full_name", ""))
 

@@ -31,7 +31,7 @@ blocked/error state in the thought: captcha/bot-wall 58 steps in 17 trajectories
 first steps. The corpus is verified-success-only on healthy pages by construction. Related:
 `navigate("url")` appears in the trainable corpus 151 times across 68 trajectories (mostly
 auth-lane URL jumps) and is listed in `SYSTEM_PROMPT`, but the eval parser's `ACTION_VERBS`
-(`cua/eval/student.py:206`) does not include it — every emitted `navigate(...)` line is a
+(`cua/eval/student/grammar.py`) does not include it — every emitted `navigate(...)` line is a
 parse failure, and the RL driver refuses it too (`navigate_blocked` in 15/143 rollouts).
 
 **Evidence (runs).** 14/50 eval episodes are `site_blocked` in all three same-night runs. On those

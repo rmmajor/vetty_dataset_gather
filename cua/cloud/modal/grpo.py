@@ -6,18 +6,20 @@ import tomllib
 
 import modal
 
+from cua.cloud.modal.common import (
+    CODE_ROOT,
+    HF_CACHE_MOUNT,
+    OUT_MOUNT,
+    commit_periodically,
+    hf_cache,
+    outputs,
+    with_package,
+)
 from cua.settings import CLOUD, RL
 
 APP_NAME = "cua-grpo"
 
-OUT_MOUNT = "/outputs"
-HF_CACHE_MOUNT = "/root/.cache/huggingface"
-CODE_ROOT = "/workspace"
-
 app = modal.App(APP_NAME)
-
-outputs = modal.Volume.from_name("cua-outputs", create_if_missing=True)
-hf_cache = modal.Volume.from_name("cua-hf-cache", create_if_missing=True)
 
 _PYPROJECT_FILE = pathlib.Path("pyproject.toml")
 _CONSTRAINTS_FILE = pathlib.Path("constraints/rl-modal.txt")
@@ -33,18 +35,15 @@ def _rl_requirements():
 # Module-level reads re-run inside the container, where these files are absent and the image is already built.
 _RL_REQUIREMENTS = _rl_requirements() if _PYPROJECT_FILE.is_file() and _CONSTRAINTS_FILE.is_file() else []
 
-image = (
+# Pinned to CUDA 12.8.1: the vLLM/torch column resolved in constraints/rl-modal.txt needs it, unlike the SFT lane's 12.4.1.
+image = with_package(
     modal.Image.from_registry("nvidia/cuda:12.8.1-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
     .apt_install("git")
-    .uv_pip_install(*_RL_REQUIREMENTS, "accelerate>=1.0", "huggingface_hub[hf_transfer]")
+    .uv_pip_install(*_RL_REQUIREMENTS, "accelerate>=1.0", "huggingface_hub[hf_transfer]"),
     # Baked at deploy time so the container's summary names the GPU actually rented, not the module default.
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "CUA_GRPO_GPU": CLOUD.grpo_gpu, "PYTHONPATH": CODE_ROOT})
-    .add_local_file("rl_config.yaml", f"{CODE_ROOT}/rl_config.yaml")
-    .add_local_file("pyproject.toml", f"{CODE_ROOT}/pyproject.toml")
-    .add_local_dir("constraints", f"{CODE_ROOT}/constraints")
-    # Reached through PYTHONPATH, not an editable install: add_local_* must close an image, so no pip step can follow it.
-    .add_local_dir("cua", f"{CODE_ROOT}/cua", ignore=["**/__pycache__", "**/*.pyc"])
+    env={"CUA_GRPO_GPU": CLOUD.grpo_gpu},
+    files=("rl_config.yaml",),
 )
 
 
@@ -71,7 +70,6 @@ def grpo(
     import shutil
     import subprocess
     import sys
-    import threading
     from pathlib import Path
 
     import yaml
@@ -126,14 +124,7 @@ def grpo(
     run_config = run_dir / "rl_config.yaml"
     run_config.write_text(yaml.safe_dump(cfg, sort_keys=False))
 
-    stop = threading.Event()
-
-    def commit_periodically():
-        while not stop.wait(CLOUD.grpo_commit_every_s):
-            outputs.commit()
-
-    committer = threading.Thread(target=commit_periodically, daemon=True)
-    committer.start()
+    stop = commit_periodically(outputs, CLOUD.grpo_commit_every_s)
     cmd = [
         sys.executable,
         "-m",

@@ -1,17 +1,5 @@
-"""Job registry — WHAT runs on the rented box.
+"""Job registry — WHAT runs on the rented box: `train` fine-tunes, `eval` benchmarks, `grpo` runs RL against the Mac env service, `serve` serves the student."""
 
-The lifecycle (rent → ssh → run → pull → ALWAYS destroy) is job-agnostic. A job only answers
-five questions: what to check locally, what to upload, what command to run, what to pull back,
-and how to summarize it. Adding a job type = a class + one line in `JOBS`; `lifecycle.py` and
-the teardown guarantees never change.
-
-  train — fine-tune: ship trajectories/ + code, run the UNCHANGED `python -m cua.sft` convert+train.
-  eval  — benchmark only (no training): ship a harness from `benchmarks.py` and run it.
-  grpo  — RL: ship the SFT adapter + cua/rl/ code, run cua/rl/train.py against the Mac env service over a tunnel.
-  serve — serve the student on serve_port through a tunnel (for cua.rl.eval / live harness smokes).
-"""
-
-import ast
 import contextlib
 import hashlib
 import json
@@ -26,6 +14,7 @@ from pathlib import Path
 
 import yaml
 
+from cua.cloud.ignore import gitignored_excludes
 from cua.cloud.vast.benchmarks import build_benchmark, materialize
 from cua.rl.train import (
     build_deploy_command,
@@ -40,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class RemoteJob:
-    """Contract for anything the lifecycle can run on a box."""
+    """Contract for anything the lifecycle can run on a box: five questions, and `JOBS` is the registry it is selected from."""
 
     name: str = "base"
 
@@ -103,7 +92,7 @@ class TrainJob(RemoteJob):
         provider.upload(instance, cfg.trajectories_dir.rstrip("/") + "/", f"{wd}/trajectories/")
         if Path(cfg.train_config).is_file():
             provider.upload(instance, cfg.train_config, f"{wd}/{Path(cfg.train_config).name}")
-        _upload_package(provider, instance, cfg)
+        upload_package(provider, instance, cfg)
         if cfg.resume_from:
             logger.info(f"Uploading resume checkpoint {cfg.resume_from}…")
             provider.upload(instance, cfg.resume_from.rstrip("/") + "/", f"{wd}/{self._resume_name(cfg)}/")
@@ -119,9 +108,7 @@ class TrainJob(RemoteJob):
             train_command("python", Path(cfg.train_config).name, "training_data/sft_dataset.jsonl", resume)
         )
         return (
-            # NOT ".[pipeline]": that is the whole pipeline (playwright, pandas, datasets…) and
-            # installing it over the image clobbered torch, leaving transformers half-imported
-            # ("PyTorch was not found" -> NameError: name 'nn'). This is Modal's proven train stack.
+            # Modal's proven train stack, NOT ".[pipeline]": installing that over the image clobbers torch.
             'pip install --no-cache-dir "ms-swift[llm]>=4.5,<5" "transformers>=4.57" '
             '"datasets>=3.0" "qwen_vl_utils>=0.0.14" "peft>=0.14" "accelerate>=1.0" '
             "pyyaml Pillow tqdm && \\\n"
@@ -158,9 +145,7 @@ class EvalJob(RemoteJob):
         if not cfg.eval_models:
             raise FileNotFoundError("no models to evaluate — pass --model <id> (repeatable)")
         self.local_files = materialize(self.benchmark, self.staging)
-        # coord_space is per-MODEL, not per-dataset: a stock Qwen answers in normalized_1000, a
-        # model fine-tuned on this corpus answers in viewport_abs. Scoring one in the other's
-        # space silently reports a wrong number, so it is written onto every spec explicitly.
+        # coord_space is per-MODEL, never per-dataset, so it is written onto every spec explicitly.
         specs = []
         for m in cfg.eval_models:
             spec = {"label": str(m).split("/")[-1], "model": str(m)}
@@ -208,49 +193,8 @@ class EvalJob(RemoteJob):
         return self.benchmark.summarize(Path(cfg.eval_results_dir))
 
 
-RL_CODE_ROOTS = ("cua/rl/train.py", "cua/sft/swift_launch.py", "cua/rl/trainer/swift_plugin.py")
 # What `pip install -e ".[rl]" -c constraints/rl-modal.txt` reads on the box; README.md is pyproject's declared readme.
 PACKAGE_FILES = ("pyproject.toml", "README.md", "constraints/rl-modal.txt", "corpus_health.json")
-
-
-def _module_files(dotted):
-    """Local .py files a dotted import resolves to, including the packages on its path."""
-    parts = dotted.split(".")
-    found = []
-    for depth in range(1, len(parts) + 1):
-        prefix = parts[:depth]
-        for candidate in (Path(*prefix).with_suffix(".py"), Path(*prefix, "__init__.py")):
-            if candidate.is_file():
-                found.append(str(candidate))
-    return found
-
-
-def first_party_closure(roots):
-    """Every first-party module the roots transitively import.
-
-    A hand-listed manifest goes stale the moment someone adds an import, and the failure lands
-    ~45 minutes and one GPU rental later as an ImportError on the box. Derive it instead.
-    """
-    pending, seen = list(roots), set()
-    while pending:
-        rel = pending.pop()
-        if rel in seen or not Path(rel).is_file():
-            continue
-        seen.add(rel)
-        try:
-            tree = ast.parse(Path(rel).read_text())
-        except (SyntaxError, UnicodeDecodeError):
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                names = [a.name for a in node.names]
-            elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
-                names = [node.module] + [f"{node.module}.{a.name}" for a in node.names]
-            else:
-                continue
-            for name in names:
-                pending.extend(_module_files(name))
-    return tuple(sorted(seen))
 
 
 def _sha256(path):
@@ -280,11 +224,11 @@ def _upload_code(provider, instance, cfg, files):
             provider.upload(instance, rel, f"{wd}/{rel}")
 
 
-def _upload_package(provider, instance, cfg):
-    """The whole installable package plus the files an editable install reads, so no manifest can go stale."""
+def upload_package(provider, instance, cfg):
+    """The whole installable package plus the files an editable install reads, minus anything gitignored, so no manifest can go stale."""
     wd = cfg.remote_workdir
     provider.exec(instance, f"mkdir -p {wd}/cua", timeout=60)
-    provider.upload(instance, "cua/", f"{wd}/cua/")
+    provider.upload(instance, "cua/", f"{wd}/cua/", exclude=gitignored_excludes())
     _upload_code(provider, instance, cfg, PACKAGE_FILES)
 
 
@@ -313,8 +257,7 @@ class GrpoJob(RemoteJob):
         adapter = Path(cfg.output_dir) / "adapter_config.json"
         if not adapter.is_file():
             raise FileNotFoundError(f"SFT adapter '{adapter}' missing — run `make remote-train` first (spec Phase 2)")
-        # The suite and the measured frontier band are config-driven: training on every train task
-        # rather than the pass@k-selected ones is what starved grpo-v2 of gradient.
+        # Suite and frontier band are config-driven: training on every train task is what starved grpo-v2 of gradient.
         suite_path = Path(self.rl.get("tasks_file") or "cua/rl/rl_tasks.json")
         if not suite_path.is_file():
             raise FileNotFoundError(f"{suite_path} missing — run `make rl-tasks` or `make rl-candidates`")
@@ -355,11 +298,7 @@ class GrpoJob(RemoteJob):
             return [json.loads(line).get("task_id") for line in f if line.strip()]
 
     def assert_tasks_served(self, base_url, task_ids) -> None:
-        """A task the service does not serve 404s on reset, and the plugin turns that into reward 0.0.
-
-        Every episode then trains on a fabricated zero and the run reports success — the exact
-        failure grpo-v2 died of. Catch the mismatch before renting anything.
-        """
+        """A task the service does not serve 404s on reset and the plugin turns that into a fabricated reward 0.0, so catch it before renting."""
         try:
             with urllib.request.urlopen(f"{base_url}/tasks", timeout=15) as resp:
                 served = {t.get("task_id") for t in json.loads(resp.read().decode()).get("tasks", [])}
@@ -377,7 +316,7 @@ class GrpoJob(RemoteJob):
         wd = cfg.remote_workdir
         provider.exec(instance, f"mkdir -p {wd}/sft_adapter {wd}/rl_runs/{self.run_id}", timeout=60)
         logger.info("Uploading GRPO bundle (code + SFT adapter + config)…")
-        _upload_package(provider, instance, cfg)
+        upload_package(provider, instance, cfg)
         _upload_code(provider, instance, cfg, (cfg.rl_config,))
         provider.upload(instance, str(self.dataset_path), f"{wd}/{Path(self.rl['dataset']).name}")
         provider.upload(instance, cfg.output_dir.rstrip("/") + "/", f"{wd}/sft_adapter/")
@@ -390,11 +329,7 @@ class GrpoJob(RemoteJob):
 
     def remote_command(self, cfg) -> str:
         wd = cfg.remote_workdir
-        # Same preamble as ServeJob, proven on the CUDA images: their python is externally managed
-        # (PEP 668) and has no ensurepip, so pip needs --break-system-packages and uv builds the venv.
-        # The plain downloader pulls the 19GB base at ~0.5MB/s on a rented box: hours of paid GPU
-        # before the first step. hf_transfer is deprecated and silently ignored by current
-        # huggingface_hub, so the acceleration knob is now HF_XET_HIGH_PERFORMANCE.
+        # The uv/--break-system-packages preamble and the xet download knob are explained in docs/architecture.md.
         return (
             "pip install -q --break-system-packages uv && uv venv --system-site-packages /workspace/venv && "
             ". /workspace/venv/bin/activate && \\\n"
@@ -435,8 +370,7 @@ class GrpoJob(RemoteJob):
             provider.exec(instance, f"echo {phase} > {wd}/PHASE_ACK", timeout=30)
         if self.polls % max(1, cfg.collect_every_polls) == 0:
             try:
-                # rl_output/ (not latest/): `latest` is published only after swift exits, so pulling it
-                # during the run always failed and every mid-run checkpoint died with the box.
+                # rl_output/, not latest/: `latest` appears only after swift exits, so every mid-run checkpoint died with the box.
                 provider.download(instance, f"{wd}/rl_output/", str(self.run_dir / "rl_output") + "/")
                 logger.info(f"pulled in-progress checkpoints to {self.run_dir / 'rl_output'}")
             except Exception as e:
@@ -497,7 +431,7 @@ class ServeJob(RemoteJob):
 
     def upload(self, provider, instance, cfg) -> None:
         wd = cfg.remote_workdir
-        _upload_package(provider, instance, cfg)
+        upload_package(provider, instance, cfg)
         _upload_code(provider, instance, cfg, (cfg.rl_config,))
         for name, local in parse_serve_adapters(cfg.serve_adapter).items():
             provider.exec(instance, f"mkdir -p {wd}/serve_adapter/{name}", timeout=60)
@@ -527,8 +461,7 @@ class ServeJob(RemoteJob):
                 f"  {merge} && deactivate && \\\n"
                 f"  {serve}"
             )
-        # A venv over the image's site-packages keeps its torch/CUDA but sidesteps Debian's unremovable apt-installed pins.
-        # uv builds it: the CUDA images ship a Debian python without ensurepip, so `python -m venv` cannot create one.
+        # A uv venv over the image's site-packages keeps its torch/CUDA while sidestepping Debian's unremovable pins.
         return (
             "pip install -q --break-system-packages uv && uv venv --system-site-packages /workspace/venv && . /workspace/venv/bin/activate && \\\n"
             "  uv pip install -q -e '.[rl]' -c constraints/rl-modal.txt && \\\n"

@@ -4,11 +4,15 @@ import json
 import logging
 import sys
 import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from cua.pipeline import schemas
+from cua.pipeline.notifier import send_report
 from cua.pipeline.registry import RepoRegistry
-from cua.pipeline.sandbox import safe_parallel_sandboxes
+from cua.pipeline.sandbox import install_sigterm_handler, safe_parallel_sandboxes
 from cua.pipeline.schemas import (
     NON_QUALITY_CATEGORIES,
     STAGE_BEHAVIOR_CUTOFFS,
@@ -18,14 +22,20 @@ from cua.pipeline.schemas import (
     RepoStatus,
 )
 from cua.pipeline.sdk_runner import UsageLimitReached, cost_tracker, rate_limit_tracker
+from cua.pipeline.stage1_discover import run_discovery
+from cua.pipeline.stage2_filter import run_filter
+from cua.pipeline.stage3_shallow_score import run_shallow_score
+from cua.pipeline.stage4_deep_analyze import fit_veto, judge_fit, run_deep_analyze
+from cua.pipeline.stage5_trial_run import run_trial
+from cua.pipeline.stage6_generate import run_generate
+from cua.pipeline.stage7_think import run_think
 from cua.settings import GITHUB, PIPELINE
 
 logger = logging.getLogger(__name__)
 
 
 def requeue_stale(registry: RepoRegistry, dry_run: bool = False) -> int:
-    """Re-queue rejections produced by superseded code: for each stage with a known behavior
-    cutoff, reset rejections recorded before that cutoff back to the stage's input status."""
+    """Re-queue rejections produced by superseded code: per stage with a known behavior cutoff, reset rejections recorded before it to the stage's input status."""
     verb = "would re-queue" if dry_run else "re-queued"
     total = 0
     for stage, cutoff in sorted(STAGE_BEHAVIOR_CUTOFFS.items()):
@@ -37,8 +47,7 @@ def requeue_stale(registry: RepoRegistry, dry_run: bool = False) -> int:
 
 
 def requeue_infra(registry: RepoRegistry, dry_run: bool = False) -> int:
-    """Re-queue infra/flaky rejections (clone/SDK/timeout/max-turns/...) across all stages,
-    leaving genuine quality rejections in place."""
+    """Re-queue infra/flaky rejections (clone/SDK/timeout/max-turns/...) across all stages, leaving genuine quality rejections in place."""
     verb = "would re-queue" if dry_run else "re-queued"
     n = registry.reset_rejected(category_in=NON_QUALITY_CATEGORIES, dry_run=dry_run)
     logger.info(f"Infra re-queue: {verb} {n} infra/flaky rejections{' (dry-run)' if dry_run else ''}")
@@ -46,8 +55,7 @@ def requeue_infra(registry: RepoRegistry, dry_run: bool = False) -> int:
 
 
 def requeue_rescore(registry: RepoRegistry, stage: int, min_score: float, dry_run: bool = False) -> int:
-    """Re-queue rejections a lowered gate would now accept: reset stage-N rejects whose stored gate
-    score is >= min_score back to that stage's input status, so re-running stage N re-admits them."""
+    """Re-queue rejections a lowered gate would now accept: reset stage-N rejects whose stored gate score is >= min_score, so re-running stage N re-admits them."""
     verb = "would re-queue" if dry_run else "re-queued"
     n = registry.reset_rejected(stage=stage, min_score=min_score, dry_run=dry_run)
     logger.info(
@@ -58,14 +66,7 @@ def requeue_rescore(registry: RepoRegistry, stage: int, min_score: float, dry_ru
 
 
 async def prune_unfit(registry: RepoRegistry, dry_run: bool = False) -> int:
-    """Retroactively reject repos already past stage 4 that are obvious bad fits, so no more
-    stage-5 boot / stage-6 capture compute is wasted on them. Re-judges each from its STORED
-    analysis (no re-clone): the deterministic fit_veto backstops first, and only if those keep the
-    repo, one cheap text-only good_fit verdict. Vetoed repos move to rejected_analyze — reversible
-    via ``--requeue-stage 4 --min-score 0``. This is exactly the stage-4 fit veto (same predicate)
-    applied to the existing backlog."""
-    from cua.pipeline.stage4_deep_analyze import fit_veto, judge_fit
-
+    """Retroactively reject repos past stage 4 that the stage-4 fit veto would refuse today, re-judged from their STORED analysis (no re-clone), so no more stage-5/6 compute is wasted; reversible via ``--requeue-stage 4 --min-score 0``."""
     candidates = registry.get_repos_by_status([RepoStatus.ANALYZED.value, RepoStatus.VALIDATED.value])
     verb = "would prune" if dry_run else "pruned"
     logger.info(f"Prune unfit: re-judging {len(candidates)} repos past stage 4")
@@ -121,8 +122,6 @@ def setup_logging(data_dir: Path, verbose: bool = False):
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
-    from datetime import datetime
-
     log_file = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     file_handler = logging.FileHandler(str(log_file))
     file_handler.setFormatter(formatter)
@@ -131,60 +130,54 @@ def setup_logging(data_dir: Path, verbose: bool = False):
     return log_file
 
 
-def print_status(registry: RepoRegistry, stages: list[int] = None):
-    """Print the pipeline registry status.
+# The 7-stage funnel — always shown (even at 0) so the full pipeline is visible at a glance.
+PROGRESS_STATUSES = [
+    "discovered",
+    "filtered",
+    "scored",
+    "analyzed",
+    "validated",
+    "captured",
+    "completed",
+]
+# Rejection buckets — only shown when non-empty.
+REJECTION_STATUSES = [
+    "rejected_filter",
+    "rejected_score",
+    "rejected_analyze",
+    "rejected_trial",
+    "rejected_generate",
+]
 
-    ``stages``: when set (e.g. by --stage N), an extra "current stage" rejection
-    section is printed for each stage in the list, on top of the all-stages
-    aggregate — so a stage-3 run shows both the all-time top reasons and only the
-    reasons added at stage 3.
-    """
+
+def print_status_counts(registry: RepoRegistry) -> None:
+    """The funnel's status counts plus the trajectory totals behind `completed` and the not-yet-finalized `captured`."""
     stats = registry.get_stats()
-    pending = registry.get_pending_counts()
-    domain_dist = registry.get_domain_distribution()
-    rejection_reasons = registry.get_rejection_reasons(limit=10)
     total_traj = registry.count_total_trajectories()
     captured_traj = registry.count_total_trajectories(RepoStatus.CAPTURED.value)
 
-    print("\n=== Pipeline Registry Status ===\n")
-
     print("Status counts:")
-    # The 7-stage funnel — always shown (even at 0) so the full pipeline is visible at a glance.
-    progress_statuses = [
-        "discovered",
-        "filtered",
-        "scored",
-        "analyzed",
-        "validated",
-        "captured",
-        "completed",
-    ]
-    # Rejection buckets — only shown when non-empty.
-    rejection_statuses = [
-        "rejected_filter",
-        "rejected_score",
-        "rejected_analyze",
-        "rejected_trial",
-        "rejected_generate",
-    ]
-    for status in progress_statuses:
+    for status in PROGRESS_STATUSES:
         print(f"  {status:25s} {stats.get(status, 0):>6,}")
-    for status in rejection_statuses:
+    for status in REJECTION_STATUSES:
         count = stats.get(status, 0)
         if count > 0:
             print(f"  {status:25s} {count:>6,}")
 
-    total = sum(stats.values())
-    print(f"  {'TOTAL':25s} {total:>6,}")
+    print(f"  {'TOTAL':25s} {sum(stats.values()):>6,}")
     print(f"\n  Total trajectories generated (completed): {total_traj:,}")
     if captured_traj:
         print(f"  Captured but pending stage-7 finalize:    {captured_traj:,}")
 
-    print("\nPending for next run:")
-    for stage in [3, 4, 5, 6, 7]:
-        count = pending.get(stage, 0)
-        print(f"  Stage {stage}: {count:,} repos")
 
+def print_status_distributions(registry: RepoRegistry) -> None:
+    """What is queued for the next drain, and how the live backlog and the rejections are spread."""
+    pending = registry.get_pending_counts()
+    print("\nPending for next run:")
+    for stage in DRAIN_STAGES:
+        print(f"  Stage {stage}: {pending.get(stage, 0):,} repos")
+
+    domain_dist = registry.get_domain_distribution()
     if domain_dist:
         print("\nDomain distribution (non-rejected repos):")
         for domain, count in domain_dist.items():
@@ -196,23 +189,33 @@ def print_status(registry: RepoRegistry, stages: list[int] = None):
         for cat, count in category_dist:
             print(f"  {cat:20s} {count:>6,}")
 
+
+def print_rejection_reasons(registry: RepoRegistry, stages: list[int] = None) -> None:
+    """Top rejection reasons across all stages, plus one section per requested stage so a --stage run sees what it just rejected."""
+    rejection_reasons = registry.get_rejection_reasons(limit=10)
     if rejection_reasons:
         print("\nTop rejection reasons (all stages, all time):")
         for i, (reason, count) in enumerate(rejection_reasons, 1):
             print(f'  {i}. "{reason}" ({count:,})')
 
-    if stages:
-        for stage in stages:
-            rejected_status = STAGE_TO_REJECTED_STATUS.get(stage)
-            if rejected_status is None:
-                continue
-            per_stage = registry.get_rejection_reasons(limit=5, status=rejected_status.value)
-            if not per_stage:
-                continue
-            print(f"\nTop rejection reasons (stage {stage} — {rejected_status.value}):")
-            for i, (reason, count) in enumerate(per_stage, 1):
-                print(f'  {i}. "{reason}" ({count:,})')
+    for stage in stages or []:
+        rejected_status = STAGE_TO_REJECTED_STATUS.get(stage)
+        if rejected_status is None:
+            continue
+        per_stage = registry.get_rejection_reasons(limit=5, status=rejected_status.value)
+        if not per_stage:
+            continue
+        print(f"\nTop rejection reasons (stage {stage} — {rejected_status.value}):")
+        for i, (reason, count) in enumerate(per_stage, 1):
+            print(f'  {i}. "{reason}" ({count:,})')
 
+
+def print_status(registry: RepoRegistry, stages: list[int] = None):
+    """Print the pipeline registry status; ``stages`` (from --stage N) adds a per-stage rejection section on top of the all-stages aggregate."""
+    print("\n=== Pipeline Registry Status ===\n")
+    print_status_counts(registry)
+    print_status_distributions(registry)
+    print_rejection_reasons(registry, stages)
     print()
 
 
@@ -221,6 +224,142 @@ def parse_stage_range(stage_str: str) -> list[int]:
         start, end = stage_str.split("-", 1)
         return list(range(int(start), int(end) + 1))
     return [int(stage_str)]
+
+
+@dataclass(frozen=True)
+class StageRequest:
+    """Everything a stage entry point can need; ``workers`` is already capped and clamped for that stage."""
+
+    registry: RepoRegistry
+    github_token: str
+    trajectory_dir: Path
+    limit: int | None
+    workers: int
+    budget_remaining: float | None
+    star_floor: int
+
+
+@dataclass(frozen=True)
+class StageSpec:
+    """One funnel stage: its entry point plus the worker, drain and budget-pacing policy the orchestrator applies to it."""
+
+    number: int
+    name: str
+    run: Callable[[StageRequest], Awaitable[dict]]
+    workers_cap: int | None = None
+    sandboxed: bool = False
+    drained: bool = False
+    cost_estimate: float | None = None
+
+
+async def _discover(request: StageRequest) -> dict:
+    return run_discovery(request.registry, request.github_token, star_floor=request.star_floor)
+
+
+async def _filter(request: StageRequest) -> dict:
+    return run_filter(request.registry, limit=request.limit)
+
+
+async def _shallow_score(request: StageRequest) -> dict:
+    return await run_shallow_score(
+        request.registry, limit=request.limit, workers=request.workers, budget_remaining=request.budget_remaining
+    )
+
+
+async def _deep_analyze(request: StageRequest) -> dict:
+    return await run_deep_analyze(
+        request.registry, limit=request.limit, workers=request.workers, budget_remaining=request.budget_remaining
+    )
+
+
+async def _trial_run(request: StageRequest) -> dict:
+    return await run_trial(
+        request.registry, limit=request.limit, workers=request.workers, budget_remaining=request.budget_remaining
+    )
+
+
+async def _capture(request: StageRequest) -> dict:
+    return await run_generate(
+        request.registry,
+        request.trajectory_dir,
+        limit=request.limit,
+        workers=request.workers,
+        budget_remaining=request.budget_remaining,
+    )
+
+
+async def _finalize(request: StageRequest) -> dict:
+    return await run_think(
+        request.registry,
+        request.trajectory_dir,
+        limit=request.limit,
+        workers=request.workers,
+        budget_remaining=request.budget_remaining,
+    )
+
+
+DEFAULT_STAGE_COST = 0.10
+# Stage 6 costs whatever the capture mode costs, so its estimate is resolved per call instead of stored here.
+STAGE6_COST_BY_MODE = {"agent": 6.00, "replay": 0.20}
+
+# Adding a stage is an entry here plus its STAGE_TO_* statuses in schemas.py — never a new branch in run_stage.
+STAGES = {
+    spec.number: spec
+    for spec in (
+        StageSpec(1, "discover", _discover, cost_estimate=DEFAULT_STAGE_COST),
+        StageSpec(2, "filter", _filter, cost_estimate=DEFAULT_STAGE_COST),
+        # Sonnet shallow scoring.
+        StageSpec(3, "shallow_score", _shallow_score, drained=True, cost_estimate=0.15),
+        # Static analysis only (clone + read files, no install or app boot), so its containers are light.
+        StageSpec(
+            4,
+            "deep_analyze",
+            _deep_analyze,
+            workers_cap=PIPELINE.stage4_workers,
+            sandboxed=True,
+            drained=True,
+            cost_estimate=0.20,
+        ),
+        # Boot gate = clone + install + boot + driver probe (~1-2GB/worker), and code-driven, so ~$0 LLM.
+        StageSpec(
+            5,
+            "trial_run",
+            _trial_run,
+            workers_cap=PIPELINE.stage5_workers,
+            sandboxed=True,
+            drained=True,
+            cost_estimate=0.02,
+        ),
+        # Each worker holds a sandbox with a booted app plus headless Chromium (~1.2GB real).
+        StageSpec(6, "capture", _capture, workers_cap=PIPELINE.stage6_workers, sandboxed=True, drained=True),
+        # Polish (agent, text-only) / per-step think-with-image (replay).
+        StageSpec(7, "finalize", _finalize, workers_cap=3, drained=True, cost_estimate=0.50),
+    )
+}
+
+DRAIN_STAGES = tuple(number for number, spec in sorted(STAGES.items()) if spec.drained)
+# Kept as a name because README and CLAUDE.md cite it; the specs are the source of the figures.
+STAGE_COST_ESTIMATES = {
+    number: spec.cost_estimate
+    for number, spec in STAGES.items()
+    if spec.cost_estimate not in (None, DEFAULT_STAGE_COST)
+}
+
+
+def stage_workers(spec: StageSpec, workers: int) -> int:
+    """``--workers`` capped by the stage's own ceiling, then clamped against Docker VM memory for the stages that hold a container each."""
+    capped = workers if spec.workers_cap is None else min(workers, spec.workers_cap)
+    return safe_parallel_sandboxes(capped) if spec.sandboxed else capped
+
+
+def stage_cost(stage: int) -> float:
+    """Per-repo LLM estimate used only to pre-size a --budget batch, never to charge it."""
+    spec = STAGES.get(stage)
+    if spec is None:
+        return DEFAULT_STAGE_COST
+    if spec.cost_estimate is None:
+        return STAGE6_COST_BY_MODE.get(schemas.CAPTURE_MODE, STAGE6_COST_BY_MODE["agent"])
+    return spec.cost_estimate
 
 
 async def run_stage(
@@ -233,179 +372,118 @@ async def run_stage(
     budget_remaining: float = None,
     star_floor: int = 5,
 ) -> dict:
-    if stage == 1:
-        from cua.pipeline.stage1_discover import run_discovery
-
-        return run_discovery(registry, github_token, star_floor=star_floor)
-
-    elif stage == 2:
-        from cua.pipeline.stage2_filter import run_filter
-
-        return run_filter(registry, limit=limit)
-
-    elif stage == 3:
-        from cua.pipeline.stage3_shallow_score import run_shallow_score
-
-        return await run_shallow_score(registry, limit=limit, workers=workers, budget_remaining=budget_remaining)
-
-    elif stage == 4:
-        from cua.pipeline.stage4_deep_analyze import run_deep_analyze
-
-        # Stage 4 is static analysis only (clone + read files, no install or app boot), so its containers are light.
-        stage4_workers = safe_parallel_sandboxes(min(workers, PIPELINE.stage4_workers))
-        return await run_deep_analyze(registry, limit=limit, workers=stage4_workers, budget_remaining=budget_remaining)
-
-    elif stage == 5:
-        from cua.pipeline.stage5_trial_run import run_trial
-
-        # Boot gate = clone + install + boot + driver probe (~1-2GB/worker), so 2 is safe alongside capture.
-        stage5_workers = safe_parallel_sandboxes(min(workers, PIPELINE.stage5_workers))
-        return await run_trial(registry, limit=limit, workers=stage5_workers, budget_remaining=budget_remaining)
-
-    elif stage == 6:
-        from cua.pipeline.stage6_generate import run_generate
-
-        # Each stage-6 worker holds a sandbox with a booted app plus headless Chromium (~1.2GB real).
-        stage6_workers = safe_parallel_sandboxes(min(workers, PIPELINE.stage6_workers))
-        return await run_generate(
-            registry, trajectory_dir, limit=limit, workers=stage6_workers, budget_remaining=budget_remaining
-        )
-
-    elif stage == 7:
-        from cua.pipeline.stage7_think import run_think
-
-        return await run_think(
-            registry, trajectory_dir, limit=limit, workers=min(workers, 3), budget_remaining=budget_remaining
-        )
-
-    else:
+    spec = STAGES.get(stage)
+    if spec is None:
         raise ValueError(f"Unknown stage: {stage}")
+    return await spec.run(
+        StageRequest(
+            registry=registry,
+            github_token=github_token,
+            trajectory_dir=trajectory_dir,
+            limit=limit,
+            workers=stage_workers(spec, workers),
+            budget_remaining=budget_remaining,
+            star_floor=star_floor,
+        )
+    )
 
 
-# Per-repo LLM cost estimates used only for --budget pacing (not metered spend).
-# Stage 5 is code-driven (~$0 LLM). Stage 6 depends on the capture mode: agent capture runs
-# the task proposer + ~8 multi-turn teacher tasks + per-task verification per repo; replay
-# only does the 1-per-trajectory instruction + task-type calls.
-STAGE_COST_ESTIMATES = {
-    3: 0.15,  # Sonnet shallow scoring
-    4: 0.20,  # Sonnet static deep-analysis
-    5: 0.02,  # code-driven boot gate / trial — negligible LLM
-    7: 0.50,  # finalize: polish (agent, text-only) / per-step think-with-image (replay)
-}
-STAGE6_COST_BY_MODE = {"agent": 6.00, "replay": 0.20}
+def budget_used(baseline: float) -> float:
+    """Metered spend since the drain started; every ResultMessage's total_cost_usd lands in cost_tracker."""
+    return cost_tracker.total_usd - baseline
 
 
-def stage_cost(stage: int) -> float:
-    if stage == 6:
-        return STAGE6_COST_BY_MODE.get(schemas.CAPTURE_MODE, STAGE6_COST_BY_MODE["agent"])
-    return STAGE_COST_ESTIMATES.get(stage, 0.10)
+def should_continue(baseline: float, budget: float) -> bool:
+    """False once --budget is covered by metered spend or the Claude usage limit is reached, so repos stay in their input status instead of being rejected."""
+    used = budget_used(baseline)
+    if used >= budget:
+        logger.warning(f"Budget exhausted (${used:.2f}/${budget:.2f} metered), stopping")
+        return False
+    if rate_limit_tracker.limit_reached():
+        util = rate_limit_tracker.max_utilization()
+        util_str = f"{util * 100:.0f}%" if util is not None else "hard 429"
+        logger.warning(f"Claude usage limit reached ({util_str}), stopping")
+        return False
+    return True
 
 
-async def drain_funnel(
+def affordable_limit(stage: int, pending_count: int, remaining_budget: float, limit: int = None) -> int:
+    """How many repos this stage may take: what is pending, what the remaining budget pre-sizes, and any explicit --limit."""
+    cost_per_repo = stage_cost(stage)
+    max_affordable = int(remaining_budget / cost_per_repo) if cost_per_repo > 0 else pending_count
+    effective_limit = min(pending_count, max_affordable)
+    return min(effective_limit, limit) if limit else effective_limit
+
+
+def record_stage_error(stage: int, error: Exception, stage_results: dict, stage_errors: list[str]) -> None:
+    """A crashed stage starves everything downstream, so record it loudly — a stage-4 NameError once ran a whole night looking like "0 repos pending"."""
+    logger.error(f"  Stage {stage} failed: {error}")
+    stage_results.setdefault(stage, {"processed": 0, "passed": 0, "rejected": 0})
+    stage_results[stage]["error"] = str(error)
+    err = f"stage {stage}: {type(error).__name__}: {str(error)[:200]}"
+    if err not in stage_errors:
+        stage_errors.append(err)
+
+
+async def run_pass(
     registry: RepoRegistry,
     github_token: str,
     trajectory_dir: Path,
-    budget: float = 50.0,
-    workers: int = 5,
-    limit: int = None,
-    loop: bool = False,
-):
-    """Run stages 3->6 over pending repos, capping each stage by --budget affordability and
-    stopping when the budget is spent OR the Claude subscription usage limit is reached.
-
-    ``loop=False`` (overnight): one forward pass — each stage feeds the next within the pass.
-    ``loop=True`` (until-limit): repeat passes until the usage limit / budget stops it, or a
-    full pass processes 0 repos (the funnel is drained). The funnel strictly drains because
-    stages 1-2 are not looped, so no new ``filtered`` repos are seeded mid-run.
-
-    Both modes honour ``rate_limit_tracker.limit_reached()``: a hard 429 (or, when a threshold
-    is set, crossing it) stops the run instead of letting repos be rejected.
-    """
-    start_time = time.time()
-    # Budget is now paced by ACTUAL metered spend (every ResultMessage's total_cost_usd lands
-    # in cost_tracker), not by per-repo estimates — those drifted badly enough to stop a run
-    # at "$30 estimated" while the real session window sat at 10%. Estimates below only
-    # pre-size batches, never charge the budget.
-    cost_baseline = cost_tracker.total_usd
-    stage_results = {}
-    stage_errors: list[str] = []
-
-    def budget_used() -> float:
-        return cost_tracker.total_usd - cost_baseline
-
-    def should_stop() -> bool:
-        if budget_used() >= budget:
-            logger.warning(f"Budget exhausted (${budget_used():.2f}/${budget:.2f} metered), stopping")
-            return True
-        if rate_limit_tracker.limit_reached():
-            util = rate_limit_tracker.max_utilization()
-            util_str = f"{util * 100:.0f}%" if util is not None else "hard 429"
-            logger.warning(f"Claude usage limit reached ({util_str}), stopping")
-            return True
-        return False
-
-    while True:
-        pass_processed = 0
-
-        for stage in [3, 4, 5, 6, 7]:
-            if should_stop():
-                break
-
-            remaining_budget = budget - budget_used()
-            logger.info(f"--- Stage {stage} --- (budget remaining: ${remaining_budget:.2f} of ${budget:.2f}, metered)")
-
-            pending = registry.get_pending_counts()
-            pending_count = pending.get(stage, 0)
-            if pending_count == 0:
-                logger.info(f"  No repos pending for stage {stage}, skipping")
-                continue
-
-            cost_per_repo = stage_cost(stage)
-            max_affordable = int(remaining_budget / cost_per_repo) if cost_per_repo > 0 else pending_count
-            effective_limit = min(pending_count, max_affordable)
-            if limit:
-                effective_limit = min(effective_limit, limit)
-
-            logger.info(f"  Processing up to {effective_limit} repos (of {pending_count} pending)")
-
-            try:
-                result = await run_stage(
-                    stage,
-                    registry,
-                    github_token,
-                    trajectory_dir,
-                    limit=effective_limit,
-                    workers=workers,
-                    budget_remaining=remaining_budget,
-                )
-                processed = result.get("processed", 0)
-                pass_processed += processed
-
-                # Accumulate processed across passes; keep the latest registry-derived
-                # passed/rejected/trajectories (those are cumulative totals already).
-                prev_processed = stage_results.get(stage, {}).get("processed", 0)
-                stage_results[stage] = {**result, "processed": prev_processed + processed}
-
-            except Exception as e:
-                logger.error(f"  Stage {stage} failed: {e}")
-                stage_results.setdefault(stage, {"processed": 0, "passed": 0, "rejected": 0})
-                stage_results[stage]["error"] = str(e)
-                # A crashed stage starves everything downstream of it. Record it loudly: a
-                # stage-4 NameError once ran a whole night looking like "0 repos pending".
-                err = f"stage {stage}: {type(e).__name__}: {str(e)[:200]}"
-                if err not in stage_errors:
-                    stage_errors.append(err)
-
-        if not loop:
-            break
-        if should_stop():
-            break
-        if pass_processed == 0:
-            logger.info("Funnel drained (a full pass processed 0 repos), stopping")
+    *,
+    baseline: float,
+    budget: float,
+    workers: int,
+    limit: int,
+    stage_results: dict,
+    stage_errors: list[str],
+) -> int:
+    """One forward pass over the drain stages, returning how many repos it processed."""
+    pass_processed = 0
+    for stage in DRAIN_STAGES:
+        if not should_continue(baseline, budget):
             break
 
-    run_duration = time.time() - start_time
+        remaining_budget = budget - budget_used(baseline)
+        logger.info(f"--- Stage {stage} --- (budget remaining: ${remaining_budget:.2f} of ${budget:.2f}, metered)")
 
+        pending_count = registry.get_pending_counts().get(stage, 0)
+        if pending_count == 0:
+            logger.info(f"  No repos pending for stage {stage}, skipping")
+            continue
+
+        effective_limit = affordable_limit(stage, pending_count, remaining_budget, limit)
+        logger.info(f"  Processing up to {effective_limit} repos (of {pending_count} pending)")
+
+        try:
+            result = await run_stage(
+                stage,
+                registry,
+                github_token,
+                trajectory_dir,
+                limit=effective_limit,
+                workers=workers,
+                budget_remaining=remaining_budget,
+            )
+            processed = result.get("processed", 0)
+            pass_processed += processed
+            # Accumulate processed across passes; the registry-derived passed/rejected/trajectories are cumulative already.
+            prev_processed = stage_results.get(stage, {}).get("processed", 0)
+            stage_results[stage] = {**result, "processed": prev_processed + processed}
+        except Exception as e:
+            record_stage_error(stage, e, stage_results, stage_errors)
+    return pass_processed
+
+
+async def close_out_drain(
+    registry: RepoRegistry,
+    run_duration: float,
+    spent: float,
+    budget: float,
+    stage_results: dict,
+    stage_errors: list[str],
+    loop: bool,
+) -> None:
+    """Close out a drain: the threshold caveat, the Telegram report, the crashed-stage roll-up and the spend line."""
     if loop and rate_limit_tracker.threshold < 1.0 and rate_limit_tracker.observed_event_count == 0:
         logger.warning(
             f"--until-limit {rate_limit_tracker.threshold * 100:.0f}%% was requested but zero "
@@ -413,13 +491,11 @@ async def drain_funnel(
             f"drained' instead. Headless OAuth may not emit rate_limit_event messages."
         )
 
-    from cua.pipeline.notifier import send_report
-
     try:
         await send_report(
             registry,
             run_duration,
-            budget_used(),
+            spent,
             budget,
             stage_results,
             rate_limit_info=rate_limit_tracker.latest(),
@@ -433,8 +509,53 @@ async def drain_funnel(
             logger.warning(f"  !! {err}")
 
     logger.info(
-        f"Run complete in {run_duration / 3600:.1f}h, metered spend: ${budget_used():.2f}/${budget:.2f} "
+        f"Run complete in {run_duration / 3600:.1f}h, metered spend: ${spent:.2f}/${budget:.2f} "
         f"across {cost_tracker.call_count} calls"
+    )
+
+
+async def drain_funnel(
+    registry: RepoRegistry,
+    github_token: str,
+    trajectory_dir: Path,
+    budget: float = 50.0,
+    workers: int = 5,
+    limit: int = None,
+    loop: bool = False,
+):
+    """Run the drain stages over pending repos, stopping on --budget (metered) or the Claude usage limit; ``loop=False`` is one forward pass (overnight), ``loop=True`` repeats until the funnel drains (until-limit)."""
+    start_time = time.time()
+    # Estimates only pre-size batches: the budget is paced by ACTUAL metered spend, which per-repo guesses drifted badly from.
+    baseline = cost_tracker.total_usd
+    stage_results = {}
+    stage_errors: list[str] = []
+
+    while True:
+        pass_processed = await run_pass(
+            registry,
+            github_token,
+            trajectory_dir,
+            baseline=baseline,
+            budget=budget,
+            workers=workers,
+            limit=limit,
+            stage_results=stage_results,
+            stage_errors=stage_errors,
+        )
+        if not loop or not should_continue(baseline, budget):
+            break
+        if pass_processed == 0:
+            logger.info("Funnel drained (a full pass processed 0 repos), stopping")
+            break
+
+    await close_out_drain(
+        registry,
+        time.time() - start_time,
+        budget_used(baseline),
+        budget,
+        stage_results,
+        stage_errors,
+        loop,
     )
     return stage_results
 
@@ -482,6 +603,93 @@ async def run_until_limit(
     )
 
 
+async def run_maintenance(args, registry: RepoRegistry) -> bool:
+    """The registry-only commands (--status and the re-queue / prune passes); True once one of them has handled the invocation."""
+    if args.status:
+        print_status(registry)
+        return True
+
+    if args.requeue_stale:
+        requeue_stale(registry, dry_run=args.dry_run)
+    elif args.requeue_infra:
+        requeue_infra(registry, dry_run=args.dry_run)
+    elif args.requeue_stage is not None:
+        if args.min_score is None:
+            logger.error("--requeue-stage requires --min-score")
+            sys.exit(1)
+        requeue_rescore(registry, args.requeue_stage, args.min_score, dry_run=args.dry_run)
+    elif args.prune_unfit:
+        await prune_unfit(registry, dry_run=args.dry_run)
+    else:
+        return False
+
+    print_status(registry)
+    return True
+
+
+async def run_stage_range(args, registry: RepoRegistry, github_token: str, trajectory_dir: Path) -> None:
+    """Run each stage of --stage N or N-M in order, pacing --budget by the spend metered since the first one."""
+    stages = parse_stage_range(args.stage)
+    baseline = cost_tracker.total_usd
+
+    for stage in stages:
+        if stage == 1 and not github_token:
+            logger.error("GITHUB_TOKEN environment variable required for stage 1")
+            sys.exit(1)
+
+        logger.info(f"=== Running Stage {stage} ===")
+        result = await run_stage(
+            stage,
+            registry,
+            github_token,
+            trajectory_dir,
+            limit=args.limit,
+            workers=args.workers,
+            budget_remaining=args.budget - budget_used(baseline),
+            star_floor=args.star_floor,
+        )
+        logger.info(f"Stage {stage} result: {result} (metered spend so far: ${budget_used(baseline):.2f})")
+
+    print_status(registry, stages=stages)
+
+
+async def run_requested_stages(args, registry: RepoRegistry, github_token: str, trajectory_dir: Path) -> None:
+    """The two drain modes and the explicit --stage run; an invocation naming none of them is an error."""
+    if args.until_limit is not None:
+        pct = args.until_limit
+        if not (0 < pct <= 100):
+            logger.error(f"--until-limit must be in (0, 100], got {pct}")
+            sys.exit(1)
+        await run_until_limit(
+            registry,
+            github_token,
+            trajectory_dir,
+            threshold_pct=pct,
+            budget=args.budget,
+            workers=args.workers,
+            limit=args.limit,
+        )
+        return
+
+    if args.overnight:
+        await run_overnight(
+            registry,
+            github_token,
+            trajectory_dir,
+            budget=args.budget,
+            workers=args.workers,
+            limit=args.limit,
+        )
+        return
+
+    if args.stage:
+        await run_stage_range(args, registry, github_token, trajectory_dir)
+        return
+
+    logger.error("Specify --stage, --overnight, --until-limit, or --status")
+    sys.exit(1)
+
+
 async def async_main(args):
     if args.capture_mode:
         schemas.CAPTURE_MODE = args.capture_mode
@@ -491,97 +699,13 @@ async def async_main(args):
     data_dir.mkdir(parents=True, exist_ok=True)
     trajectory_dir.mkdir(parents=True, exist_ok=True)
 
-    db_path = data_dir / "registry.db"
-    registry = RepoRegistry(str(db_path))
-
+    registry = RepoRegistry(str(data_dir / "registry.db"))
     github_token = GITHUB.token
 
     try:
-        if args.status:
-            print_status(registry)
+        if await run_maintenance(args, registry):
             return
-
-        if args.requeue_stale:
-            requeue_stale(registry, dry_run=args.dry_run)
-            print_status(registry)
-            return
-
-        if args.requeue_infra:
-            requeue_infra(registry, dry_run=args.dry_run)
-            print_status(registry)
-            return
-
-        if args.requeue_stage is not None:
-            if args.min_score is None:
-                logger.error("--requeue-stage requires --min-score")
-                sys.exit(1)
-            requeue_rescore(registry, args.requeue_stage, args.min_score, dry_run=args.dry_run)
-            print_status(registry)
-            return
-
-        if args.prune_unfit:
-            await prune_unfit(registry, dry_run=args.dry_run)
-            print_status(registry)
-            return
-
-        if args.until_limit is not None:
-            pct = args.until_limit
-            if not (0 < pct <= 100):
-                logger.error(f"--until-limit must be in (0, 100], got {pct}")
-                sys.exit(1)
-            await run_until_limit(
-                registry,
-                github_token,
-                trajectory_dir,
-                threshold_pct=pct,
-                budget=args.budget,
-                workers=args.workers,
-                limit=args.limit,
-            )
-            return
-
-        if args.overnight:
-            await run_overnight(
-                registry,
-                github_token,
-                trajectory_dir,
-                budget=args.budget,
-                workers=args.workers,
-                limit=args.limit,
-            )
-            return
-
-        if args.stage:
-            stages = parse_stage_range(args.stage)
-            cost_baseline = cost_tracker.total_usd
-
-            for stage in stages:
-                if stage == 1 and not github_token:
-                    logger.error("GITHUB_TOKEN environment variable required for stage 1")
-                    sys.exit(1)
-
-                logger.info(f"=== Running Stage {stage} ===")
-                result = await run_stage(
-                    stage,
-                    registry,
-                    github_token,
-                    trajectory_dir,
-                    limit=args.limit,
-                    workers=args.workers,
-                    budget_remaining=args.budget - (cost_tracker.total_usd - cost_baseline),
-                    star_floor=args.star_floor,
-                )
-                logger.info(
-                    f"Stage {stage} result: {result} "
-                    f"(metered spend so far: ${cost_tracker.total_usd - cost_baseline:.2f})"
-                )
-
-            print_status(registry, stages=stages)
-            return
-
-        logger.error("Specify --stage, --overnight, --until-limit, or --status")
-        sys.exit(1)
-
+        await run_requested_stages(args, registry, github_token, trajectory_dir)
     finally:
         registry.close()
 
@@ -670,11 +794,7 @@ Examples:
 
     args = parser.parse_args()
 
-    data_dir = Path(args.data_dir)
-    setup_logging(data_dir, verbose=args.verbose)
-
-    from cua.pipeline.sandbox import install_sigterm_handler
-
+    setup_logging(Path(args.data_dir), verbose=args.verbose)
     install_sigterm_handler()
 
     asyncio.run(async_main(args))

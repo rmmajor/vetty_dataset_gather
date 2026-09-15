@@ -1,14 +1,4 @@
-"""Crash-safe record of the instances this machine owns, so teardown survives a hard process death.
-
-An instance is recorded the moment it is created, stamped with the pid of the run that owns it.
-If that orchestrator is killed (-9, power loss, closed laptop) before `destroy`, the record stays
-behind and `cleanup` tears the box down. The pid is what separates an ORPHAN (owner process gone)
-from a box a CONCURRENT run is actively using — several runs share one state file whenever they
-share a working directory, and destroying a live sibling's GPU is as bad as destroying a
-stranger's. Records are therefore a list, never a single slot that later runs overwrite.
-
-Path is overridable via `REMOTE_TRAIN_STATE_FILE`.
-"""
+"""Crash-safe list of the instances this machine owns, each stamped with its owning pid, so teardown survives a hard process death."""
 
 import json
 import logging

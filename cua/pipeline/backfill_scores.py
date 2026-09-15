@@ -1,16 +1,4 @@
-"""One-time backfill: recover the structured data the old reject() discarded.
-
-For every already-rejected repo, parse its free-text filter_reason into:
-  * a failure_category, so the dashboard's quality-vs-infra split and `--requeue-infra` work on
-    historical rejections (not just ones produced going forward), and
-  * the scores behind the rejection — the stage-3 gate dims (app / run / interact, which are
-    exactly what the gate is tuned on) and the stage-4 deep_score + test-count / self-contained —
-    so the dashboard's score-distribution charts have data immediately.
-
-The other five stage-3 dimensions were never stored in the reason string, so they stay sparse
-until repos are re-scored under the new reject() that persists full scores. Parse-only, no LLM,
-idempotent: re-running rewrites the same values and never overwrites scores that already exist.
-"""
+"""One-time migration: parse each already-rejected repo's free-text filter_reason back into a failure_category and the stage-3/4 scores behind it, so the dashboard and --requeue-infra see historical rejections; parse-only, no LLM, idempotent."""
 
 import argparse
 import json

@@ -1,1 +1,11 @@
-NO ARGPARSE SURFACE — this entrypoint reads sys.argv directly, so --help is not captured; running it would start Docker, network or LLM work.
+Autonomous register / password-reset capture on a real public site
+
+positional arguments:
+  name         Site name for trajectories/site_<name>
+  signup_url   The signup page URL
+  instruction  Override the generated user goal (register only)
+
+options:
+  -h, --help   show this help message and exit
+  --reset      Register + verify, then a full forgot-password reset (also:
+               `reset ...`)

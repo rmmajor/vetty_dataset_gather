@@ -1,11 +1,4 @@
-"""In-memory provider for the no-cost self-test (`python -m cua.cloud.vast run --provider mock`).
-
-Simulates the whole lifecycle without renting anything: fixed fake offers (including a cheap
-RU and a cheap CN one so the geo-exclusion is observable), an instance that "answers" SSH,
-exec that reports training DONE, and a download that drops a fake adapter. Records every
-`destroy` so the self-test can assert teardown ran in every exit path. Mirrors
-`cua/eval/screenspot.py`'s MockPredictor.
-"""
+"""In-memory provider for the no-cost self-test: fake offers, an instance that answers SSH, and a record of every destroy, upload and tunnel."""
 
 import json
 import logging
@@ -24,6 +17,7 @@ class MockProvider(ComputeProvider):
         self.cfg = cfg
         self.destroyed: list = []
         self.exec_log: list = []
+        self.uploads: list = []
         self.tunnels: list = []
         self.reported_label = cfg.instance_label  # tests set this to a foreign label to exercise the ownership gate
         self.phases = list(getattr(cfg, "mock_phases", ()))
@@ -63,7 +57,8 @@ class MockProvider(ComputeProvider):
         self.tunnels.append(list(forwards))
         return NullTunnel(forwards)
 
-    def upload(self, instance, local_path, remote_path) -> None:
+    def upload(self, instance, local_path, remote_path, *, exclude=()) -> None:
+        self.uploads.append({"local": local_path, "remote": remote_path, "exclude": tuple(exclude)})
         self.exec_log.append(f"UPLOAD {local_path} -> {remote_path}")
 
     def download(self, instance, remote_path, local_path) -> None:

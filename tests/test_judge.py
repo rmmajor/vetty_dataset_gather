@@ -2,8 +2,8 @@ import json
 import tempfile
 from pathlib import Path
 
-from cua.pipeline.agent_capture import verdict_from_parsed
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from cua.pipeline.teacher import verdict_from_parsed
 from cua.rl.judge import AsyncBridge, judge_success
 from cua.settings import RL
 

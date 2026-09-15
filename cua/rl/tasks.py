@@ -10,9 +10,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from cua.pipeline import app_secrets
-from cua.pipeline.corpus_audit import is_trainable
-from cua.pipeline.public_capture import _norm_instruction
-from cua.pipeline.stage6_generate import _safe_task_id
+from cua.pipeline.corpus.audit import is_trainable
+from cua.trajectory.schema import norm_instruction, safe_task_id
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +97,8 @@ def _trained_keys(trajectories_dir, seen_config):
     if seen_config and Path(seen_config).exists():
         for s in json.loads(Path(seen_config).read_text())["sites"]:
             for t in s["tasks"]:
-                dirs.add((s["name"], _safe_task_id(t["id"])))
-                instructions.add(_norm_instruction(t["instruction"]))
+                dirs.add((s["name"], safe_task_id(t["id"])))
+                instructions.add(norm_instruction(t["instruction"]))
     traj_root = Path(trajectories_dir) if trajectories_dir else None
     for traj in traj_root.glob("**/task_*/trajectory.json") if traj_root and traj_root.exists() else []:
         # Only what SFT actually trained on is contaminated; failed captures never entered the corpus.
@@ -110,7 +109,7 @@ def _trained_keys(trajectories_dir, seen_config):
             (site_dir[len("site_") :] if site_dir.startswith("site_") else site_dir, traj.parent.name[len("task_") :])
         )
         try:
-            instructions.add(_norm_instruction(json.loads(traj.read_text()).get("instruction", "")))
+            instructions.add(norm_instruction(json.loads(traj.read_text()).get("instruction", "")))
         except (json.JSONDecodeError, OSError):
             continue
     return dirs, instructions
@@ -137,7 +136,7 @@ def build_suite(sources, trajectories_dir, seen_config, unseen_site_pct=15):
             if not available:
                 continue
             for index, t in enumerate(sorted(site["tasks"], key=lambda t: t["id"])):
-                if (site["name"], _safe_task_id(t["id"])) in trained_dirs or _norm_instruction(
+                if (site["name"], safe_task_id(t["id"])) in trained_dirs or norm_instruction(
                     t["instruction"]
                 ) in trained_instructions:
                     excluded_trained += 1
@@ -179,11 +178,11 @@ def check_suite(suite, trajectories_dir, seen_config):
         if t["task_id"] in ids:
             problems.append(f"duplicate task_id {t['task_id']}")
         ids.add(t["task_id"])
-        norm = _norm_instruction(t["instruction"])
+        norm = norm_instruction(t["instruction"])
         if norm in instructions and instructions[norm] != t["split"]:
             problems.append(f"instruction shared across splits: {t['task_id']} / {instructions[norm]}")
         instructions[norm] = t["split"]
-        if (t["site"], _safe_task_id(t["task_id"].split("__", 1)[1])) in trained_dirs or norm in trained_instructions:
+        if (t["site"], safe_task_id(t["task_id"].split("__", 1)[1])) in trained_dirs or norm in trained_instructions:
             problems.append(f"trained-on task in suite: {t['task_id']}")
         if t["split"] == "train" and not t["idempotent"]:
             problems.append(f"non-idempotent task in train: {t['task_id']}")

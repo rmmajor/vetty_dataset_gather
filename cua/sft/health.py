@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cua.pipeline import operator_pii
-from cua.pipeline.corpus_audit import corpus_health_violations
+from cua.pipeline.corpus.audit import corpus_health_violations
 from cua.prompt.coords import COORD_SPACE
 from cua.prompt.format import PREV_IMAGE_SIZE, PROMPT_FORMAT_VERSION
 

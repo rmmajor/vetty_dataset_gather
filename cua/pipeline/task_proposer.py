@@ -7,7 +7,7 @@ feature hints (tests document what the app can do — they are hints here, not t
 The output is the dataset's difficulty/diversity lever: tasks must be phrased as genuine user
 goals (never QA assertions), skew long-horizon (most need 8+ actions), and mix action kinds
 (typing/forms mandatory, scroll/drag where the UI affords them). The teacher agent in
-agent_capture.py then pursues each task in the live app.
+The teacher then pursues each task in the live app.
 """
 
 import json

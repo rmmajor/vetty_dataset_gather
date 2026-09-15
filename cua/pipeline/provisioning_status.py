@@ -1,7 +1,7 @@
 """Persistent per-site provisioning status for the login-gated lanes.
 
 Records whether a site's burner account could be created autonomously. The autonomous lane
-(`capture_logingated`) marks `registered` on success and `needs_human` when registration is blocked
+(`lanes/logingated`) marks `registered` on success and `needs_human` when registration is blocked
 (captcha / phone / disposable-email rejection); the human-in-the-loop provisioning lane consumes the
 `needs_human` queue, and future autonomous runs skip those sites so they are not re-failed for cost.
 

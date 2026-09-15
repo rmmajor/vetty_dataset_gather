@@ -13,33 +13,29 @@ from pathlib import Path
 
 from PIL import Image
 
-from cua.eval.student import (
+from cua.eval.student.backends import BROWSER_BACKENDS, EvalBrowser, ReplayStudent
+from cua.eval.student.blocks import detect_block
+from cua.eval.student.config import EpisodeRecord, EvalConfig
+from cua.eval.student.episode import (
     ACTION_TO_DRIVER,
-    BROWSER_BACKENDS,
-    EXPECTED_TO_DIFFER_KEYS,
-    PARITY_EXEMPT_KEYS,
-    EpisodeRecord,
-    EvalBrowser,
-    EvalConfig,
-    ReplayStudent,
     action_coordinates,
-    build_student_messages,
-    classify_action_line,
-    compute_metrics,
-    coord_space_diagnosis,
-    detect_block,
     driver_payload,
-    harness_fingerprint,
-    judge_episode,
-    observed_effect,
     outside_coord_space,
     outside_viewport,
-    parse_student_output,
-    render_comparison,
-    render_report,
     run_episode,
     scale_action,
 )
+from cua.eval.student.fingerprint import (
+    EXPECTED_TO_DIFFER_KEYS,
+    PARITY_EXEMPT_KEYS,
+    coord_space_diagnosis,
+    harness_fingerprint,
+)
+from cua.eval.student.grammar import classify_action_line, parse_student_output
+from cua.eval.student.metrics import compute_metrics
+from cua.eval.student.observation import build_student_messages, observed_effect
+from cua.eval.student.report import render_comparison, render_report
+from cua.eval.student.run import judge_episode
 from cua.eval.task_sources import TASK_SOURCES, EvalTask
 from cua.pipeline.sandbox import ShellSandbox
 from cua.prompt.coords import to_viewport_coords

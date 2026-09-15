@@ -5,6 +5,7 @@ import re
 
 from cua.pipeline import app_runner, driver_session, schemas
 from cua.pipeline._processing import run_repo
+from cua.pipeline.driver_session import run_blocking
 from cua.pipeline.frameworks import resolve_profile
 from cua.pipeline.instrumentation import REPO_DIR, RESULTS_DIR, setup_repo_instrumentation
 from cua.pipeline.logging_utils import StageProgress, repo_logger
@@ -28,11 +29,6 @@ TEST_RUN_TIMEOUT = 240
 
 _PASS_RE = re.compile(r"(\d+)\s+passed")
 _FAIL_RE = re.compile(r"(\d+)\s+failed")
-
-
-async def _run(fn, *args):
-    """Run a blocking DockerSandbox call off the event loop so concurrent workers overlap."""
-    return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
 
 
 def _collect_metrics(sandbox) -> TrialResults:
@@ -93,27 +89,25 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
     # browser driver needs the /ms-playwright browsers that only this image ships.
     sandbox = DockerSandbox()
     try:
-        await _run(sandbox.start, repo_name)
+        await run_blocking(sandbox.start, repo_name)
 
-        _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
+        _, stderr, exit_code = await run_blocking(sandbox.clone_repo, repo_name, repo.get("default_branch"))
         if exit_code != 0:
             raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
 
         # start_app owns the dependency install now: it picks the repo's own package manager
         # (npm/pnpm/yarn) in the app's actual dir, which a blind root `npm install` got wrong.
-        app_url = await _run(driver_session.start_app, sandbox, profile)
+        app_url = await run_blocking(driver_session.start_app, sandbox, profile)
         if app_url is None:
-            app_log, _, _ = await _run(sandbox.exec_command, f"tail -20 {driver_session.APP_LOG} 2>/dev/null")
+            app_log, _, _ = await run_blocking(sandbox.exec_command, f"tail -20 {driver_session.APP_LOG} 2>/dev/null")
             detail = app_log.strip() or "no recognizable start script / no bootable Node app"
             raise QualityReject(
                 FailureCategory.NO_BOOT,
                 f"app did not boot (public_url_tests={bool(deep_analysis.get('tests_public_url'))}); {detail[-300:]}",
             )
 
-        await _run(driver_session.install_driver, sandbox)
-        await _run(driver_session.start_driver, sandbox)
-        client = driver_session.DriverClient(sandbox)
-        probe = await _run(client.session, "boot_probe", app_url)
+        client = await driver_session.boot_driver(sandbox)
+        probe = await run_blocking(client.session, "boot_probe", app_url)
         n_elements = driver_session.count_interactive_elements(probe.get("snapshot", ""))
 
         if n_elements < PIPELINE.boot_gate_min_elements:
@@ -124,7 +118,7 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
             )
 
         try:
-            affordances = await _run(client.affordances)
+            affordances = await run_blocking(client.affordances)
         except Exception:
             affordances = {}
 
@@ -149,7 +143,7 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
             trial_score=metrics.weighted_score,
         )
     finally:
-        await _run(sandbox.stop)
+        await run_blocking(sandbox.stop)
 
 
 async def trial_single_repo(registry: RepoRegistry, repo: dict):
@@ -178,23 +172,23 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
 
     sandbox = DockerSandbox(image=profile.sandbox_image, platform=profile.sandbox_platform)
     try:
-        await _run(sandbox.start, repo_name)
+        await run_blocking(sandbox.start, repo_name)
 
-        _, stderr, exit_code = await _run(sandbox.clone_repo, repo_name, repo.get("default_branch"))
+        _, stderr, exit_code = await run_blocking(sandbox.clone_repo, repo_name, repo.get("default_branch"))
         if exit_code != 0:
             raise RetryableFailure(FailureCategory.CLONE_FAILED, f"clone failed: {stderr[:200]}")
 
-        await _run(setup_repo_instrumentation, sandbox, profile)
+        await run_blocking(setup_repo_instrumentation, sandbox, profile)
 
         # Start the repo's own app (if it bundles one) so its E2E tests have something to drive —
         # the single biggest no_capture cause. None when there's no app / Playwright self-manages.
-        app_spec = await _run(app_runner.detect_app_start, sandbox, profile)
-        await _run(app_runner.build_app, sandbox, app_spec)
+        app_spec = await run_blocking(app_runner.detect_app_start, sandbox, profile)
+        await run_blocking(app_runner.build_app, sandbox, app_spec)
 
         # Locate test files via the profile's globs (skip vendored deps).
         test_files: list[str] = []
         for glob in profile.test_globs:
-            for path in await _run(sandbox.list_files, glob, REPO_DIR):
+            for path in await run_blocking(sandbox.list_files, glob, REPO_DIR):
                 if "/node_modules/" not in path and path not in test_files:
                     test_files.append(path)
         if not test_files:
@@ -212,18 +206,18 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
                 framework_language=profile.language,
             ).replace("<test_file>", rel)
             cmd = app_runner.wrap_test_command(cmd, app_spec)
-            out, err, _ = await _run(sandbox.exec_command, cmd, TEST_RUN_TIMEOUT)
+            out, err, _ = await run_blocking(sandbox.exec_command, cmd, TEST_RUN_TIMEOUT)
             combined = out + err
             trial_outputs.append(f"$ {rel}\n{combined}")
             if m := _PASS_RE.search(combined):
                 passed += int(m.group(1))
             if m := _FAIL_RE.search(combined):
                 failed += int(m.group(1))
-            interim = await _run(_collect_metrics, sandbox)
+            interim = await run_blocking(_collect_metrics, sandbox)
             if interim.valid_bounding_boxes > 0:
                 break
 
-        metrics = await _run(_collect_metrics, sandbox)
+        metrics = await run_blocking(_collect_metrics, sandbox)
         total = passed + failed
         # pass_rate informs ranking only; the gate is capture-based (a test that performs actions
         # then fails an assertion still produced a valid trajectory).
@@ -259,7 +253,7 @@ async def trial_single_repo(registry: RepoRegistry, repo: dict):
             trial_score=weighted,
         )
     finally:
-        await _run(sandbox.stop)
+        await run_blocking(sandbox.stop)
 
 
 async def run_trial(

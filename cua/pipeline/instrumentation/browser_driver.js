@@ -2,7 +2,7 @@
  * In-container browser driver for agent-driven trajectory capture.
  *
  * A long-running HTTP server holding ONE Playwright page at 1280x720. The host-side agent
- * (cua/pipeline/agent_capture.py) calls these endpoints through `docker exec curl`; every
+ * (cua/pipeline/teacher/) calls these endpoints through `docker exec curl`; every
  * action endpoint records a trajectory step in the repo-wide schema (screenshot taken BEFORE
  * the action + the action dict with the target element's bbox-center coordinates) before
  * performing the action with raw mouse/keyboard input at those exact coordinates. What the

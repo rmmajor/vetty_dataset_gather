@@ -98,25 +98,28 @@ docker build -t repo-pipeline-sandbox:latest -f docker/Dockerfile.sandbox docker
 python -m cua.pipeline.sandbox --test
 
 ===== test-driver =====
-python -m cua.pipeline.driver_smoke
+python -m cua.pipeline.smoke.driver
+
+===== test-auth-flow =====
+python -m cua.pipeline.smoke.auth_flow
 
 ===== test-verify-gate =====
-python -m cua.pipeline.verify_gate_smoke
+python -m cua.pipeline.smoke.verify_gate
 
 ===== test-qa-verify =====
-python -m cua.pipeline.qa_verify_smoke
+python -m cua.pipeline.smoke.qa_verify
 
 ===== test-rl-unit =====
 python -m tests
 
 ===== test-corpus-audit =====
-python -m cua.pipeline.corpus_audit_smoke
+python -m cua.pipeline.smoke.corpus_audit
 
 ===== test-instruction-style =====
-python -m cua.pipeline.instruction_style_smoke
+python -m cua.pipeline.smoke.instruction_style
 
 ===== test-outcome-relabel =====
-python -m cua.pipeline.outcome_relabel_smoke
+python -m cua.pipeline.smoke.outcome_relabel
 
 ===== fixtures-build =====
 python -m tests.regression_fixtures build
@@ -127,12 +130,12 @@ python -m tests.regression_fixtures check
 ===== check =====
 python -m tests
 python -m cua.eval.screenspot run --smoke-test
-python -m cua.pipeline.verify_gate_smoke
-python -m cua.pipeline.qa_verify_smoke
+python -m cua.pipeline.smoke.verify_gate
+python -m cua.pipeline.smoke.qa_verify
 python -m cua.cloud.vast run --smoke
-python -m cua.pipeline.corpus_audit_smoke
-python -m cua.pipeline.instruction_style_smoke
-python -m cua.pipeline.outcome_relabel_smoke
+python -m cua.pipeline.smoke.corpus_audit
+python -m cua.pipeline.smoke.instruction_style
+python -m cua.pipeline.smoke.outcome_relabel
 python experiments/render_registry.py --check
 python -m tests.regression_fixtures check
 ruff check .
@@ -165,42 +168,42 @@ python -m cua.rl.rollout --endpoint http://127.0.0.1:8001/v1 --model policy --k 
 python -m cua.rl.eval --endpoint http://127.0.0.1:8001/v1 --model policy  
 
 ===== audit-corpus =====
-python -m cua.pipeline.corpus_audit trajectories/
+python -m cua.pipeline.corpus.audit trajectories/
 
 ===== capture-public =====
-python -m cua.pipeline.public_capture  
+python -m cua.pipeline.lanes.public  
 
 ===== provision-human =====
 test -n "$SITE" || (echo 'ERROR: set SITE=<site-name> (a site from the indie/logingated config)' && exit 1)
 python -m playwright install chromium
-python -m cua.pipeline.provision_human x 
+python -m cua.pipeline.lanes.provision_human x 
 
 ===== capture-human =====
-python -m cua.pipeline.public_capture --config cua/pipeline/sites/public_sites_human.json --no-propose 
+python -m cua.pipeline.lanes.public --config cua/pipeline/sites/public_sites_human.json --no-propose 
 
 ===== capture-search =====
-python -m cua.pipeline.public_capture --config cua/pipeline/sites/public_sites_search.json  
+python -m cua.pipeline.lanes.public --config cua/pipeline/sites/public_sites_search.json  
 
 ===== capture-qa-verify =====
-python -m cua.pipeline.public_capture --config cua/pipeline/sites/public_sites_qa_verify.json  
+python -m cua.pipeline.lanes.public --config cua/pipeline/sites/public_sites_qa_verify.json  
 
 ===== polish-pass =====
-python -m cua.pipeline.polish_pass trajectories/
+python -m cua.pipeline.corpus.polish trajectories/
 
 ===== outcome-relabel =====
-python -m cua.pipeline.outcome_relabel trajectories/ --dry-run 
+python -m cua.pipeline.corpus.outcome_relabel trajectories/ --dry-run 
 
 ===== relabel-recoverable =====
-python -m cua.pipeline.relabel_recoverable trajectories/ --dry-run
+python -m cua.pipeline.corpus.relabel_recoverable trajectories/ --dry-run
 
 ===== wall-demos =====
-python -m cua.pipeline.wall_supervision trajectories/ --dry-run
+python -m cua.pipeline.corpus.wall_supervision trajectories/ --dry-run
 
 ===== instruction-style =====
-python -m cua.pipeline.instruction_style_pass trajectories/ --dry-run
+python -m cua.pipeline.corpus.instruction_style trajectories/ --dry-run
 
 ===== instruction-qa-voice =====
-python -m cua.pipeline.instruction_style_pass trajectories/ --mode qa_verify --dry-run
+python -m cua.pipeline.corpus.instruction_style trajectories/ --mode qa_verify --dry-run
 
 ===== pipeline-discover =====
 test -n "$GITHUB_TOKEN" || (echo 'ERROR: GITHUB_TOKEN not set' && exit 1)
@@ -235,6 +238,12 @@ python -m cua.pipeline.orchestrator --stage 7 \
 
 ===== pipeline-status =====
 python -m cua.pipeline.orchestrator --status
+
+===== gate-validate =====
+python -m cua.pipeline.tools.gate_tools validate 
+
+===== gate-regate =====
+python -m cua.pipeline.tools.gate_tools regate  
 
 ===== test-notifier =====
 python -m cua.pipeline.notifier --test

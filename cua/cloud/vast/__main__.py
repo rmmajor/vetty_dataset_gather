@@ -1,17 +1,4 @@
-"""CLI for provider-pluggable remote jobs (train / eval) on rented GPUs.
-
-    python -m cua.cloud.vast train                       # rent -> SFT -> pull adapter -> destroy
-    python -m cua.cloud.vast eval --model Qwen/Qwen3.5-9B-Base --model Qwen/Qwen3.5-9B --limit 100
-    python -m cua.cloud.vast run --smoke                 # no-cost self-test (mock provider)
-    python -m cua.cloud.vast grpo                        # rent -> GRPO against the local env service -> pull adapters -> destroy
-    python -m cua.cloud.vast serve --adapter output      # rent -> serve the student on 127.0.0.1:8001 via tunnel -> destroy
-    python -m cua.cloud.vast search                      # dry run: cheapest allowed offer, rents nothing
-    python -m cua.cloud.vast cleanup                     # destroy instances whose owning run is dead or released (--all: every labeled box)
-    python -m cua.cloud.vast release --instance ID       # a supervisor hands its box to cleanup instead of editing the state file
-
-`--provider` / `--benchmark` choices come straight from the registries, so a new provider or a
-new eval shows up in the CLI with no changes here.
-"""
+"""CLI for provider-pluggable remote jobs on rented GPUs, installed as `cua-remote`; every subcommand is documented in docs/architecture.md."""
 
 import argparse
 import logging
@@ -21,6 +8,8 @@ from cua.cloud.vast import lifecycle, state
 from cua.cloud.vast.base import PROVIDERS, ProviderError, build_provider
 from cua.cloud.vast.benchmarks import BENCHMARKS
 from cua.cloud.vast.config import load_config
+
+NOTIFY_HELP = "Telegram ping on completion."
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -109,7 +98,8 @@ def release_cmd(args) -> int:
     return 0
 
 
-def _add_common(p) -> None:
+def _add_common(p, notify=None) -> None:
+    """The flags every subcommand shares; `notify` is the help text of --notify (argparse.SUPPRESS hides it) and None omits the flag."""
     p.add_argument("--config", default="remote_train.yaml", help="Path to remote_train.yaml")
     p.add_argument("--provider", default=None, choices=sorted(PROVIDERS), help="Compute provider")
     p.add_argument("--gpu", default=None, help="GPU name substring filter (e.g. A100)")
@@ -118,14 +108,16 @@ def _add_common(p) -> None:
     p.add_argument("--max-price", type=float, default=None, help="Max $/hr cap")
     p.add_argument("--max-hours", type=float, default=None, help="Max wall-clock hours (teardown watchdog)")
     p.add_argument("--verbose", action="store_true", help="Debug logging")
+    if notify is not None:
+        p.add_argument("--notify", action="store_true", help=notify)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="remote_train", description="Remote GPU jobs (train / eval).")
+    parser = argparse.ArgumentParser(prog="cua-remote", description="Remote GPU jobs (train / eval).")
     sub = parser.add_subparsers(dest="command", required=True)
 
     train_p = sub.add_parser("train", help="Fine-tune on a rented GPU, pull the adapter, destroy.")
-    _add_common(train_p)
+    _add_common(train_p, notify=NOTIFY_HELP)
     train_p.add_argument(
         "--resume-from",
         dest="resume_from",
@@ -144,22 +136,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=None,
         help="If this supervisor is killed, leave the box running so the detached "
-        "job finishes; recover with `remote_train cleanup`.",
+        "job finishes; recover with `python -m cua.cloud.vast cleanup`.",
     )
     train_p.add_argument("--push-hf", default=None, help="HuggingFace repo to upload the adapter to.")
-    train_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     train_p.set_defaults(func=train_cmd)
 
     # `run` kept as an alias of `train` so `run --smoke` (the documented self-test) still works.
     run_p = sub.add_parser("run", help="Alias of `train`; `run --smoke` is the no-cost self-test.")
-    _add_common(run_p)
+    _add_common(run_p, notify=argparse.SUPPRESS)
     run_p.add_argument("--smoke", action="store_true", help="No-cost self-test (mock provider).")
     run_p.add_argument("--push-hf", default=None, help=argparse.SUPPRESS)
-    run_p.add_argument("--notify", action="store_true", help=argparse.SUPPRESS)
     run_p.set_defaults(func=train_cmd)
 
     eval_p = sub.add_parser("eval", help="Benchmark model(s) on a rented GPU. No training.")
-    _add_common(eval_p)
+    _add_common(eval_p, notify=NOTIFY_HELP)
     eval_p.add_argument(
         "--model", action="append", dest="models", help="Model id to evaluate (repeatable, e.g. Qwen/Qwen3.5-9B-Base)."
     )
@@ -174,20 +164,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Coordinate convention THE MODEL answers in. normalized_1000 for a "
         "stock Qwen; viewport_abs for a checkpoint fine-tuned on this corpus.",
     )
-    eval_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     eval_p.set_defaults(func=eval_cmd)
 
     grpo_p = sub.add_parser(
         "grpo", help="GRPO on a rented GPU against the local env service (make rl-serve first); ALWAYS destroys."
     )
-    _add_common(grpo_p)
+    _add_common(grpo_p, notify=NOTIFY_HELP)
     grpo_p.add_argument("--rl-config", default=None, help="RL run config (default rl_config.yaml)")
     grpo_p.add_argument(
         "--env-url",
         default=None,
         help="Env service URL as seen from the box (default from rl_config; mock:// for smokes)",
     )
-    grpo_p.add_argument("--notify", action="store_true", help="Telegram ping on completion.")
     grpo_p.set_defaults(func=grpo_cmd)
 
     serve_p = sub.add_parser(
@@ -231,7 +219,7 @@ def main() -> int:
     try:
         return args.func(args)
     except (ProviderError, FileNotFoundError, ValueError) as e:
-        logging.getLogger("remote_train").error(str(e))
+        logging.getLogger("cua-remote").error(str(e))
         return 1
 
 

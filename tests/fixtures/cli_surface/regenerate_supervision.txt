@@ -8,7 +8,7 @@ A trajectories (mind2web, in `trajectories/task_*/`) skip the instruction
 generator — their instructions come from the GPT recorder with a different
 provenance and would not benefit from the test-source-based prompt. They still
 get new thoughts. Run from the repo root: .venv-pipeline/bin/python -m
-cua.pipeline.regenerate_supervision --dry-run --sample 5
+cua.pipeline.corpus.regenerate_supervision --dry-run --sample 5
 
 positional arguments:
   path                  trajectories root (default: trajectories/)

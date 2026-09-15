@@ -88,10 +88,10 @@ the merge timestamp.
 - **Disposable-email domain** — see `superpowers/specs/2026-06-28-post-gather-sft-todo.md`.
   A cheap domain with catch-all forwarding unblocks teable, scribbles, outline-wiki and likely a
   share of the mainstream set, while keeping the burner-only invariant intact.
-- **`provision_human.SOURCE_CONFIGS`** is still a hardcoded 2-entry list and only *warns* on an
-  unknown site name; it should adopt `public_capture.known_site_configs` / `resolve_named_sites`
+- **`sites.registry.SOURCE_CONFIGS`** is still a hardcoded 2-entry list and only *warns* on an
+  unknown site name; it should adopt `sites.registry.known_site_configs` / `resolve_named_sites`
   so the human lane cannot silently drop a named site either.
-- **`stage6_generate._agent_capture_complete`** (`:169`, `:339`) still gates on
+- **`stage6_generate._teacher_capture_complete`** (`:169`, `:339`) still gates on
   `_is_valid_trajectory`, so the repo lane retains the "a failed task counts as recorded" bug that
   was fixed for the public lanes. Left alone deliberately: that lane has its own
   `AGENT_MAX_CONSECUTIVE_FAILS` semantics and re-capture there reboots a whole repo sandbox.
@@ -163,7 +163,7 @@ closed is "do this before RL", since there is no RL run to gate.
 
 Written 2026-09-01 from the QA-benchmark measurement of `sft-v1` plus a scan of our own corpus:
 only **16.1%** of done() steps follow any verification thought, and only 11.6% of trajectories
-re-open a page to check what they changed (`python -m cua.pipeline.verify_pattern_scan
+re-open a page to check what they changed (`python -m cua.pipeline.corpus.verify_pattern_scan
 trajectories`). The `false_done` penalty in `cua/rl/reward_config.json` cannot teach a behaviour the
 SFT distribution never demonstrates, so item 8 is gated on this. Full reasoning, tranche sizing and
 success bar: `docs/decisions/sft-v3-plan.md`.

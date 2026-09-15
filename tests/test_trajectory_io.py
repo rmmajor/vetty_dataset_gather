@@ -7,7 +7,7 @@ from cua.trajectory.io import TrajectoryDir, iter_trajectory_dirs, load_json, wr
 from cua.trajectory.schema import metadata_from
 from tests.regression_fixtures import write_synthetic_corpus
 
-# The key set cua.pipeline.public_capture._verify_and_finalize writes for every site_* capture.
+# The key set cua.pipeline.lanes.capture_lane.verify_and_finalize writes for every site_* capture.
 SITE_CAPTURE_KEYS = [
     "task_id",
     "instruction",

@@ -5,7 +5,7 @@
 Every variable below is read exactly once, at import of `cua/settings.py`, into a frozen section
 object. No other module reads the environment **except** the marked runtime reads: a handful of
 files that execute where the `cua` package is not importable — the injected conftests, the program
-string `auth_flow_smoke` runs inside the sandbox, and the Modal serve/merge images — keep their own
+string the auth-flow smoke runs inside the sandbox, and the Modal serve/merge images — keep their own
 read behind a `# env-read: <reason>` marker, which `scripts/check_env_reads.py` enforces. Those
 variables are therefore not in this table; the marker line names each one.
 
@@ -52,30 +52,33 @@ Regenerate this table with `python -m cua.settings --table`.
 | `THINK_BUDGET_USD` | `0.30` | `PIPELINE.think_budget_usd` | cua.pipeline.think_generator |
 | `THINK_SESSION_BUDGET_USD` | `5.0` | `PIPELINE.think_session_budget_usd` | cua.pipeline.think_generator |
 | `POLISH_BUDGET_USD` | `0.50` | `PIPELINE.polish_budget_usd` | cua.pipeline.think_generator |
-| `QA_VOICE_BUDGET_USD` | `0.50` | `PIPELINE.qa_voice_budget_usd` | cua.pipeline.instruction_style_pass |
-| `OUTCOME_WINDOW_STEPS` | `12` | `PIPELINE.outcome_window_steps` | cua.pipeline.outcome_relabel |
-| `OUTCOME_BUDGET_USD` | `1.00` | `PIPELINE.outcome_budget_usd` | cua.pipeline.outcome_relabel, cua.pipeline.outcome_relabel_smoke |
-| `OUTCOME_IMAGE_TOKENS` | `350` | `PIPELINE.outcome_image_tokens` | cua.pipeline.outcome_relabel |
-| `OUTCOME_PRICE_IN_PER_M` | `2.0` | `PIPELINE.outcome_price_in_per_m` | cua.pipeline.outcome_relabel |
-| `OUTCOME_PRICE_OUT_PER_M` | `10.0` | `PIPELINE.outcome_price_out_per_m` | cua.pipeline.outcome_relabel |
-| `OUTCOME_CALL_OVERHEAD_USD` | `0.08` | `PIPELINE.outcome_call_overhead_usd` | cua.pipeline.outcome_relabel |
-| `PUBLIC_TASKS_PER_SITE` | `6` | `PIPELINE.public_tasks_per_site` | cua.pipeline.public_capture |
+| `QA_VOICE_BUDGET_USD` | `0.50` | `PIPELINE.qa_voice_budget_usd` | cua.pipeline.corpus.instruction_style |
+| `OUTCOME_WINDOW_STEPS` | `12` | `PIPELINE.outcome_window_steps` | cua.pipeline.corpus.outcome_relabel |
+| `OUTCOME_BUDGET_USD` | `1.00` | `PIPELINE.outcome_budget_usd` | cua.pipeline.corpus.outcome_relabel, cua.pipeline.smoke.outcome_relabel |
+| `OUTCOME_IMAGE_TOKENS` | `350` | `PIPELINE.outcome_image_tokens` | cua.pipeline.corpus.outcome_relabel |
+| `OUTCOME_PRICE_IN_PER_M` | `2.0` | `PIPELINE.outcome_price_in_per_m` | cua.pipeline.corpus.outcome_relabel |
+| `OUTCOME_PRICE_OUT_PER_M` | `10.0` | `PIPELINE.outcome_price_out_per_m` | cua.pipeline.corpus.outcome_relabel |
+| `OUTCOME_CALL_OVERHEAD_USD` | `0.08` | `PIPELINE.outcome_call_overhead_usd` | cua.pipeline.corpus.outcome_relabel |
+| `PUBLIC_TASKS_PER_SITE` | `6` | `PIPELINE.public_tasks_per_site` | cua.pipeline.lanes.public |
 | `DRIVER_PORT` | `8765` | `PIPELINE.driver_port` | cua.pipeline.driver_session, cua.rl.backends |
 | `DRIVER_PLAYWRIGHT_CORE_VERSION` | `1.55.0` | `PIPELINE.driver_playwright_core_version` | cua.pipeline.driver_session |
 | `DRIVER_READY_TIMEOUT` | `60` | `PIPELINE.driver_ready_timeout` | cua.pipeline.driver_session |
-| `AGENT_MAX_ACTIONS` | `60` | `CAPTURE.max_actions_per_task` | cua.pipeline.agent_capture |
-| `AGENT_TASK_BUDGET_USD` | `25.0` | `CAPTURE.task_budget_usd` | cua.pipeline.agent_capture |
-| `AGENT_MAX_TURNS` | `150` | `CAPTURE.max_turns` | cua.pipeline.agent_capture |
-| `VERIFY_BUDGET_USD` | `0.30` | `CAPTURE.verify_budget_usd` | cua.pipeline.agent_capture |
-| `AGENT_RELABEL_MIN_STEPS` | `3` | `CAPTURE.relabel_min_steps` | cua.pipeline.relabel_recoverable |
-| `AGENT_DEGENERATE_LOOP_FRACTION` | `0.6` | `CAPTURE.degenerate_loop_fraction` | cua.pipeline.agent_capture |
-| `AGENT_DEGENERATE_MIN_REPEATS` | `3` | `CAPTURE.degenerate_min_repeats` | cua.pipeline.agent_capture |
+| `AGENT_MAX_ACTIONS` | `60` | `CAPTURE.max_actions_per_task` | cua.pipeline.teacher |
+| `AGENT_TASK_BUDGET_USD` | `25.0` | `CAPTURE.task_budget_usd` | cua.pipeline.teacher |
+| `AGENT_MAX_TURNS` | `150` | `CAPTURE.max_turns` | cua.pipeline.teacher |
+| `VERIFY_BUDGET_USD` | `0.30` | `CAPTURE.verify_budget_usd` | cua.pipeline.teacher |
+| `AGENT_RELABEL_MIN_STEPS` | `3` | `CAPTURE.relabel_min_steps` | cua.pipeline.corpus.relabel_recoverable |
+| `AGENT_DEGENERATE_LOOP_FRACTION` | `0.6` | `CAPTURE.degenerate_loop_fraction` | cua.pipeline.teacher |
+| `AGENT_DEGENERATE_MIN_REPEATS` | `3` | `CAPTURE.degenerate_min_repeats` | cua.pipeline.teacher |
 | `AGENT_CONTAINER_TIMEOUT` | `10800` | `CAPTURE.container_timeout` | cua.pipeline.stage6_generate |
 | `AGENT_TASK_TIME_RESERVE` | `900` | `CAPTURE.task_time_reserve` | cua.pipeline.stage6_generate |
 | `AGENT_MAX_KEPT_PER_REPO` | `10` | `CAPTURE.max_kept_per_repo` | cua.pipeline.stage6_generate |
 | `AGENT_MAX_CONSECUTIVE_FAILS` | `3` | `CAPTURE.max_consecutive_fails` | cua.pipeline.stage6_generate |
-| `CAPTURE_MAX_ATTEMPTS` | `2` | `CAPTURE.max_attempts` | cua.pipeline.public_capture, cua.pipeline.stage6_generate |
-| `PUBLIC_CONTAINER_TIMEOUT` | `10800` | `CAPTURE.public_container_timeout` | cua.pipeline.public_capture |
+| `CAPTURE_MAX_ATTEMPTS` | `2` | `CAPTURE.max_attempts` | cua.pipeline.lanes.capture_lane, tests.test_capture_lane |
+| `PUBLIC_CONTAINER_TIMEOUT` | `10800` | `CAPTURE.public_container_timeout` | cua.pipeline.lanes.public |
+| `LOGINGATED_CONTAINER_TIMEOUT` | `5400` | `CAPTURE.logingated_container_timeout` | cua.pipeline.lanes.logingated |
+| `REGISTER_CONTAINER_TIMEOUT` | `5400` | `CAPTURE.register_container_timeout` | cua.pipeline.lanes.register_real_site |
+| `PROBE_CONTAINER_TIMEOUT` | `1800` | `CAPTURE.probe_container_timeout` | cua.pipeline.lanes.probe_sandbox |
 | `WATCHDOG_POLICY` | `llm` | `CAPTURE.watchdog_policy` | cua.pipeline.safety_watchdog |
 | `WATCHDOG_BUDGET_USD` | `0.20` | `CAPTURE.watchdog_budget_usd` | cua.pipeline.safety_watchdog |
 | `PERSONA_EMAIL_DOMAIN` | `example.com` | `CAPTURE.persona_email_domain` | cua.pipeline.persona |
@@ -112,18 +115,18 @@ Regenerate this table with `python -m cua.settings --table`.
 | `EVAL_API_KEY` | `""` | `EVAL.api_key` | cua.eval.student |
 | `EVAL_COORD_SPACE` | `normalized_1000` | `EVAL.coord_space` | cua.eval.student |
 | `EVAL_ENV_FILE` | `""` | `EVAL.env_file` | cua.eval.task_sources |
-| `VERIFY_MID_SCREENSHOTS` | `2` | `EVAL.verify_mid_screenshots` | cua.pipeline.agent_capture |
+| `VERIFY_MID_SCREENSHOTS` | `2` | `EVAL.verify_mid_screenshots` | cua.pipeline.teacher |
 | `HF_ENDPOINT` | `https://huggingface.co` | `EVAL.hf_endpoint` | cua.eval.task_sources |
 | `HF_TOKEN` | — | `EVAL.hf_token` | cua.cloud.vast.config |
 | `HUGGING_FACE_HUB_TOKEN` | — | `EVAL.hugging_face_hub_token` | — |
 | `HUGGINGFACE_HUB_TOKEN` | — | `EVAL.huggingface_hub_token` | — |
 | `HF_READ_TOKEN` | — | `EVAL.hf_read_token` | — |
-| `SCREENSPOT_IMAGE_SIZE` | `native` | `EVAL.screenspot_image_size` | cua.eval.screenspot |
-| `SCREENSPOT_ENDPOINT` | `""` | `EVAL.screenspot_endpoint` | cua.eval.screenspot |
-| `SCREENSPOT_API_KEY` | `""` | `EVAL.screenspot_api_key` | cua.eval.screenspot |
-| `SCREENSPOT_WORKERS` | `8` | `EVAL.screenspot_workers` | cua.eval.screenspot |
-| `SCREENSPOT_CLAUDE_WORKERS` | `4` | `EVAL.screenspot_claude_workers` | cua.eval.screenspot |
-| `SCREENSPOT_CLAUDE_BUDGET_USD` | `0.30` | `EVAL.screenspot_claude_budget_usd` | cua.eval.screenspot |
+| `SCREENSPOT_IMAGE_SIZE` | `native` | `EVAL.screenspot_image_size` | cua.eval.screenspot.config |
+| `SCREENSPOT_ENDPOINT` | `""` | `EVAL.screenspot_endpoint` | cua.eval.screenspot.predictors |
+| `SCREENSPOT_API_KEY` | `""` | `EVAL.screenspot_api_key` | cua.eval.screenspot.predictors |
+| `SCREENSPOT_WORKERS` | `8` | `EVAL.screenspot_workers` | cua.eval.screenspot.predictors |
+| `SCREENSPOT_CLAUDE_WORKERS` | `4` | `EVAL.screenspot_claude_workers` | cua.eval.screenspot.predictors |
+| `SCREENSPOT_CLAUDE_BUDGET_USD` | `0.30` | `EVAL.screenspot_claude_budget_usd` | cua.eval.screenspot.predictors |
 | `CUA_TRAIN_GPU` | `A100-80GB` | `CLOUD.train_gpu` | cua.cloud.modal.train |
 | `CUA_RUN_NAME` | `sft-v1` | `CLOUD.run_name` | cua.cloud.modal.train |
 | `CUA_TRAIN_TIMEOUT` | `36000` | `CLOUD.train_timeout` | cua.cloud.modal.train |

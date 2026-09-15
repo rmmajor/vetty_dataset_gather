@@ -1,18 +1,6 @@
-"""Provider-agnostic compute abstraction for remote training.
+"""The provider contract the remote lifecycle sees, the registry it is selected from, and the shared offer-selection policy."""
 
-A `ComputeProvider` is the entire surface the training lifecycle (`lifecycle.py`) sees:
-find a GPU offer, rent it, run commands / move files over SSH, and tear it down. Vast.ai
-is the first implementation (`vastai.py`); a second provider (RunPod, Lambda, …) is a new
-module implementing the eight methods below plus one line appending its factory to
-`PROVIDERS` — the lifecycle, CLI, and Makefile never change. This mirrors
-`cua/eval/screenspot.py`'s predictor-backend registry: a dict of name -> factory function,
-selected by a `--provider` flag validated against `sorted(PROVIDERS)`.
-
-Offer selection (`select_cheapest_allowed`) and the country deny-list (`is_excluded_country`)
-live here as pure functions so every provider shares one policy and the self-test can
-exercise them without renting anything.
-"""
-
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from cua.cloud.vast import state
@@ -52,11 +40,7 @@ class Instance:
 
 
 class ComputeProvider:
-    """The contract every GPU provider implements. Methods raise `ProviderError` on failure.
-
-    Implement these eight methods and append a factory to `PROVIDERS`; nothing else in the
-    codebase needs to change to support a new provider.
-    """
+    """Every GPU provider implements these methods, raising `ProviderError` on failure, and appends a factory to `PROVIDERS`."""
 
     name: str = "base"
 
@@ -76,8 +60,8 @@ class ComputeProvider:
         """Run a shell command over SSH. Returns (stdout, stderr, exit_code)."""
         raise NotImplementedError
 
-    def upload(self, instance: Instance, local_path: str, remote_path: str) -> None:
-        """Copy a local file/dir to the instance."""
+    def upload(self, instance: Instance, local_path: str, remote_path: str, *, exclude: Sequence[str] = ()) -> None:
+        """Copy a local file/dir to the instance, skipping paths matching the `exclude` patterns (rsync syntax, relative to `local_path`)."""
         raise NotImplementedError
 
     def download(self, instance: Instance, remote_path: str, local_path: str) -> None:
@@ -141,11 +125,7 @@ def is_excluded_country(geolocation, exclude_codes) -> bool:
 
 
 def select_cheapest_allowed(offers: list, cfg) -> Offer:
-    """Pure shared selection: drop excluded countries, enforce price/vram, cheapest wins.
-
-    Used by every provider so the geo/price/vram policy is defined once. Raises
-    `ProviderError` (with a diagnostic) if nothing qualifies.
-    """
+    """Pure shared selection used by every provider: drop excluded countries, enforce price/vram, cheapest wins."""
     blocked = state.bad_offer_ids()
     allowed = [
         o
