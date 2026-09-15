@@ -2,7 +2,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -22,33 +21,11 @@ from cua.pipeline.sandbox import DockerSandbox
 from cua.pipeline.schemas import FailureCategory, QualityReject, RepoStatus, RetryableFailure
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 from cua.pipeline.task_proposer import propose_tasks
+from cua.settings import CAPTURE, PIPELINE
 
 logger = logging.getLogger(__name__)
 
-# Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet-class models — see
-# memory pathb-e2e-and-sdk-budget-floor). Defaults sit comfortably above that floor; tune
-# down only after verifying a smaller cap doesn't trip `error_max_budget_usd`.
-INSTRUCTION_BUDGET_USD = float(os.environ.get("INSTRUCTION_BUDGET_USD", "0.30"))
-TASK_TYPE_BUDGET_USD = float(os.environ.get("TASK_TYPE_BUDGET_USD", "0.30"))
 SUITE_RUN_TIMEOUT = 480  # seconds; partial capture on timeout is fine for trajectory mining
-
-# One container hosts a whole repo's agent session (app boot + N teacher tasks), so it needs
-# more than the 30-minute default. Teacher turns can stretch enormously under subscription
-# rate-limit waits, hence the generous ceiling plus the per-task time reserve below.
-AGENT_CONTAINER_TIMEOUT = int(os.environ.get("AGENT_CONTAINER_TIMEOUT", "10800"))
-# Don't start another teacher task with less than this much container time left — a task that
-# gets cut off mid-flight records an incoherent tail.
-AGENT_TASK_TIME_RESERVE = int(os.environ.get("AGENT_TASK_TIME_RESERVE", "900"))
-# At most this many verified trajectories are kept per repo — diversity guard so one prolific
-# app cannot dominate the corpus the way Booking.com did.
-AGENT_MAX_KEPT = int(os.environ.get("AGENT_MAX_KEPT_PER_REPO", "10"))
-# Early-abort: stop a repo after this many CONSECUTIVE unproductive tasks (teacher reported
-# failure, or the task aborted on an exception). A repo whose backend never came up or whose
-# auth wall blocks every flow (e.g. TREK) otherwise grinds through its whole task list — minutes
-# per doomed task. A productive task resets the counter.
-AGENT_MAX_CONSECUTIVE_FAILS = int(os.environ.get("AGENT_MAX_CONSECUTIVE_FAILS", "3"))
-# Bounds re-capture of failed trajectories so a permanently-blocked task cannot burn a sandbox forever.
-CAPTURE_MAX_ATTEMPTS = int(os.environ.get("CAPTURE_MAX_ATTEMPTS", "2"))
 ATTEMPTS_FILE = "capture_attempts.json"
 
 INSTRUCTION_PROMPT = """You are reading an automated browser test for a web application.
@@ -160,7 +137,7 @@ def capture_verdict(traj_dir: Path) -> str | None:
 
 def is_capture_exhausted(traj_dir: Path) -> bool:
     """A recorded trajectory that failed verification and has no attempts left."""
-    return capture_verdict(traj_dir) == "failed" and capture_attempts(traj_dir) >= CAPTURE_MAX_ATTEMPTS
+    return capture_verdict(traj_dir) == "failed" and capture_attempts(traj_dir) >= CAPTURE.max_attempts
 
 
 def is_capture_settled(traj_dir: Path) -> bool:
@@ -286,11 +263,11 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
     repo_name = repo["full_name"]
     # Default Playwright image regardless of the repo's own framework: the teacher never runs
     # the repo's tests, and the browser driver needs this image's /ms-playwright browsers.
-    sandbox = DockerSandbox(container_timeout=AGENT_CONTAINER_TIMEOUT)
+    sandbox = DockerSandbox(container_timeout=CAPTURE.container_timeout)
     captured_anything = False
     # Auth-flow capture: bring up the shared mail stack and attach this sandbox to it, so the app's
     # verification/reset mail lands in GreenMail and the agent can read it through Roundcube.
-    auth_flow = schemas.AUTH_FLOW_CAPTURE
+    auth_flow = PIPELINE.auth_flow_capture
     mail_stack = await _run(mail_service.ensure_mail_stack) if auth_flow else None
     # App env for auth-flow capture: SMTP pointed at GreenMail + dummy auth secrets (JWT_SECRET,
     # NEXTAUTH_URL, ...) most auth apps need just to boot. Without the latter a Next/Express auth
@@ -393,7 +370,7 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                 continue
             if rate_limit_tracker.limit_reached():
                 raise UsageLimitReached("usage limit reached mid agent capture")
-            if sandbox.remaining_seconds() < AGENT_TASK_TIME_RESERVE:
+            if sandbox.remaining_seconds() < CAPTURE.task_time_reserve:
                 rlog.info(
                     f"container time low ({sandbox.remaining_seconds():.0f}s left), "
                     f"stopping after {i} of {len(tasks)} tasks"
@@ -444,7 +421,7 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                 task_secrets = acct_creds
                 task_mail = acct_mail
             elif auth == "account":
-                if captured_session is not None and not _use_discovered(account_index, schemas.AUTH_DISCOVERED_RATIO):
+                if captured_session is not None and not _use_discovered(account_index, PIPELINE.auth_discovered_ratio):
                     auth_mode = "pre_session"
                     task_authcfg = {"auth_mode": "pre_session", "storage_state": captured_session}
                 else:
@@ -493,7 +470,7 @@ async def _capture_agent(rlog, registry: RepoRegistry, repo: dict, profile, repo
                 await _run(sandbox.copy_out, RESULTS_DIR, str(repo_traj_dir))
             except Exception as e:
                 logger.warning(f"incremental copy_out failed for {repo_name}: {e}")
-            if consecutive_fails >= AGENT_MAX_CONSECUTIVE_FAILS:
+            if consecutive_fails >= CAPTURE.max_consecutive_fails:
                 rlog.warning(
                     f"early-abort: {consecutive_fails} consecutive unproductive tasks "
                     f"(stopped after {i + 1} of {len(tasks)}) — likely a dead backend or auth wall"
@@ -546,7 +523,7 @@ async def _postprocess_agent_capture(rlog, registry, repo, repo_traj_dir: Path) 
         )
 
     # Dedup + cap among verified-successful trajectories: identical action-shape duplicates are
-    # excluded, then the longest AGENT_MAX_KEPT survive (length is the scarce resource).
+    # excluded, then the longest AGENT_MAX_KEPT_PER_REPO survive (length is the scarce resource).
     verified = []
     for traj_dir in valid_dirs:
         traj = json.loads((traj_dir / "trajectory.json").read_text())
@@ -561,7 +538,7 @@ async def _postprocess_agent_capture(rlog, registry, repo, repo_traj_dir: Path) 
         if h in seen_hashes:
             _excluded(traj_dir, "duplicate action sequence")
             continue
-        if kept >= AGENT_MAX_KEPT:
+        if kept >= CAPTURE.max_kept_per_repo:
             _excluded(traj_dir, "per_repo_cap")
             continue
         seen_hashes.add(h)
@@ -758,7 +735,7 @@ async def generate_instruction(
             ClaudeAgentOptions(
                 model=MODEL_FOR_GROUNDED_GENERATION,
                 max_turns=1,
-                max_budget_usd=INSTRUCTION_BUDGET_USD,
+                max_budget_usd=PIPELINE.instruction_budget_usd,
                 permission_mode="bypassPermissions",
             ),
             registry=registry,
@@ -873,7 +850,7 @@ async def classify_task_type(trajectory: dict, capture_meta: dict, registry=None
             ClaudeAgentOptions(
                 model=MODEL_FOR_CLASSIFICATION,
                 max_turns=1,
-                max_budget_usd=TASK_TYPE_BUDGET_USD,
+                max_budget_usd=PIPELINE.task_type_budget_usd,
                 permission_mode="bypassPermissions",
             ),
             registry=registry,

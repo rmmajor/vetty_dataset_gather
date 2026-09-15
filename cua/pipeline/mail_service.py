@@ -33,6 +33,7 @@ import urllib.request
 from dataclasses import dataclass, field
 
 import docker
+from cua.settings import CAPTURE
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,9 @@ WEBMAIL_PORT = 80
 
 # Host-published ports for readiness polling + host-side mail probes (the in-sandbox path uses
 # the network DNS above, not these). Only one shared stack per host, so fixed ports are safe.
-HOST_SMTP_PORT = int(__import__("os").environ.get("MAIL_HOST_SMTP_PORT", "13025"))
-HOST_IMAP_PORT = int(__import__("os").environ.get("MAIL_HOST_IMAP_PORT", "13143"))
-HOST_WEBMAIL_PORT = int(__import__("os").environ.get("MAIL_HOST_WEBMAIL_PORT", "18080"))
+HOST_SMTP_PORT = CAPTURE.mail_host_smtp_port
+HOST_IMAP_PORT = CAPTURE.mail_host_imap_port
+HOST_WEBMAIL_PORT = CAPTURE.mail_host_webmail_port
 
 GREENMAIL_OPTS = (
     "-Dgreenmail.setup.test.all -Dgreenmail.auth.disabled -Dgreenmail.users.login=email -Dgreenmail.hostname=0.0.0.0"

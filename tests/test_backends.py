@@ -1,4 +1,5 @@
-from cua.rl.backends import BACKENDS, RL_LOOP_GUARD_REPEATS, StaticPageBackend, WorkerPool, resolve_preconditions
+from cua.rl.backends import BACKENDS, StaticPageBackend, WorkerPool, resolve_preconditions
+from cua.settings import RL
 
 
 def test_pool_passes_the_loop_guard_to_every_driver():
@@ -9,7 +10,7 @@ def test_pool_passes_the_loop_guard_to_every_driver():
         w.driver_env == {"DRIVER_LOOP_GUARD_REPEATS": "7"} for w in pool.workers
     )
     assert (
-        WorkerPool(StaticPageBackend("<html></html>"), requested_workers=1).loop_guard_repeats == RL_LOOP_GUARD_REPEATS
+        WorkerPool(StaticPageBackend("<html></html>"), requested_workers=1).loop_guard_repeats == RL.loop_guard_repeats
     )
 
 

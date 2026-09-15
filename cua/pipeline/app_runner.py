@@ -17,18 +17,14 @@ persisted log (see stage5) explaining why.
 
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass
 
 from cua.pipeline.frameworks import FrameworkProfile
 from cua.pipeline.instrumentation import REPO_DIR
+from cua.settings import SANDBOX
 
 logger = logging.getLogger(__name__)
-
-# Seconds to wait for the dev server's port to open before running the tests anyway. Env-tunable.
-APP_READY_TIMEOUT = int(os.environ.get("SANDBOX_APP_READY_TIMEOUT", "60"))
-BUILD_TIMEOUT = int(os.environ.get("SANDBOX_APP_BUILD_TIMEOUT", "420"))
 
 # Start scripts to try, in order of preference. `dev` needs no build and is the most likely to work.
 _START_SCRIPTS = ("dev", "start", "serve", "preview")
@@ -262,7 +258,7 @@ def detect_app_start(sandbox, profile: FrameworkProfile, for_agent: bool = False
 def build_app(sandbox, spec: AppStartSpec | None):
     """Run the one-time build (if the chosen start needs it) before the test runs."""
     if spec and spec.build_cmd:
-        sandbox.exec_command(spec.build_cmd, timeout=BUILD_TIMEOUT)
+        sandbox.exec_command(spec.build_cmd, timeout=SANDBOX.app_build_timeout)
 
 
 def wrap_test_command(test_cmd: str, spec: AppStartSpec | None) -> str:
@@ -276,7 +272,7 @@ def wrap_test_command(test_cmd: str, spec: AppStartSpec | None) -> str:
         return test_cmd
     return (
         f"( {spec.start_cmd} >/workspace/app.log 2>&1 ) & APP_PID=$! ; "
-        f"for i in $(seq 1 {APP_READY_TIMEOUT}); do "
+        f"for i in $(seq 1 {SANDBOX.app_ready_timeout}); do "
         f"(exec 3<>/dev/tcp/127.0.0.1/{spec.port}) 2>/dev/null && break; sleep 1; done ; "
         f"{test_cmd} ; "
         f"kill $APP_PID 2>/dev/null ; pkill -P $APP_PID 2>/dev/null || true"

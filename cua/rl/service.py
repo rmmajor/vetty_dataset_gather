@@ -4,7 +4,6 @@ import argparse
 import gzip
 import json
 import logging
-import os
 import queue
 import sys
 import threading
@@ -14,20 +13,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from cua.pipeline.sandbox import install_sigterm_handler
-from cua.rl.backends import RL_LOOP_GUARD_REPEATS
 from cua.rl.episode import Episode, EpisodeConfig
 from cua.rl.judge import AsyncBridge
 from cua.rl.rollout import build_pool
 from cua.rl.runner import make_run_context, require_oracles
 from cua.rl.tasks import SUITE_PATH, load_suite, select_tasks
+from cua.settings import RL
 
 logger = logging.getLogger(__name__)
-RL_ENV_HOST = os.environ.get("RL_ENV_HOST", "127.0.0.1")
-RL_ENV_PORT = int(os.environ.get("RL_ENV_PORT", "8900"))
-RL_ENV_TOKEN = os.environ.get("RL_ENV_TOKEN", "")
-# Below the ingress's ~100 s origin timeout (Cloudflare): a longer server-side wait is cut off by the tunnel before the 503 reaches the client.
-RL_RESET_TIMEOUT_S = float(os.environ.get("RL_RESET_TIMEOUT_S", "45"))
-RL_EPISODE_IDLE_S = float(os.environ.get("RL_EPISODE_IDLE_S", "600"))
 
 
 def _terminal_payload(record):
@@ -36,7 +29,7 @@ def _terminal_payload(record):
 
 class EnvService:
     def __init__(
-        self, pool, tasks_by_id, run_ctx_factory, cfg, episode_cls=Episode, reset_timeout_s=RL_RESET_TIMEOUT_S
+        self, pool, tasks_by_id, run_ctx_factory, cfg, episode_cls=Episode, reset_timeout_s=RL.reset_timeout_s
     ):
         self.pool, self.tasks, self.run_ctx_factory, self.cfg = pool, tasks_by_id, run_ctx_factory, cfg
         self.episode_cls, self.reset_timeout_s = episode_cls, reset_timeout_s
@@ -169,7 +162,7 @@ class EnvService:
         self._entry(episode_id)
         return {"status": "live"}
 
-    def reap(self, max_idle_s=RL_EPISODE_IDLE_S):
+    def reap(self, max_idle_s=RL.episode_idle_s):
         with self.lock:
             stale = [eid for eid, e in self.episodes.items() if time.time() - e["last"] > max_idle_s]
         for episode_id in stale:
@@ -255,14 +248,14 @@ def main():
     parser.add_argument("--split", default="train")
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--drivers-per-sandbox", type=int, default=1)
-    parser.add_argument("--loop-guard-repeats", type=int, default=RL_LOOP_GUARD_REPEATS)
+    parser.add_argument("--loop-guard-repeats", type=int, default=RL.loop_guard_repeats)
     parser.add_argument("--backend", default="public_site")
     parser.add_argument("--max-steps", type=int, default=30)
     parser.add_argument("--verifier-mode", default="fallback", choices=["always", "fallback", "never"])
     parser.add_argument("--run-id", default=time.strftime("service-%Y%m%d-%H%M%S"))
     parser.add_argument("--out", default="rl_runs")
-    parser.add_argument("--host", default=RL_ENV_HOST)
-    parser.add_argument("--port", type=int, default=RL_ENV_PORT)
+    parser.add_argument("--host", default=RL.env_host)
+    parser.add_argument("--port", type=int, default=RL.env_port)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     install_sigterm_handler()
@@ -278,7 +271,7 @@ def main():
         return make_run_context(run_id, Path(args.out) / run_id, iteration, policy_tag=tag, bridge=bridge)
 
     service = EnvService(pool, tasks, run_ctx_factory, cfg)
-    server = serve(service, args.host, args.port, RL_ENV_TOKEN)
+    server = serve(service, args.host, args.port, RL.env_token)
     try:
         pool.start()
         threading.Thread(target=_reap_forever, args=(service,), daemon=True).start()

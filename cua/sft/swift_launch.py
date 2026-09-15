@@ -92,7 +92,7 @@ def train_model(
     _resolve_val_dataset(config)
 
     cmd = build_sft_command(config, passthrough_args=passthrough_args)
-    env = os.environ.copy()
+    env = os.environ.copy()  # env-read: the `swift sft` child inherits this process's environment
     max_pixels = config.get("max_pixels")
     if max_pixels:
         env[MAX_PIXELS_ENV] = str(max_pixels)

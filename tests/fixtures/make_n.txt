@@ -138,7 +138,7 @@ python -m tests.regression_fixtures check
 ruff check .
 ruff format --check .
 python scripts/check_comments.py .
-python scripts/check_env_reads.py . --report-only 
+python scripts/check_env_reads.py . --allow cua/settings.py
 python scripts/check_nested_imports.py . --report-only
 <make> test-student-eval EVAL_ARGS=--no-judge
 python -m cua.eval.student_smoke --no-judge
@@ -341,7 +341,7 @@ python experiments/render_registry.py --check
 ruff check .
 ruff format --check .
 python scripts/check_comments.py .
-python scripts/check_env_reads.py . --report-only 
+python scripts/check_env_reads.py . --allow cua/settings.py
 python scripts/check_nested_imports.py . --report-only
 
 ===== fmt =====

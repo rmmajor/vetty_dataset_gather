@@ -8,19 +8,20 @@ import time
 from pathlib import Path
 
 from cua.pipeline.sandbox import install_sigterm_handler
-from cua.rl.backends import BACKENDS, RL_LOOP_GUARD_REPEATS, WorkerPool
+from cua.rl.backends import BACKENDS, WorkerPool
 from cua.rl.episode import EpisodeConfig
 from cua.rl.judge import AsyncBridge
 from cua.rl.policies import make_policy
 from cua.rl.runner import make_run_context, require_oracles, run_batch, summarize, write_rollouts
 from cua.rl.tasks import SUITE_PATH, load_suite, select_tasks
+from cua.settings import RL
 
 logger = logging.getLogger(__name__)
 
 
 def add_common_args(parser):
     parser.add_argument("--policy", default="openai", choices=["openai", "mock", "scripted"])
-    parser.add_argument("--endpoint", default="http://127.0.0.1:8001/v1")
+    parser.add_argument("--endpoint", default=f"http://127.0.0.1:{RL.serve_port}/v1")
     parser.add_argument("--model", default="policy")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--max-tokens", type=int, default=512)
@@ -31,7 +32,7 @@ def add_common_args(parser):
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--drivers-per-sandbox", type=int, default=1)
-    parser.add_argument("--loop-guard-repeats", type=int, default=RL_LOOP_GUARD_REPEATS)
+    parser.add_argument("--loop-guard-repeats", type=int, default=RL.loop_guard_repeats)
     parser.add_argument("--backend", default="public_site", choices=sorted(BACKENDS))
     parser.add_argument("--max-steps", type=int, default=30)
     parser.add_argument("--verifier-mode", default="fallback", choices=["always", "fallback", "never"])

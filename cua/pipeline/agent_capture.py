@@ -15,7 +15,6 @@ audited `cua.pipeline.relabel_recoverable` pass, never here.
 import asyncio
 import json
 import logging
-import os
 import re
 from pathlib import Path
 
@@ -29,21 +28,11 @@ from cua.pipeline.llm_config import MODEL_FOR_REASONING, MODEL_FOR_TEACHER_AGENT
 from cua.pipeline.persona import MASKED_FIELDS, default_persona, persona_secrets
 from cua.pipeline.safety_watchdog import get_policy
 from cua.pipeline.sdk_runner import UsageLimitReached
+from cua.settings import CAPTURE, EVAL
 
 logger = logging.getLogger(__name__)
 
-MAX_ACTIONS_PER_TASK = int(os.environ.get("AGENT_MAX_ACTIONS", "60"))
-AGENT_TASK_BUDGET_USD = float(os.environ.get("AGENT_TASK_BUDGET_USD", "25.0"))
-AGENT_MAX_TURNS = int(os.environ.get("AGENT_MAX_TURNS", "150"))
 VERIFIER_UNAVAILABLE_REASON = "verifier unavailable"
-VERIFY_BUDGET_USD = float(os.environ.get("VERIFY_BUDGET_USD", "0.30"))
-# Hindsight relabeling only makes sense for trajectories with real substance.
-RELABEL_MIN_STEPS = int(os.environ.get("AGENT_RELABEL_MIN_STEPS", "3"))
-# Degeneracy — one action over this share of the UI steps, repeated at least this often — is the ONLY override of a confirmed goal.
-DEGENERATE_LOOP_FRACTION = float(os.environ.get("AGENT_DEGENERATE_LOOP_FRACTION", "0.6"))
-DEGENERATE_MIN_REPEATS = int(os.environ.get("AGENT_DEGENERATE_MIN_REPEATS", "3"))
-# Mid-run frames per verdict beyond the final one; ~1230 tokens each, so the eval-scale cost dial.
-VERIFY_MID_SCREENSHOTS = int(os.environ.get("VERIFY_MID_SCREENSHOTS", "2"))
 
 TEACHER_PROMPT = """You are a skilled computer user accomplishing a goal in a web application. \
 Work through the app's UI exactly as a careful human would.
@@ -373,7 +362,7 @@ def build_driver_mcp_server(
     async def _act(payload: dict):
         if state["completed"]:
             return _text("task already completed — no further actions.", is_error=True)
-        if state["actions"] >= MAX_ACTIONS_PER_TASK:
+        if state["actions"] >= CAPTURE.max_actions_per_task:
             return _text(
                 "action budget exhausted. Call task_complete now with an honest outcome.",
                 is_error=True,
@@ -394,7 +383,7 @@ def build_driver_mcp_server(
         except Exception as e:
             return _text(f"driver failure: {str(e)[:300]}", is_error=True)
         state["actions"] += 1
-        remaining = MAX_ACTIONS_PER_TASK - state["actions"]
+        remaining = CAPTURE.max_actions_per_task - state["actions"]
         return _text(
             f"done (step {result['step']}, {remaining} actions left)\nURL: {result['url']}\n\n{result['snapshot']}"
         )
@@ -872,7 +861,7 @@ async def run_teacher_task(
         instruction=task["instruction"],
         url=session["url"],
         snapshot=session["snapshot"],
-        max_actions=MAX_ACTIONS_PER_TASK,
+        max_actions=CAPTURE.max_actions_per_task,
         policy_block=render_policy_block(
             autonomy,
             auth_mode,
@@ -890,8 +879,8 @@ async def run_teacher_task(
             prompt,
             ClaudeAgentOptions(
                 model=MODEL_FOR_TEACHER_AGENT,
-                max_turns=AGENT_MAX_TURNS,
-                max_budget_usd=AGENT_TASK_BUDGET_USD,
+                max_turns=CAPTURE.max_turns,
+                max_budget_usd=CAPTURE.task_budget_usd,
                 permission_mode="bypassPermissions",
                 mcp_servers={"browser": server},
                 allowed_tools=allowed,
@@ -977,7 +966,7 @@ def _verification_screenshots(traj_dir: Path, steps: list, mid_screenshots: int 
     """Final screenshot plus evenly-sampled mid-trajectory frames. A final-screenshot-only
     verifier is process-blind: a run that wandered into the right end state trains wandering as
     positive. Mid frames let the judge see whether progress was actually being made."""
-    n_mid = VERIFY_MID_SCREENSHOTS if mid_screenshots is None else mid_screenshots
+    n_mid = EVAL.verify_mid_screenshots if mid_screenshots is None else mid_screenshots
     paths = []
     labels = []
     ui_steps = [s for s in steps if s.get("actions") and s["actions"][0].get("type") != "done"]
@@ -1045,8 +1034,8 @@ def degenerate_loop_evidence(steps: list[dict]) -> dict:
     # Far stricter than the converter's stuck-loop DEFECT check: a real run that retried one control four times must survive this.
     degenerate = (
         bool(ui_steps)
-        and dominant_repeats >= DEGENERATE_MIN_REPEATS
-        and dominant_repeats / len(ui_steps) >= DEGENERATE_LOOP_FRACTION
+        and dominant_repeats >= CAPTURE.degenerate_min_repeats
+        and dominant_repeats / len(ui_steps) >= CAPTURE.degenerate_loop_fraction
     )
     return {"ui_steps": len(ui_steps), "dominant_action_repeats": dominant_repeats, "degenerate": degenerate}
 
@@ -1104,7 +1093,7 @@ async def verify_trajectory(
             ClaudeAgentOptions(
                 model=MODEL_FOR_REASONING,
                 max_turns=1,
-                max_budget_usd=VERIFY_BUDGET_USD,
+                max_budget_usd=CAPTURE.verify_budget_usd,
                 permission_mode="bypassPermissions",
             ),
             registry=registry,
@@ -1208,7 +1197,7 @@ async def session_authenticated(
             ClaudeAgentOptions(
                 model=MODEL_FOR_REASONING,
                 max_turns=1,
-                max_budget_usd=VERIFY_BUDGET_USD,
+                max_budget_usd=CAPTURE.verify_budget_usd,
                 permission_mode="bypassPermissions",
             ),
             registry=registry,

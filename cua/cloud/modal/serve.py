@@ -6,17 +6,17 @@ import pathlib
 
 import modal
 
-APP_NAME = os.environ.get("CUA_SERVE_APP", "cua-serve")
-EVAL_SECRET = os.environ.get("CUA_EVAL_SECRET", "cua-eval")
-MODEL = os.environ.get("CUA_SERVE_MODEL", "Qwen/Qwen3.5-9B")
-SERVED_NAME = os.environ.get("CUA_SERVED_NAME", "cua-student")
-ADAPTER_NAME = os.environ.get("CUA_ADAPTER_NAME", "")
-GPU = os.environ.get("CUA_SERVE_GPU", "L40S")
-MAX_MODEL_LEN = int(os.environ.get("CUA_MAX_MODEL_LEN", "8192"))
-GPU_MEM_UTIL = os.environ.get("CUA_GPU_MEM_UTIL", "0.90")
-MAX_LORA_RANK = int(os.environ.get("CUA_MAX_LORA_RANK", "64"))
+APP_NAME = os.environ.get("CUA_SERVE_APP", "cua-serve")  # env-read: no cua package in this image
+EVAL_SECRET = os.environ.get("CUA_EVAL_SECRET", "cua-eval")  # env-read: no cua package in this image
+MODEL = os.environ.get("CUA_SERVE_MODEL", "Qwen/Qwen3.5-9B")  # env-read: no cua package in this image
+SERVED_NAME = os.environ.get("CUA_SERVED_NAME", "cua-student")  # env-read: no cua package in this image
+ADAPTER_NAME = os.environ.get("CUA_ADAPTER_NAME", "")  # env-read: no cua package in this image
+GPU = os.environ.get("CUA_SERVE_GPU", "L40S")  # env-read: no cua package in this image
+MAX_MODEL_LEN = int(os.environ.get("CUA_MAX_MODEL_LEN", "8192"))  # env-read: no cua package in this image
+GPU_MEM_UTIL = os.environ.get("CUA_GPU_MEM_UTIL", "0.90")  # env-read: no cua package in this image
+MAX_LORA_RANK = int(os.environ.get("CUA_MAX_LORA_RANK", "64"))  # env-read: no cua package in this image
 # vLLM 0.28 defaults to one image per prompt and answers the sft3 two-image (prev + current) request with HTTP 400.
-LIMIT_MM = os.environ.get("CUA_LIMIT_MM", '{"image": 2}')
+LIMIT_MM = os.environ.get("CUA_LIMIT_MM", '{"image": 2}')  # env-read: no cua package in this image
 
 ADAPTERS_MOUNT = "/adapters"
 HF_CACHE_MOUNT = "/root/.cache/huggingface"
@@ -70,7 +70,7 @@ def warm_cache(model: str = MODEL):
 
     path = huggingface_hub.snapshot_download(
         model,
-        token=os.environ.get("HF_TOKEN") or os.environ.get("HF_READ_TOKEN"),
+        token=os.environ.get("HF_TOKEN") or os.environ.get("HF_READ_TOKEN"),  # env-read: no cua package in this image
         allow_patterns=["*.safetensors", "*.json", "*.txt", "*.py", "*.jinja"],
     )
     hf_cache.commit()
@@ -103,7 +103,7 @@ class Server:
         import subprocess
 
         # vLLM reads VLLM_API_KEY from the env; passing --api-key would print the secret into Modal's logs.
-        if not os.environ.get("VLLM_API_KEY"):
+        if not os.environ.get("VLLM_API_KEY"):  # env-read: no cua package in this image
             raise RuntimeError("VLLM_API_KEY missing — the cua-eval secret is not attached")
         cmd = [
             "vllm",

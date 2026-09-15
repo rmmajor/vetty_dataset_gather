@@ -1,20 +1,15 @@
 """Environment backends (registry) and the sandbox worker pool that hosts rollout browsers."""
 
 import logging
-import os
 import queue
 import threading
 
 from cua.pipeline import app_secrets, driver_session
-from cua.pipeline.driver_session import DRIVER_PORT, DriverClient
+from cua.pipeline.driver_session import DriverClient
 from cua.pipeline.sandbox import DockerSandbox, safe_parallel_sandboxes
+from cua.settings import PIPELINE, RL
 
 logger = logging.getLogger(__name__)
-RL_CONTAINER_TIMEOUT = int(os.environ.get("RL_CONTAINER_TIMEOUT", str(4 * 3600)))
-RL_RECYCLE_RESERVE_S = int(os.environ.get("RL_RECYCLE_RESERVE_S", "1200"))
-RL_DRIVERS_PER_SANDBOX = int(os.environ.get("RL_DRIVERS_PER_SANDBOX", "1"))
-# The capture-time guard (3) ended two thirds of RL episodes; 5 lets a recoverable retry survive while a true loop still terminates.
-RL_LOOP_GUARD_REPEATS = int(os.environ.get("RL_LOOP_GUARD_REPEATS", "5"))
 
 
 def resolve_preconditions(task):
@@ -89,7 +84,7 @@ BACKENDS = {PublicSiteBackend.key: PublicSiteBackend, StaticPageBackend.key: Sta
 class RolloutWorker:
     """One sandbox hosting N driver slots; recycled (when idle) before the container self-expires."""
 
-    def __init__(self, worker_id, backend, drivers_per_sandbox=RL_DRIVERS_PER_SANDBOX, driver_env=None):
+    def __init__(self, worker_id, backend, drivers_per_sandbox=RL.drivers_per_sandbox, driver_env=None):
         self.worker_id = worker_id
         self.backend = backend
         self.drivers_per_sandbox = drivers_per_sandbox
@@ -100,14 +95,14 @@ class RolloutWorker:
         self.lock = threading.Lock()
 
     def start(self):
-        self.sandbox = DockerSandbox(container_timeout=RL_CONTAINER_TIMEOUT)
+        self.sandbox = DockerSandbox(container_timeout=RL.container_timeout)
         self.sandbox.start(f"cua/rl/worker-{self.worker_id}")
         self.backend.open(self.sandbox)
         driver_session.install_driver(self.sandbox)
         self.clients = []
         for i in range(self.drivers_per_sandbox):
-            driver_session.start_driver(self.sandbox, env=self.driver_env, port=DRIVER_PORT + i)
-            self.clients.append(DriverClient(self.sandbox, port=DRIVER_PORT + i))
+            driver_session.start_driver(self.sandbox, env=self.driver_env, port=PIPELINE.driver_port + i)
+            self.clients.append(DriverClient(self.sandbox, port=PIPELINE.driver_port + i))
         logger.info(f"worker {self.worker_id}: sandbox up with {len(self.clients)} driver slot(s)")
 
     def client(self, slot):
@@ -117,7 +112,7 @@ class RolloutWorker:
         if (
             self.sandbox is None
             or self.sandbox.container is None
-            or self.sandbox.remaining_seconds() < RL_RECYCLE_RESERVE_S
+            or self.sandbox.remaining_seconds() < RL.recycle_reserve_s
         ):
             return True
         try:
@@ -145,8 +140,8 @@ class WorkerPool:
         self,
         backend,
         requested_workers,
-        drivers_per_sandbox=RL_DRIVERS_PER_SANDBOX,
-        loop_guard_repeats=RL_LOOP_GUARD_REPEATS,
+        drivers_per_sandbox=RL.drivers_per_sandbox,
+        loop_guard_repeats=RL.loop_guard_repeats,
     ):
         self.loop_guard_repeats = loop_guard_repeats
         driver_env = {"DRIVER_LOOP_GUARD_REPEATS": str(loop_guard_repeats)}

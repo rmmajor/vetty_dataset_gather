@@ -6,11 +6,9 @@ import tomllib
 
 import modal
 
+from cua.settings import CLOUD, RL
+
 APP_NAME = "cua-grpo"
-# Two GPUs: ms-swift server mode syncs weights over NCCL, which cannot host the trainer and the rollout engine on one device.
-GPU = os.environ.get("CUA_GRPO_GPU", "A100-80GB:2")
-GRPO_TIMEOUT = int(os.environ.get("CUA_GRPO_TIMEOUT", str(9 * 3600)))
-COMMIT_EVERY_S = int(os.environ.get("CUA_GRPO_COMMIT_EVERY_S", "600"))
 
 OUT_MOUNT = "/outputs"
 HF_CACHE_MOUNT = "/root/.cache/huggingface"
@@ -41,7 +39,7 @@ image = (
     .apt_install("git")
     .uv_pip_install(*_RL_REQUIREMENTS, "accelerate>=1.0", "huggingface_hub[hf_transfer]")
     # Baked at deploy time so the container's summary names the GPU actually rented, not the module default.
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "CUA_GRPO_GPU": GPU, "PYTHONPATH": CODE_ROOT})
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "CUA_GRPO_GPU": CLOUD.grpo_gpu, "PYTHONPATH": CODE_ROOT})
     .add_local_file("rl_config.yaml", f"{CODE_ROOT}/rl_config.yaml")
     .add_local_file("pyproject.toml", f"{CODE_ROOT}/pyproject.toml")
     .add_local_dir("constraints", f"{CODE_ROOT}/constraints")
@@ -50,7 +48,12 @@ image = (
 )
 
 
-@app.function(image=image, gpu=GPU, volumes={OUT_MOUNT: outputs, HF_CACHE_MOUNT: hf_cache}, timeout=GRPO_TIMEOUT)
+@app.function(
+    image=image,
+    gpu=CLOUD.grpo_gpu,
+    volumes={OUT_MOUNT: outputs, HF_CACHE_MOUNT: hf_cache},
+    timeout=CLOUD.grpo_timeout,
+)
 def grpo(
     run_name: str,
     env_url: str,
@@ -76,7 +79,7 @@ def grpo(
     from cua.rl.train import derive_run_config, load_rl_config, load_task_ids, make_dataset
 
     if no_reward_smoke:
-        # Inherited by cua.rl.train's subprocesses: the mock env answers verdictless closes and the run must die instead of training zeros.
+        # env-read: inherited by cua.rl.train's subprocesses, so the mock env's verdictless closes kill the run instead of training zeros
         os.environ["RL_MOCK_NO_REWARD"] = "1"
 
     adapter_src = Path(OUT_MOUNT) / sft_adapter
@@ -126,7 +129,7 @@ def grpo(
     stop = threading.Event()
 
     def commit_periodically():
-        while not stop.wait(COMMIT_EVERY_S):
+        while not stop.wait(CLOUD.grpo_commit_every_s):
             outputs.commit()
 
     committer = threading.Thread(target=commit_periodically, daemon=True)
@@ -162,7 +165,7 @@ def grpo(
         "returncode": result.returncode,
         "adapter": str(adapter) if adapter.exists() else "",
         "env_url": env_url,
-        "gpu": GPU,
+        "gpu": CLOUD.grpo_gpu,
         "smoke": smoke,
         "max_steps": cfg["max_steps"],
     }
@@ -201,7 +204,7 @@ def main(
     result = grpo.remote(
         run_name=run_name,
         env_url=env_url,
-        env_token=env_token or os.environ.get("RL_ENV_TOKEN", ""),
+        env_token=env_token or RL.env_token,
         sft_adapter=sft_adapter,
         max_steps=max_steps,
         num_generations=num_generations,

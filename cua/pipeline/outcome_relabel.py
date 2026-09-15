@@ -13,7 +13,6 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import random
 import sys
 from datetime import UTC, datetime
@@ -28,6 +27,7 @@ from cua.pipeline.sdk_runner import UsageLimitReached
 from cua.prompt.coords import to_model_action
 from cua.prompt.effects import downscale_prev, step_effects
 from cua.prompt.format import PREV_IMAGE_SIZE, history_entries_for_step
+from cua.settings import PIPELINE
 from cua.trajectory.actions import format_action_summary
 
 logger = logging.getLogger(__name__)
@@ -36,16 +36,10 @@ THOUGHT_SOURCE = "teacher_outcome"
 BACKUP_NAME = "trajectory_pre_outcome.json"
 IMAGE_SIZE = PREV_IMAGE_SIZE
 NO_PREVIOUS_ACTION = "none (this is the starting screen)"
-WINDOW_STEPS = int(os.environ.get("OUTCOME_WINDOW_STEPS", "12"))
-OUTCOME_BUDGET_USD = float(os.environ.get("OUTCOME_BUDGET_USD", "1.00"))
 # Estimate knobs: image tokens per downscaled screen on the judge model, list prices per 1M tokens, SDK per-call floor.
-IMAGE_TOKENS = int(os.environ.get("OUTCOME_IMAGE_TOKENS", "350"))
 TEXT_TOKENS_PER_STEP = 130
 PROMPT_TOKENS = 450
 OUTPUT_TOKENS_PER_STEP = 70
-PRICE_IN_PER_M = float(os.environ.get("OUTCOME_PRICE_IN_PER_M", "2.0"))
-PRICE_OUT_PER_M = float(os.environ.get("OUTCOME_PRICE_OUT_PER_M", "10.0"))
-CALL_OVERHEAD_USD = float(os.environ.get("OUTCOME_CALL_OVERHEAD_USD", "0.08"))
 
 OUTCOME_PROMPT = """Above are the screens an agent saw while carrying out a web task, one per step, labelled
 "Screen at step k" (shown at reduced size; where text is too small to read, trust the step's
@@ -111,7 +105,7 @@ def find_targets(corpus_dir: Path, max_steps: int | None = None) -> list[Path]:
     return targets
 
 
-def step_windows(n_steps: int, size: int = WINDOW_STEPS) -> list[tuple[int | None, list[int]]]:
+def step_windows(n_steps: int, size: int = PIPELINE.outcome_window_steps) -> list[tuple[int | None, list[int]]]:
     """(context index or None, target indices) per window; the context is the previous window's last target."""
     windows = []
     start = 0
@@ -204,7 +198,7 @@ async def llm_call(blocks: list[dict], full_name: str) -> str:
         ClaudeAgentOptions(
             model=MODEL_FOR_GROUNDED_GENERATION,
             max_turns=1,
-            max_budget_usd=OUTCOME_BUDGET_USD,
+            max_budget_usd=PIPELINE.outcome_budget_usd,
             permission_mode="bypassPermissions",
             tools=[],
         ),
@@ -297,15 +291,19 @@ def estimate_cost(targets: list[Path]) -> dict:
         for context_index, target_indices in step_windows(n_steps):
             windows += 1
             images += len(target_indices) + (context_index is not None)
-    input_tokens = images * IMAGE_TOKENS + steps * TEXT_TOKENS_PER_STEP + windows * PROMPT_TOKENS
+    input_tokens = images * PIPELINE.outcome_image_tokens + steps * TEXT_TOKENS_PER_STEP + windows * PROMPT_TOKENS
     output_tokens = steps * OUTPUT_TOKENS_PER_STEP
-    usd = input_tokens / 1e6 * PRICE_IN_PER_M + output_tokens / 1e6 * PRICE_OUT_PER_M + windows * CALL_OVERHEAD_USD
+    usd = (
+        input_tokens / 1e6 * PIPELINE.outcome_price_in_per_m
+        + output_tokens / 1e6 * PIPELINE.outcome_price_out_per_m
+        + windows * PIPELINE.outcome_call_overhead_usd
+    )
     return {
         "trajectories": trajectories,
         "steps": steps,
         "windows": windows,
         "images": images,
-        "image_tokens": images * IMAGE_TOKENS,
+        "image_tokens": images * PIPELINE.outcome_image_tokens,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "usd": usd,
@@ -395,15 +393,16 @@ def main():
         estimate = estimate_cost(targets)
         print(
             f"targets: {estimate['trajectories']} trajectories, {estimate['steps']} steps, {estimate['windows']} windows "
-            f"({WINDOW_STEPS} steps each), {estimate['images']} images"
+            f"({PIPELINE.outcome_window_steps} steps each), {estimate['images']} images"
         )
         print(
-            f"tokens: ~{estimate['input_tokens']:,} in ({estimate['image_tokens']:,} image @ {IMAGE_TOKENS}/image) "
+            f"tokens: ~{estimate['input_tokens']:,} in ({estimate['image_tokens']:,} image @ {PIPELINE.outcome_image_tokens}/image) "
             f"+ ~{estimate['output_tokens']:,} out"
         )
         print(
-            f"estimate: ~${estimate['usd']:.2f} at ${PRICE_IN_PER_M}/M in, ${PRICE_OUT_PER_M}/M out, "
-            f"${CALL_OVERHEAD_USD} SDK floor per call ({estimate['windows']} calls)"
+            f"estimate: ~${estimate['usd']:.2f} at ${PIPELINE.outcome_price_in_per_m}/M in, "
+            f"${PIPELINE.outcome_price_out_per_m}/M out, "
+            f"${PIPELINE.outcome_call_overhead_usd} SDK floor per call ({estimate['windows']} calls)"
         )
         return
 

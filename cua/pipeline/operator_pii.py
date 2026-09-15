@@ -1,21 +1,20 @@
 """Who the operator is — so no capture types their identity and no dataset ships it — configured, never hardcoded."""
 
-import os
 import re
 import subprocess
 from pathlib import Path
 
+from cua.settings import CAPTURE
+
 # Sources, merged in order: inline $OPERATOR_PII, $OPERATOR_PII_FILE, then the machine's git user.email.
-PII_FILE = Path(
-    os.environ.get("OPERATOR_PII_FILE") or Path(__file__).resolve().parents[2] / "credentials" / "operator_pii.txt"
-)
+PII_FILE = Path(CAPTURE.operator_pii_file or Path(__file__).resolve().parents[2] / "credentials" / "operator_pii.txt")
 
 _PATTERNS = None
 
 
 def configured_identities() -> list[str]:
     """Operator-identity literals (emails, names, phone numbers) from env, file, then git user.email."""
-    blobs = [os.environ.get("OPERATOR_PII", "")]
+    blobs = [CAPTURE.operator_pii]
     if PII_FILE.exists():
         blobs.append(PII_FILE.read_text())
     try:

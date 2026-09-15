@@ -44,11 +44,12 @@ from cua.prompt.format import (
     to_claude_content,
     to_openai_content,
 )
+from cua.settings import EVAL, MAX_PIXELS_DEFAULT
 
 # The element description handed to the grounding observation; a ScreenSpot instruction names the target.
 GROUNDING_DESCRIPTION_TEMPLATE = 'the element described as "{instruction}"'
 
-DEFAULT_MAX_PIXELS = 1003520
+DEFAULT_MAX_PIXELS = MAX_PIXELS_DEFAULT
 DEFAULT_VIEWPORT_W = 1280
 DEFAULT_VIEWPORT_H = 720
 # `os-copilot/ScreenSpot-v2` is NOT usable here: that repo is raw JSON + an image zip, with no
@@ -74,7 +75,7 @@ DEFAULT_PARSE_PATTERNS = [
 
 # What every arm is shown, independent of how its answer is read back. Set to a "WxH" to resize
 # (matching the 1280x720 the QA bench and episode eval drive), or "native" to send the source image.
-PREPARED_IMAGE_SIZE = os.environ.get("SCREENSPOT_IMAGE_SIZE", "native")
+PREPARED_IMAGE_SIZE = EVAL.screenspot_image_size
 
 
 def prepare_sample_image(image):
@@ -369,7 +370,7 @@ class SwiftPredictor(Predictor):
                 str(cfg.temperature),
             ]
 
-            env = os.environ.copy()
+            env = os.environ.copy()  # env-read: the `swift infer` child inherits this process's environment
             if cfg.max_pixels:
                 env["MAX_PIXELS"] = str(cfg.max_pixels)
 
@@ -409,9 +410,9 @@ class OpenAIPredictor(Predictor):
 
     def __init__(self, model, cfg):
         self.model = model
-        self.endpoint = (os.environ.get("SCREENSPOT_ENDPOINT") or "").rstrip("/")
-        self.api_key = os.environ.get("SCREENSPOT_API_KEY", "")
-        self.workers = int(os.environ.get("SCREENSPOT_WORKERS", "8"))
+        self.endpoint = EVAL.screenspot_endpoint.rstrip("/")
+        self.api_key = EVAL.screenspot_api_key
+        self.workers = EVAL.screenspot_workers
         if not self.endpoint:
             raise ValueError("set SCREENSPOT_ENDPOINT to the /v1 base url of the served model")
         self.cfg = cfg
@@ -469,10 +470,10 @@ class ClaudePredictor(Predictor):
 
     def __init__(self, model, cfg):
         self.model = model
-        self.workers = int(os.environ.get("SCREENSPOT_CLAUDE_WORKERS", "4"))
+        self.workers = EVAL.screenspot_claude_workers
         # A runaway guard, not a throttle: every SDK call carries a full-agent floor, so a cap near
         # the true per-call cost returns "" instead of an answer. Matches the pipeline's 0.30.
-        self.budget_usd = float(os.environ.get("SCREENSPOT_CLAUDE_BUDGET_USD", "0.30"))
+        self.budget_usd = EVAL.screenspot_claude_budget_usd
         self.cfg = cfg
 
     def _encode(self, image):

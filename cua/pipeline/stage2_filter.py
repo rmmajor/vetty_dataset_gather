@@ -1,24 +1,15 @@
 import concurrent.futures
 import hashlib
 import logging
-import os
 
 from cua.pipeline.bootable_gate import ProbeError, gate_repo, is_hard_reject
 from cua.pipeline.registry import RepoRegistry
 from cua.pipeline.schemas import FailureCategory, RepoStatus
+from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
 
 MAX_SIZE_KB = 500_000
-
-# No-LLM bootable-app gate: reject test-suite / non-app repos before any LLM stage. On by default;
-# set BOOTABLE_GATE=0 to fall back to the old metadata-only filter. Probes are network I/O, run in
-# a small thread pool. A probe error never rejects (infra) — the repo stays `discovered` to retry.
-# Conservative by default: only HARD rejects (clearly non-app / test-suite) drop here; ambiguous
-# "no framework" repos pass to the LLM. BOOTABLE_GATE_AGGRESSIVE=1 rejects those too.
-BOOTABLE_GATE = os.environ.get("BOOTABLE_GATE", "1") != "0"
-BOOTABLE_GATE_AGGRESSIVE = os.environ.get("BOOTABLE_GATE_AGGRESSIVE", "0") == "1"
-BOOTABLE_GATE_WORKERS = int(os.environ.get("BOOTABLE_GATE_WORKERS", "8"))
 
 
 def run_bootable_gate(registry: RepoRegistry, repos: list[dict]) -> tuple[list[dict], int, int]:
@@ -34,11 +25,11 @@ def run_bootable_gate(registry: RepoRegistry, repos: list[dict]) -> tuple[list[d
             return repo, None, str(e)[:160]
 
     kept, rejected, errors = [], 0, 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=BOOTABLE_GATE_WORKERS) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=PIPELINE.bootable_gate_workers) as ex:
         for repo, accept, reason in ex.map(probe, repos):
             if accept is None:
                 errors += 1  # probe error: leave at input status, retry next run
-            elif accept or not (is_hard_reject(reason) or BOOTABLE_GATE_AGGRESSIVE):
+            elif accept or not (is_hard_reject(reason) or PIPELINE.bootable_gate_aggressive):
                 kept.append(repo)  # bootable, or a soft reject we defer to the LLM
             else:
                 registry.reject(
@@ -151,7 +142,7 @@ def run_filter(registry: RepoRegistry, limit: int = None):
     logger.info(f"Clone dedup: removed {clone_deduped} repos with identical descriptions")
 
     gate_rejected = gate_errors = 0
-    if BOOTABLE_GATE:
+    if PIPELINE.bootable_gate:
         survivors, gate_rejected, gate_errors = run_bootable_gate(registry, after_clone_dedup)
         logger.info(
             f"Bootable-app gate: {len(survivors)} bootable, {gate_rejected} not-bootable "

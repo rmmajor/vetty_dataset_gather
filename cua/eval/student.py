@@ -5,7 +5,6 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import re
 import subprocess
 import time
@@ -48,20 +47,13 @@ from cua.prompt.format import (
     png_b64,
     to_openai_content,
 )
+from cua.settings import EVAL
 from cua.trajectory import VIEWPORT
 from cua.trajectory.actions import format_action_for_training
 
 logger = logging.getLogger(__name__)
 
-EVAL_RUNS_DIR = Path(os.environ.get("EVAL_RUNS_DIR", "eval_runs"))
-# Headroom below a container's self-expiry at which the next episode gets a fresh sandbox.
-EPISODE_TIME_RESERVE = int(os.environ.get("EVAL_EPISODE_TIME_RESERVE", "900"))
-EVAL_CONTAINER_TIMEOUT = int(os.environ.get("EVAL_CONTAINER_TIMEOUT", "10800"))
-MAX_CONSECUTIVE_PARSE_FAILURES = int(os.environ.get("EVAL_MAX_PARSE_FAILURES", "3"))
-# Steps in a row that execute NOTHING (refused, errored or unparseable) before the episode is
-# abandoned. The driver's own loop guard is off for eval, so this is what stops a miscalibrated
-# model burning a full step cap on refusals.
-MAX_UNPRODUCTIVE_STEPS = int(os.environ.get("EVAL_MAX_UNPRODUCTIVE_STEPS", "5"))
+EVAL_RUNS_DIR = Path(EVAL.runs_dir)
 NO_THINK_PLACEHOLDER = "(model emitted no <think> block)"
 
 
@@ -845,7 +837,7 @@ async def _run(fn, *args):
 
 
 def _docker_browser(cfg):
-    kwargs = {"container_timeout": EVAL_CONTAINER_TIMEOUT}
+    kwargs = {"container_timeout": EVAL.container_timeout}
     if cfg.sandbox_image:
         kwargs["image"] = cfg.sandbox_image
     return DockerSandbox(**kwargs)
@@ -853,11 +845,11 @@ def _docker_browser(cfg):
 
 def _remote_ssh_browser(cfg):
     host, _, port = cfg.browser_host.partition(":")
-    return remote_sandbox.RemoteSandbox(host=host, port=int(port or 22), container_timeout=EVAL_CONTAINER_TIMEOUT)
+    return remote_sandbox.RemoteSandbox(host=host, port=int(port or 22), container_timeout=EVAL.container_timeout)
 
 
 def _vast_residential_browser(cfg):
-    return remote_sandbox.VastResidentialSandbox(container_timeout=EVAL_CONTAINER_TIMEOUT)
+    return remote_sandbox.VastResidentialSandbox(container_timeout=EVAL.container_timeout)
 
 
 # Where the browser runs, and therefore what IP live sites see. Adding an egress is a registry
@@ -879,7 +871,7 @@ class EvalBrowser:
         self.client: DriverClient | None = None
 
     async def ensure(self):
-        if self.sandbox is not None and self.sandbox.remaining_seconds() > EPISODE_TIME_RESERVE:
+        if self.sandbox is not None and self.sandbox.remaining_seconds() > EVAL.episode_time_reserve:
             return
         await self.stop()
         self.sandbox = BROWSER_BACKENDS[self.cfg.browser_backend](self.cfg)
@@ -1141,7 +1133,7 @@ def _write_episode_metadata(episode_dir: Path, record: EpisodeRecord, cfg: EvalC
                 "excluded_reason": "eval_episode",
                 "eval_label": cfg.label,
                 "eval_model": cfg.model,
-                "viewport": {"width": 1280, "height": 720},
+                "viewport": {"width": VIEWPORT[0], "height": VIEWPORT[1]},
             },
             indent=2,
         )
@@ -1361,18 +1353,13 @@ def harness_fingerprint(cfg: EvalConfig, source, provenance: dict) -> dict:
     }
 
 
-# A calibrated viewport_abs model essentially never lands outside the viewport, so crossing this
-# share of emitted coordinates means the run measured the wrong coordinate space, not the model.
-COORD_SPACE_SUSPECT_RATE = float(os.environ.get("EVAL_COORD_SPACE_SUSPECT_RATE", "0.25"))
-
-
 def coord_space_diagnosis(fingerprint: dict, metrics: dict) -> str:
     """The run-level version of the per-episode warning: is this number even measuring the model?"""
     space = fingerprint.get("coord_space")
     if space not in COORD_SPACE_SUSPECT:
         return ""
     rate = metrics.get("emitted_out_of_viewport_rate", 0)
-    if rate < COORD_SPACE_SUSPECT_RATE or not metrics.get("emitted_coords"):
+    if rate < EVAL.coord_space_suspect_rate or not metrics.get("emitted_coords"):
         return ""
     hint, other_space = COORD_SPACE_SUSPECT[space]
     max_x, max_y = COORD_SPACE_RANGE[space]
@@ -1940,16 +1927,16 @@ def _add_run_arguments(parser):
     parser.add_argument("--student", default="openai", choices=sorted(STUDENT_BACKENDS))
     parser.add_argument(
         "--endpoint",
-        default=os.environ.get("EVAL_ENDPOINT", ""),
+        default=EVAL.endpoint,
         help="OpenAI-compatible base URL (e.g. http://host:8000/v1)",
     )
-    parser.add_argument("--model", default=os.environ.get("EVAL_MODEL", ""), help="served model id")
+    parser.add_argument("--model", default=EVAL.model, help="served model id")
     parser.add_argument(
         "--adapter",
-        default=os.environ.get("EVAL_ADAPTER", ""),
+        default=EVAL.adapter,
         help="LoRA/checkpoint path served behind the endpoint (recorded in the report)",
     )
-    parser.add_argument("--api-key", default=os.environ.get("EVAL_API_KEY", ""))
+    parser.add_argument("--api-key", default=EVAL.api_key)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--student-timeout", type=int, default=180)
@@ -1959,7 +1946,7 @@ def _add_run_arguments(parser):
     parser.add_argument("--mock-trajectory", default="", help="trajectory.json replayed by the 'mock' student backend")
     parser.add_argument(
         "--coord-space",
-        default=os.environ.get("EVAL_COORD_SPACE", "normalized_1000"),
+        default=EVAL.coord_space,
         choices=sorted(COORD_SPACES),
         help="the convention THIS model answers in: a stock Qwen and an sft3 checkpoint emit "
         "normalized_1000 (the prompt's 0-1000 grid); an sft-v1/v2 checkpoint emits "
@@ -1983,13 +1970,13 @@ def _add_run_arguments(parser):
     parser.add_argument(
         "--max-unproductive-steps",
         type=int,
-        default=MAX_UNPRODUCTIVE_STEPS,
+        default=EVAL.max_unproductive_steps,
         help="abort the episode as 'stuck' after this many steps in a row that execute no action at all",
     )
     parser.add_argument(
         "--max-parse-failures",
         type=int,
-        default=MAX_CONSECUTIVE_PARSE_FAILURES,
+        default=EVAL.max_parse_failures,
         help="abort as 'parse_failure_abort' after this many unparseable steps in a row",
     )
     parser.add_argument(

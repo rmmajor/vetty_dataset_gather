@@ -3,19 +3,15 @@
 import asyncio
 import json
 import logging
-import os
 import threading
 import time
 from pathlib import Path
 
 from cua.pipeline.agent_capture import verify_trajectory
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from cua.settings import RL
 
 logger = logging.getLogger(__name__)
-VERIFIER_CONCURRENCY = int(os.environ.get("RL_VERIFIER_CONCURRENCY", "2"))
-VERIFY_TIMEOUT_S = int(os.environ.get("RL_VERIFY_TIMEOUT_S", "2700"))
-VERIFY_RETRY_S = float(os.environ.get("RL_VERIFY_RETRY_S", "300"))
-VERIFY_WAIT_S = float(os.environ.get("RL_VERIFY_WAIT_S", "1800"))
 
 
 class AsyncBridge:
@@ -23,7 +19,7 @@ class AsyncBridge:
 
     def __init__(self):
         self.loop = asyncio.new_event_loop()
-        self.semaphore = asyncio.Semaphore(VERIFIER_CONCURRENCY)
+        self.semaphore = asyncio.Semaphore(RL.verifier_concurrency)
         self.thread = threading.Thread(target=self.loop.run_forever, name="rl-async-bridge", daemon=True)
         self.thread.start()
 
@@ -48,19 +44,19 @@ async def _verify(traj_dir, task, bridge, verify):
 
 def _run_verifier(traj_dir, task, bridge, verify, sleep):
     # The tracker's rejected flag is sticky, so a stale limit would defer every verdict for the rest of the run; clear it and let the call prove the limit.
-    deadline = time.monotonic() + VERIFY_WAIT_S
+    deadline = time.monotonic() + RL.verify_wait_s
     while True:
         if rate_limit_tracker.limit_reached():
             rate_limit_tracker.reset()
         try:
-            bridge.run(_verify(traj_dir, task, bridge, verify), timeout=VERIFY_TIMEOUT_S)
+            bridge.run(_verify(traj_dir, task, bridge, verify), timeout=RL.verify_timeout_s)
             return True
         except UsageLimitReached as e:
             if time.monotonic() >= deadline:
                 logger.warning(f"{traj_dir.name}: verdict deferred — {e}")
                 return False
-            logger.warning(f"{traj_dir.name}: usage limit — retrying the verifier in {VERIFY_RETRY_S:.0f}s ({e})")
-            sleep(VERIFY_RETRY_S)
+            logger.warning(f"{traj_dir.name}: usage limit — retrying the verifier in {RL.verify_retry_s:.0f}s ({e})")
+            sleep(RL.verify_retry_s)
 
 
 def judge_success(traj_dir, task, check_result, mode, bridge, verify=verify_trajectory, sleep=time.sleep):

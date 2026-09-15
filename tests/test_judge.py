@@ -4,7 +4,8 @@ from pathlib import Path
 
 from cua.pipeline.agent_capture import verdict_from_parsed
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
-from cua.rl.judge import VERIFY_RETRY_S, AsyncBridge, judge_success
+from cua.rl.judge import AsyncBridge, judge_success
+from cua.settings import RL
 
 
 def test_verifier_retries_through_a_stale_usage_limit():
@@ -28,7 +29,7 @@ def test_verifier_retries_through_a_stale_usage_limit():
             )
     finally:
         bridge.close()
-    assert result == (True, "verifier", "final") and len(attempts) == 2 and sleeps == [VERIFY_RETRY_S]
+    assert result == (True, "verifier", "final") and len(attempts) == 2 and sleeps == [RL.verify_retry_s]
     assert rate_limit_tracker.limit_reached() is False
 
 

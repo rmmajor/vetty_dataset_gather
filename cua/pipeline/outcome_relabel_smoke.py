@@ -14,6 +14,7 @@ from PIL import Image
 from cua.pipeline import outcome_relabel
 from cua.pipeline.sdk_runner import UsageLimitReached
 from cua.prompt.effects import effect_annotation, step_effects
+from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +305,7 @@ def check_default_call_options(work_dir: Path) -> list[str]:
     options = seen["options"]
     if options.max_turns != 1 or options.tools != [] or options.model != outcome_relabel.MODEL_FOR_GROUNDED_GENERATION:
         failures.append(f"default call must be one tool-free turn on the grounded-generation model: {options}")
-    if options.permission_mode != "bypassPermissions" or options.max_budget_usd != outcome_relabel.OUTCOME_BUDGET_USD:
+    if options.permission_mode != "bypassPermissions" or options.max_budget_usd != PIPELINE.outcome_budget_usd:
         failures.append(f"unexpected permission/budget options: {options}")
     content = seen["messages"][0]["message"]["content"]
     if (

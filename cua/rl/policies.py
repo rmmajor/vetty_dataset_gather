@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import ssl
 import time
 import urllib.error
@@ -11,12 +10,9 @@ from pathlib import Path
 
 from cua.rl.actions import encode_step
 from cua.rl.observation import to_openai_messages
+from cua.settings import RL
 
 logger = logging.getLogger(__name__)
-# A served endpoint drops connections and cold-starts; the request carries no side effect, so transient failures are retried.
-POLICY_BACKOFF_S = float(os.environ.get("RL_POLICY_BACKOFF_S", "5"))
-# A scale-to-zero endpoint takes minutes to answer its first request, so the budget is a deadline, not a retry count.
-POLICY_WAIT_S = float(os.environ.get("RL_POLICY_WAIT_S", "600"))
 TRANSIENT = (ssl.SSLError, urllib.error.URLError, ConnectionError, TimeoutError)
 
 
@@ -29,8 +25,8 @@ class OpenAICompatiblePolicy:
         max_tokens=512,
         timeout_s=180,
         api_key=None,
-        wait_s=POLICY_WAIT_S,
-        backoff_s=POLICY_BACKOFF_S,
+        wait_s=RL.policy_wait_s,
+        backoff_s=RL.policy_backoff_s,
         opener=urllib.request.urlopen,
         sleep=time.sleep,
         clock=time.monotonic,
@@ -43,7 +39,7 @@ class OpenAICompatiblePolicy:
             max_tokens,
             timeout_s,
         )
-        self.api_key = api_key or os.environ.get("RL_POLICY_API_KEY", "")
+        self.api_key = api_key or RL.policy_api_key
         self.wait_s, self.backoff_s, self.opener, self.sleep, self.clock = wait_s, backoff_s, opener, sleep, clock
 
     def act(self, observation):

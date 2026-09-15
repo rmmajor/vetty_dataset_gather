@@ -12,18 +12,15 @@ agent_capture.py then pursues each task in the live app.
 
 import json
 import logging
-import os
 
 from claude_agent_sdk import ClaudeAgentOptions
 
 from cua.pipeline.agent_runner import run_agent
 from cua.pipeline.llm_config import MODEL_FOR_REASONING
 from cua.pipeline.sdk_runner import UsageLimitReached
+from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
-
-TASKS_PER_REPO = int(os.environ.get("AGENT_TASKS_PER_REPO", "8"))
-PROPOSE_BUDGET_USD = float(os.environ.get("TASK_PROPOSE_BUDGET_USD", "2.0"))
 
 PROPOSE_PROMPT = """You are designing realistic user tasks for a computer-use agent to perform in a \
 live web application. The tasks become training data for a model that must learn LONG-HORIZON \
@@ -314,7 +311,7 @@ async def propose_tasks(
     caller rejects the repo without spending a single teacher call. `auth_flow=True` enables auth
     task classification; `inbox=False` (a known pre-verified account, no readable sandbox inbox)
     switches to the known-account block so no email-dependent tasks are proposed."""
-    n_tasks = n_tasks or TASKS_PER_REPO
+    n_tasks = n_tasks or PIPELINE.tasks_per_repo
     affordances_block, affordance_quotas = render_affordances(affordances)
     prompt_text = PROPOSE_PROMPT.format(
         repo_name=repo.get("full_name", ""),
@@ -339,7 +336,7 @@ async def propose_tasks(
                 # A long prompt (style/auth blocks) can push the JSON past one turn; the budget cap,
                 # not the turn count, is what bounds cost here.
                 max_turns=6,
-                max_budget_usd=PROPOSE_BUDGET_USD,
+                max_budget_usd=PIPELINE.task_propose_budget_usd,
                 permission_mode="bypassPermissions",
             ),
             registry=registry,

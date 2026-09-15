@@ -22,10 +22,11 @@ from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions
 
-from cua.pipeline.agent_capture import RELABEL_MIN_STEPS, _step_summary, verify_trajectory
+from cua.pipeline.agent_capture import _step_summary, verify_trajectory
 from cua.pipeline.agent_runner import run_agent
 from cua.pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
 from cua.pipeline.sdk_runner import UsageLimitReached
+from cua.settings import CAPTURE
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ def find_candidates(corpus_dir: Path) -> list[dict]:
         if (cmeta.get("verifier") or {}).get("degenerate"):
             continue
         steps = [s for s in traj.get("steps", []) if s.get("actions")]
-        if len(steps) < RELABEL_MIN_STEPS:
+        if len(steps) < CAPTURE.relabel_min_steps:
             continue
         candidates.append({"dir": traj_dir, "trajectory": traj, "metadata": meta, "capture_meta": cmeta})
     return candidates

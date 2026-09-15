@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import docker
+from cua.settings import SANDBOX
 
 logger = logging.getLogger(__name__)
 
@@ -20,20 +21,6 @@ EXEC_TIMEOUT_SECONDS = 300  # 5 minutes per command
 # archive API) instead of being embedded in the exec command line, which would otherwise overflow
 # the kernel argv limit ("argument list too long") — hit by a large pre_session storage_state.
 HTTP_INLINE_MAX = 100_000
-
-# Per-container resource caps. With workers=2, peak demand is ~2 * (SANDBOX_MEM_LIMIT +
-# SANDBOX_TMP_SIZE), which must stay under the Docker VM memory; defaults target ~6g for an 8g VM.
-# SANDBOX_MEMSWAP_LIMIT == SANDBOX_MEM_LIMIT disables swap so the cap is hard (a runaway test is
-# OOM-killed in-container instead of spilling into host RAM). tmpfs is RAM-backed, hence capped too.
-SANDBOX_MEM_LIMIT = os.environ.get("SANDBOX_MEM_LIMIT", "2g")
-SANDBOX_MEMSWAP_LIMIT = os.environ.get("SANDBOX_MEMSWAP_LIMIT", SANDBOX_MEM_LIMIT)
-SANDBOX_PIDS_LIMIT = int(os.environ.get("SANDBOX_PIDS_LIMIT", "1024"))
-SANDBOX_CPUS = float(os.environ.get("SANDBOX_CPUS", "2"))
-SANDBOX_TMP_SIZE = os.environ.get("SANDBOX_TMP_SIZE", "1g")
-SANDBOX_SHM_SIZE = os.environ.get("SANDBOX_SHM_SIZE", "256m")
-# Headroom left for the Docker daemon and any co-running containers when auto-sizing how many
-# sandboxes may run at once. Bump it if a heavy non-pipeline stack shares the VM.
-SANDBOX_VM_RESERVE = os.environ.get("SANDBOX_VM_RESERVE", "1.5g")
 
 
 def _parse_size(s) -> int:
@@ -68,8 +55,8 @@ def safe_parallel_sandboxes(requested: int, container_mem_limit: str | None = No
     except Exception as e:
         logger.warning(f"could not read Docker MemTotal ({e}); leaving parallelism at {requested}")
         return requested
-    per = _parse_size(container_mem_limit or SANDBOX_MEM_LIMIT) + _parse_size(SANDBOX_TMP_SIZE)
-    reserve = _parse_size(SANDBOX_VM_RESERVE)
+    per = _parse_size(container_mem_limit or SANDBOX.mem_limit) + _parse_size(SANDBOX.tmp_size)
+    reserve = _parse_size(SANDBOX.vm_reserve)
     safe = _safe_parallel(mem_total, requested, per, reserve)
     if safe < requested:
         logger.warning(
@@ -200,11 +187,11 @@ class DockerSandbox(ShellSandbox):
             # timeout even with a dead owner.
             command=["sleep", str(self.container_timeout)],
             auto_remove=True,
-            mem_limit=SANDBOX_MEM_LIMIT,
-            memswap_limit=SANDBOX_MEMSWAP_LIMIT,
-            pids_limit=SANDBOX_PIDS_LIMIT,
-            shm_size=SANDBOX_SHM_SIZE,
-            nano_cpus=int(SANDBOX_CPUS * 1_000_000_000),
+            mem_limit=SANDBOX.mem_limit,
+            memswap_limit=SANDBOX.memswap_limit,
+            pids_limit=SANDBOX.pids_limit,
+            shm_size=SANDBOX.shm_size,
+            nano_cpus=int(SANDBOX.cpus * 1_000_000_000),
             cap_drop=["ALL"],
             # Grant back ONLY the file-ownership/permission caps that dependency installs need:
             # npm/pnpm/yarn extract tarballs preserving ownership (fchown) and run postinstall
@@ -215,7 +202,7 @@ class DockerSandbox(ShellSandbox):
             # ephemeral + resource caps + no host bind-mounts keep isolation strong.
             cap_add=["CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "SETUID", "SETGID"],
             security_opt=["no-new-privileges:true"],
-            tmpfs={"/tmp": f"size={SANDBOX_TMP_SIZE}"},
+            tmpfs={"/tmp": f"size={SANDBOX.tmp_size}"},
             detach=True,
             # /workspace is writable (not read-only for the whole container
             # because we need to clone and install deps)

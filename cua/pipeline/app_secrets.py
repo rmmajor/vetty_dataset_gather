@@ -20,8 +20,9 @@ The known-accounts file is the first slice of the Phase-5 burner store; it lives
 
 import json
 import logging
-import os
 from pathlib import Path
+
+from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ _BOOT_ENV_SECRETS = {
     "AUTH_URL": "http://127.0.0.1:3000",
 }
 
-_CRED_DIR = Path(os.environ.get("PIPELINE_CREDENTIALS_DIR", "credentials"))
+_CRED_DIR = Path(PIPELINE.credentials_dir)
 _KNOWN_ACCOUNTS_FILE = _CRED_DIR / "known_accounts.json"
 # Guarded/public-lane burner store (see [[burner-accounts-only-for-capture]]): real-site logins the
 # capture is permitted to use, plus the saved browser sessions that let a run start already signed in.

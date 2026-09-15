@@ -12,6 +12,7 @@ from pathlib import Path
 
 import yaml
 
+from cua.settings import RL
 from cua.sft.swift_launch import yaml_to_cli_args
 
 ROLLOUT_FLAG_MAP = {
@@ -190,17 +191,17 @@ def build_vllm_serve_command(cfg, adapters=None):
 
 def build_env(cfg, run_dir, workdir=None):
     env = {
-        **os.environ,
+        **os.environ,  # env-read: the trainer subprocess inherits this process's environment
         "MAX_PIXELS": str(cfg["max_pixels"]),
         "RL_ENV_URL": cfg["env_url"],
         "RL_RUN_DIR": str(run_dir),
         "RL_RUN_ID": Path(run_dir).name,
-        "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES", "0"),
+        "CUDA_VISIBLE_DEVICES": RL.cuda_visible_devices,
     }
     if cfg.get("env_token"):
         env["RL_ENV_TOKEN"] = str(cfg["env_token"])
     if workdir:
-        # swift loads --external_plugins as a top-level module, so the repo root must be importable for `rl.*` / cua.sft.swift_launch.
+        # env-read: prepends the repo root to the inherited path, since swift loads --external_plugins as a top-level module
         env["PYTHONPATH"] = os.pathsep.join(p for p in (str(workdir), os.environ.get("PYTHONPATH", "")) if p)
     return env
 

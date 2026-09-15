@@ -22,7 +22,6 @@ in the orchestrator, not inside this function.
 import base64
 import json
 import logging
-import os
 from pathlib import Path
 
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, RateLimitEvent, ResultMessage
@@ -30,19 +29,9 @@ from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ClaudeSDKClie
 from cua.pipeline.agent_runner import run_agent
 from cua.pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
 from cua.pipeline.sdk_runner import UsageLimitReached, cost_tracker, harden_options, rate_limit_tracker
+from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
-
-# Each Claude Agent SDK `query()` carries a fixed overhead (~$0.08 for Sonnet-class models — see
-# memory pathb-e2e-and-sdk-budget-floor). Defaults sit comfortably above that floor; the
-# per-call envelope for one think block is dominated by SDK overhead, not by tokens.
-THINK_BUDGET_USD = float(os.environ.get("THINK_BUDGET_USD", "0.30"))
-# A whole trajectory's thoughts run through ONE ClaudeSDKClient session, so this cap covers the
-# session (all steps), not a single call. Generous — actual spend is far lower; it only guards
-# against a runaway session, not per-step cost.
-THINK_SESSION_BUDGET_USD = float(os.environ.get("THINK_SESSION_BUDGET_USD", "5.0"))
-
-POLISH_BUDGET_USD = float(os.environ.get("POLISH_BUDGET_USD", "0.50"))
 
 POLISH_PROMPT = """Below are the step-by-step inner thoughts an agent wrote WHILE executing a web
 task, paired with the action each thought preceded. Rewrite each thought into clean training
@@ -242,7 +231,7 @@ async def generate_think_for_step(
             ClaudeAgentOptions(
                 model=MODEL_FOR_GROUNDED_GENERATION,
                 max_turns=1,
-                max_budget_usd=THINK_BUDGET_USD,
+                max_budget_usd=PIPELINE.think_budget_usd,
                 permission_mode="bypassPermissions",
             ),
             registry=registry,
@@ -326,7 +315,7 @@ async def generate_thinks_for_trajectory(
     options = ClaudeAgentOptions(
         model=MODEL_FOR_GROUNDED_GENERATION,
         max_turns=1,
-        max_budget_usd=THINK_SESSION_BUDGET_USD,
+        max_budget_usd=PIPELINE.think_session_budget_usd,
         permission_mode="bypassPermissions",
     )
     harden_options(options)
@@ -531,7 +520,7 @@ async def polish_thoughts_for_trajectory(
             ClaudeAgentOptions(
                 model=MODEL_FOR_GROUNDED_GENERATION,
                 max_turns=1,
-                max_budget_usd=POLISH_BUDGET_USD,
+                max_budget_usd=PIPELINE.polish_budget_usd,
                 permission_mode="bypassPermissions",
             ),
             registry=registry,

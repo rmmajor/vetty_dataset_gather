@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 import re
 
 from cua.pipeline import app_runner, driver_session, schemas
@@ -19,16 +18,13 @@ from cua.pipeline.schemas import (
     TrialResults,
 )
 from cua.pipeline.sdk_runner import rate_limit_tracker
+from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
 
 # How many test files to try (a POC trial — stop early once we capture real coordinates).
 MAX_TRIAL_FILES = 3
 TEST_RUN_TIMEOUT = 240
-
-# Fewer interactive elements than this on the booted homepage means there is nothing for an
-# agent to meaningfully do (blank page, build splash, bare error page).
-MIN_INTERACTIVE_ELEMENTS = int(os.environ.get("BOOT_GATE_MIN_ELEMENTS", "5"))
 
 _PASS_RE = re.compile(r"(\d+)\s+passed")
 _FAIL_RE = re.compile(r"(\d+)\s+failed")
@@ -120,11 +116,11 @@ async def boot_gate_single_repo(registry: RepoRegistry, repo: dict):
         probe = await _run(client.session, "boot_probe", app_url)
         n_elements = driver_session.count_interactive_elements(probe.get("snapshot", ""))
 
-        if n_elements < MIN_INTERACTIVE_ELEMENTS:
+        if n_elements < PIPELINE.boot_gate_min_elements:
             raise QualityReject(
                 FailureCategory.QUALITY_GATE,
                 f"booted UI too trivial: {n_elements} interactive elements "
-                f"(< {MIN_INTERACTIVE_ELEMENTS}); snapshot head: {probe.get('snapshot', '')[:200]}",
+                f"(< {PIPELINE.boot_gate_min_elements}); snapshot head: {probe.get('snapshot', '')[:200]}",
             )
 
         try:

@@ -366,13 +366,13 @@ registry-check: ## Fail if the README registry block is out of date
 # ---------- Lint / format ----------
 
 LINT_PATHS     ?= .
-ENV_READ_ALLOW ?=
+ENV_READ_ALLOW ?= cua/settings.py
 
-lint: ## Ruff plus the repo's own comment/env/import conventions (the three convention scripts only report, for now)
+lint: ## Ruff plus the repo's own comment/env/import conventions (the env-read check is enforcing, the other two report)
 	ruff check .
 	ruff format --check .
 	python scripts/check_comments.py $(LINT_PATHS)
-	python scripts/check_env_reads.py $(LINT_PATHS) --report-only $(if $(ENV_READ_ALLOW),--allow $(ENV_READ_ALLOW))
+	python scripts/check_env_reads.py $(LINT_PATHS) --allow $(ENV_READ_ALLOW)
 	python scripts/check_nested_imports.py $(LINT_PATHS) --report-only
 
 fmt: ## Apply ruff formatting plus the safe import/upgrade autofixes

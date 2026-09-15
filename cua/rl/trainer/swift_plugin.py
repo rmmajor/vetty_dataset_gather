@@ -4,7 +4,6 @@ import asyncio
 import copy
 import functools
 import logging
-import os
 import uuid
 
 from swift.infer_engine.protocol import RolloutOutput
@@ -23,20 +22,16 @@ from cua.rl.trainer.core import (
     observation_to_user_message,
     require_reward,
 )
+from cua.settings import RL
 
 logger = logging.getLogger(__name__)
-
-RL_ENV_URL = os.environ.get("RL_ENV_URL", "http://127.0.0.1:8900")
-RL_ENV_TOKEN = os.environ.get("RL_ENV_TOKEN", "")
-RL_RUN_DIR = os.environ.get("RL_RUN_DIR", "/workspace/rl_runs/current")
-RL_RUN_ID = os.environ.get("RL_RUN_ID", "grpo")
 
 
 class BrowserEnv(Env):
     def __init__(self, env_config):
         super().__init__(env_config)
-        self.client = env_client_for(RL_ENV_URL, token=RL_ENV_TOKEN)
-        self.recorder = EpisodeRecorder(RL_RUN_DIR)
+        self.client = env_client_for(RL.env_url, token=RL.env_token)
+        self.recorder = EpisodeRecorder(RL.run_dir)
         self.episode_id = None
         self.trajectory_uuid = uuid.uuid4().hex
         self.turn = 0
@@ -58,7 +53,7 @@ class BrowserEnv(Env):
                 self.client.reset,
                 env_config["task_id"],
                 int(env_config.get("sample_idx", 0)),
-                RL_RUN_ID,
+                RL.run_id,
                 int(env_config.get("iteration", 0)),
                 env_config.get("policy_tag", ""),
             )

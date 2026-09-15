@@ -20,12 +20,12 @@ from claude_agent_sdk import AssistantMessage, RateLimitEvent, ResultMessage, qu
 
 from cua.pipeline.schemas import FailureCategory, RetryableFailure
 from cua.pipeline.sdk_runner import (
-    DEFAULT_QUERY_TIMEOUT_S,
     UsageLimitReached,
     cost_tracker,
     harden_options,
     rate_limit_tracker,
 )
+from cua.settings import SDK
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ async def run_agent(
     purpose: str = "",
     capture_assistant_fallback: bool = False,
     raise_on_error: bool = False,
-    timeout_s: float = DEFAULT_QUERY_TIMEOUT_S,
+    timeout_s: float = SDK.query_timeout_s,
 ) -> str:
     """Run one agent query, record telemetry, and return the model's text result.
 

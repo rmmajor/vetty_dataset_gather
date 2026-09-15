@@ -15,7 +15,6 @@ after approval. The same policy is reusable as the deployment-time safety gate.
 import base64
 import json
 import logging
-import os
 import re
 from pathlib import Path
 
@@ -23,10 +22,9 @@ from claude_agent_sdk import ClaudeAgentOptions
 
 from cua.pipeline.agent_runner import run_agent
 from cua.pipeline.llm_config import MODEL_FOR_SAFETY_JUDGE
+from cua.settings import CAPTURE
 
 logger = logging.getLogger(__name__)
-
-WATCHDOG_BUDGET_USD = float(os.environ.get("WATCHDOG_BUDGET_USD", "0.20"))
 
 # Risk classes that are never auto-approved on a LIVE site — they move real money or cannot be
 # cleanly undone. In a controlled, ephemeral test env (env="test") nothing is real, so they are
@@ -169,7 +167,7 @@ class LLMApprovalPolicy(ApprovalPolicy):
                 ClaudeAgentOptions(
                     model=MODEL_FOR_SAFETY_JUDGE,
                     max_turns=1,
-                    max_budget_usd=WATCHDOG_BUDGET_USD,
+                    max_budget_usd=CAPTURE.watchdog_budget_usd,
                     permission_mode="bypassPermissions",
                 ),
                 registry=registry,
@@ -226,7 +224,6 @@ _POLICIES = {
 
 
 def get_policy(name: str | None = None) -> ApprovalPolicy:
-    """Resolve the active approval policy. Defaults to the LLM watchdog; override with env
-    WATCHDOG_POLICY=static|human (config, not code)."""
-    key = (name or os.environ.get("WATCHDOG_POLICY", "llm")).strip().lower()
+    """Resolve the active approval policy: the LLM watchdog unless WATCHDOG_POLICY names static or human."""
+    key = (name or CAPTURE.watchdog_policy).strip().lower()
     return _POLICIES.get(key, LLMApprovalPolicy)()

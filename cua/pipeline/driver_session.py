@@ -14,25 +14,19 @@ Used by stage 5 (boot-gate probe) and stage 6 (agent capture).
 """
 
 import logging
-import os
 import re
 import shlex
 
 from cua.pipeline import app_runner
 from cua.pipeline.instrumentation import INSTRUMENTATION_DIR, RESULTS_DIR
+from cua.settings import PIPELINE, SANDBOX
 
 logger = logging.getLogger(__name__)
 
-DRIVER_PORT = int(os.environ.get("DRIVER_PORT", "8765"))
 DRIVER_DIR = "/workspace/driver"
 DRIVER_BAKED_DIR = "/opt/driver"
 DRIVER_LOG = "/workspace/driver.log"
 APP_LOG = "/workspace/app.log"
-# Pinned to the sandbox image's Playwright base (browsers in /ms-playwright are this revision).
-# 1.55 (>=1.51) so storageState({indexedDB:true}) can carry IndexedDB-based auth for SPA apps
-# (workflowy/appflowy/…) whose session cookies alone do not authenticate a reused context.
-PLAYWRIGHT_CORE_VERSION = os.environ.get("DRIVER_PLAYWRIGHT_CORE_VERSION", "1.55.0")
-DRIVER_READY_TIMEOUT = int(os.environ.get("DRIVER_READY_TIMEOUT", "60"))
 
 _REF_LINE_RE = re.compile(r"^\[\d+\] ", re.MULTILINE)
 
@@ -60,7 +54,7 @@ def install_driver(sandbox):
 
     stdout, stderr, exit_code = sandbox.exec_command(
         f"cd {DRIVER_DIR} && npm init -y >/dev/null 2>&1 && "
-        f"PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install playwright-core@{PLAYWRIGHT_CORE_VERSION} "
+        f"PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install playwright-core@{PIPELINE.driver_playwright_core_version} "
         f"--no-audit --no-fund 2>&1 | tail -3",
         timeout=240,
     )
@@ -68,12 +62,12 @@ def install_driver(sandbox):
         raise DriverError(f"playwright-core install failed: {(stdout + stderr)[-300:]}")
 
 
-def start_driver(sandbox, env: dict | None = None, port: int = DRIVER_PORT):
+def start_driver(sandbox, env: dict | None = None, port: int = PIPELINE.driver_port):
     """Daemonize the driver on `port` (one process per port; RL runs several per sandbox); `env` prefixes the node invocation and stays the positional second argument for the eval harness."""
     prefix = "".join(f"{k}={v} " for k, v in {**(env or {}), "DRIVER_PORT": port}.items())
-    log_path = DRIVER_LOG if port == DRIVER_PORT else f"{DRIVER_LOG}.{port}"
+    log_path = DRIVER_LOG if port == PIPELINE.driver_port else f"{DRIVER_LOG}.{port}"
     sandbox.start_background(f"{prefix}node {DRIVER_DIR}/browser_driver.js", log_path)
-    if not sandbox.wait_for_port(port, DRIVER_READY_TIMEOUT):
+    if not sandbox.wait_for_port(port, PIPELINE.driver_ready_timeout):
         log_tail, _, _ = sandbox.exec_command(f"tail -20 {log_path}")
         raise DriverError(f"driver did not open port {port}; log tail: {log_tail[-400:]}")
 
@@ -89,7 +83,7 @@ def _wait_for_http_port(sandbox, preferred: int, timeout: int) -> int | None:
         f"for p in {preferred} $(cat /proc/net/tcp /proc/net/tcp6 2>/dev/null "
         f"| awk 'NR>1 && $4==\"0A\"{{print $2}}' | sed 's/.*://' "
         f"| while read h; do printf '%d\\n' \"0x$h\" 2>/dev/null; done | sort -un); do "
-        f'[ "$p" = "{DRIVER_PORT}" ] && continue; '
+        f'[ "$p" = "{PIPELINE.driver_port}" ] && continue; '
         f"code=$(curl -s -o /dev/null -w '%{{http_code}}' -m 2 \"http://127.0.0.1:$p/\" 2>/dev/null); "
         f'case "$code" in 2*|3*) echo "CUA_PORT=$p"; exit 0;; esac; '
         f"done; sleep 1; done"
@@ -134,7 +128,7 @@ def start_app(sandbox, profile, extra_env: dict | None = None) -> str | None:
         prefix = "; ".join(f"export {k}={shlex.quote(str(v))}" for k, v in extra_env.items())
         start_cmd = f"{prefix}; {start_cmd}"
     sandbox.start_background(start_cmd, APP_LOG)
-    port = _wait_for_http_port(sandbox, spec.port, app_runner.APP_READY_TIMEOUT)
+    port = _wait_for_http_port(sandbox, spec.port, SANDBOX.app_ready_timeout)
     if port is None:
         log_tail, _, _ = sandbox.exec_command(f"tail -25 {APP_LOG}")
         logger.warning(f"app did not open an HTTP port (inferred :{spec.port}); log tail: {log_tail[-500:]}")
@@ -154,7 +148,7 @@ class DriverClient:
     """Typed calls to the in-container driver. Raises DriverError with the driver's own
     (agent-readable) message when a request is rejected."""
 
-    def __init__(self, sandbox, port: int = DRIVER_PORT):
+    def __init__(self, sandbox, port: int = PIPELINE.driver_port):
         self.sandbox = sandbox
         self.base = f"http://127.0.0.1:{port}"
 

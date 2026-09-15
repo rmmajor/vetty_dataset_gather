@@ -1,17 +1,16 @@
 import asyncio
 import logging
-import os
 
 from telegram import Bot
 
 from cua.pipeline.registry import RepoRegistry
+from cua.settings import NOTIFY
 
 logger = logging.getLogger(__name__)
 
 
 def get_bot_config() -> tuple[str, str]:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    token, chat_id = NOTIFY.telegram_bot_token, NOTIFY.telegram_chat_id
     if not token or not chat_id:
         raise ValueError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in environment (or .env file)")
     return token, chat_id

@@ -1,7 +1,8 @@
 """The disposable QA identity every capture hands its teacher, so it never invents (or recalls) a real one."""
 
-import os
 import secrets
+
+from cua.settings import CAPTURE
 
 _FIRST_NAMES = [
     "Emma",
@@ -58,10 +59,6 @@ _LAST_NAMES = [
     "Hughes",
 ]
 
-# RFC 2606 reserves example.com and NANPA reserves 555-01xx: neither can reach a real person.
-PERSONA_EMAIL_DOMAIN = os.environ.get("PERSONA_EMAIL_DOMAIN", "example.com")
-PERSONA_PHONE_PREFIX = os.environ.get("PERSONA_PHONE_PREFIX", "+1202555")
-
 # Masked like real burner credentials, so a lane with a real inbox overrides the fallback in place.
 MASKED_FIELDS = ("email", "phone")
 
@@ -83,8 +80,8 @@ def disposable_persona() -> dict:
         "last_name": last,
         "full_name": f"{first} {last}",
         "username": handle,
-        "email": f"{handle}@{PERSONA_EMAIL_DOMAIN}",
-        "phone": f"{PERSONA_PHONE_PREFIX}01{secrets.randbelow(100):02d}",
+        "email": f"{handle}@{CAPTURE.persona_email_domain}",
+        "phone": f"{CAPTURE.persona_phone_prefix}01{secrets.randbelow(100):02d}",
     }
 
 

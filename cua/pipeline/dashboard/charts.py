@@ -11,6 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from cua.pipeline.schemas import NON_QUALITY_CATEGORIES
+from cua.trajectory import VIEWPORT
 
 MUTED = "#888888"
 _INFRA_CATEGORY_VALUES = {c.value for c in NON_QUALITY_CATEGORIES}
@@ -373,7 +374,7 @@ def thought_presence_bar(step_df: pd.DataFrame) -> go.Figure:
 # ---------- Click coordinates --------------------------------------------------------------
 
 
-def click_heatmap(step_df: pd.DataFrame, *, viewport_w: int = 1280, viewport_h: int = 720) -> go.Figure:
+def click_heatmap(step_df: pd.DataFrame, *, viewport_w: int = VIEWPORT[0], viewport_h: int = VIEWPORT[1]) -> go.Figure:
     coord_steps = step_df.dropna(subset=["x", "y"])
     if coord_steps.empty:
         return empty_state_fig("no coordinate actions recorded")

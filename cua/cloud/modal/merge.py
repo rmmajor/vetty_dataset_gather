@@ -8,10 +8,10 @@ import subprocess
 
 import modal
 
-BASE_MODEL = os.environ.get("CUA_MERGE_BASE", "Qwen/Qwen3.5-9B")
-ADAPTER_NAME = os.environ.get("CUA_MERGE_ADAPTER", "sft-v2/adapter")
-MERGED_NAME = os.environ.get("CUA_MERGE_OUT", ADAPTER_NAME.replace("/", "__"))
-GPU = os.environ.get("CUA_MERGE_GPU", "L40S")
+BASE_MODEL = os.environ.get("CUA_MERGE_BASE", "Qwen/Qwen3.5-9B")  # env-read: no cua package in this image
+ADAPTER_NAME = os.environ.get("CUA_MERGE_ADAPTER", "sft-v2/adapter")  # env-read: no cua package in this image
+MERGED_NAME = os.environ.get("CUA_MERGE_OUT", ADAPTER_NAME.replace("/", "__"))  # env-read: no cua package in this image
+GPU = os.environ.get("CUA_MERGE_GPU", "L40S")  # env-read: no cua package in this image
 
 ADAPTERS_MOUNT = "/adapters"
 HF_CACHE_MOUNT = "/root/.cache/huggingface"

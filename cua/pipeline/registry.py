@@ -1,5 +1,4 @@
 import json
-import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +9,7 @@ from cua.pipeline.schemas import (
     FailureCategory,
     RepoStatus,
 )
+from cua.settings import PIPELINE
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS repos (
@@ -242,12 +242,9 @@ class RepoRegistry:
             FROM repos WHERE status = ?"""
         params = [required_status.value]
 
-        # Optional language filter (e.g. run only Python repos through a stage) — set via
-        # PIPELINE_LANGUAGE env var, matching the codebase's env-config convention.
-        language = os.environ.get("PIPELINE_LANGUAGE")
-        if language:
+        if PIPELINE.language:
             query += " AND language = ?"
-            params.append(language)
+            params.append(PIPELINE.language)
 
         if stage >= 4:
             # Drain order: bootability first (deep_score, set in stage 4 — NULL→0 for stage 4's

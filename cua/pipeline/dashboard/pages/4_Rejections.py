@@ -6,8 +6,6 @@ repos a threshold change would recover. Existing rejections only have data here 
 `python -m cua.pipeline.backfill_scores`; new ones populate automatically.
 """
 
-import os
-
 import streamlit as st
 
 from cua.pipeline.dashboard import charts
@@ -18,13 +16,14 @@ from cua.pipeline.dashboard._state import (
     page_header,
 )
 from cua.pipeline.schemas import NON_QUALITY_CATEGORIES
+from cua.settings import PIPELINE
 
 _INFRA = {c.value for c in NON_QUALITY_CATEGORIES}
 # Mirror the stage gates so the threshold lines track the actual (env-tunable) config.
-_DEEP_GATE = int(os.environ.get("STAGE4_DEEP_SCORE_THRESHOLD", "4"))
-_GATE_APP = int(os.environ.get("STAGE3_GATE_APP_MIN", "3"))
-_GATE_RUN = int(os.environ.get("STAGE3_GATE_RUNNABILITY_MIN", "2"))
-_GATE_INTERACT = int(os.environ.get("STAGE3_GATE_INTERACTION_MIN", "2"))
+_DEEP_GATE = PIPELINE.stage4_deep_score_threshold
+_GATE_APP = PIPELINE.stage3_gate_app_min
+_GATE_RUN = PIPELINE.stage3_gate_runnability_min
+_GATE_INTERACT = PIPELINE.stage3_gate_interaction_min
 _REJECTED_PREFIX = "rejected_"
 _PASSED_S3 = {"scored", "analyzed", "validated", "completed"}
 _PASSED_S4 = {"analyzed", "validated", "completed"}

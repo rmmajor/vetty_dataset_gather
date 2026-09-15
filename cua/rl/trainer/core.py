@@ -16,11 +16,9 @@ from PIL import Image
 
 from cua.rl.actions import decode_step
 from cua.rl.observation import build_observation
+from cua.settings import RL
 
 logger = logging.getLogger(__name__)
-RL_RESET_WAIT_S = float(os.environ.get("RL_RESET_WAIT_S", "1800"))
-# A terminal step can wait on the verifier through a usage-limit pause; the retries are idempotent, so waiting beats a fabricated reward.
-RL_STEP_WAIT_S = float(os.environ.get("RL_STEP_WAIT_S", "2400"))
 
 
 def _retry_after(error):
@@ -40,8 +38,8 @@ class HttpEnvClient:
         timeout_s=600,
         retries=6,
         backoff_s=5,
-        reset_wait_s=RL_RESET_WAIT_S,
-        step_wait_s=RL_STEP_WAIT_S,
+        reset_wait_s=RL.reset_wait_s,
+        step_wait_s=RL.step_wait_s,
         opener=urllib.request.urlopen,
         **_,
     ):
@@ -120,7 +118,7 @@ class MockEnvClient:
 
     def __init__(self, steps=3, image_size=(1280, 720), **_):
         self.steps, self.png = steps, blank_png_b64(image_size)
-        # RL_MOCK_NO_REWARD simulates a verdictless service so the smoke can prove the run refuses to train on it.
+        # env-read: the GRPO smoke toggles this in-process to simulate the verdictless service the run must refuse to train on
         self.no_reward = os.environ.get("RL_MOCK_NO_REWARD") == "1"
         self.episodes = {}
 

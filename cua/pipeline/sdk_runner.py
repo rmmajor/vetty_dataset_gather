@@ -11,7 +11,6 @@ repo to be rejected — the repo stays in its input status and is retried on the
 
 import asyncio
 import logging
-import os
 import shutil
 
 from claude_agent_sdk import (
@@ -22,19 +21,12 @@ from claude_agent_sdk import (
     query,
 )
 
+from cua.settings import SDK
+
 logger = logging.getLogger(__name__)
 
-# The SDK always prefers its bundled CLI, which can lag the system install and has wedged on
-# subprocess spawn. Pin to the (newer, session-proven) system `claude` when available; override
-# with CLAUDE_CLI_PATH. None -> fall back to the SDK's default (bundled) discovery.
-CLAUDE_CLI_PATH = os.environ.get("CLAUDE_CLI_PATH") or shutil.which("claude")
-
-# Hard wall-clock cap on a single SDK query. The SDK can spawn a CLI subprocess that wedges
-# (blocks in waitpid forever, producing no ResultMessage); without this, one such wedge stalls an
-# entire stage run indefinitely (observed: a verify call hung a stage-6 run for 2h). The default
-# comfortably exceeds the longest legitimate call — a multi-turn teacher session, ~25 min observed
-# — while staying finite. Tune with SDK_QUERY_TIMEOUT; override per-call via run_query/run_agent.
-DEFAULT_QUERY_TIMEOUT_S = int(os.environ.get("SDK_QUERY_TIMEOUT", "2400"))
+# The SDK's bundled CLI can lag the system install and has wedged on spawn; None falls back to its own discovery.
+CLAUDE_CLI_PATH = SDK.claude_cli_path or shutil.which("claude")
 
 
 def harden_options(options) -> None:
@@ -147,7 +139,7 @@ async def run_query(
     *,
     label: str = "",
     fallback_to_assistant_text: bool = False,
-    timeout_s: float = DEFAULT_QUERY_TIMEOUT_S,
+    timeout_s: float = SDK.query_timeout_s,
 ) -> str:
     """Run one SDK `query()` and return its success result text.
 

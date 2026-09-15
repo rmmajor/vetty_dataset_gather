@@ -18,7 +18,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -30,7 +29,6 @@ from cua.pipeline.registry import RepoRegistry
 from cua.pipeline.sandbox import DockerSandbox, install_sigterm_handler, safe_parallel_sandboxes
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 from cua.pipeline.stage6_generate import (
-    CAPTURE_MAX_ATTEMPTS,
     _load_proposed_tasks,
     _safe_task_id,
     is_capture_settled,
@@ -38,12 +36,12 @@ from cua.pipeline.stage6_generate import (
 )
 from cua.pipeline.task_proposer import propose_tasks
 from cua.pipeline.think_generator import needs_polish, polish_thoughts_for_trajectory
+from cua.settings import CAPTURE, PIPELINE
+from cua.trajectory import VIEWPORT
 
 logger = logging.getLogger(__name__)
 
 SITES_CONFIG = Path(__file__).parent / "sites" / "public_sites.json"
-PUBLIC_CONTAINER_TIMEOUT = 10800
-PUBLIC_TASKS_PER_SITE = int(os.environ.get("PUBLIC_TASKS_PER_SITE", "6"))
 # Every site registry ships as a JSON here, so a new one is searched by --sites with no code change.
 SITE_CONFIG_GLOB = "public_sites*.json"
 
@@ -126,7 +124,7 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
         "efficiency": verifier.get("efficiency"),
         "efficiency_ratio": verifier.get("efficiency_ratio"),
         "relabeled": verifier.get("relabeled", False),
-        "viewport": {"width": 1280, "height": 720},
+        "viewport": {"width": VIEWPORT[0], "height": VIEWPORT[1]},
         "source_repo": f"public:{site['name']}",
         "autonomy": task_meta.get("autonomy", "autonomous"),
         "auth_mode": task_meta.get("auth_mode", "none"),
@@ -143,7 +141,7 @@ async def _verify_and_finalize(traj_dir: Path, site: dict, task: dict, state: di
     (traj_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
 
     attempts = record_capture_attempt(traj_dir, "success" if traj["success"] else "failed")
-    if not traj["success"] and attempts >= CAPTURE_MAX_ATTEMPTS:
+    if not traj["success"] and attempts >= CAPTURE.max_attempts:
         logger.warning(
             f"[{site['name']}] task '{task['id']}' has now failed {attempts}x — resume will "
             f"stop re-capturing it (raise CAPTURE_MAX_ATTEMPTS to keep trying)"
@@ -197,7 +195,7 @@ async def _propose_for_site(
         screenshot,
         "",
         "",
-        n_tasks=PUBLIC_TASKS_PER_SITE,
+        n_tasks=PIPELINE.public_tasks_per_site,
         registry=registry,
         affordances=affordances,
         avoid_instructions=avoid,
@@ -278,7 +276,7 @@ async def capture_site(
     ran: list[dict] = []
     states: dict = {}
     full: list[dict] = []
-    sandbox = DockerSandbox(container_timeout=PUBLIC_CONTAINER_TIMEOUT)
+    sandbox = DockerSandbox(container_timeout=CAPTURE.public_container_timeout)
     try:
         await _run(sandbox.start, f"public/{site['name']}")
         await _run(driver_session.install_driver, sandbox)

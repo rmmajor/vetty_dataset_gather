@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 import time
 from pathlib import Path
@@ -19,6 +18,7 @@ from cua.pipeline.schemas import (
     RepoStatus,
 )
 from cua.pipeline.sdk_runner import UsageLimitReached, cost_tracker, rate_limit_tracker
+from cua.settings import GITHUB, PIPELINE
 
 logger = logging.getLogger(__name__)
 
@@ -251,31 +251,22 @@ async def run_stage(
     elif stage == 4:
         from cua.pipeline.stage4_deep_analyze import run_deep_analyze
 
-        # Stage 4 is static analysis only (clone + read files, NO npm install / app boot), so
-        # its containers are light — the 3-worker default is conservative. Raise via env when
-        # you want to blast the scored backlog and have RAM headroom.
-        stage4_cap = int(os.environ.get("STAGE4_WORKERS", "3"))
-        stage4_workers = safe_parallel_sandboxes(min(workers, stage4_cap))
+        # Stage 4 is static analysis only (clone + read files, no install or app boot), so its containers are light.
+        stage4_workers = safe_parallel_sandboxes(min(workers, PIPELINE.stage4_workers))
         return await run_deep_analyze(registry, limit=limit, workers=stage4_workers, budget_remaining=budget_remaining)
 
     elif stage == 5:
         from cua.pipeline.stage5_trial_run import run_trial
 
-        # Boot gate = clone + npm install + boot + driver probe (~1-2GB/worker). Default 2 is
-        # safe alongside capture; raise via env when running stage 5 on its own (no concurrent
-        # stage-6 capture eating RAM) to drain the analyzed backlog faster.
-        stage5_cap = int(os.environ.get("STAGE5_WORKERS", "2"))
-        stage5_workers = safe_parallel_sandboxes(min(workers, stage5_cap))
+        # Boot gate = clone + install + boot + driver probe (~1-2GB/worker), so 2 is safe alongside capture.
+        stage5_workers = safe_parallel_sandboxes(min(workers, PIPELINE.stage5_workers))
         return await run_trial(registry, limit=limit, workers=stage5_workers, budget_remaining=budget_remaining)
 
     elif stage == 6:
         from cua.pipeline.stage6_generate import run_generate
 
-        # Each stage-6 worker holds a sandbox with a booted app + headless Chromium (~1.2GB
-        # real). Default 2 fits alongside the other stages in an ~8GB Docker VM; raise via
-        # env when the VM has headroom or other lanes are idle.
-        stage6_cap = int(os.environ.get("STAGE6_WORKERS", "2"))
-        stage6_workers = safe_parallel_sandboxes(min(workers, stage6_cap))
+        # Each stage-6 worker holds a sandbox with a booted app plus headless Chromium (~1.2GB real).
+        stage6_workers = safe_parallel_sandboxes(min(workers, PIPELINE.stage6_workers))
         return await run_generate(
             registry, trajectory_dir, limit=limit, workers=stage6_workers, budget_remaining=budget_remaining
         )
@@ -503,7 +494,7 @@ async def async_main(args):
     db_path = data_dir / "registry.db"
     registry = RepoRegistry(str(db_path))
 
-    github_token = os.environ.get("GITHUB_TOKEN", "")
+    github_token = GITHUB.token
 
     try:
         if args.status:

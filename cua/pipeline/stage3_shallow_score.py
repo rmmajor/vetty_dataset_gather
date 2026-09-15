@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 import re
 import subprocess
 
@@ -20,18 +19,9 @@ from cua.pipeline.schemas import (
     ShallowScores,
 )
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
-
-SCORE_BUDGET_USD = float(os.environ.get("STAGE3_BUDGET_USD", "2.0"))
-
-# Gate minimums (each dimension is 1-5). Env-overridable so they can be tuned from the dashboard's
-# score distributions without a code edit. runnability defaults to 2 (reject only score-1 "requires
-# paid external services"); a 2 means "needs some setup" and the sandbox — which has outbound
-# network — gets to actually try it at stage 5 rather than being killed on a shallow guess here.
-GATE_APP_VS_LIBRARY_MIN = int(os.environ.get("STAGE3_GATE_APP_MIN", "3"))
-GATE_RUNNABILITY_MIN = int(os.environ.get("STAGE3_GATE_RUNNABILITY_MIN", "2"))
-GATE_INTERACTION_MIN = int(os.environ.get("STAGE3_GATE_INTERACTION_MIN", "2"))
 
 SCORING_PROMPT = """You are evaluating a GitHub repository as a source of browser-use trajectories. An agent will BOOT THE REPO'S OWN WEB APP locally and operate its UI to accomplish user goals — the test suite serves as feature hints, not as the trajectory generator. We need PRODUCTION apps with complex UIs that live inside the repo — not demos, tutorials, practice repos, or test suites pointed at someone else's hosted site.
 
@@ -207,7 +197,7 @@ async def score_single_repo(registry: RepoRegistry, repo: dict, context: dict) -
         ClaudeAgentOptions(
             model=MODEL_FOR_REASONING,
             max_turns=3,
-            max_budget_usd=SCORE_BUDGET_USD,
+            max_budget_usd=PIPELINE.stage3_budget_usd,
             permission_mode="bypassPermissions",
         ),
         registry=registry,
@@ -263,9 +253,9 @@ async def process_repo(registry: RepoRegistry, repo: dict):
     # than navigate+assert (interaction_richness). production_complexity is NOT gated — it conflates
     # "real app" with "complex app", which wrongly rejects simple-but-ideal apps like SauceDemo.
     if (
-        scores.application_vs_library < GATE_APP_VS_LIBRARY_MIN
-        or scores.runnability < GATE_RUNNABILITY_MIN
-        or scores.interaction_richness < GATE_INTERACTION_MIN
+        scores.application_vs_library < PIPELINE.stage3_gate_app_min
+        or scores.runnability < PIPELINE.stage3_gate_runnability_min
+        or scores.interaction_richness < PIPELINE.stage3_gate_interaction_min
     ):
         raise QualityReject(
             FailureCategory.QUALITY_GATE,

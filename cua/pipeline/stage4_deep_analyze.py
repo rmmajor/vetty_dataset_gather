@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 
 from claude_agent_sdk import ClaudeAgentOptions
 
@@ -21,16 +20,9 @@ from cua.pipeline.schemas import (
     RetryableFailure,
 )
 from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
-
-ANALYZE_BUDGET_USD = float(os.environ.get("STAGE4_BUDGET_USD", "5.0"))
-
-# Per-pass admission cap. Stage 3's gates pass plenty of mediocre (ui=2/interaction=2) apps;
-# get_repos_for_stage(4) orders by UI richness, so capping each pass to the top K spends the
-# analysis budget on the richest candidates and lets toy apps pool at `scored` indefinitely —
-# selection by ordering, not rejection.
-TOP_K_PER_PASS = int(os.environ.get("STAGE4_TOP_K_PER_PASS", "15"))
 
 DEEP_ANALYSIS_PROMPT = """You are analyzing the browser-test repository '{repo_name}' that has been cloned to /workspace/repo inside a Docker container. The test suite uses either Playwright or Selenium.
 
@@ -92,17 +84,6 @@ After analysis, output your findings as a JSON object with EXACTLY these fields:
 Output ONLY the JSON at the end of your analysis.
 """
 
-# Gate for promotion to stage 5 (deep_score is 0–10). Env-overridable so it can be tuned from the
-# dashboard's score distribution without a code edit.
-DEEP_SCORE_THRESHOLD = int(os.environ.get("STAGE4_DEEP_SCORE_THRESHOLD", "4"))
-
-# Fit-veto thresholds (agent mode). Stage 4 exists to reject toys CHEAPLY here — before a stage-5
-# boot or a stage-6 capture is wasted discovering that the "app" was a unit-test suite, a
-# boilerplate, or a login wall. Both env-tunable so they can be tightened from the score
-# distribution without a code edit; set a floor to 0 to disable that rule.
-MIN_EST_TRAJECTORIES = int(os.environ.get("STAGE4_MIN_EST_TRAJECTORIES", "3"))
-TOY_COMPLEXITY_MAX = int(os.environ.get("STAGE4_TOY_COMPLEXITY_MAX", "2"))
-
 
 def can_self_host(analysis: DeepAnalysis) -> bool:
     return (
@@ -157,17 +138,19 @@ def fit_veto(analysis: DeepAnalysis, shallow_scores: dict | None) -> str | None:
     verdict (filled by the stage-4 prompt, or by judge_fit over a stored analysis) is the main gate
     and catches boilerplates / course repos / login-walled apps that the raw numbers rate highly."""
     if schemas.CAPTURE_MODE == "agent":
-        if MIN_EST_TRAJECTORIES > 0 and analysis.estimated_trajectories < MIN_EST_TRAJECTORIES:
+        if PIPELINE.stage4_min_est_trajectories > 0 and (
+            analysis.estimated_trajectories < PIPELINE.stage4_min_est_trajectories
+        ):
             return (
                 f"only ~{analysis.estimated_trajectories} usable trajectories "
-                f"(< {MIN_EST_TRAJECTORIES}) — too little for a capture-worthy app"
+                f"(< {PIPELINE.stage4_min_est_trajectories}) — too little for a capture-worthy app"
             )
         if analysis.needs_external_backend and not can_self_host(analysis):
             return "needs an external backend/service the sandbox cannot provide"
 
     production_complexity = (shallow_scores or {}).get("production_complexity")
-    if isinstance(production_complexity, int) and production_complexity <= TOY_COMPLEXITY_MAX:
-        return f"toy/tutorial (production_complexity {production_complexity} <= {TOY_COMPLEXITY_MAX})"
+    if isinstance(production_complexity, int) and production_complexity <= PIPELINE.stage4_toy_complexity_max:
+        return f"toy/tutorial (production_complexity {production_complexity} <= {PIPELINE.stage4_toy_complexity_max})"
 
     if not analysis.good_fit:
         return f"not a good fit — {analysis.veto_reason or 'model vetoed'}"
@@ -267,7 +250,7 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
             ClaudeAgentOptions(
                 model=MODEL_FOR_REASONING,
                 max_turns=25,
-                max_budget_usd=ANALYZE_BUDGET_USD,
+                max_budget_usd=PIPELINE.stage4_budget_usd,
                 permission_mode="bypassPermissions",
                 mcp_servers={"sandbox": mcp_server},
                 allowed_tools=sandbox_tools,
@@ -323,7 +306,7 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
                 deep_score=deep_score,
             )
 
-        if deep_score >= DEEP_SCORE_THRESHOLD:
+        if deep_score >= PIPELINE.stage4_deep_score_threshold:
             registry.update_status(
                 repo_name,
                 RepoStatus.ANALYZED.value,
@@ -334,7 +317,8 @@ async def analyze_single_repo(registry: RepoRegistry, repo: dict):
         else:
             raise QualityReject(
                 FailureCategory.QUALITY_GATE,
-                f"deep score {deep_score}/{DEEP_SCORE_THRESHOLD} (tests: {analysis.test_case_count}, self_contained: {analysis.is_self_contained})",
+                f"deep score {deep_score}/{PIPELINE.stage4_deep_score_threshold} "
+                f"(tests: {analysis.test_case_count}, self_contained: {analysis.is_self_contained})",
                 deep_analysis=analysis.model_dump(),
                 deep_score=deep_score,
             )
@@ -362,7 +346,7 @@ async def run_deep_analyze(
     workers: int = 3,
     budget_remaining: float = None,
 ):
-    effective_limit = min(limit, TOP_K_PER_PASS) if limit else TOP_K_PER_PASS
+    effective_limit = min(limit, PIPELINE.stage4_top_k_per_pass) if limit else PIPELINE.stage4_top_k_per_pass
     repos = registry.get_repos_for_stage(4, limit=effective_limit)
     logger.info(
         f"Deep analyzing {len(repos)} repos with {workers} workers (top-{effective_limit} by richness ordering)"

@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -10,11 +9,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from cua.pipeline.stage6_generate import _safe_task_id
+from cua.settings import EVAL, env_values
 
 logger = logging.getLogger(__name__)
 
 PUBLIC_SITES_CONFIG = Path(__file__).resolve().parents[1] / "pipeline" / "sites" / "public_sites.json"
-HF_ENDPOINT = os.environ.get("HF_ENDPOINT", "https://huggingface.co")
+HF_ENDPOINT = EVAL.hf_endpoint
 HF_TOKEN_FILE = Path.home() / ".cache" / "huggingface" / "token"
 # HF libraries read only the first two, so this repo's own HF_READ_TOKEN needs explicit handling.
 HF_TOKEN_VARS = ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN", "HF_READ_TOKEN")
@@ -72,7 +72,7 @@ def _normalize_url(url: str) -> str:
 
 def _env_file_candidates() -> list[Path]:
     """`.env` next to the invocation and next to the main checkout (a worktree has none of its own)."""
-    candidates = [Path(os.environ["EVAL_ENV_FILE"])] if os.environ.get("EVAL_ENV_FILE") else []
+    candidates = [Path(EVAL.env_file)] if EVAL.env_file else []
     candidates.append(Path.cwd() / ".env")
     try:
         common = subprocess.run(
@@ -97,8 +97,9 @@ def _read_env_file(path: Path) -> dict:
 
 def resolve_hf_token() -> str | None:
     """Explicit env var, then a `.env` file, then the token `huggingface-cli login` cached."""
+    tokens = env_values(EVAL)
     for var in HF_TOKEN_VARS:
-        token = os.environ.get(var)
+        token = tokens.get(var)
         if token:
             return token.strip()
     for env_file in _env_file_candidates():

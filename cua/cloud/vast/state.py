@@ -16,9 +16,11 @@ import os
 import time
 from pathlib import Path
 
+from cua.settings import CLOUD
+
 logger = logging.getLogger(__name__)
 
-STATE_FILE = Path(os.environ.get("REMOTE_TRAIN_STATE_FILE", ".remote_train_state.json"))
+STATE_FILE = Path(CLOUD.remote_train_state_file)
 
 
 def record_instance(instance) -> None:
@@ -106,7 +108,7 @@ def _write(records) -> None:
         logger.error(f"Could not write state file {STATE_FILE}: {e}")
 
 
-BAD_OFFER_FILE = Path(os.environ.get("REMOTE_TRAIN_BAD_OFFERS", ".remote_train_bad_offers.json"))
+BAD_OFFER_FILE = Path(CLOUD.remote_train_bad_offers)
 BAD_OFFER_TTL_S = 6 * 3600
 
 

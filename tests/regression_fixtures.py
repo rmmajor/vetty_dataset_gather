@@ -58,6 +58,7 @@ ENV_PASSTHROUGH = ("PATH", "HOME", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR")
 
 def subprocess_env() -> dict:
     """A pinned environment: an inherited COLUMNS rewraps argparse help and MAKEFLAGS reprefixes make errors."""
+    # env-read: a fixture subprocess needs the real PATH/HOME, and nothing else, from this process
     env = {name: os.environ[name] for name in ENV_PASSTHROUGH if name in os.environ}
     env.update(GUARD_VARS)
     env.update(

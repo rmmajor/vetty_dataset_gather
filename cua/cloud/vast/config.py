@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 
 import yaml
 
+from cua.settings import CLOUD, EVAL
+
 DEFAULT_EXCLUDE_COUNTRIES = ("RU", "CN")
 
 
@@ -131,14 +133,16 @@ def load_config(path: str, cli_overrides: dict | None = None) -> RemoteTrainConf
             if key in _YAML_KEYS and value is not None:
                 setattr(cfg, key, value)
 
-    cfg.api_key = os.environ.get("VAST_API_KEY", cfg.api_key)
-    cfg.hf_token = os.environ.get("HF_TOKEN", cfg.hf_token)
-    if os.environ.get("REMOTE_TRAIN_EXCLUDE_COUNTRIES"):
+    if CLOUD.vast_api_key is not None:
+        cfg.api_key = CLOUD.vast_api_key
+    if EVAL.hf_token is not None:
+        cfg.hf_token = EVAL.hf_token
+    if CLOUD.remote_train_exclude_countries:
         cfg.exclude_countries = tuple(
-            c.strip().upper() for c in os.environ["REMOTE_TRAIN_EXCLUDE_COUNTRIES"].split(",") if c.strip()
+            c.strip().upper() for c in CLOUD.remote_train_exclude_countries.split(",") if c.strip()
         )
-    if os.environ.get("REMOTE_TRAIN_INSTANCE_LABEL"):
-        cfg.instance_label = os.environ["REMOTE_TRAIN_INSTANCE_LABEL"]
+    if CLOUD.remote_train_instance_label:
+        cfg.instance_label = CLOUD.remote_train_instance_label
 
     for key, value in (cli_overrides or {}).items():
         if value is not None:

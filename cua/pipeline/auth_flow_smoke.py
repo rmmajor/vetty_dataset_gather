@@ -38,8 +38,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 CODES = {}
 TOKENS = {}
 SESSIONS = set()
-SMTP_HOST = os.environ.get("SMTP_HOST", "greenmail")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "3025"))
+SMTP_HOST = os.environ.get("SMTP_HOST", "greenmail")  # env-read: runs inside the sandbox app process
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "3025"))  # env-read: runs inside the sandbox app process
 
 SIGNUP = """<!doctype html><html><head><title>Demo App</title></head><body>
 <h1>Create your account</h1>

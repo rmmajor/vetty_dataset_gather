@@ -1,7 +1,8 @@
-import os
 from enum import Enum
 
 from pydantic import BaseModel, Field
+
+from cua.settings import PIPELINE
 
 # The recorded-trajectory contract moved to cua.trajectory.schema; re-exported so pipeline callers keep one import site.
 from cua.trajectory.schema import CaptureMeta as CaptureMeta
@@ -106,26 +107,8 @@ NON_QUALITY_CATEGORIES = RETRYABLE_CATEGORIES | {
     FailureCategory.BUDGET_EXCEEDED,
 }
 
-MAX_RETRIES = int(os.environ.get("PIPELINE_MAX_RETRIES", "3"))
-
-# How stages 4-6 produce trajectories. "agent": a Claude teacher pursues proposed user goals in
-# the repo's booted app (the browser driver records coordinates; framework-independent).
-# "replay": the legacy instrumented-test-suite path. Defined here — next to the state machine it
-# shapes — so every stage reads the same switch instead of each re-reading the environment.
-CAPTURE_MODE = os.environ.get("PIPELINE_CAPTURE_MODE", "agent")
-
-# Auth-flow capture (agent mode): when on, the shared GreenMail+Roundcube mail stack is wired into
-# each capture sandbox (mail_service) and the proposer is allowed to emit registration / email-
-# verification / password-reset / email-OTP tasks the teacher completes END-TO-END in the browser
-# (register → open the webmail → read the link/code → return). Off by default so ordinary repo
-# capture is unchanged and needs no mail stack.
-AUTH_FLOW_CAPTURE = os.environ.get("PIPELINE_AUTH_FLOW_CAPTURE", "0") not in ("0", "", "false", "False")
-
-# Of the tasks that need an account, the fraction captured as "discovered" login (start signed OUT
-# with credentials available, sign in only when the app blocks progress) instead of "pre_session"
-# (start already signed in). Keeps login an organic minority skill rather than a forced prefix on
-# every trajectory. The rest of account tasks reuse the session captured from the register task.
-AUTH_DISCOVERED_RATIO = float(os.environ.get("PIPELINE_AUTH_DISCOVERED_RATIO", "0.25"))
+# The one module attribute the orchestrator rebinds: --capture-mode overrides it for the whole run.
+CAPTURE_MODE = PIPELINE.capture_mode
 
 
 class PipelineFailure(Exception):

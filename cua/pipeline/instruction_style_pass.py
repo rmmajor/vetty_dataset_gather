@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import re
 import sys
 from collections.abc import Callable
@@ -18,12 +17,11 @@ from cua.pipeline.corpus_audit import QA_VERIFY_STYLE, demonstrates_recheck, in_
 from cua.pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
 from cua.pipeline.relabel_recoverable import NOT_GOAL_SHAPED
 from cua.pipeline.sdk_runner import UsageLimitReached
+from cua.settings import PIPELINE
 
 logger = logging.getLogger(__name__)
 
 REWRITE_BUDGET_USD = 0.10
-# The qa_verify prompt carries the run's thoughts, so it sits well above the SDK's per-call floor.
-QA_VOICE_BUDGET_USD = float(os.environ.get("QA_VOICE_BUDGET_USD", "0.50"))
 QA_VERIFY_MAX_SHARE = 0.25
 THOUGHT_CHARS = 160
 FINAL_THOUGHT_CHARS = 400
@@ -179,7 +177,7 @@ STYLE_MODES: dict[str, StyleMode] = {
         already_styled=in_qa_verify_voice,
         build_prompt=build_qa_verify_prompt,
         parse_reply=parse_json_instruction,
-        budget_usd=QA_VOICE_BUDGET_USD,
+        budget_usd=PIPELINE.qa_voice_budget_usd,
         max_share=QA_VERIFY_MAX_SHARE,
         dry_run_previews=True,
     ),

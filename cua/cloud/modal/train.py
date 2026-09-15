@@ -6,15 +6,10 @@ import pathlib
 
 import modal
 
+from cua.settings import CLOUD, MAX_PIXELS_DEFAULT
 from cua.sft.recipe import convert_command, train_command
 
 APP_NAME = "cua-train"
-GPU = os.environ.get("CUA_TRAIN_GPU", "A100-80GB")
-RUN_NAME = os.environ.get("CUA_RUN_NAME", "sft-v1")
-TRAIN_TIMEOUT = int(os.environ.get("CUA_TRAIN_TIMEOUT", str(10 * 3600)))
-# Without periodic commits the per-epoch checkpoints only reach the volume when the whole run ends,
-# so a crash costs every epoch and an earlier epoch cannot be served while training continues.
-COMMIT_EVERY_S = int(os.environ.get("CUA_TRAIN_COMMIT_EVERY_S", "600"))
 
 DATA_MOUNT = "/data"
 OUT_MOUNT = "/outputs"
@@ -68,10 +63,10 @@ for _name in CONFIGS:
 
 @app.function(
     image=image,
-    gpu=GPU,
+    gpu=CLOUD.train_gpu,
     volumes={DATA_MOUNT: trajectories, OUT_MOUNT: outputs, HF_CACHE_MOUNT: hf_cache},
     secrets=[modal.Secret.from_name("huggingface")],
-    timeout=TRAIN_TIMEOUT,
+    timeout=CLOUD.train_timeout,
 )
 def train(
     val_split: float = 0.1,
@@ -99,8 +94,7 @@ def train(
             f"  modal volume put cua-trajectories ./trajectories /{data_subdir}"
         )
 
-    # RUN_NAME is read at import, which re-runs in the container where the env var is absent.
-    run_name = run_name or RUN_NAME
+    run_name = run_name or CLOUD.run_name
     run_dir = Path(OUT_MOUNT) / run_name
     swift_out = run_dir / "swift"
     dataset_dir = run_dir / "training_data"
@@ -139,7 +133,7 @@ def train(
     stop = threading.Event()
 
     def commit_periodically():
-        while not stop.wait(COMMIT_EVERY_S):
+        while not stop.wait(CLOUD.train_commit_every_s):
             outputs.commit()
 
     committer = threading.Thread(target=commit_periodically, daemon=True)
@@ -160,7 +154,7 @@ def train(
         shutil.rmtree(adapter)
     shutil.copytree(final, adapter)
 
-    summary = {"run": run_name, "adapter": str(adapter), "source_checkpoint": str(final), "gpu": GPU}
+    summary = {"run": run_name, "adapter": str(adapter), "source_checkpoint": str(final), "gpu": CLOUD.train_gpu}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     # The weight cache is only worth having if it survives the run that paid for it.
     hf_cache.commit()
@@ -183,7 +177,8 @@ def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
 
     from PIL import Image
 
-    os.environ.setdefault("MAX_PIXELS", "1003520")
+    # env-read: ms-swift's template reads MAX_PIXELS from the env, so it is written here and read back
+    max_pixels = os.environ.setdefault("MAX_PIXELS", str(MAX_PIXELS_DEFAULT))
     from swift.model import get_model_processor
     from swift.template import get_template
 
@@ -223,10 +218,10 @@ def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
     grounding.append({"role": "assistant", "content": "action: click(<ref>(500, 500)</ref>, button=left)"})
     loaded = get_model_processor(model, load_model=False)
     processor = loaded[1] if isinstance(loaded, tuple) else loaded
-    template = get_template(processor, max_length=4096, max_pixels=int(os.environ["MAX_PIXELS"]))
+    template = get_template(processor, max_length=4096, max_pixels=int(max_pixels))
     template.set_mode("train")
     pad_id = processor.tokenizer.convert_tokens_to_ids("<|image_pad|>")
-    report = {"model": model, "template": template.template_meta.template_type, "max_pixels": os.environ["MAX_PIXELS"]}
+    report = {"model": model, "template": template.template_meta.template_type, "max_pixels": max_pixels}
     for name, messages in (("two_image_step", step), ("grounding", grounding)):
         encoded = template.encode({"messages": messages})
         ids, labels = list(encoded["input_ids"]), list(encoded.get("labels") or [])
