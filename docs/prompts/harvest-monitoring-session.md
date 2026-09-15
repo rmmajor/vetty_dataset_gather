@@ -11,7 +11,7 @@ The run is one of:
 - `--stage 5-7` (boot-gate the analyzed backlog → capture validated → finalize), or
 - `--until-limit 100` (full drain loop 3→7).
 
-Find it: `pgrep -fl "repo_pipeline.orchestrator"`. Its log is the newest file in
+Find it: `pgrep -fl "cua.pipeline.orchestrator"`. Its log is the newest file in
 `pipeline_data/run_logs/`. Use a **Monitor** on that log (one monitor, stop it before re-arming —
 see Monitor hygiene below). Useful filter:
 `grep -E "boot OK|complete —|verified trajectories from|stage 6.*(proposed|task ')|REJECT|RUN DEGRADED|Stage . failed|Traceback|budget|usage limit"`
@@ -20,7 +20,7 @@ see Monitor hygiene below). Useful filter:
 
 - **Corpus: 42 verified trainable trajectories, 275 SFT examples**, median 6 / max 20 steps, 36/42
   with terminal `done()`. Confirm with: `make audit-corpus` and
-  `.venv-pipeline/bin/python train_qwen.py convert --input trajectories/ --output /tmp/c --val-split 0 | grep -E "Trajectories trained|Steps/|Domains"`
+  `.venv-pipeline/bin/python -m cua.sft convert --input trajectories/ --output /tmp/c --val-split 0 | grep -E "Trajectories trained|Steps/|Domains"`
 - Funnel: ~171 `analyzed`, ~1705 `scored`, 7 `completed`. Branch `feat/agent-capture` → PR #23.
 - Run the pipeline via `.venv-pipeline/bin/python` (NOT system python). Claude calls auth via the
   logged-in `claude` CLI (OAuth) — **never set ANTHROPIC_API_KEY**.

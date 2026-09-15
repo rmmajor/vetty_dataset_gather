@@ -124,12 +124,12 @@ the page's rendered text (`/page_text`, since `/snapshot` shows only headings an
 `navigate` is legal in the eval harness again (it is in the trained grammar and was scored a parse
 failure); the RL decoder tolerates a prefilled `<think>`, which had been discarding every thought and
 marking every turn unclean; G=8, temperature 1.0, `dynamic_sample` + `max_resample_times`,
-`epsilon_high`, `max_turns 32`, 50 steps; `rl/analysis.py` gives per-task pass@k, reward histograms,
+`epsilon_high`, `max_turns 32`, 50 steps; `cua/rl/analysis.py` gives per-task pass@k, reward histograms,
 zero-variance-group share and the LoRA-B dead-run detector.
 
 **Ranked, still open:**
 
-1. **Finish frontier selection and keep it fresh.** `repo_pipeline/public_sites_actions_frontier.json`
+1. **Finish frontier selection and keep it fresh.** `cua/pipeline/sites/public_sites_actions_frontier.json`
    holds 51 oracle-checked tasks in two tiers (4–12 and 10–16 expected actions). A k=1 pilot on
    merged sft-v1 scored 51.5% pool-wide with zero deferred rewards, so the pool straddles the
    frontier; the k=8 sweep picks the 20–80% band. Task difficulty moves with the policy, so re-sweep
@@ -163,8 +163,8 @@ closed is "do this before RL", since there is no RL run to gate.
 
 Written 2026-09-01 from the QA-benchmark measurement of `sft-v1` plus a scan of our own corpus:
 only **16.1%** of done() steps follow any verification thought, and only 11.6% of trajectories
-re-open a page to check what they changed (`python -m repo_pipeline.verify_pattern_scan
-trajectories`). The `false_done` penalty in `rl/reward_config.json` cannot teach a behaviour the
+re-open a page to check what they changed (`python -m cua.pipeline.verify_pattern_scan
+trajectories`). The `false_done` penalty in `cua/rl/reward_config.json` cannot teach a behaviour the
 SFT distribution never demonstrates, so item 8 is gated on this. Full reasoning, tranche sizing and
 success bar: `docs/decisions/sft-v3-plan.md`.
 

@@ -57,7 +57,7 @@ not the execution environment.
 Designed generic-over-special-case per the repo's CLAUDE.md rules: auth is JSON config keyed by
 site + a strategy/provider registry, never hardcoded site checks.
 
-### 1. `InboxProvider` (new) — `repo_pipeline/inbox.py`
+### 1. `InboxProvider` (new) — `cua/pipeline/inbox.py`
 Interface: `get_message(alias, since, match=...) -> Message | None`, `extract_code(msg)`,
 `extract_link(msg)`. Concrete impl reads **one catch-all mailbox** (IMAP or Gmail API) and
 filters by the `To:` alias, so a single mailbox backs unlimited per-task aliases. Backend
@@ -67,7 +67,7 @@ Exposed to the teacher as a `check_email(alias)` tool. The harness (not the mode
 fetch + code/link extraction and returns the result as a tool message; the model then types the
 code or navigates the link, keeping it as genuine CUA grounding.
 
-### 2. Identity generator (new) — `repo_pipeline/identity.py`
+### 2. Identity generator (new) — `cua/pipeline/identity.py`
 Per task: `cua+<uuid>@ourdomain` (uuid4 minted at task start on the host), a generated password,
 and synthetic profile fields (name/username/DOB) for registration forms. The minted identity is
 recorded in the task state so a re-run can reuse or regenerate it deterministically.
@@ -138,7 +138,7 @@ host: generate identity (alias, password, profile)
    ending with the book visible on the user's shelf (or username in the header).
 2. `trajectory.json` has `success: true` (verifier verdict), no verbatim password
    (placeholder only), `capture_source == "agent"`.
-3. `train_qwen.py convert` counts it; `make audit-corpus` stays at **0 failing**.
+3. `cua/sft/legacy_train_qwen.py convert` counts it; `make audit-corpus` stays at **0 failing**.
 4. The `check_email` loop demonstrably read a real verification message from the catch-all
    mailbox.
 5. Thoughts describe **user intent** ("I need an account to save books, so I'm registering"),

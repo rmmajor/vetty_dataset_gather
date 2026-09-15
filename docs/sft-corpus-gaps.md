@@ -1,7 +1,7 @@
 # SFT corpus data gaps — ranked
 
 Measured 2026-08-30 over the canonical corpus `trajectories/` (1,225 trajectory dirs), replicating
-`train_qwen.py convert` gating exactly (excluded_reason, replay gate, verifier `success`, stuck-loop
+`cua/sft/legacy_train_qwen.py convert` gating exactly (excluded_reason, replay gate, verifier `success`, stuck-loop
 gate). **Trainable subset: 609 trajectories, 11,318 steps → ~11,291 per-step SFT examples.** Skips:
 506 unverified (306 failed / 105 partial / 52 completed-but-unverified / 43 unreported), 45 excluded,
 38 replay-gated, 27 stuck-loop. Composition of the trainable set: 573 public-site captures + 33 repo
@@ -31,7 +31,7 @@ blocked/error state in the thought: captcha/bot-wall 58 steps in 17 trajectories
 first steps. The corpus is verified-success-only on healthy pages by construction. Related:
 `navigate("url")` appears in the trainable corpus 151 times across 68 trajectories (mostly
 auth-lane URL jumps) and is listed in `SYSTEM_PROMPT`, but the eval parser's `ACTION_VERBS`
-(`repo_pipeline/student_eval.py:206`) does not include it — every emitted `navigate(...)` line is a
+(`cua/eval/student.py:206`) does not include it — every emitted `navigate(...)` line is a
 parse failure, and the RL driver refuses it too (`navigate_blocked` in 15/143 rollouts).
 
 **Evidence (runs).** 14/50 eval episodes are `site_blocked` in all three same-night runs. On those
@@ -131,7 +131,7 @@ tempting next action exists but done() is correct. `--exclude-meandering` is the
 
 ## 5. History-window truncation hits 56.5% of steps — exactly on the long auth trajectories
 
-**Evidence (dataset).** With `HISTORY_WINDOW = 10` (`train_qwen.py:166`), 6,393/11,318 trainable
+**Evidence (dataset).** With `HISTORY_WINDOW = 10` (`cua/sft/legacy_train_qwen.py:166`), 6,393/11,318 trainable
 steps (56.5%) train with a truncated "Previous actions" list. The truncation concentrates on the
 corpus's core: auth-lane trajectories run median 24 steps / p90 47 vs 10 / 33 login-free; 65
 trainable trajectories exceed 40 steps.

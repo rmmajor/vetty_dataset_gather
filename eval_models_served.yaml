@@ -9,7 +9,7 @@
 # normalized_1000, an sft-v1/v2 checkpoint answers in viewport_abs. Scoring one in the other's
 # convention silently produces a wrong number rather than an error.
 #
-# One rental serves every arm at once (rl_train.build_vllm_serve_command takes a name -> path dict),
+# One rental serves every arm at once (cua.rl.train.build_vllm_serve_command takes a name -> path dict),
 # so the four specs below are scored under one harness commit and one endpoint — the matched
 # comparison the paper reports. Comment out the arms you are not serving.
 

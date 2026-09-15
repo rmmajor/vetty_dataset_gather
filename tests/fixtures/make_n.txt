@@ -1,0 +1,349 @@
+===== help =====
+grep -E '^[a-zA-Z_-]+:.*?## .*$'  Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $1, $2}'
+
+===== setup =====
+pip install -e ".[path_a]"
+playwright install chromium
+
+===== install-training =====
+pip install "ms-swift[llm]"
+
+===== install-all =====
+pip install -e ".[path_a]"
+playwright install chromium
+pip install "ms-swift[llm]"
+
+===== load-tasks =====
+python -m cua.path_a.load_mind2web_tasks --output /nonexistent/tasks.jsonl 
+
+===== record =====
+python -m cua.path_a.load_mind2web_tasks --output /nonexistent/tasks.jsonl 
+test -n "$OPENAI_API_KEY" || (echo 'ERROR: OPENAI_API_KEY not set' && exit 1)
+python -m cua.path_a.recorder \
+		--tasks /nonexistent/tasks.jsonl \
+		--output trajectories/ \
+		--max-steps 15 \
+		--viewport 1280x720 \
+		--resume
+
+===== convert =====
+python -m cua.sft convert \
+		--input trajectories/ \
+		--output /nonexistent/training_data/ \
+		--val-split 0.1 \
+		--exclude-waste-steps \
+		--meandering-mode subsample
+
+===== train =====
+python -m cua.sft convert \
+		--input trajectories/ \
+		--output /nonexistent/training_data/ \
+		--val-split 0.1 \
+		--exclude-waste-steps \
+		--meandering-mode subsample
+python -m cua.sft train \
+		--config config.yaml \
+		--dataset /nonexistent/training_data/sft_dataset.jsonl \
+		 \
+		 \
+		
+
+===== all =====
+pip install -e ".[path_a]"
+playwright install chromium
+python -m cua.path_a.load_mind2web_tasks --output /nonexistent/tasks.jsonl 
+test -n "$OPENAI_API_KEY" || (echo 'ERROR: OPENAI_API_KEY not set' && exit 1)
+python -m cua.path_a.recorder \
+		--tasks /nonexistent/tasks.jsonl \
+		--output trajectories/ \
+		--max-steps 15 \
+		--viewport 1280x720 \
+		--resume
+python -m cua.sft convert \
+		--input trajectories/ \
+		--output /nonexistent/training_data/ \
+		--val-split 0.1 \
+		--exclude-waste-steps \
+		--meandering-mode subsample
+python -m cua.sft train \
+		--config config.yaml \
+		--dataset /nonexistent/training_data/sft_dataset.jsonl \
+		 \
+		 \
+		
+
+===== clean-trajectories =====
+rm -rf trajectories
+
+===== clean-training =====
+rm -rf /nonexistent/training_data
+
+===== clean =====
+rm -rf trajectories
+rm -rf /nonexistent/training_data
+rm -f /nonexistent/tasks.jsonl
+
+===== setup-pipeline =====
+pip install -e ".[pipeline,dashboard]"
+playwright install chromium
+
+===== build-sandbox =====
+docker build -t repo-pipeline-sandbox:latest -f docker/Dockerfile.sandbox docker/
+
+===== build-sandbox-selenium =====
+docker build --platform=linux/amd64 -t repo-pipeline-sandbox-selenium:latest -f docker/Dockerfile.sandbox-selenium docker/
+
+===== test-sandbox =====
+docker build -t repo-pipeline-sandbox:latest -f docker/Dockerfile.sandbox docker/
+python -m cua.pipeline.sandbox --test
+
+===== test-driver =====
+python -m cua.pipeline.driver_smoke
+
+===== test-verify-gate =====
+python -m cua.pipeline.verify_gate_smoke
+
+===== test-qa-verify =====
+python -m cua.pipeline.qa_verify_smoke
+
+===== test-rl-unit =====
+python -m tests
+
+===== test-corpus-audit =====
+python -m cua.pipeline.corpus_audit_smoke
+
+===== test-instruction-style =====
+python -m cua.pipeline.instruction_style_smoke
+
+===== test-outcome-relabel =====
+python -m cua.pipeline.outcome_relabel_smoke
+
+===== fixtures-build =====
+python -m tests.regression_fixtures build
+
+===== fixtures-check =====
+python -m tests.regression_fixtures check
+
+===== check =====
+python -m tests
+python -m cua.eval.screenspot run --smoke-test
+python -m cua.pipeline.verify_gate_smoke
+python -m cua.pipeline.qa_verify_smoke
+python -m cua.cloud.vast run --smoke
+python -m cua.pipeline.corpus_audit_smoke
+python -m cua.pipeline.instruction_style_smoke
+python -m cua.pipeline.outcome_relabel_smoke
+python experiments/render_registry.py --check
+python -m tests.regression_fixtures check
+ruff check .
+ruff format --check .
+python scripts/check_comments.py .
+python scripts/check_env_reads.py . --report-only 
+python scripts/check_nested_imports.py . --report-only
+<make> test-student-eval EVAL_ARGS=--no-judge
+python -m cua.eval.student_smoke --no-judge
+
+===== test-rl =====
+python -m cua.rl.smoke
+
+===== rl-tasks =====
+python -m cua.rl.tasks build  && python -m cua.rl.tasks check 
+
+===== rl-candidates =====
+python -m cua.rl.tasks build-candidates 
+
+===== rl-analyze =====
+python -m cua.rl.analysis rollouts 
+
+===== rl-serve =====
+python -m cua.rl.service --split train --workers 3 
+
+===== rl-rollout =====
+python -m cua.rl.rollout --endpoint http://127.0.0.1:8001/v1 --model policy --k 4 
+
+===== rl-eval =====
+python -m cua.rl.eval --endpoint http://127.0.0.1:8001/v1 --model policy  
+
+===== audit-corpus =====
+python -m cua.pipeline.corpus_audit trajectories/
+
+===== capture-public =====
+python -m cua.pipeline.public_capture  
+
+===== provision-human =====
+test -n "$SITE" || (echo 'ERROR: set SITE=<site-name> (a site from the indie/logingated config)' && exit 1)
+python -m playwright install chromium
+python -m cua.pipeline.provision_human x 
+
+===== capture-human =====
+python -m cua.pipeline.public_capture --config cua/pipeline/sites/public_sites_human.json --no-propose 
+
+===== capture-search =====
+python -m cua.pipeline.public_capture --config cua/pipeline/sites/public_sites_search.json  
+
+===== capture-qa-verify =====
+python -m cua.pipeline.public_capture --config cua/pipeline/sites/public_sites_qa_verify.json  
+
+===== polish-pass =====
+python -m cua.pipeline.polish_pass trajectories/
+
+===== outcome-relabel =====
+python -m cua.pipeline.outcome_relabel trajectories/ --dry-run 
+
+===== relabel-recoverable =====
+python -m cua.pipeline.relabel_recoverable trajectories/ --dry-run
+
+===== wall-demos =====
+python -m cua.pipeline.wall_supervision trajectories/ --dry-run
+
+===== instruction-style =====
+python -m cua.pipeline.instruction_style_pass trajectories/ --dry-run
+
+===== instruction-qa-voice =====
+python -m cua.pipeline.instruction_style_pass trajectories/ --mode qa_verify --dry-run
+
+===== pipeline-discover =====
+test -n "$GITHUB_TOKEN" || (echo 'ERROR: GITHUB_TOKEN not set' && exit 1)
+python -m cua.pipeline.orchestrator --stage 1
+
+===== pipeline-filter =====
+python -m cua.pipeline.orchestrator --stage 2
+
+===== pipeline-score =====
+python -m cua.pipeline.orchestrator --stage 3 \
+		--workers 5 \
+		--budget 30 \
+		
+
+===== pipeline-overnight =====
+python -m cua.pipeline.orchestrator --overnight \
+		--workers 5 \
+		--budget 30 \
+		
+
+===== pipeline-until-limit =====
+python -m cua.pipeline.orchestrator --until-limit 100 \
+		--workers 5 \
+		--budget 30 \
+		
+
+===== pipeline-think =====
+python -m cua.pipeline.orchestrator --stage 7 \
+		--workers 5 \
+		--budget 30 \
+		
+
+===== pipeline-status =====
+python -m cua.pipeline.orchestrator --status
+
+===== test-notifier =====
+python -m cua.pipeline.notifier --test
+
+===== eval-online-mind2web =====
+test -n "$EVAL_ENDPOINT" || (echo 'ERROR: set EVAL_ENDPOINT=http://<host>:8000/v1 (the served model; the browser runs locally)' && exit 1)
+python -m cua.eval.student run --task-source online_mind2web --endpoint x    --label baseline   
+
+===== eval-held-out =====
+test -n "$EVAL_ENDPOINT" || (echo 'ERROR: set EVAL_ENDPOINT=http://<host>:8000/v1' && exit 1)
+python -m cua.eval.student run --task-source held_out --endpoint x    --label baseline   
+
+===== eval-compare =====
+test -n "$EVAL_RUNS" || (echo 'ERROR: set EVAL_RUNS="eval_runs/<before_id> eval_runs/<after_id>"' && exit 1)
+python -m cua.eval.student compare x
+
+===== eval-sources =====
+python -m cua.eval.student sources
+
+===== test-student-eval =====
+python -m cua.eval.student_smoke 
+
+===== install-eval =====
+pip install -e ".[eval]"
+
+===== eval-screenspot =====
+python -m cua.eval.screenspot run \
+		--models-config eval_models.yaml \
+		--backend swift \
+		--dataset rootsautomation/ScreenSpot \
+		--split test \
+		--viewport 1280x720 \
+		--output-dir eval_results \
+		 \
+		
+
+===== test-eval =====
+python -m cua.eval.screenspot run --smoke-test
+
+===== dashboard =====
+streamlit run cua/pipeline/dashboard/app.py
+
+===== install-remote =====
+pip install vastai
+
+===== remote-train =====
+test -n "$VAST_API_KEY" || (echo 'ERROR: VAST_API_KEY not set' && exit 1)
+python -m cua.cloud.vast train 
+
+===== remote-eval =====
+test -n "$VAST_API_KEY" || (echo 'ERROR: VAST_API_KEY not set' && exit 1)
+python -m cua.cloud.vast eval \
+		 \
+		 \
+		
+
+===== remote-train-dry =====
+test -n "$VAST_API_KEY" || (echo 'ERROR: VAST_API_KEY not set' && exit 1)
+python -m cua.cloud.vast search
+
+===== remote-train-cleanup =====
+test -n "$VAST_API_KEY" || (echo 'ERROR: VAST_API_KEY not set' && exit 1)
+python -m cua.cloud.vast cleanup
+
+===== test-remote =====
+python -m cua.cloud.vast run --smoke
+
+===== remote-grpo =====
+test -n "$VAST_API_KEY" || (echo 'ERROR: VAST_API_KEY not set' && exit 1)
+python -m cua.cloud.vast grpo 
+
+===== remote-serve =====
+test -n "$VAST_API_KEY" || (echo 'ERROR: VAST_API_KEY not set' && exit 1)
+python -m cua.cloud.vast serve   
+
+===== test-grpo =====
+python -m cua.cloud.vast run --smoke
+python -m cua.rl.train print-commands --config rl_config.yaml
+python -m tests test_trainer_core test_rl_train test_tunnel
+
+===== grpo-dataset =====
+python -m cua.rl.train make-dataset --tasks cua/rl/rl_tasks.json --out rl_tasks.jsonl
+
+===== rl-expose =====
+test -n "$RL_ENV_TOKEN" || (echo 'ERROR: set RL_ENV_TOKEN (the same value `make rl-serve` runs with)' && exit 1)
+ngrok http 127.0.0.1:8900
+
+===== modal-grpo-smoke =====
+modal run cua/cloud/modal/grpo.py --smoke --run-name grpo-smoke
+
+===== modal-grpo =====
+test -n "$RL_ENV_URL" || (echo 'ERROR: set RL_ENV_URL=https://<ingress-host> (from make rl-expose)' && exit 1)
+test -n "$RL_ENV_TOKEN" || (echo 'ERROR: set RL_ENV_TOKEN' && exit 1)
+modal run cua/cloud/modal/grpo.py --run-name grpo-v1 --env-url x 
+
+===== registry =====
+python experiments/render_registry.py --fill-ci
+python experiments/render_registry.py
+
+===== registry-check =====
+python experiments/render_registry.py --check
+
+===== lint =====
+ruff check .
+ruff format --check .
+python scripts/check_comments.py .
+python scripts/check_env_reads.py . --report-only 
+python scripts/check_nested_imports.py . --report-only
+
+===== fmt =====
+ruff format .
+ruff check --fix .

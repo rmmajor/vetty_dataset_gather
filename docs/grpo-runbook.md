@@ -25,12 +25,12 @@ session. If a volume, secret or cached weight is missing there, create it there 
 
 - The new SFT LoRA adapter on the `cua-outputs` volume, e.g. `sft-v2/adapter`.
 - `EVAL_API_KEY` in `.env` (the served endpoint's key), `MODAL_PROFILE` pinned per command.
-- The task pool: `rl/rl_tasks_candidates.json` (179 oracle-checked candidates, 35 hosts).
+- The task pool: `cua/rl/rl_tasks_candidates.json` (179 oracle-checked candidates, 35 hosts).
 
 ## 1. Re-check contamination against the grown corpus (free)
 
 ```
-python -m rl.tasks build-candidates --trajectories trajectories --max-expected 18
+python -m cua.rl.tasks build-candidates --trajectories trajectories --max-expected 18
 ```
 
 `excluded_trained` must be reported and the printed problem list empty. The corpus grows between runs,
@@ -42,7 +42,7 @@ Serve the BASE model with the new adapter attached — equivalent to the merged 
 merge (ScreenSpot measured base+LoRA 85.3 vs merged 85.3):
 
 ```
-CUA_ADAPTER_NAME=sft-v2/adapter modal deploy modal_serve.py
+CUA_ADAPTER_NAME=sft-v2/adapter modal deploy cua/cloud/modal/serve.py
 ```
 
 Then WARM it before any sweep: a scale-to-zero endpoint answers nothing for its first ~4 minutes, and
@@ -51,8 +51,8 @@ a cold start at sweep time reads as a dead policy. Poll `/v1/models` until it re
 ## 3. Sweep the pool to find the frontier band (~2-3 h, ~$5)
 
 ```
-python -m rl.rollout --policy openai --endpoint <serve>/v1 --model cua-student-lora \
-  --temperature 1.0 --tasks rl/rl_tasks_candidates.json --split train \
+python -m cua.rl.rollout --policy openai --endpoint <serve>/v1 --model cua-student-lora \
+  --temperature 1.0 --tasks cua/rl/rl_tasks_candidates.json --split train \
   --verifier-mode never --k 8 --workers 3 --drivers-per-sandbox 2 --max-steps 36 \
   --run-id sweep-sft-v2
 ```
@@ -64,15 +64,15 @@ still yields the same sample count per task.
 ## 4. Select the band (free)
 
 ```
-python -m rl.analysis rollouts rl_runs/sweep-sft-v2          # histogram, zero-variance share, harness failures
-python -m rl.analysis select-frontier --rollouts rl_runs/sweep-sft-v2 --min 0.2 --max 0.8 \
-  --out rl/frontier_selection.json
+python -m cua.rl.analysis rollouts rl_runs/sweep-sft-v2          # histogram, zero-variance share, harness failures
+python -m cua.rl.analysis select-frontier --rollouts rl_runs/sweep-sft-v2 --min 0.2 --max 0.8 \
+  --out cua/rl/frontier_selection.json
 ```
 
 Before trusting a cluster of 0.0 tasks, look at one episode's `final_screenshot.png` — a site behind a
 CAPTCHA or returning an error scores 0 for reasons that have nothing to do with the policy. Blocked and
 crashed episodes are already excluded from the denominator; whole sites that are walled should be added
-to `_config.exclude_sites` in `repo_pipeline/public_sites_actions_frontier.json`.
+to `_config.exclude_sites` in `cua/pipeline/sites/public_sites_actions_frontier.json`.
 
 If fewer than ~15 tasks land in the band, widen to `--min 0.1 --max 0.9` rather than training on seven.
 
@@ -81,11 +81,11 @@ If fewer than ~15 tasks land in the band, widen to `--min 0.1 --max 0.9` rather 
 Env service on the Mac, exposed through an ingress, then the run:
 
 ```
-RL_ENV_TOKEN=<token> python -m rl.service --tasks rl/rl_tasks_candidates.json --split train \
+RL_ENV_TOKEN=<token> python -m cua.rl.service --tasks cua/rl/rl_tasks_candidates.json --split train \
   --workers 3 --drivers-per-sandbox 2 --verifier-mode never --max-steps 36 --run-id grpo-v3
 ngrok http 127.0.0.1:8900
-modal run modal_grpo.py --run-name grpo-v3 --env-url <ingress> --env-token <token> \
-  --tasks-file rl/rl_tasks_candidates.json --task-ids-file rl/frontier_selection.json --max-steps 50
+modal run cua/cloud/modal/grpo.py --run-name grpo-v3 --env-url <ingress> --env-token <token> \
+  --tasks-file cua/rl/rl_tasks_candidates.json --task-ids-file cua/rl/frontier_selection.json --max-steps 50
 ```
 
 The service refuses to start if any served task lacks a `success_check`, and a verdictless episode
@@ -98,7 +98,7 @@ adapter the run started from:
 
 ```
 modal volume get cua-outputs grpo-v3/rl_output/.../checkpoint-5/adapter_model.safetensors <local>
-python -m rl.analysis bnorm <local> --ref <the sft-v2 adapter_model.safetensors>
+python -m cua.rl.analysis bnorm <local> --ref <the sft-v2 adapter_model.safetensors>
 ```
 
 `B_ratio` under 0.10 sets `dead_run: true` — the weights did not move and no further steps will help.

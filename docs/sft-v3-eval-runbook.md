@@ -17,7 +17,7 @@ Verified against the code on 2026-09-03 while sft-v3 was training; nothing here 
 
 ## 1. Serve every arm from one box
 
-`rl_train.build_vllm_serve_command` takes a `name -> path` dict and emits one `--lora-modules` list,
+`cua.rl.train.build_vllm_serve_command` takes a `name -> path` dict and emits one `--lora-modules` list,
 so a single rental exposes `cua-student` (base) plus `sft-v1`, `sft-v2`, `sft-v3` as served names.
 Serve with `--limit-mm-per-prompt image=2`: sft3 sends two images and vLLM's default of 1 returns
 HTTP 400. Warm the endpoint before any sweep — a cold start reads as a dead policy.

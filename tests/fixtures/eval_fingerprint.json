@@ -1,0 +1,48 @@
+{
+  "config": {
+    "coord_space": "viewport_abs",
+    "episode_timeout_s": 600,
+    "judge": false,
+    "judge_mid_screenshots": 2,
+    "label": "smoke",
+    "max_steps": 12,
+    "resume": false,
+    "student": "mock",
+    "task_source": "held_out"
+  },
+  "harness_fingerprint": {
+    "action_grammar": "tolerant",
+    "action_verbs": "click,double_click,move,drag,scroll,type,keypress,wait,done,screenshot,navigate,handoff,confirm",
+    "block_signatures": "v2:captcha,human_verification,cloudflare,waf_block,geo_block,site_error",
+    "browser_backend": "docker",
+    "coord_space": "viewport_abs",
+    "dataset": "cua/pipeline/sites/public_sites.json",
+    "dataset_revision": "",
+    "dataset_split": "",
+    "driver_loop_guard_repeats": 0,
+    "effect_annotations": true,
+    "egress": "",
+    "history_window": 20,
+    "judge_enabled": false,
+    "judge_mid_screenshots": 2,
+    "judge_model": "",
+    "level_distribution": {},
+    "max_parse_failures": 3,
+    "max_tokens": 512,
+    "max_unproductive_steps": 5,
+    "observation": "v3",
+    "prev_image_size": "640x360",
+    "prompt_format": "sft3",
+    "screenshot_format": "png",
+    "step_cap_policy": "flat 12",
+    "student_backend": "mock",
+    "subset_strategy": "full set",
+    "task_source": "held_out",
+    "task_source_description": "our own never-captured public-site tasks (seen site, unseen task)",
+    "temperature": 0.0,
+    "type_mode": "replace"
+  },
+  "removed_volatile_keys": [
+    "git_commit"
+  ]
+}

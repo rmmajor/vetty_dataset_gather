@@ -6,15 +6,15 @@ are distilled into Qwen 3.5-9B by step-level supervised fine-tuning (SFT). A GRP
 was dropped after three runs (`docs/decisions/grpo-v3-results.md`).
 
 Three trajectory **producers** write one trajectory format, and one converter/trainer
-(`train_qwen.py`) consumes all of them:
+(`cua/sft/legacy_train_qwen.py`) consumes all of them:
 
-1. **Path A — GPT-5.4 CUA distillation** (`record_trajectories_from_gpt_api.py`): GPT-5.4's `computer` tool works through Mind2Web tasks in a Playwright browser (~$0.55/trajectory). Contributes a handful of trainable trajectories today.
-2. **Path B — QA repo funnel** (`repo_pipeline/orchestrator.py`, stages 1–7): finds bootable web-app repos on GitHub, boots them in Docker sandboxes, and has a Claude teacher pursue proposed user tasks through a coordinate-recording browser driver. Only a fraction of a percent of discovered repos yield trajectories, so this is a minority of the corpus.
-3. **Public-site capture lanes** (`repo_pipeline/public_capture.py` and siblings): the same teacher, driver and verifier pointed at curated registries of real public sites — login-free, search goals, and login-gated behind burner accounts. The bulk of the trainable corpus.
+1. **Path A — GPT-5.4 CUA distillation** (`cua/path_a/recorder.py`): GPT-5.4's `computer` tool works through Mind2Web tasks in a Playwright browser (~$0.55/trajectory). Contributes a handful of trainable trajectories today.
+2. **Path B — QA repo funnel** (`cua/pipeline/orchestrator.py`, stages 1–7): finds bootable web-app repos on GitHub, boots them in Docker sandboxes, and has a Claude teacher pursue proposed user tasks through a coordinate-recording browser driver. Only a fraction of a percent of discovered repos yield trajectories, so this is a minority of the corpus.
+3. **Public-site capture lanes** (`cua/pipeline/public_capture.py` and siblings): the same teacher, driver and verifier pointed at curated registries of real public sites — login-free, search goals, and login-gated behind burner accounts. The bulk of the trainable corpus.
 
 The data philosophy is real third-party sites over self-hosted seeded clones
 (`docs/decisions/real-sites-vs-controlled-backends.md`). The trajectory schema in
-`repo_pipeline/schemas.py` is the contract between producers, converter, evals and RL.
+`cua/pipeline/schemas.py` is the contract between producers, converter, evals and RL.
 
 ## Prerequisites
 
@@ -25,13 +25,13 @@ The data philosophy is real third-party sites over self-hosted seeded clones
 
 ## Setup
 
-    pip install -r requirements.txt            # or: make setup
+    pip install -e ".[path_a]"                 # or: make setup
     playwright install chromium
     export OPENAI_API_KEY=your_key_here
 
 For Path B and the public-site lanes:
 
-    pip install -r requirements-pipeline.txt   # or: make setup-pipeline
+    pip install -e ".[pipeline,dashboard]"     # or: make setup-pipeline
     export GITHUB_TOKEN=your_token             # stage 1 + the stage-2 gh probe
     make build-sandbox                         # Docker sandbox image (~4.4 GB: Playwright base + pre-baked driver)
 
@@ -46,12 +46,12 @@ For training (on a GPU machine):
 
 ### Step 1: Load tasks from Mind2Web
 
-    python load_tasks.py --output tasks.jsonl
-    python load_tasks.py --output tasks.jsonl --limit 100  # limit for testing
+    python -m cua.path_a.load_mind2web_tasks --output tasks.jsonl
+    python -m cua.path_a.load_mind2web_tasks --output tasks.jsonl --limit 100  # limit for testing
 
 ### Step 2: Record trajectories
 
-    python record_trajectories_from_gpt_api.py --tasks tasks.jsonl --output trajectories/
+    python -m cua.path_a.recorder --tasks tasks.jsonl --output trajectories/
 
 Options:
 - `--max-steps 15` — max actions per task (default: 15)
@@ -136,14 +136,14 @@ Optional — Telegram notifications:
 
 Or use the CLI directly:
 
-    python -m repo_pipeline.orchestrator --stage 1
-    python -m repo_pipeline.orchestrator --stage 2
-    python -m repo_pipeline.orchestrator --stage 3-7 --limit 10 --budget 5 --workers 5
-    python -m repo_pipeline.orchestrator --stage 6 --capture-mode replay
-    python -m repo_pipeline.orchestrator --overnight --budget 30 --workers 5
-    python -m repo_pipeline.orchestrator --until-limit 75 --budget 30
-    python -m repo_pipeline.orchestrator --requeue-infra --dry-run
-    python -m repo_pipeline.orchestrator --status
+    python -m cua.pipeline.orchestrator --stage 1
+    python -m cua.pipeline.orchestrator --stage 2
+    python -m cua.pipeline.orchestrator --stage 3-7 --limit 10 --budget 5 --workers 5
+    python -m cua.pipeline.orchestrator --stage 6 --capture-mode replay
+    python -m cua.pipeline.orchestrator --overnight --budget 30 --workers 5
+    python -m cua.pipeline.orchestrator --until-limit 75 --budget 30
+    python -m cua.pipeline.orchestrator --requeue-infra --dry-run
+    python -m cua.pipeline.orchestrator --status
 
 CLI options:
 - `--stage N` or `--stage N-M` — run specific stage(s)
@@ -166,7 +166,7 @@ debugging code) or Docker VM memory exhaustion.
 
 See `crontab.example`. Example:
 
-    0 1 * * * cd /path/to/dataset_gather && python -m repo_pipeline.orchestrator --overnight --budget 30 >> pipeline_data/run_logs/$(date +\%Y\%m\%d).log 2>&1
+    0 1 * * * cd /path/to/dataset_gather && python -m cua.pipeline.orchestrator --overnight --budget 30 >> pipeline_data/run_logs/$(date +\%Y\%m\%d).log 2>&1
 
 Prefer a harness-tracked background run under `caffeinate` over `nohup` for anything long.
 
@@ -189,14 +189,14 @@ rejected with an infra `FailureCategory` so it stays re-queueable).
 Re-evaluate rejected repos with the `--requeue-*` flags above, or from Python:
 
 ```python
-from repo_pipeline.registry import RepoRegistry
+from cua.pipeline.registry import RepoRegistry
 registry = RepoRegistry()
 registry.reset_rejected(stage=5)  # re-queue repos rejected at the boot gate
 ```
 
 ### File Structure
 
-    repo_pipeline/
+    cua/pipeline/
     ├── orchestrator.py              # Main entry point (stages, drain loop, requeue flags)
     ├── registry.py                  # SQLite repo registry
     ├── schemas.py                   # Pydantic models + stage/status maps + Trajectory contract
@@ -227,9 +227,9 @@ registry.reset_rejected(stage=5)  # re-queue repos rejected at the boot gate
     ├── Dockerfile.sandbox           # Playwright base image + driver at /opt/driver
     ├── Dockerfile.sandbox-selenium  # amd64 Selenium image (replay only)
     └── docker-compose.sandbox.yml
-    rl/, rl_train.py, rl_config*.yaml   # GRPO harness (frozen; see docs/decisions/grpo-v3-results.md)
-    remote_train/                    # Vast.ai lane (train / eval / grpo / serve)
-    modal_train.py, modal_serve.py, modal_merge.py, modal_grpo.py   # Modal lane
+    cua/rl/, cua/rl/train.py, rl_config*.yaml   # GRPO harness (frozen; see docs/decisions/grpo-v3-results.md)
+    cua/cloud/vast/                    # Vast.ai lane (train / eval / grpo / serve)
+    cua/cloud/modal/train.py, cua/cloud/modal/serve.py, cua/cloud/modal/merge.py, cua/cloud/modal/grpo.py   # Modal lane
     experiments/                     # Registry CSVs + README block renderer
     eval_archive/                    # Committed raw eval artefacts
 
@@ -242,11 +242,11 @@ writes `trajectories/site_<name>/task_*/` with no registry row, so stage 7 never
     make capture-public [PUBLIC_SITES=a,b] [PUBLIC_MAX_TASKS=N]   # public_sites.json, login-free
     make capture-search [SITES=a,b]                               # public_sites_search.json, search goals
     make capture-qa-verify [SITES=a,b]                            # public_sites_qa_verify.json, act → save → re-check
-    python -m repo_pipeline.capture_logingated [--sites a,b] [--parallel K]   # self-registers a mail.tm burner
+    python -m cua.pipeline.capture_logingated [--sites a,b] [--parallel K]   # self-registers a mail.tm burner
     make provision-human SITE=<name>                              # headed host browser, a human clears the wall once
     make capture-human [SITES=a,b]                                # replay saved sessions from public_sites_human.json
-    python -m repo_pipeline.probe_capturable [--dry-run]          # HTTP WAF pre-filter → needs_human
-    python -m repo_pipeline.probe_sandbox <config.json> [--mark]  # render-probe through the sandbox browser
+    python -m cua.pipeline.probe_capturable [--dry-run]          # HTTP WAF pre-filter → needs_human
+    python -m cua.pipeline.probe_sandbox <config.json> [--mark]  # render-probe through the sandbox browser
 
 Site registries share one schema (`name`, `start_url`, `tasks[{id, instruction, difficulty,
 expected_actions, action_kinds, auth_required}]`, optional `provisioning`, `task_style`,
@@ -278,9 +278,9 @@ Dry-run by default, `APPLY=1` to write, all resumable:
 
 Every lane produces the same trajectory format. Convert and train:
 
-    python train_qwen.py convert --input trajectories/ --output training_data/ \
+    python -m cua.sft convert --input trajectories/ --output training_data/ \
         --exclude-waste-steps --meandering-mode subsample     # what `make convert` runs
-    python train_qwen.py train --config config.yaml --dataset training_data/sft_dataset.jsonl
+    python -m cua.sft train --config config.yaml --dataset training_data/sft_dataset.jsonl
 
 `convert` emits **one SFT example per step** in the `sft3` observation format (`PROMPT_FORMAT_VERSION`):
 a 640x360 thumbnail of the previous screen plus the current 1280x720 screenshot, the instruction, and a
@@ -310,13 +310,13 @@ Or use Make:
 
 GPU lanes, neither of which forks the training logic:
 
-    modal run modal_serve.py::warm && modal run modal_train.py --run-name sft-v3 --config config.yaml   # Modal A100-80GB
+    modal run cua/cloud/modal/serve.py::warm && modal run cua/cloud/modal/train.py --run-name sft-v3 --config config.yaml   # Modal A100-80GB
     make remote-train          # Vast.ai (needs VAST_API_KEY), ALWAYS destroys the instance
 
 Serving a fine-tuned adapter needs `--response_prefix ''` (ms-swift's default prefills an empty
 `<think>` block so no action line is ever emitted) and the base passed explicitly, because
 `adapter_config.json` records a stale volume path. A GRPO adapter is trained over the MERGED SFT weights
-and must be served on those (`modal_merge.py`, `CUA_SERVE_MODEL`), never on the raw base.
+and must be served on those (`cua/cloud/modal/merge.py`, `CUA_SERVE_MODEL`), never on the raw base.
 
 ## Experiment registry
 
@@ -379,7 +379,7 @@ that must not be quoted (the row stays, `notes` says why).
 | corpus-v1 | all | sft_examples | 5477 |  | done | One example per recorded step of a trainable trajectory. |
 | corpus-v1 | all | trainable_trajectories | 504 |  | done | Verified successes that became SFT examples. |
 | corpus-v1 | all | trajectories | 1068 |  | done |  |
-| corpus-v2 | all | trajectories | 1299 |  | done | Task directories recorded when the general corpus reached the 738 trainable trajectories cua-sft-v2 trained on, at 02:50 on 2026-08-31. Derived, not recorded at the time: the admission gate of repo_pipeline.corpus_audit.is_trainable was re-run over every task directory in trajectories/, each dated by the earliest of its screenshots, which the later relabel and polish passes never rewrote. Replaying that history gives the corpus as it stood at any past moment. The same reconstruction reaches 1395 recorded at the QA freeze against the 1398 registered, and reproduces the four withheld counts as 461, 76, 45 and 31 against 461, 76, 46 and 31, so the figure is accurate to a handful of directories rather than exact. |
+| corpus-v2 | all | trajectories | 1299 |  | done | Task directories recorded when the general corpus reached the 738 trainable trajectories cua-sft-v2 trained on, at 02:50 on 2026-08-31. Derived, not recorded at the time: the admission gate of cua.pipeline.corpus_audit.is_trainable was re-run over every task directory in trajectories/, each dated by the earliest of its screenshots, which the later relabel and polish passes never rewrote. Replaying that history gives the corpus as it stood at any past moment. The same reconstruction reaches 1395 recorded at the QA freeze against the 1398 registered, and reproduces the four withheld counts as 461, 76, 45 and 31 against 461, 76, 46 and 31, so the figure is accurate to a handful of directories rather than exact. |
 
 #### `online-mind2web` — osunlp/Online-Mind2Web@eacad896a84d
 
@@ -651,7 +651,7 @@ that must not be quoted (the row stays, `notes` says why).
 | cua-grpo-v3 | adapter | lora_b_frobenius | 0.5557 |  | done | Frobenius norm of all lora_B tensors after 50 steps: 0.19 at step 5 and saturating with the cosine schedule; 3.1% of the sft-v2 adapter's 17.7846. grpo-v2 measured 0.279 (1.9% of sft-v1) and flat. |
 | cua-grpo-v3 | all-episodes | false_done_rate | 31.6 % <sub>[28–35]</sub> | 752 | done | Within-run number: 238/752 rollouts ended with done() and failed the oracle; 27.5% in the first 160, 38.8% in the last 160. done() rate 84.2% against 53.7% success. |
 | cua-grpo-v3 | all-episodes | oracle_success_rate | 53.7 % <sub>[50–57]</sub> | 752 | done | Within-run oracle number, not a benchmark: 404/752 rollouts; the 30 blocked episodes stay in the denominator because they trained. |
-| cua-grpo-v3 | first-160-episodes | mean_reward | 1.064 | 160 | done | Within-run number: mean composed reward (rl/reward_config.json, autonomous lane) over the first 160 rollouts, sd 0.894. |
+| cua-grpo-v3 | first-160-episodes | mean_reward | 1.064 | 160 | done | Within-run number: mean composed reward (cua/rl/reward_config.json, autonomous lane) over the first 160 rollouts, sd 0.894. |
 | cua-grpo-v3 | first-160-episodes | oracle_success_rate | 59.4 % <sub>[52–67]</sub> | 160 | done | Within-run oracle number, not a benchmark: the first 160 training rollouts (10 steps x 16) ordered by episode mtime, success_check verdicts only, live sites at temperature 1.0. |
 | cua-grpo-v3 | last-160-episodes | mean_reward | 0.84 | 160 | done | Within-run number: last 160 rollouts, sd 0.930; 1.064 -> 0.840 is z=2.2. |
 | cua-grpo-v3 | last-160-episodes | oracle_success_rate | 50.0 % <sub>[42–58]</sub> | 160 | done | Within-run oracle number, not a benchmark: the last 160 training rollouts. 59.4% -> 50.0% is z=1.7 against the first window. |
@@ -749,7 +749,7 @@ _348 registry rows: 290 done, 1 pending, 3 planned, 54 superseded. Percentages c
 
 ## Evaluation (ScreenSpot grounding)
 
-`eval_screenspot.py` measures **grounding** — given a screenshot and an instruction, the
+`cua/eval/screenspot.py` measures **grounding** — given a screenshot and an instruction, the
 model predicts a click point and we score whether it lands inside the target bounding box.
 It isolates *pointing* from task completion; the student eval below measures the latter.
 
@@ -761,7 +761,7 @@ Predictor backends are a registry (`PREDICTOR_BACKENDS`): `swift` (local `swift 
 `eval_models.yaml` with a repo id + `adapters` dir), `openai` (any OpenAI-compatible endpoint via
 `SCREENSPOT_ENDPOINT` / `SCREENSPOT_API_KEY`, specs in `eval_models_served.yaml` naming vLLM *served*
 models), `claude` (a frontier arm through the logged-in CLI, no GPU needed), `mock` (tests). The
-system prompt is imported from `train_qwen.py` so train and eval never drift.
+system prompt is imported from `cua/sft/legacy_train_qwen.py` so train and eval never drift.
 
 ### Measured results
 
@@ -813,7 +813,7 @@ mirror's annotation format.
 ## Remote training / eval on a rented GPU (Vast.ai)
 
 `make train` assumes a GPU box you manage. To rent one instead — provision → ship code/data →
-run → pull results → **destroy the instance** — use the provider-pluggable `remote_train/`
+run → pull results → **destroy the instance** — use the provider-pluggable `cua/cloud/vast/`
 package:
 
     make install-remote                 # one-time: pip install the vastai CLI
@@ -887,7 +887,7 @@ with `metadata.excluded_reason` set, so they never enter training.
 
 ## Training Configuration
 
-See `config.yaml` for the SFT recipe (`train_qwen.py train` maps its keys to `swift sft` flags):
+See `config.yaml` for the SFT recipe (`cua/sft/legacy_train_qwen.py train` maps its keys to `swift sft` flags):
 - Model: Qwen/Qwen3.5-9B (post-trained checkpoint; the eval baseline is measured on it)
 - LoRA rank 64, alpha 128, all-linear
 - Learning rate 5e-5, **2 epochs** (sft-v2's eval loss bottomed at epoch 2 and rose at 3; sft-v3's epoch 2 was trained and rejected for the same reason), warmup 0.05
@@ -910,7 +910,7 @@ examples blew the 4096 limit, which is why convert emits one example per step.
 > [`eval_archive/README.md`](eval_archive/README.md). Later rounds live in the registry block above,
 > with their `artifacts_path` per row.
 
-`repo_pipeline/student_eval.py` runs a served model through real browser episodes and reports whether
+`cua/eval/student.py` runs a served model through real browser episodes and reports whether
 a checkpoint beat the base. **The deliverable is a delta**: every run takes `--label`, writes
 `eval_runs/<run_id>/{report.md,results.json,run.log,episodes/}`, and `compare` renders the before/after
 table plus a harness-parity check that flags any field two runs disagree on. Prompts are built by the
@@ -928,7 +928,7 @@ base figure** by the full 300-task arm in "Later rounds" below (that row's notes
 rows it supersedes); it stays here because the SFT v1 delta was measured against it.
 
 **Model:** `Qwen/Qwen3.5-9B` (post-trained checkpoint, no adapter) served by vLLM 0.28.0 on a
-Modal L40S via `modal_serve.py`. Browser ran locally in `DockerSandbox` on a residential IP —
+Modal L40S via `cua/cloud/modal/serve.py`. Browser ran locally in `DockerSandbox` on a residential IP —
 a datacenter IP changes the blocking rate and makes the number incomparable.
 
 **Task set:** `osunlp/Online-Mind2Web` rev `eacad896a84d`, 50 tasks sampled level-stratified
@@ -1013,7 +1013,7 @@ Grounding, notably, was **not** a failure mode once the coordinate space was set
 ### Reproducing
 
 ```bash
-modal deploy modal_serve.py                     # serves Qwen/Qwen3.5-9B on an L40S as cua-student
+modal deploy cua/cloud/modal/serve.py                     # serves Qwen/Qwen3.5-9B on an L40S as cua-student
 make eval-online-mind2web \
   EVAL_ENDPOINT=<url>/v1 EVAL_MODEL=cua-student \
   EVAL_LABEL=before EVAL_COORD_SPACE=normalized_1000 \
@@ -1139,16 +1139,16 @@ local-executor / frontier-verdict architecture are in the registry block and
 Reproduce grounding with the `openai` backend (any OpenAI-compatible endpoint instead of `swift infer`):
 
 ```bash
-modal run modal_serve.py::warm                  # populate the weight cache on CPU first
-CUA_ADAPTER_NAME=<run>/adapter modal deploy modal_serve.py    # base as cua-student + LoRA as cua-student-lora
+modal run cua/cloud/modal/serve.py::warm                  # populate the weight cache on CPU first
+CUA_ADAPTER_NAME=<run>/adapter modal deploy cua/cloud/modal/serve.py    # base as cua-student + LoRA as cua-student-lora
 SCREENSPOT_ENDPOINT=<url>/v1 SCREENSPOT_API_KEY=<key> \
-  python eval_screenspot.py run --models-config eval_models_served.yaml \
+  python -m cua.eval.screenspot run --models-config eval_models_served.yaml \
   --dataset rootsautomation/ScreenSpot --split test --bbox-format xyxy --bbox-normalized
 ```
 
 `eval_models_served.yaml` carries the vLLM *served* names and a `coord_space` per spec;
 `eval_models.yaml` is the local `swift infer` lane and takes a repo id plus an adapters directory
-instead. A GRPO adapter needs its own serve on the merged SFT weights (`modal_merge.py`).
+instead. A GRPO adapter needs its own serve on the merged SFT weights (`cua/cloud/modal/merge.py`).
 
 ## Cost Estimates
 

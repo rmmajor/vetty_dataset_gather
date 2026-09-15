@@ -24,7 +24,7 @@ pipeline = [
     "python-telegram-bot>=20.0",
     "docker",
     "requests",
-    # rl/analysis.py imports numpy at import time, so the pipeline extra carries it even without the dashboard.
+    # cua/rl/analysis.py imports numpy at import time, so the pipeline extra carries it even without the dashboard.
     "numpy>=1.26",
 ]
 dashboard = [
@@ -67,6 +67,13 @@ dev = [
     "ruff",
 ]
 
+[project.scripts]
+cua-sft = "cua.sft.legacy_train_qwen:main"
+cua-screenspot = "cua.eval.screenspot:main"
+cua-student-eval = "cua.eval.student:main"
+cua-pipeline = "cua.pipeline.orchestrator:main"
+cua-remote = "cua.cloud.vast.__main__:main"
+
 [tool.setuptools.packages.find]
 include = ["cua*"]
 
@@ -81,11 +88,11 @@ extend-exclude = ["eval_archive", "experiments", "docs", ".superpowers", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ISC"]
-# Temporary: E402 lifts in the package move; E501/B904/B023 in the comment and cleanup phases; ISC004/F601 when phase 7 splits student_eval.py; UP042 in the pipeline phase (a StrEnum renders registry values differently); F841 for the one side-effecting RHS at auth_flow_smoke.py:300.
-ignore = ["E501", "E402", "B904", "B023", "ISC004", "UP042", "F601", "F841"]
+# Temporary: E501/B904/B023 lift in the comment and cleanup phases; ISC004/F601 when phase 7 splits student_eval.py; UP042 in the pipeline phase (a StrEnum renders registry values differently); F841 for the one side-effecting RHS at auth_flow_smoke.py:300.
+ignore = ["E501", "B904", "B023", "ISC004", "UP042", "F601", "F841"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["cua", "repo_pipeline", "rl", "remote_train", "train_qwen", "eval_screenspot", "rl_train"]
+known-first-party = ["cua", "tests"]
 
 # Empty on purpose: the formatter runs at its defaults, so its style is the repo style.
 [tool.ruff.format]

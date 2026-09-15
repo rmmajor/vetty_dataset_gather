@@ -1,4 +1,4 @@
-# Remote-training config for `python -m remote_train` (Vast.ai by default).
+# Remote-training config for `python -m cua.cloud.vast` (Vast.ai by default).
 # Precedence: these values < env vars < CLI flags. Secrets live in env only:
 #   VAST_API_KEY (required), HF_TOKEN (optional, for --push-hf).
 
@@ -36,6 +36,6 @@ output_dir: output
 val_split: 0.1
 
 # ----- Optional post-train steps (default off) -----
-run_eval: false           # run eval_screenspot.py before/after on the box (needs that file)
+run_eval: false           # run cua/eval/screenspot.py before/after on the box (needs that file)
 push_hf_repo: ""          # e.g. "your-hf-handle/qwen-cua-lora"; needs HF_TOKEN
 notify: false             # Telegram ping on completion (needs TELEGRAM_BOT_TOKEN/CHAT_ID)

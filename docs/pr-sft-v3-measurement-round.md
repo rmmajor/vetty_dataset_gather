@@ -191,7 +191,7 @@ economic claim rests on the QA bench rather than on grounding alone.
 
 ## What was wrong, and what it cost
 
-**A token cap that scored the cap.** `eval_screenspot.OpenAIPredictor` hard-coded `max_tokens: 512`
+**A token cap that scored the cap.** `cua.eval.screenspot.OpenAIPredictor` hard-coded `max_tokens: 512`
 and ignored the configured value. The base model reasons before answering, so it was cut off
 mid-thought and its click never arrived: 462 of 1272 samples failed to parse, every one a
 truncation, putting it at 54.1%. The fine-tuned checkpoints answer tersely and were untouched, so

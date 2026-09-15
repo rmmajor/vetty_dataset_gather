@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip3 install playwright pytest pytest-playwright --break-system-packages
 
-# Baked playwright-core for the agent-capture browser driver (instrumentation/browser_driver.js).
+# Baked playwright-core for the agent-capture browser driver (cua/pipeline/instrumentation/browser_driver.js).
 # Pinned to the image's Playwright revision so the bundled /ms-playwright browsers match; the
 # driver also falls back to a runtime npm install when this directory is absent (older images).
 RUN mkdir -p /opt/driver && cd /opt/driver && npm init -y >/dev/null \

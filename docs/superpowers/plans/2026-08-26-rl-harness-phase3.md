@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Run GRPO on the rented GPU against the Phase 1 env service: an ms-swift `Env`/scheduler plugin whose logic is pure and unit-tested on the Mac, a box-side phase driver (`rl_train.py`) that merges the SFT adapter, serves for before/after eval, and runs `swift rollout` + `swift rlhf`, and a `remote_train` `GrpoJob` (+ `ServeJob`, SSH tunnel, poll hook) with the existing teardown guarantees — all mock-smokable without a GPU.
+**Goal:** Run GRPO on the rented GPU against the Phase 1 env service: an ms-swift `Env`/scheduler plugin whose logic is pure and unit-tested on the Mac, a box-side phase driver (`cua/rl/train.py`) that merges the SFT adapter, serves for before/after eval, and runs `swift rollout` + `swift rlhf`, and a `remote_train` `GrpoJob` (+ `ServeJob`, SSH tunnel, poll hook) with the existing teardown guarantees — all mock-smokable without a GPU.
 
-**Architecture:** `rl/trainer/core.py` holds everything the plugin does that does not need ms-swift (env HTTP client with retries, mock env, message/record shaping, format reward). `rl/trainer/swift_plugin.py` is a thin adapter over ms-swift's `Env` / `GYMScheduler` / `ORM`. `rl_train.py` is both the local command builder (`print-commands`, `make-dataset`) and the on-box phase driver (`run`), with process launching injected so the driver is testable. `remote_train` gains `GrpoJob` and `ServeJob`, an SSH tunnel resource opened after `wait_ready` and closed before destroy, and an `on_poll` hook that services the before/after-eval handshake and rsyncs the latest adapter.
+**Architecture:** `cua/rl/trainer/core.py` holds everything the plugin does that does not need ms-swift (env HTTP client with retries, mock env, message/record shaping, format reward). `cua/rl/trainer/swift_plugin.py` is a thin adapter over ms-swift's `Env` / `GYMScheduler` / `ORM`. `cua/rl/train.py` is both the local command builder (`print-commands`, `make-dataset`) and the on-box phase driver (`run`), with process launching injected so the driver is testable. `remote_train` gains `GrpoJob` and `ServeJob`, an SSH tunnel resource opened after `wait_ready` and closed before destroy, and an `on_poll` hook that services the before/after-eval handshake and rsyncs the latest adapter.
 
-**Tech Stack:** stdlib (`subprocess`, `threading`, `urllib`), existing `remote_train`, `rl/` Phase 1, Pillow (mock PNG). Box side: ms-swift 4.5.2 / vLLM 0.23.0 / torch 2.11.0 (pinned in `requirements-rl.txt`, VALIDATE-ON-BOX).
+**Tech Stack:** stdlib (`subprocess`, `threading`, `urllib`), existing `remote_train`, `cua/rl/` Phase 1, Pillow (mock PNG). Box side: ms-swift 4.5.2 / vLLM 0.23.0 / torch 2.11.0 (pinned in `requirements-rl.txt`, VALIDATE-ON-BOX).
 
 **Spec:** `docs/superpowers/specs/2026-08-26-rl-harness-design.md` §Phase 3 (D1 merge-before-RL, D2 one record per turn, 3.1–3.3; 3.4 fallback deferred).
 
@@ -16,7 +16,7 @@
 - Never `git commit`/`push` without an explicit go-ahead. Work on `feat/rl-harness-phase3` (stacked on `feat/rl-harness`).
 - Cloud rules: guaranteed teardown (reuse `lifecycle._run_job`'s `try/finally`; the tunnel closes inside that `finally` BEFORE `_guaranteed_destroy`), RU/CN deny-list, label `roman.maior`. Nothing in this phase rents a GPU.
 - Both tunnel ends bind `127.0.0.1`; the env service port is `8900`, the serve port `8001`, the rollout server `8000` (box-local).
-- `$PY` = `/Users/rmajor/unik/maga/dataset_gather/.venv-pipeline/bin/python`, run from the worktree root. ms-swift/vLLM/torch are NOT importable here — `rl/trainer/swift_plugin.py` is compile-checked only.
+- `$PY` = `/Users/rmajor/unik/maga/dataset_gather/.venv-pipeline/bin/python`, run from the worktree root. ms-swift/vLLM/torch are NOT importable here — `cua/rl/trainer/swift_plugin.py` is compile-checked only.
 - Deferred (documented, not stubbed with fake behavior): `--mode fallback` (decoupled batch GRPO) raises `NotImplementedError` with the spec reference.
 
 ---
@@ -25,27 +25,27 @@
 
 | File | Responsibility |
 |---|---|
-| `rl/trainer/__init__.py` | empty |
-| `rl/trainer/core.py` | `ENV_CLIENTS` (`http`, `mock`), `env_client_for(url)`, `observation_to_user_message`, `episode_records`, `EpisodeRecorder`, `action_format_score` |
-| `rl/trainer/swift_plugin.py` | `BrowserEnv`, `BrowserScheduler`, `ActionFormatORM`, registrations (box only) |
-| `rl_train.py` | flag maps, `build_*_command`, `make_dataset`, `PhaseDriver`, CLI `print-commands` / `make-dataset` / `run` |
+| `cua/rl/trainer/__init__.py` | empty |
+| `cua/rl/trainer/core.py` | `ENV_CLIENTS` (`http`, `mock`), `env_client_for(url)`, `observation_to_user_message`, `episode_records`, `EpisodeRecorder`, `action_format_score` |
+| `cua/rl/trainer/swift_plugin.py` | `BrowserEnv`, `BrowserScheduler`, `ActionFormatORM`, registrations (box only) |
+| `cua/rl/train.py` | flag maps, `build_*_command`, `make_dataset`, `PhaseDriver`, CLI `print-commands` / `make-dataset` / `run` |
 | `rl_config.yaml`, `requirements-rl.txt` | RL run config (mirrors `config.yaml` style) and pinned box deps |
-| `remote_train/tunnel.py` | `SshTunnel`, `NullTunnel` |
-| `remote_train/base.py` (modify) | `ComputeProvider.tunnel()` default |
-| `remote_train/vastai.py` (modify) | `tunnel()` via the provider's ssh args |
-| `remote_train/mock.py` (modify) | `tunnel()` → `NullTunnel` (records forwards); scripted `PHASE` answers |
-| `remote_train/jobs.py` (modify) | `RemoteJob.resources()` / `on_poll()` defaults; `GrpoJob`, `ServeJob`; `JOBS` |
-| `remote_train/lifecycle.py` (modify) | enter `job.resources` after `wait_ready`; `on_poll` in the poll loop; smoke covers `grpo` + `serve` |
-| `remote_train/config.py` (modify) | `rl_config`, `rl_runs_dir`, `collect_every_polls`, `serve_adapter`, `serve_seconds`, `env_url` |
-| `remote_train/__main__.py` (modify) | `grpo`, `serve` subcommands |
+| `cua/cloud/vast/tunnel.py` | `SshTunnel`, `NullTunnel` |
+| `cua/cloud/vast/base.py` (modify) | `ComputeProvider.tunnel()` default |
+| `cua/cloud/vast/vastai.py` (modify) | `tunnel()` via the provider's ssh args |
+| `cua/cloud/vast/mock.py` (modify) | `tunnel()` → `NullTunnel` (records forwards); scripted `PHASE` answers |
+| `cua/cloud/vast/jobs.py` (modify) | `RemoteJob.resources()` / `on_poll()` defaults; `GrpoJob`, `ServeJob`; `JOBS` |
+| `cua/cloud/vast/lifecycle.py` (modify) | enter `job.resources` after `wait_ready`; `on_poll` in the poll loop; smoke covers `grpo` + `serve` |
+| `cua/cloud/vast/config.py` (modify) | `rl_config`, `rl_runs_dir`, `collect_every_polls`, `serve_adapter`, `serve_seconds`, `env_url` |
+| `cua/cloud/vast/__main__.py` (modify) | `grpo`, `serve` subcommands |
 | `Makefile` (modify) | `remote-grpo`, `remote-serve`, `test-grpo`, `grpo-dataset` |
-| `rl/tests/test_trainer_core.py`, `rl/tests/test_rl_train.py`, `rl/tests/test_tunnel.py` | Mac-side tests |
+| `tests/test_trainer_core.py`, `tests/test_rl_train.py`, `tests/test_tunnel.py` | Mac-side tests |
 
 ---
 
-### Task 1: `rl/trainer/core.py` — env clients, message shaping, records, format reward
+### Task 1: `cua/rl/trainer/core.py` — env clients, message shaping, records, format reward
 
-**Files:** Create `rl/trainer/__init__.py`, `rl/trainer/core.py`, `rl/tests/test_trainer_core.py`
+**Files:** Create `cua/rl/trainer/__init__.py`, `cua/rl/trainer/core.py`, `tests/test_trainer_core.py`
 
 **Interfaces (produced):**
 - `HttpEnvClient(base_url, token="", timeout_s=600, retries=6, backoff_s=5)` with `reset(task_id, sample_idx, run_id, iteration, policy_tag) -> dict`, `step(episode_id, response_text) -> dict`, `close(episode_id, reason) -> dict`, `tasks(split) -> list`.
@@ -56,15 +56,15 @@
 - `EpisodeRecorder(run_dir)`: `save_png(uuid, turn, b64) -> str path`, `log(record: dict)` appends to `episodes.jsonl`.
 - `action_format_score(text) -> float` = 1.0 clean decode, 0.5 decodes with errors, 0.0 no actions (pure; used by the ORM).
 
-- [ ] **Step 1: Failing tests** — `rl/tests/test_trainer_core.py`:
+- [ ] **Step 1: Failing tests** — `tests/test_trainer_core.py`:
 ```python
 import base64
 import json
 import tempfile
 from pathlib import Path
 
-from rl.actions import encode_step
-from rl.trainer.core import (ENV_CLIENTS, EpisodeRecorder, HttpEnvClient, MockEnvClient, action_format_score,
+from cua.rl.actions import encode_step
+from cua.rl.trainer.core import (ENV_CLIENTS, EpisodeRecorder, HttpEnvClient, MockEnvClient, action_format_score,
                              env_client_for, episode_records, observation_to_user_message)
 
 
@@ -118,8 +118,8 @@ def test_action_format_score_levels():
     assert action_format_score("<think>t</think>\naction: done()\ntrailing prose") == 0.5
     assert action_format_score("no actions here") == 0.0
 ```
-- [ ] **Step 2: Run** — `$PY -m rl.tests test_trainer_core` → `ModuleNotFoundError: No module named 'rl.trainer'`.
-- [ ] **Step 3: Implement** `rl/trainer/core.py`:
+- [ ] **Step 2: Run** — `$PY -m tests test_trainer_core` → `ModuleNotFoundError: No module named 'cua.rl.trainer'`.
+- [ ] **Step 3: Implement** `cua/rl/trainer/core.py`:
 ```python
 """ms-swift-free half of the GRPO plugin: env clients, message/record shaping, format reward — unit-tested on the Mac."""
 import base64
@@ -133,14 +133,14 @@ from pathlib import Path
 
 from PIL import Image
 
-from rl.actions import decode_step
-from rl.observation import build_observation
+from cua.rl.actions import decode_step
+from cua.rl.observation import build_observation
 
 logger = logging.getLogger(__name__)
 
 
 class HttpEnvClient:
-    """Talks to rl/service.py (through the reverse SSH tunnel on the box); retries so a tunnel blip is not an episode failure."""
+    """Talks to cua/rl/service.py (through the reverse SSH tunnel on the box); retries so a tunnel blip is not an episode failure."""
 
     def __init__(self, base_url, token="", timeout_s=600, retries=6, backoff_s=5, **_):
         self.base_url, self.token, self.timeout_s, self.retries, self.backoff_s = base_url.rstrip("/"), token, timeout_s, retries, backoff_s
@@ -271,9 +271,9 @@ def env_client_for(url, **kwargs):
 
 ---
 
-### Task 2: `rl/trainer/swift_plugin.py` — thin ms-swift adapter (box only)
+### Task 2: `cua/rl/trainer/swift_plugin.py` — thin ms-swift adapter (box only)
 
-**Files:** Create `rl/trainer/swift_plugin.py`
+**Files:** Create `cua/rl/trainer/swift_plugin.py`
 
 **Interfaces (produced, VALIDATE-ON-BOX):** `envs["browser_env"] = BrowserEnv`, `multi_turns["browser_scheduler"] = BrowserScheduler`, `orms["action_format"] = ActionFormatORM`. Reads env `RL_ENV_URL` (default `http://127.0.0.1:8900`), `RL_ENV_TOKEN`, `RL_RUN_DIR` (default `/workspace/rl_runs/current`), `RL_RUN_ID`.
 
@@ -289,8 +289,8 @@ from swift.plugin.orm import ORM, orms
 from swift.rollout.gym_env import Env, envs
 from swift.rollout.multi_turn import GYMScheduler, multi_turns
 
-from rl.trainer.core import EpisodeRecorder, action_format_score, env_client_for, episode_records, observation_to_user_message
-from train_qwen import SYSTEM_PROMPT
+from cua.rl.trainer.core import EpisodeRecorder, action_format_score, env_client_for, episode_records, observation_to_user_message
+from cua.sft.legacy_train_qwen import SYSTEM_PROMPT
 
 RL_ENV_URL = os.environ.get("RL_ENV_URL", "http://127.0.0.1:8900")
 RL_ENV_TOKEN = os.environ.get("RL_ENV_TOKEN", "")
@@ -383,28 +383,28 @@ envs["browser_env"] = BrowserEnv
 multi_turns["browser_scheduler"] = BrowserScheduler
 orms["action_format"] = ActionFormatORM
 ```
-- [ ] **Step 2: Compile-check** — `$PY -m py_compile rl/trainer/swift_plugin.py` → no output. Record in the report that `GYMScheduler`'s exact hook names (`on_trajectory_start`, `step`, and where `run()` assembles outputs — here exposed as `build_outputs`) are the V6 validation item; the box checklist diffs this file against `swift/rollout/multi_turn.py` before the first run.
+- [ ] **Step 2: Compile-check** — `$PY -m py_compile cua/rl/trainer/swift_plugin.py` → no output. Record in the report that `GYMScheduler`'s exact hook names (`on_trajectory_start`, `step`, and where `run()` assembles outputs — here exposed as `build_outputs`) are the V6 validation item; the box checklist diffs this file against `swift/rollout/multi_turn.py` before the first run.
 
 ---
 
-### Task 3: `rl_train.py` — flag maps, command builders, dataset, phase driver
+### Task 3: `cua/rl/train.py` — flag maps, command builders, dataset, phase driver
 
-**Files:** Create `rl_train.py`, `rl_config.yaml`, `requirements-rl.txt`, `rl/tests/test_rl_train.py`
+**Files:** Create `cua/rl/train.py`, `rl_config.yaml`, `requirements-rl.txt`, `tests/test_rl_train.py`
 
 **Interfaces (produced):**
 - `load_rl_config(path) -> dict`; `ROLLOUT_FLAG_MAP`, `RLHF_FLAG_MAP`, `DEPLOY_FLAG_MAP` (config key → swift flag).
 - `build_merge_command(cfg) -> list[str]`, `build_rollout_command(cfg) -> list[str]`, `build_rlhf_command(cfg) -> list[str]`, `build_deploy_command(cfg, adapters=None) -> list[str]`, `build_env(cfg, run_dir) -> dict`.
 - `make_dataset(suite_path, out_path, split="train", repeats=1) -> int`.
 - `PhaseDriver(cfg, run_dir, workdir, launcher=subprocess.Popen, run=subprocess.run, http_ok=_http_ok, sleep=time.sleep, clock=time.time)` with `.run(mode="swift") -> int`; phase files `PHASE` / `PHASE_ACK` in `workdir`; copies newest `checkpoint-*` into `<output_dir>/latest`.
-- CLI: `python rl_train.py print-commands --config rl_config.yaml`, `make-dataset --tasks rl/rl_tasks.json --out rl_tasks.jsonl [--split train] [--repeats 1]`, `run --config rl_config.yaml --run-dir DIR [--workdir /workspace] [--mode swift|fallback]`.
+- CLI: `python -m cua.rl.train print-commands --config rl_config.yaml`, `make-dataset --tasks cua/rl/rl_tasks.json --out rl_tasks.jsonl [--split train] [--repeats 1]`, `run --config rl_config.yaml --run-dir DIR [--workdir /workspace] [--mode swift|fallback]`.
 
-- [ ] **Step 1: Failing tests** — `rl/tests/test_rl_train.py`:
+- [ ] **Step 1: Failing tests** — `tests/test_rl_train.py`:
 ```python
 import json
 import tempfile
 from pathlib import Path
 
-from rl_train import (PhaseDriver, build_deploy_command, build_env, build_merge_command, build_rlhf_command,
+from cua.rl.train import (PhaseDriver, build_deploy_command, build_env, build_merge_command, build_rlhf_command,
                       build_rollout_command, load_rl_config, make_dataset)
 
 CFG = load_rl_config("rl_config.yaml")
@@ -499,12 +499,12 @@ def test_fallback_mode_is_explicitly_unimplemented():
         except NotImplementedError as e:
             assert "3.4" in str(e)
 ```
-- [ ] **Step 2: Run** → `ModuleNotFoundError: No module named 'rl_train'`.
+- [ ] **Step 2: Run** → `ModuleNotFoundError: No module named 'cua.rl.train'`.
 - [ ] **Step 3: Implement**
 
 `rl_config.yaml`:
 ```yaml
-# GRPO run config for `python rl_train.py` (box) and `python -m remote_train grpo` (Mac). Mirrors config.yaml's style.
+# GRPO run config for `python -m cua.rl.train` (box) and `python -m cua.cloud.vast grpo` (Mac). Mirrors config.yaml's style.
 base_model: Qwen/Qwen3.5-9B            # the SFT base (config.yaml); the SFT LoRA is merged into it before RL (spec D1)
 sft_adapter: output                     # Mac path of the SFT adapter to ship
 sft_adapter_remote: /workspace/sft_adapter
@@ -547,14 +547,14 @@ log_completions: true
 report_to: tensorboard
 output_dir: /workspace/rl_output
 # plugin / env
-external_plugins: rl/trainer/swift_plugin.py
+external_plugins: cua/rl/trainer/swift_plugin.py
 gym_env: browser_env
 multi_turn_scheduler: browser_scheduler
 reward_funcs: action_format
 reward_weights: "0.2 1.0"
 env_url: http://127.0.0.1:8900
 env_retry_s: 180
-# eval phases (swift deploy on serve_port; the Mac runs rl.eval through the tunnel and acks)
+# eval phases (swift deploy on serve_port; the Mac runs cua.rl.eval through the tunnel and acks)
 eval_before: true
 eval_after: true
 eval_wait_s: 7200
@@ -585,7 +585,7 @@ pyyaml
 requests
 ```
 
-`rl_train.py`:
+`cua/rl/train.py`:
 ```python
 """GRPO run driver: local command builders (print-commands, make-dataset) and the on-box phase runner (run)."""
 import argparse
@@ -698,7 +698,7 @@ class PhaseDriver:
 
     def set_phase(self, phase):
         (self.workdir / PHASE_FILE).write_text(phase + "\n")
-        print(f"[rl_train] PHASE {phase}", flush=True)
+        print(f"[cua.rl.train] PHASE {phase}", flush=True)
 
     def wait_for_ack(self, phase):
         deadline = self.clock() + float(self.cfg.get("eval_wait_s", 7200))
@@ -708,7 +708,7 @@ class PhaseDriver:
                 ack.unlink()
                 return True
             self.sleep(15)
-        print(f"[rl_train] no ack for {phase} within eval_wait_s — continuing", flush=True)
+        print(f"[cua.rl.train] no ack for {phase} within eval_wait_s — continuing", flush=True)
         return False
 
     def wait_healthy(self, url, timeout_s=1800):
@@ -762,7 +762,7 @@ class PhaseDriver:
         rollout = self.launcher(build_rollout_command(self.cfg), env=self.env)
         try:
             if not self.wait_healthy(f"http://127.0.0.1:{self.cfg['rollout_port']}/health/"):
-                print("[rl_train] rollout server never became healthy", flush=True)
+                print("[cua.rl.train] rollout server never became healthy", flush=True)
                 return 1
             self.set_phase("TRAINING")
             rc = self.run_foreground(build_rlhf_command(self.cfg), self.env)
@@ -802,7 +802,7 @@ def main():
     p = sub.add_parser("print-commands")
     p.add_argument("--config", default="rl_config.yaml")
     d = sub.add_parser("make-dataset")
-    d.add_argument("--tasks", default="rl/rl_tasks.json")
+    d.add_argument("--tasks", default="cua/rl/rl_tasks.json")
     d.add_argument("--out", default="rl_tasks.jsonl")
     d.add_argument("--split", default="train")
     d.add_argument("--repeats", type=int, default=1)
@@ -827,25 +827,25 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 ```
-- [ ] **Step 4: Run** → `$PY -m rl.tests test_rl_train` → `6/6 passed`; `$PY rl_train.py print-commands` prints four argv lines.
+- [ ] **Step 4: Run** → `$PY -m tests test_rl_train` → `6/6 passed`; `$PY cua/rl/train.py print-commands` prints four argv lines.
 - [ ] **Step 5: Report.**
 
 ---
 
-### Task 4: `remote_train/tunnel.py` + provider hook
+### Task 4: `cua/cloud/vast/tunnel.py` + provider hook
 
-**Files:** Create `remote_train/tunnel.py`, `rl/tests/test_tunnel.py`; modify `remote_train/base.py`, `remote_train/vastai.py`, `remote_train/mock.py`
+**Files:** Create `cua/cloud/vast/tunnel.py`, `tests/test_tunnel.py`; modify `cua/cloud/vast/base.py`, `cua/cloud/vast/vastai.py`, `cua/cloud/vast/mock.py`
 
 **Interfaces (produced):**
 - `SshTunnel(ssh_argv_base: list[str], forwards: list[tuple[str, int]], keepalive_s=15, popen=subprocess.Popen, sleep=time.sleep)` context manager; `.argv()`; `.start()`; `.close()`; `.alive`; supervisor thread restarts on exit with backoff `min(60, 5·attempt)`.
 - `NullTunnel(forwards)` no-op context manager.
 - `ComputeProvider.tunnel(instance, cfg, forwards) -> context manager` (default `NullTunnel`); `VastAIProvider.tunnel` → `SshTunnel(self._ssh_base(instance)[:-1], forwards)`; `MockProvider.tunnel` records `self.tunnels.append(forwards)` and returns `NullTunnel`.
 
-- [ ] **Step 1: Failing tests** — `rl/tests/test_tunnel.py`:
+- [ ] **Step 1: Failing tests** — `tests/test_tunnel.py`:
 ```python
 import threading
 
-from remote_train.tunnel import NullTunnel, SshTunnel
+from cua.cloud.vast.tunnel import NullTunnel, SshTunnel
 
 
 class FakePopen:
@@ -895,7 +895,7 @@ def test_null_tunnel_is_a_noop():
         assert t.forwards == [("R", 8900)]
 ```
 - [ ] **Step 2: Run** → ModuleNotFoundError.
-- [ ] **Step 3: Implement** `remote_train/tunnel.py`:
+- [ ] **Step 3: Implement** `cua/cloud/vast/tunnel.py`:
 ```python
 """SSH tunnel resource for remote jobs: -R exposes the Mac env service to the box, -L brings the box's serve port here; supervised like autossh."""
 import logging
@@ -969,27 +969,27 @@ class SshTunnel:
         self.close()
         return False
 ```
-`remote_train/base.py`: add to `ComputeProvider` (after `list_owned`):
+`cua/cloud/vast/base.py`: add to `ComputeProvider` (after `list_owned`):
 ```python
     def tunnel(self, instance: Instance, cfg, forwards: list):
         """Optional: a context manager forwarding loopback ports ((\"R\"|\"L\", port) pairs). Default: no tunnel."""
         return NullTunnel(forwards)
 ```
-with `from remote_train.tunnel import NullTunnel` at the top (tunnel.py has no remote_train imports, so no cycle).
-`remote_train/vastai.py`: add `from remote_train.tunnel import SshTunnel` and
+with `from cua.cloud.vast.tunnel import NullTunnel` at the top (tunnel.py has no remote_train imports, so no cycle).
+`cua/cloud/vast/vastai.py`: add `from cua.cloud.vast.tunnel import SshTunnel` and
 ```python
     def tunnel(self, instance, cfg, forwards):
         return SshTunnel(self._ssh_base(instance), forwards)
 ```
 (`_ssh_base` ends with `user@host`, which `SshTunnel.argv` keeps last.)
-`remote_train/mock.py`: `self.tunnels = []` in `__init__`; `def tunnel(self, instance, cfg, forwards): self.tunnels.append(list(forwards)); return NullTunnel(forwards)` with the import.
-- [ ] **Step 4: Run** → `3/3 passed`; `$PY -m remote_train run --smoke` still ALL PASS. **Step 5: Report.**
+`cua/cloud/vast/mock.py`: `self.tunnels = []` in `__init__`; `def tunnel(self, instance, cfg, forwards): self.tunnels.append(list(forwards)); return NullTunnel(forwards)` with the import.
+- [ ] **Step 4: Run** → `3/3 passed`; `$PY -m cua.cloud.vast run --smoke` still ALL PASS. **Step 5: Report.**
 
 ---
 
 ### Task 5: `GrpoJob` + `ServeJob` + lifecycle hooks + config + CLI + Makefile + smoke
 
-**Files:** Modify `remote_train/jobs.py`, `remote_train/lifecycle.py`, `remote_train/config.py`, `remote_train/__main__.py`, `remote_train/mock.py`, `Makefile`; extend `rl/tests/test_rl_train.py` with job-level tests.
+**Files:** Modify `cua/cloud/vast/jobs.py`, `cua/cloud/vast/lifecycle.py`, `cua/cloud/vast/config.py`, `cua/cloud/vast/__main__.py`, `cua/cloud/vast/mock.py`, `Makefile`; extend `tests/test_rl_train.py` with job-level tests.
 
 **Interfaces (produced):**
 - `RemoteJob.resources(provider, instance, cfg)` → context manager (default `contextlib.nullcontext()`); `RemoteJob.on_poll(provider, instance, cfg) -> bool` (default `False`; `True` = finish the run now).
@@ -999,11 +999,11 @@ with `from remote_train.tunnel import NullTunnel` at the top (tunnel.py has no r
 - Config keys: `rl_config="rl_config.yaml"`, `rl_runs_dir="rl_runs"`, `collect_every_polls=10`, `serve_adapter=""`, `serve_seconds=0`, `env_url=""` (override; empty → from rl_config).
 - Mock provider: `exec` answers `cat /workspace/PHASE` with a scripted sequence (`cfg.mock_phases`, default `["EVAL_BEFORE_READY", "TRAINING", "EVAL_AFTER_READY", "DONE"]`, one per call) and records writes of `PHASE_ACK`.
 
-- [ ] **Step 1: Failing tests** — append to `rl/tests/test_rl_train.py`:
+- [ ] **Step 1: Failing tests** — append to `tests/test_rl_train.py`:
 ```python
-from remote_train.config import RemoteTrainConfig
-from remote_train.jobs import JOBS, GrpoJob, ServeJob
-from remote_train.mock import MockProvider
+from cua.cloud.vast.config import RemoteTrainConfig
+from cua.cloud.vast.jobs import JOBS, GrpoJob, ServeJob
+from cua.cloud.vast.mock import MockProvider
 
 
 def _grpo_cfg(tmp):
@@ -1030,7 +1030,7 @@ def test_grpo_job_registered_and_preflight_applies_compute():
         assert header["sft_adapter_sha256"] and header["suite_sha256"] and header["rl_config_sha256"]
         assert Path(job.dataset_path).read_text().count("\n") > 0
         cmd = job.remote_command(cfg)
-        assert "requirements-rl.txt" in cmd and "rl_train.py run" in cmd and "--run-dir /workspace/rl_runs/" in cmd
+        assert "requirements-rl.txt" in cmd and "cua/rl/train.py run" in cmd and "--run-dir /workspace/rl_runs/" in cmd
 
 
 def test_grpo_job_on_poll_handles_handshake_and_collects_adapter():
@@ -1067,7 +1067,7 @@ def test_serve_job_stops_after_serve_seconds():
 - [ ] **Step 2: Run** → `ImportError: cannot import name 'GrpoJob'`.
 - [ ] **Step 3: Implement**
 
-`remote_train/config.py`: add fields after `notify`:
+`cua/cloud/vast/config.py`: add fields after `notify`:
 ```python
     rl_config: str = "rl_config.yaml"
     rl_runs_dir: str = "rl_runs"
@@ -1079,7 +1079,7 @@ def test_serve_job_stops_after_serve_seconds():
 ```
 and add `"rl_config", "rl_runs_dir", "collect_every_polls", "serve_adapter", "serve_seconds", "env_url"` to `_YAML_KEYS`.
 
-`remote_train/mock.py` `exec`: replace the body with
+`cua/cloud/vast/mock.py` `exec`: replace the body with
 ```python
     def exec(self, instance, command, *, stream=False, timeout=0) -> tuple:
         self.exec_log.append(command)
@@ -1095,7 +1095,7 @@ and add `"rl_config", "rl_runs_dir", "collect_every_polls", "serve_adapter", "se
 ```
 with `self.phases = list(getattr(cfg, "mock_phases", ()))`, `self.phase_calls = 0` in `__init__`.
 
-`remote_train/jobs.py`: add imports `import contextlib, hashlib, json, os, subprocess, sys, time, urllib.request` and `from remote_train.tunnel import NullTunnel`; add to `RemoteJob`:
+`cua/cloud/vast/jobs.py`: add imports `import contextlib, hashlib, json, os, subprocess, sys, time, urllib.request` and `from cua.cloud.vast.tunnel import NullTunnel`; add to `RemoteJob`:
 ```python
     def resources(self, provider, instance, cfg):
         """Context entered after wait_ready and left BEFORE destroy (tunnels, local helpers)."""
@@ -1107,8 +1107,8 @@ with `self.phases = list(getattr(cfg, "mock_phases", ()))`, `self.phase_calls = 
 ```
 then the two jobs:
 ```python
-RL_CODE_FILES = ("rl_train.py", "train_qwen.py", "requirements-rl.txt", "repo_pipeline/__init__.py", "repo_pipeline/corpus_audit.py",
-                 "rl/__init__.py", "rl/actions.py", "rl/observation.py", "rl/trainer/__init__.py", "rl/trainer/core.py", "rl/trainer/swift_plugin.py")
+RL_CODE_FILES = ("cua/rl/train.py", "cua/sft/legacy_train_qwen.py", "requirements-rl.txt", "cua/pipeline/__init__.py", "cua/pipeline/corpus_audit.py",
+                 "cua/rl/__init__.py", "cua/rl/actions.py", "cua/rl/observation.py", "cua/rl/trainer/__init__.py", "cua/rl/trainer/core.py", "cua/rl/trainer/swift_plugin.py")
 
 
 def _sha256(path):
@@ -1159,13 +1159,13 @@ class GrpoJob(RemoteJob):
         adapter = Path(cfg.output_dir) / "adapter_config.json"
         if not adapter.is_file():
             raise FileNotFoundError(f"SFT adapter '{adapter}' missing — run `make remote-train` first (spec Phase 2)")
-        suite_path = Path("rl/rl_tasks.json")
+        suite_path = Path("cua/rl/rl_tasks.json")
         if not suite_path.is_file():
-            raise FileNotFoundError("rl/rl_tasks.json missing — run `make rl-tasks`")
+            raise FileNotFoundError("cua/rl/rl_tasks.json missing — run `make rl-tasks`")
         self.run_dir.mkdir(parents=True, exist_ok=True)
         rows = make_dataset(suite_path, self.dataset_path, "train", 1)
         if rows == 0:
-            raise ValueError("no train tasks in rl/rl_tasks.json")
+            raise ValueError("no train tasks in cua/rl/rl_tasks.json")
         env_url = self.rl["env_url"]
         if not env_url.startswith("mock://") and not self.http_ok(f"{env_url}/health"):
             raise ConnectionError(f"env service not answering at {env_url}/health — start `make rl-serve` first")
@@ -1195,13 +1195,13 @@ class GrpoJob(RemoteJob):
         wd = cfg.remote_workdir
         return (
             "pip install -r requirements-rl.txt && \\\n"
-            f"  python rl_train.py run --config {Path(cfg.rl_config).name} --run-dir {wd}/rl_runs/{self.run_id} --workdir {wd}"
+            f"  python -m cua.rl.train run --config {Path(cfg.rl_config).name} --run-dir {wd}/rl_runs/{self.run_id} --workdir {wd}"
         )
 
     def run_eval(self, phase):
         tag = "before" if "BEFORE" in phase else "after"
         port = (self.rl.get("compute") or {}).get("serve_port", 8001)
-        argv = [sys.executable, "-m", "rl.eval", "--endpoint", f"http://127.0.0.1:{port}/v1", "--model", "policy",
+        argv = [sys.executable, "-m", "cua.rl.eval", "--endpoint", f"http://127.0.0.1:{port}/v1", "--model", "policy",
                 "--run-id", f"{self.run_id}-{tag}", "--out", str(self.run_dir / "eval_runs")]
         logger.info(f"running student eval ({tag}) through the tunnel: {' '.join(argv)}")
         result = subprocess.run(argv, capture_output=True, text=True)
@@ -1288,9 +1288,9 @@ class ServeJob(RemoteJob):
     def report(self, cfg) -> str:
         return "serve session ended; instance destroyed"
 ```
-plus `from rl_train import build_deploy_command, make_dataset` at the top of `jobs.py` and `JOBS["grpo"] = GrpoJob`, `JOBS["serve"] = ServeJob`.
+plus `from cua.rl.train import build_deploy_command, make_dataset` at the top of `jobs.py` and `JOBS["grpo"] = GrpoJob`, `JOBS["serve"] = ServeJob`.
 
-`remote_train/lifecycle.py` `_run_job`: replace the block from `provider.wait_ready(...)` through `job.collect(...)` with
+`cua/cloud/vast/lifecycle.py` `_run_job`: replace the block from `provider.wait_ready(...)` through `job.collect(...)` with
 ```python
         provider.wait_ready(instance, cfg.ready_timeout_s)
         with job.resources(provider, instance, cfg):
@@ -1315,29 +1315,29 @@ and in `_wait_for_completion(provider, instance, cfg, deadline, job=None)` add, 
 ```
 `run_smoke_test`: `make_cfg` also sets `cfg.rl_config = "rl_config.yaml"`, `cfg.rl_runs_dir = str(tmp / "rl_runs")`, `cfg.env_url = "mock://"`, `cfg.serve_seconds = 1`, and writes a fake adapter into `cfg.output_dir` (`adapter_config.json` + `adapter_model.safetensors`); loop `for job_name in ("train", "eval", "grpo", "serve")`; for `grpo` additionally `check("grpo: tunnel opened R:8900 L:8001", happy.tunnels == [[("R", 8900), ("L", 8001)]])` and `check("grpo: both eval phases acked", sum("PHASE_ACK" in c for c in happy.exec_log) == 2)`. The grpo job's `run_eval` must not spawn the real eval in the smoke: set `GrpoJob.run_eval` via a module-level `_SMOKE_EVAL = lambda self, phase: {"phase": phase}` assignment inside `run_smoke_test` (`GrpoJob.run_eval = _SMOKE_EVAL`) and restore it after.
 
-`remote_train/__main__.py`: `grpo` subparser (`_add_common`, `--rl-config`, `--env-url`, `--notify`) → `_job_cmd(args, "grpo")`; `serve` subparser (`_add_common`, `--rl-config`, `--adapter`, `--for-seconds`) → `_job_cmd(args, "serve")`; `_cli_overrides` gains `"rl_config": getattr(args, "rl_config", None)`, `"env_url": getattr(args, "env_url", None)`, `"serve_adapter": getattr(args, "adapter", None)`, `"serve_seconds": getattr(args, "for_seconds", None)`. Module docstring gets the two new usage lines.
+`cua/cloud/vast/__main__.py`: `grpo` subparser (`_add_common`, `--rl-config`, `--env-url`, `--notify`) → `_job_cmd(args, "grpo")`; `serve` subparser (`_add_common`, `--rl-config`, `--adapter`, `--for-seconds`) → `_job_cmd(args, "serve")`; `_cli_overrides` gains `"rl_config": getattr(args, "rl_config", None)`, `"env_url": getattr(args, "env_url", None)`, `"serve_adapter": getattr(args, "adapter", None)`, `"serve_seconds": getattr(args, "for_seconds", None)`. Module docstring gets the two new usage lines.
 
 Makefile (after `test-remote`):
 ```make
 remote-grpo: ## Rent a GPU, run GRPO against the local env service (make rl-serve first), pull adapters, ALWAYS destroy
 	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
-	python -m remote_train grpo $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+	python -m cua.cloud.vast grpo $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
 
 remote-serve: ## Rent a GPU and serve the student on 127.0.0.1:8001 through a tunnel (SERVE_ADAPTER=output, SERVE_SECONDS=0)
 	@test -n "$$VAST_API_KEY" || (echo "ERROR: VAST_API_KEY not set" && exit 1)
-	python -m remote_train serve $(if $(SERVE_ADAPTER),--adapter $(SERVE_ADAPTER)) $(if $(SERVE_SECONDS),--for-seconds $(SERVE_SECONDS)) $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
+	python -m cua.cloud.vast serve $(if $(SERVE_ADAPTER),--adapter $(SERVE_ADAPTER)) $(if $(SERVE_SECONDS),--for-seconds $(SERVE_SECONDS)) $(if $(REMOTE_ARGS),$(REMOTE_ARGS))
 
 test-grpo: ## No-cost GRPO self-test: mock provider + mock env (teardown, tunnel, phase handshake) + command builders
-	python -m remote_train run --smoke
-	python rl_train.py print-commands --config rl_config.yaml
-	python -m rl.tests test_trainer_core test_rl_train test_tunnel
+	python -m cua.cloud.vast run --smoke
+	python -m cua.rl.train print-commands --config rl_config.yaml
+	python -m tests test_trainer_core test_rl_train test_tunnel
 
 grpo-dataset: ## Write rl_tasks.jsonl (train split) for the GRPO trainer
-	python rl_train.py make-dataset --tasks rl/rl_tasks.json --out rl_tasks.jsonl
+	python -m cua.rl.train make-dataset --tasks cua/rl/rl_tasks.json --out rl_tasks.jsonl
 ```
 Add `remote-grpo remote-serve test-grpo grpo-dataset` to `.PHONY`.
 
-- [ ] **Step 4: Run** — `$PY -m rl.tests` (all), `$PY -m remote_train run --smoke` → ALL PASS incl. grpo/serve lines, `$PY rl_train.py print-commands`, `make -n test-grpo`, `$PY -m remote_train grpo --help`.
+- [ ] **Step 4: Run** — `$PY -m tests` (all), `$PY -m cua.cloud.vast run --smoke` → ALL PASS incl. grpo/serve lines, `$PY cua/rl/train.py print-commands`, `make -n test-grpo`, `$PY -m cua.cloud.vast grpo --help`.
 - [ ] **Step 5: Report** — list the VALIDATE-ON-BOX items that remain (V1–V16 from the spec) and the deferred fallback.
 
 ---
@@ -1346,4 +1346,4 @@ Add `remote-grpo remote-serve test-grpo grpo-dataset` to `.PHONY`.
 
 - **Spec coverage:** 3.1 → Tasks 1–2; 3.2 → Task 3; 3.3 → Tasks 4–5 (GrpoJob, ServeJob, tunnel, on_poll, `run --smoke`, Makefile); 3.4 → deferred explicitly (NotImplementedError + report). Phase 2's `ServeJob` lands here so `make remote-serve` exists before the SFT run.
 - **Placeholders:** none; `--mode fallback` raising is a documented deferral, not a stub pretending to work.
-- **Type consistency:** `episode_records` record keys (`messages`, `images`, `response_token_ids`, `rollout_infos`) match what `BrowserScheduler.build_outputs` unpacks; `HttpEnvClient.reset` body keys match `rl/service.py`'s `/reset` (`task_id`, `sample_k`, `run_id`, `iter`, `policy_tag`); `PhaseDriver` phase strings match `GrpoJob.on_poll`'s `_READY` handling and the mock's `mock_phases`; tunnel forwards `("R"|"L", port)` match `SshTunnel.argv`.
+- **Type consistency:** `episode_records` record keys (`messages`, `images`, `response_token_ids`, `rollout_infos`) match what `BrowserScheduler.build_outputs` unpacks; `HttpEnvClient.reset` body keys match `cua/rl/service.py`'s `/reset` (`task_id`, `sample_k`, `run_id`, `iter`, `policy_tag`); `PhaseDriver` phase strings match `GrpoJob.on_poll`'s `_READY` handling and the mock's `mock_phases`; tunnel forwards `("R"|"L", port)` match `SshTunnel.argv`.

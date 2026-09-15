@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A policy-agnostic rollout harness (`rl/`) that runs the Qwen student against live public sites through the existing sandboxed browser driver, records full trajectory dirs, scores them (programmatic check → Claude verifier), and exposes reset/step/close over HTTP for the GRPO trainer plus `rollout`/`eval` CLIs.
+**Goal:** A policy-agnostic rollout harness (`cua/rl/`) that runs the Qwen student against live public sites through the existing sandboxed browser driver, records full trajectory dirs, scores them (programmatic check → Claude verifier), and exposes reset/step/close over HTTP for the GRPO trainer plus `rollout`/`eval` CLIs.
 
-**Architecture:** Every episode = `reset` (driver `/session` + `/observe`) → policy text → `rl.actions.decode_step` → driver `/act kind=sequence` (one recorded step per policy turn, observation PNG bytes == recorded PNG) → repeat until `done`/cap → `copy_out` → `success_check` or `verify_trajectory` → scalar reward. Observations are built by the same `train_qwen.py` functions that build SFT examples, so training input == RL input byte-for-byte. `rl/service.py` wraps the same `Episode` for the GPU box; `rl/rollout.py` / `rl/eval.py` drive it locally.
+**Architecture:** Every episode = `reset` (driver `/session` + `/observe`) → policy text → `cua.rl.actions.decode_step` → driver `/act kind=sequence` (one recorded step per policy turn, observation PNG bytes == recorded PNG) → repeat until `done`/cap → `copy_out` → `success_check` or `verify_trajectory` → scalar reward. Observations are built by the same `cua/sft/legacy_train_qwen.py` functions that build SFT examples, so training input == RL input byte-for-byte. `cua/rl/service.py` wraps the same `Episode` for the GPU box; `cua/rl/rollout.py` / `cua/rl/eval.py` drive it locally.
 
 **Tech Stack:** Python 3.11 stdlib (`http.server`, `urllib`, `threading`), existing `repo_pipeline` (`DockerSandbox`, `driver_session.DriverClient`, `agent_capture.verify_trajectory`, `app_secrets`, `corpus_audit`), Node driver `browser_driver.js` (Playwright 1.55 in the sandbox image), no new third-party deps.
 
@@ -16,9 +16,9 @@
 - No nested imports. No imports inside test functions (module-level only).
 - Registries/config over name checks (`BACKENDS`, `ACTION_DECODERS`, `CHECKS`, `REWARD_COMPONENTS`, `POLICIES`, `TASK_SOURCES`).
 - **Never `git commit` / `git push`.** This worktree currently holds the *uncommitted* PR #24 merge in the index; Phase 1 edits must NOT be `git add`ed until the Phase 0 merge commits land. Each task ends with "report the diff", not "commit".
-- Rollouts write under `rl_runs/` / `eval_runs/`, never `trajectories/` (`train_qwen convert` globs `trajectories/**/task_*`).
-- Claude calls only through `repo_pipeline.agent_runner.run_agent` (OAuth `claude` CLI); never set `ANTHROPIC_API_KEY`.
-- Viewport 1280x720; action dicts must equal the contract shapes in `repo_pipeline/schemas.py` / `train_qwen.format_action_for_training`.
+- Rollouts write under `rl_runs/` / `eval_runs/`, never `trajectories/` (`cua.sft.legacy_train_qwen convert` globs `trajectories/**/task_*`).
+- Claude calls only through `cua.pipeline.agent_runner.run_agent` (OAuth `claude` CLI); never set `ANTHROPIC_API_KEY`.
+- Viewport 1280x720; action dicts must equal the contract shapes in `cua/pipeline/schemas.py` / `cua.sft.legacy_train_qwen.format_action_for_training`.
 - Interpreter for all runs: `/Users/rmajor/unik/maga/dataset_gather/.venv-pipeline/bin/python` from the worktree root (call it `$PY` below). Docker Desktop must be running for Tasks 3 and 13.
 - Env knobs are `RL_*` env vars with defaults in code; no hardcoded site names anywhere.
 
@@ -28,62 +28,62 @@
 
 | File | Responsibility |
 |---|---|
-| `train_qwen.py` (modify) | Extract `build_step_user_text`, `history_entries_for_step`, `build_step_messages`; read `excluded_reason` from either metadata file |
-| `rl/__init__.py` | empty |
-| `rl/actions.py` | decoder registry + `decode_step` / `encode_step` |
-| `rl/observation.py` | `build_observation`, `to_openai_messages` |
-| `rl/executor.py` | decoded actions → driver `sequence` payload, key aliases, viewport validation, control detection |
-| `repo_pipeline/instrumentation/browser_driver.js` (modify) | `/observe`, `sequence` act kind, pending-screenshot handoff, `type_mode` |
-| `repo_pipeline/driver_session.py` (modify) | per-port `start_driver`, `DriverClient(port)`, `observe`, `act_sequence`, `session(type_mode)` |
-| `repo_pipeline/driver_smoke.py` (modify) | `/observe` + `sequence` leg |
-| `rl/checks.py` | `CHECKS` registry, `build_context`, `evaluate` |
-| `rl/rewards.py` + `rl/reward_config.json` | components/penalties registries, `compute_reward`, `load_reward_config` |
-| `rl/judge.py` | `AsyncBridge`, `judge_success` (check → verifier, deferred on usage limit) |
-| `rl/tasks.py` + `rl/rl_tasks.json` | suite builder / checker / lister, `TASK_SOURCES` |
-| `rl/backends.py` | `BACKENDS`, `resolve_preconditions`, `RolloutWorker`, `WorkerPool` |
-| `rl/episode.py` | `EpisodeConfig`, `RunContext`, `Episode` |
-| `rl/policies.py` | `POLICIES`: openai / mock / scripted |
-| `rl/runner.py` | `run_episode`, `run_batch`, `load_tasks`, `make_run_context` |
-| `rl/rollout.py` | rollout CLI → `rl_runs/<run_id>/iter_NNN/rollouts.jsonl` |
-| `rl/eval.py` | eval CLI → `eval_runs/<run_id>/report.{md,json}` |
-| `rl/service.py` | HTTP env service |
-| `rl/smoke.py` | Docker-only end-to-end smoke (`make test-rl`) |
-| `rl/tests/__main__.py`, `rl/tests/test_*.py` | dependency-free unit runner + tests |
-| `repo_pipeline/stage6_generate.py`, `repo_pipeline/corpus_audit.py` (modify) | `excluded_reason` written to both files / read from either |
+| `cua/sft/legacy_train_qwen.py` (modify) | Extract `build_step_user_text`, `history_entries_for_step`, `build_step_messages`; read `excluded_reason` from either metadata file |
+| `cua/rl/__init__.py` | empty |
+| `cua/rl/actions.py` | decoder registry + `decode_step` / `encode_step` |
+| `cua/rl/observation.py` | `build_observation`, `to_openai_messages` |
+| `cua/rl/executor.py` | decoded actions → driver `sequence` payload, key aliases, viewport validation, control detection |
+| `cua/pipeline/instrumentation/browser_driver.js` (modify) | `/observe`, `sequence` act kind, pending-screenshot handoff, `type_mode` |
+| `cua/pipeline/driver_session.py` (modify) | per-port `start_driver`, `DriverClient(port)`, `observe`, `act_sequence`, `session(type_mode)` |
+| `cua/pipeline/driver_smoke.py` (modify) | `/observe` + `sequence` leg |
+| `cua/rl/checks.py` | `CHECKS` registry, `build_context`, `evaluate` |
+| `cua/rl/rewards.py` + `cua/rl/reward_config.json` | components/penalties registries, `compute_reward`, `load_reward_config` |
+| `cua/rl/judge.py` | `AsyncBridge`, `judge_success` (check → verifier, deferred on usage limit) |
+| `cua/rl/tasks.py` + `cua/rl/rl_tasks.json` | suite builder / checker / lister, `TASK_SOURCES` |
+| `cua/rl/backends.py` | `BACKENDS`, `resolve_preconditions`, `RolloutWorker`, `WorkerPool` |
+| `cua/rl/episode.py` | `EpisodeConfig`, `RunContext`, `Episode` |
+| `cua/rl/policies.py` | `POLICIES`: openai / mock / scripted |
+| `cua/rl/runner.py` | `run_episode`, `run_batch`, `load_tasks`, `make_run_context` |
+| `cua/rl/rollout.py` | rollout CLI → `rl_runs/<run_id>/iter_NNN/rollouts.jsonl` |
+| `cua/rl/eval.py` | eval CLI → `eval_runs/<run_id>/report.{md,json}` |
+| `cua/rl/service.py` | HTTP env service |
+| `cua/rl/smoke.py` | Docker-only end-to-end smoke (`make test-rl`) |
+| `tests/__main__.py`, `tests/test_*.py` | dependency-free unit runner + tests |
+| `cua/pipeline/stage6_generate.py`, `cua/pipeline/corpus_audit.py` (modify) | `excluded_reason` written to both files / read from either |
 | `Makefile`, `.gitignore`, `CLAUDE.md` (modify) | targets, ignores, docs |
 
 ---
 
-### Task 1: Shared student-input builders in `train_qwen.py` + unit-test runner
+### Task 1: Shared student-input builders in `cua/sft/legacy_train_qwen.py` + unit-test runner
 
 **Files:**
-- Modify: `train_qwen.py` (`convert_trajectory_to_examples`, add three functions after `HISTORY_WINDOW`)
-- Create: `rl/__init__.py`, `rl/tests/__init__.py`, `rl/tests/__main__.py`, `rl/tests/test_observation.py`
+- Modify: `cua/sft/legacy_train_qwen.py` (`convert_trajectory_to_examples`, add three functions after `HISTORY_WINDOW`)
+- Create: `cua/rl/__init__.py`, `tests/__init__.py`, `tests/__main__.py`, `tests/test_observation.py`
 
 **Interfaces:**
-- Produces: `build_step_user_text(instruction: str, action_history: list[str]) -> str`; `history_entries_for_step(step: dict) -> list[str]`; `build_step_messages(system: str, user_text: str, image_ref: str) -> list[dict]` (all in `train_qwen`).
+- Produces: `build_step_user_text(instruction: str, action_history: list[str]) -> str`; `history_entries_for_step(step: dict) -> list[str]`; `build_step_messages(system: str, user_text: str, image_ref: str) -> list[dict]` (all in `cua.sft.legacy_train_qwen`).
 
 - [ ] **Step 1: Create the test runner**
 
-`rl/__init__.py` and `rl/tests/__init__.py`: empty files.
+`cua/rl/__init__.py` and `tests/__init__.py`: empty files.
 
-`rl/tests/__main__.py`:
+`tests/__main__.py`:
 ```python
-"""Dependency-free runner: `python -m rl.tests [module_substring ...]` runs every test_* function."""
+"""Dependency-free runner: `python -m tests [module_substring ...]` runs every test_* function."""
 import importlib
 import pkgutil
 import sys
 import traceback
 
-import rl.tests
+import tests
 
 
 def main(filters):
     total = failed = 0
-    for info in pkgutil.iter_modules(rl.tests.__path__):
+    for info in pkgutil.iter_modules(tests.__path__):
         if not info.name.startswith("test_") or (filters and not any(f in info.name for f in filters)):
             continue
-        module = importlib.import_module(f"rl.tests.{info.name}")
+        module = importlib.import_module(f"tests.{info.name}")
         for name in sorted(dir(module)):
             if not name.startswith("test_") or not callable(getattr(module, name)):
                 continue
@@ -105,7 +105,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: Write the failing tests**
 
-`rl/tests/test_observation.py`:
+`tests/test_observation.py`:
 ```python
 import json
 import tempfile
@@ -113,7 +113,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from train_qwen import (HISTORY_WINDOW, build_step_messages, build_step_user_text,
+from cua.sft.legacy_train_qwen import (HISTORY_WINDOW, build_step_messages, build_step_user_text,
                         convert_trajectory_to_examples, history_entries_for_step)
 
 
@@ -168,12 +168,12 @@ def test_convert_uses_shared_builders():
 
 - [ ] **Step 3: Run to verify failure**
 
-Run: `$PY -m rl.tests test_observation`
+Run: `$PY -m tests test_observation`
 Expected: FAIL with `ImportError: cannot import name 'build_step_messages'`.
 
 - [ ] **Step 4: Implement the builders and use them in convert**
 
-In `train_qwen.py`, insert after the `HISTORY_WINDOW = 10` block (before the waste-filter comment):
+In `cua/sft/legacy_train_qwen.py`, insert after the `HISTORY_WINDOW = 10` block (before the waste-filter comment):
 ```python
 def build_step_user_text(instruction, action_history):
     """The student's user turn: task + windowed text history; shared by convert and the RL env."""
@@ -225,14 +225,14 @@ Delete the now-unused inline `Previous actions` block and the trailing `for a in
 
 - [ ] **Step 5: Run tests + byte-identical convert check**
 
-Run: `$PY -m rl.tests test_observation` → Expected: `6/6 passed`.
+Run: `$PY -m tests test_observation` → Expected: `6/6 passed`.
 
 Run (parent corpus, both interpreters from the worktree):
 ```bash
 $PY - <<'EOF'
 import json, sys
 from pathlib import Path
-from train_qwen import convert_trajectory_to_examples
+from cua.sft.legacy_train_qwen import convert_trajectory_to_examples
 out = []
 for d in sorted(Path('/Users/rmajor/unik/maga/dataset_gather/trajectories').glob('**/task_*'))[:200]:
     if (d / 'trajectory.json').exists():
@@ -243,24 +243,24 @@ EOF
 ```
 Before making the edit, run the same snippet with the output named `convert_before.json` (stash-free: run it first, then edit). Expected: `cmp convert_before.json convert_after.json` prints nothing.
 
-- [ ] **Step 6: Report** — `git diff --stat train_qwen.py`; list new files. Do not `git add`.
+- [ ] **Step 6: Report** — `git diff --stat cua/sft/legacy_train_qwen.py`; list new files. Do not `git add`.
 
 ---
 
-### Task 2: Action decoder `rl/actions.py`
+### Task 2: Action decoder `cua/rl/actions.py`
 
 **Files:**
-- Create: `rl/actions.py`, `rl/tests/test_actions.py`
+- Create: `cua/rl/actions.py`, `tests/test_actions.py`
 
 **Interfaces:**
-- Consumes: `train_qwen.format_action_for_training`.
+- Consumes: `cua.sft.legacy_train_qwen.format_action_for_training`.
 - Produces: `StepDecode(thought, actions, errors, canonical, raw)` with `.ok`; `decode_step(text: str) -> StepDecode`; `encode_step(thought: str, actions: list[dict]) -> str`; `ACTION_DECODERS: dict[str, Callable[[str], dict | None]]`.
 
 - [ ] **Step 1: Write the failing tests**
 
-`rl/tests/test_actions.py`:
+`tests/test_actions.py`:
 ```python
-from rl.actions import ACTION_DECODERS, decode_step, encode_step
+from cua.rl.actions import ACTION_DECODERS, decode_step, encode_step
 
 FIXTURES = [
     {"type": "click", "x": 10, "y": 20, "button": "left"},
@@ -357,19 +357,19 @@ def test_trailing_prose_after_actions_is_stray():
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `$PY -m rl.tests test_actions` → Expected: `ModuleNotFoundError: No module named 'rl.actions'`.
+Run: `$PY -m tests test_actions` → Expected: `ModuleNotFoundError: No module named 'cua.rl.actions'`.
 
 - [ ] **Step 3: Implement**
 
-`rl/actions.py`:
+`cua/rl/actions.py`:
 ```python
-"""Decode the student's `action:` lines into trajectory action dicts — the inverse of train_qwen.format_action_for_training."""
+"""Decode the student's `action:` lines into trajectory action dicts — the inverse of cua.sft.legacy_train_qwen.format_action_for_training."""
 import ast
 import json
 import re
 from dataclasses import dataclass, field
 
-from train_qwen import format_action_for_training
+from cua.sft.legacy_train_qwen import format_action_for_training
 
 _REF = r"<ref>\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)</ref>"
 _THINK_RE = re.compile(r"^\s*<think>(.*?)</think>[ \t]*\n?", re.DOTALL)
@@ -544,18 +544,18 @@ def encode_step(thought, actions):
 ```
 Note the unclosed-think test: `re.sub(r"<think>.*?(</think>|$)", ...)` with DOTALL and a lazy `.*?` reaching `$` at end-of-string would eat the action line; make the fallback strip only the first line of the `<think>` text: replace that `re.sub` call with `rest = "\n".join(l for l in raw.splitlines() if not l.lstrip().startswith("<think>"))`.
 
-- [ ] **Step 4: Run tests** — `$PY -m rl.tests test_actions` → Expected: `13/13 passed`.
+- [ ] **Step 4: Run tests** — `$PY -m tests test_actions` → Expected: `13/13 passed`.
 
-- [ ] **Step 5: Report** — list `rl/actions.py`, `rl/tests/test_actions.py`.
+- [ ] **Step 5: Report** — list `cua/rl/actions.py`, `tests/test_actions.py`.
 
 ---
 
 ### Task 3: Driver `/observe` + `sequence` kind + per-port drivers + smoke leg
 
 **Files:**
-- Modify: `repo_pipeline/instrumentation/browser_driver.js` (`recordStep`, `handleAct`, `handleSession`, `routes`, new helpers before `handleAct`)
-- Modify: `repo_pipeline/driver_session.py` (`start_driver`, `DriverClient`)
-- Modify: `repo_pipeline/driver_smoke.py` (new leg before the `done` action)
+- Modify: `cua/pipeline/instrumentation/browser_driver.js` (`recordStep`, `handleAct`, `handleSession`, `routes`, new helpers before `handleAct`)
+- Modify: `cua/pipeline/driver_session.py` (`start_driver`, `DriverClient`)
+- Modify: `cua/pipeline/driver_smoke.py` (new leg before the `done` action)
 
 **Interfaces:**
 - Produces (driver): `POST /observe -> {ok, b64 (PNG), mime:"image/png", url, title, step_next}`; `POST /act {kind:"sequence", thought, actions:[contract dicts]} -> {ok, step, url, executed, error_at, error, terminal}`; `POST /session {..., type_mode?: "replace"|"append"}`.
@@ -563,7 +563,7 @@ Note the unclosed-think test: `re.sub(r"<think>.*?(</think>|$)", ...)` with DOTA
 
 - [ ] **Step 1: Add the smoke leg (the failing "test")**
 
-In `repo_pipeline/driver_smoke.py`, insert before the `# The loop guard must refuse ...` comment:
+In `cua/pipeline/driver_smoke.py`, insert before the `# The loop guard must refuse ...` comment:
 ```python
         # RL path: /observe hands its PNG to the next recorded step; `sequence` records ONE step with
         # the student's contract actions and executes them in order (ref-free type into the focused field).
@@ -592,7 +592,7 @@ Add `import base64` to the module imports.
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `$PY -m repo_pipeline.driver_smoke` → Expected: FAIL with `AttributeError: 'DriverClient' object has no attribute 'observe'`.
+Run: `$PY -m cua.pipeline.driver_smoke` → Expected: FAIL with `AttributeError: 'DriverClient' object has no attribute 'observe'`.
 
 - [ ] **Step 3: Implement the driver changes**
 
@@ -740,7 +740,7 @@ async function handleObserve() {
 
 (e) In `routes`, add `'POST /observe': handleObserve,` after `'POST /act': handleAct,`. Update the header comment block with two lines: `*   POST /observe                               -> {b64 (PNG), url, title, step_next}; the PNG becomes the next recorded step's screenshot` and under `/act kinds`: `*   sequence  {actions:[contract dicts]}         -> records ONE step with those dicts verbatim, executes them in order (RL policy path)`.
 
-In `repo_pipeline/driver_session.py`:
+In `cua/pipeline/driver_session.py`:
 ```python
 def start_driver(sandbox, port: int = DRIVER_PORT):
     """Daemonize the driver on `port` and wait for it (one process per port; RL runs several per sandbox)."""
@@ -761,26 +761,26 @@ def start_driver(sandbox, port: int = DRIVER_PORT):
 
 - [ ] **Step 4: Run the driver smoke**
 
-Run: `$PY -m repo_pipeline.driver_smoke` → Expected: log ends with `Driver smoke test PASSED`, exit 0.
+Run: `$PY -m cua.pipeline.driver_smoke` → Expected: log ends with `Driver smoke test PASSED`, exit 0.
 
-- [ ] **Step 5: Report** — `git diff --stat repo_pipeline/instrumentation/browser_driver.js repo_pipeline/driver_session.py repo_pipeline/driver_smoke.py`.
+- [ ] **Step 5: Report** — `git diff --stat cua/pipeline/instrumentation/browser_driver.js cua/pipeline/driver_session.py cua/pipeline/driver_smoke.py`.
 
 ---
 
-### Task 4: Executor `rl/executor.py`
+### Task 4: Executor `cua/rl/executor.py`
 
 **Files:**
-- Create: `rl/executor.py`, `rl/tests/test_executor.py`
+- Create: `cua/rl/executor.py`, `tests/test_executor.py`
 
 **Interfaces:**
-- Consumes: `repo_pipeline.corpus_audit.VIEWPORT`.
+- Consumes: `cua.pipeline.corpus_audit.VIEWPORT`.
 - Produces: `normalize_keys(keys) -> list[str]`; `validate_actions(actions) -> list[str]`; `control_index(actions) -> int | None`; `to_sequence_payload(thought, actions) -> {"kind":"sequence","thought","actions"}`; `MISSING_THOUGHT_PLACEHOLDER`; `CONTROL_TYPES`.
 
 - [ ] **Step 1: Write the failing tests**
 
-`rl/tests/test_executor.py`:
+`tests/test_executor.py`:
 ```python
-from rl.executor import (MISSING_THOUGHT_PLACEHOLDER, control_index, normalize_keys, to_sequence_payload,
+from cua.rl.executor import (MISSING_THOUGHT_PLACEHOLDER, control_index, normalize_keys, to_sequence_payload,
                          validate_actions)
 
 
@@ -810,14 +810,14 @@ def test_payload_keeps_thought():
     assert to_sequence_payload("  go  ", [{"type": "wait"}])["thought"] == "go"
 ```
 
-- [ ] **Step 2: Run to verify failure** — `$PY -m rl.tests test_executor` → `ModuleNotFoundError: No module named 'rl.executor'`.
+- [ ] **Step 2: Run to verify failure** — `$PY -m tests test_executor` → `ModuleNotFoundError: No module named 'cua.rl.executor'`.
 
 - [ ] **Step 3: Implement**
 
-`rl/executor.py`:
+`cua/rl/executor.py`:
 ```python
 """Turn a decoded student step into the driver's `sequence` payload."""
-from repo_pipeline.corpus_audit import VIEWPORT
+from cua.pipeline.corpus_audit import VIEWPORT
 
 MISSING_THOUGHT_PLACEHOLDER = "(no reasoning emitted)"
 CONTROL_TYPES = ("done", "handoff", "confirm")
@@ -868,20 +868,20 @@ def to_sequence_payload(thought, actions):
     return {"kind": "sequence", "thought": (thought or "").strip() or MISSING_THOUGHT_PLACEHOLDER, "actions": out}
 ```
 
-- [ ] **Step 4: Run tests** — `$PY -m rl.tests test_executor` → `5/5 passed`.
+- [ ] **Step 4: Run tests** — `$PY -m tests test_executor` → `5/5 passed`.
 - [ ] **Step 5: Report.**
 
 ---
 
-### Task 5: Observation `rl/observation.py`
+### Task 5: Observation `cua/rl/observation.py`
 
 **Files:**
-- Create: `rl/observation.py`; extend `rl/tests/test_observation.py`
+- Create: `cua/rl/observation.py`; extend `tests/test_observation.py`
 
 **Interfaces:**
 - Produces: `build_observation(instruction, action_history, image_png_b64, step_index) -> {"system","text","image_b64","step_index"}`; `to_openai_messages(observation) -> list[dict]`.
 
-- [ ] **Step 1: Add failing tests** to `rl/tests/test_observation.py` (add `from rl.observation import build_observation, to_openai_messages` and `from train_qwen import SYSTEM_PROMPT` at the top):
+- [ ] **Step 1: Add failing tests** to `tests/test_observation.py` (add `from cua.rl.observation import build_observation, to_openai_messages` and `from cua.sft.legacy_train_qwen import SYSTEM_PROMPT` at the top):
 ```python
 def test_build_observation_matches_sft_user_turn():
     obs = build_observation("Say hi", ["click(1, 2)"], "QUJD", 1)
@@ -894,11 +894,11 @@ def test_openai_messages_carry_data_uri_then_text():
     assert msgs[1]["content"][0] == {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJD"}}
     assert msgs[1]["content"][1] == {"type": "text", "text": "Task: Say hi\nWhat action should you take?"}
 ```
-- [ ] **Step 2: Run** — `$PY -m rl.tests test_observation` → ImportError.
-- [ ] **Step 3: Implement** `rl/observation.py`:
+- [ ] **Step 2: Run** — `$PY -m tests test_observation` → ImportError.
+- [ ] **Step 3: Implement** `cua/rl/observation.py`:
 ```python
 """The student's observation: the exact SFT user turn plus the PNG, and its OpenAI-message rendering."""
-from train_qwen import SYSTEM_PROMPT, build_step_user_text
+from cua.sft.legacy_train_qwen import SYSTEM_PROMPT, build_step_user_text
 
 
 def build_observation(instruction, action_history, image_png_b64, step_index):
@@ -919,17 +919,17 @@ def to_openai_messages(observation):
 
 ---
 
-### Task 6: Programmatic checks `rl/checks.py`
+### Task 6: Programmatic checks `cua/rl/checks.py`
 
 **Files:**
-- Create: `rl/checks.py`, `rl/tests/test_checks.py`
+- Create: `cua/rl/checks.py`, `tests/test_checks.py`
 
 **Interfaces:**
 - Produces: `CHECKS: dict[str, Callable[[Any, dict], bool]]`; `build_context(snapshot: dict, storage_state_loader: Callable[[], dict], record: dict) -> dict`; `evaluate(spec: dict, ctx: dict) -> {"passed": bool, "results": dict}`.
 
-- [ ] **Step 1: Failing tests** `rl/tests/test_checks.py`:
+- [ ] **Step 1: Failing tests** `tests/test_checks.py`:
 ```python
-from rl.checks import CHECKS, build_context, evaluate
+from cua.rl.checks import CHECKS, build_context, evaluate
 
 SNAPSHOT = {"url": "https://example.com/cart?id=7", "title": "Your Cart — Example",
             "snapshot": '## Page text\nOrder confirmed. Thanks!\n## Interactive elements (in viewport)\n[1] button "Checkout"\n[2] textbox "Coupon" value="SAVE10"\n[3] checkbox "Gift wrap" (checked)\n'}
@@ -967,7 +967,7 @@ def test_composition_and_unknown_check():
     assert set(CHECKS) >= {"url_matches", "text_visible", "element_present", "all_of", "any_of"}
 ```
 - [ ] **Step 2: Run** → ModuleNotFoundError.
-- [ ] **Step 3: Implement** `rl/checks.py`:
+- [ ] **Step 3: Implement** `cua/rl/checks.py`:
 ```python
 """Programmatic success checks evaluated against the live page at episode end (registry keyed by check name)."""
 import re
@@ -1023,18 +1023,18 @@ def evaluate(spec, ctx):
 
 ---
 
-### Task 7: Reward composition `rl/rewards.py` + `rl/reward_config.json`
+### Task 7: Reward composition `cua/rl/rewards.py` + `cua/rl/reward_config.json`
 
 **Files:**
-- Create: `rl/rewards.py`, `rl/reward_config.json`, `rl/tests/test_rewards.py`
+- Create: `cua/rl/rewards.py`, `cua/rl/reward_config.json`, `tests/test_rewards.py`
 
 **Interfaces:**
 - Produces: `REWARD_COMPONENTS`, `PENALTIES` (name → `fn(record, task) -> float`); `load_reward_config(path=REWARD_CONFIG_PATH) -> dict`; `compute_reward(record, task, config) -> (float, {"components", "penalties"})`; `REWARD_MIN=-1.0`, `REWARD_MAX=1.5`.
 - Record shape consumed: `{"success": bool|None, "turns": [{"clean": bool}], "ui_steps": int, "terminal_reason": str, "navigate_blocked": int}`.
 
-- [ ] **Step 1: Failing tests** `rl/tests/test_rewards.py`:
+- [ ] **Step 1: Failing tests** `tests/test_rewards.py`:
 ```python
-from rl.rewards import PENALTIES, REWARD_COMPONENTS, REWARD_MAX, compute_reward, load_reward_config
+from cua.rl.rewards import PENALTIES, REWARD_COMPONENTS, REWARD_MAX, compute_reward, load_reward_config
 
 CONFIG = load_reward_config()
 TASK = {"lane": "autonomous", "expected_actions": 10}
@@ -1076,7 +1076,7 @@ def test_unknown_success_counts_as_zero():
 - [ ] **Step 2: Run** → ModuleNotFoundError.
 - [ ] **Step 3: Implement**
 
-`rl/reward_config.json`:
+`cua/rl/reward_config.json`:
 ```json
 {
   "verifier_mode": {"train": "fallback", "eval": "always"},
@@ -1092,7 +1092,7 @@ def test_unknown_success_counts_as_zero():
   }
 }
 ```
-`rl/rewards.py`:
+`cua/rl/rewards.py`:
 ```python
 """Episode reward = weighted components − penalties; weights per lane live in reward_config.json."""
 import json
@@ -1155,23 +1155,23 @@ def compute_reward(record, task, config):
 
 ---
 
-### Task 8: Judge `rl/judge.py` (check → verifier → deferred)
+### Task 8: Judge `cua/rl/judge.py` (check → verifier → deferred)
 
 **Files:**
-- Create: `rl/judge.py`, `rl/tests/test_judge.py`
+- Create: `cua/rl/judge.py`, `tests/test_judge.py`
 
 **Interfaces:**
-- Consumes: `repo_pipeline.agent_capture.verify_trajectory(traj_dir, autonomy=, full_name=)`, `repo_pipeline.sdk_runner.rate_limit_tracker`, `UsageLimitReached`.
+- Consumes: `cua.pipeline.agent_capture.verify_trajectory(traj_dir, autonomy=, full_name=)`, `cua.pipeline.sdk_runner.rate_limit_tracker`, `UsageLimitReached`.
 - Produces: `AsyncBridge()` with `.run(coro, timeout=None)`, `.close()`; `judge_success(traj_dir, task, check_result, mode, bridge, verify=verify_trajectory) -> (success: bool|None, source: str, status: "final"|"deferred")`; `cached_verdict(traj_dir) -> dict|None`.
 
-- [ ] **Step 1: Failing tests** `rl/tests/test_judge.py` (the verifier is injected so no Claude call happens):
+- [ ] **Step 1: Failing tests** `tests/test_judge.py` (the verifier is injected so no Claude call happens):
 ```python
 import asyncio
 import json
 import tempfile
 from pathlib import Path
 
-from rl.judge import AsyncBridge, judge_success
+from cua.rl.judge import AsyncBridge, judge_success
 
 
 def _traj_dir(tmp, success=False, verifier=None):
@@ -1220,7 +1220,7 @@ def test_cached_verdict_skips_verifier():
         assert judge_success(d, {"task_id": "t"}, None, "fallback", None, verify=boom) == (False, "verifier", "final")
 ```
 - [ ] **Step 2: Run** → ModuleNotFoundError.
-- [ ] **Step 3: Implement** `rl/judge.py`:
+- [ ] **Step 3: Implement** `cua/rl/judge.py`:
 ```python
 """Terminal success for a rollout dir: programmatic check first, Claude verifier as fallback/audit — all SDK calls on one background loop."""
 import asyncio
@@ -1229,8 +1229,8 @@ import os
 import threading
 from pathlib import Path
 
-from repo_pipeline.agent_capture import verify_trajectory
-from repo_pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
+from cua.pipeline.agent_capture import verify_trajectory
+from cua.pipeline.sdk_runner import UsageLimitReached, rate_limit_tracker
 
 VERIFIER_CONCURRENCY = int(os.environ.get("RL_VERIFIER_CONCURRENCY", "2"))
 VERIFY_TIMEOUT_S = int(os.environ.get("RL_VERIFY_TIMEOUT_S", "2700"))
@@ -1284,22 +1284,22 @@ def judge_success(traj_dir, task, check_result, mode, bridge, verify=verify_traj
 
 ---
 
-### Task 9: Task suite `rl/tasks.py` + `rl/rl_tasks.json`
+### Task 9: Task suite `cua/rl/tasks.py` + `cua/rl/rl_tasks.json`
 
 **Files:**
-- Create: `rl/tasks.py`, `rl/tests/test_tasks.py`, `rl/rl_tasks.json` (generated)
+- Create: `cua/rl/tasks.py`, `tests/test_tasks.py`, `cua/rl/rl_tasks.json` (generated)
 
 **Interfaces:**
-- Produces: `TASK_SOURCES: list[dict]` (`{"path", "backend", "env", "lane", "auth_mode"}`); `build_suite(sources, trajectories_dir, seen_config, unseen_site_pct=15) -> {"suite_sha256", "built_from", "tasks": [...]}`; `check_suite(suite, trajectories_dir, seen_config) -> list[str]` (problems); `load_suite(path) -> dict`; `select_tasks(suite, split=None, task_ids=None) -> list[dict]`; `is_idempotent(task_src) -> bool`; `split_for(site, task_index, idempotent, seen_sites, unseen_site_pct) -> str`. CLI `python -m rl.tasks build|check|list`.
+- Produces: `TASK_SOURCES: list[dict]` (`{"path", "backend", "env", "lane", "auth_mode"}`); `build_suite(sources, trajectories_dir, seen_config, unseen_site_pct=15) -> {"suite_sha256", "built_from", "tasks": [...]}`; `check_suite(suite, trajectories_dir, seen_config) -> list[str]` (problems); `load_suite(path) -> dict`; `select_tasks(suite, split=None, task_ids=None) -> list[dict]`; `is_idempotent(task_src) -> bool`; `split_for(site, task_index, idempotent, seen_sites, unseen_site_pct) -> str`. CLI `python -m cua.rl.tasks build|check|list`.
 - Task record fields (normative): `task_id, site, start_url, instruction, difficulty, expected_actions, action_kinds, backend, env, lane, auth_mode, idempotent, split, preconditions, allowed_hosts, success_check, throttle, source`.
 
-- [ ] **Step 1: Failing tests** `rl/tests/test_tasks.py`:
+- [ ] **Step 1: Failing tests** `tests/test_tasks.py`:
 ```python
 import json
 import tempfile
 from pathlib import Path
 
-from rl.tasks import build_suite, check_suite, is_idempotent, select_tasks, split_for
+from cua.rl.tasks import build_suite, check_suite, is_idempotent, select_tasks, split_for
 
 SRC = {"path": None, "backend": "public_site", "env": "live", "lane": "autonomous", "auth_mode": "none"}
 
@@ -1349,7 +1349,7 @@ def test_build_excludes_trained_tasks_and_checks_disjointness():
         assert select_tasks(suite, task_ids=["site0__t1"])[0]["allowed_hosts"] == ["site0.example"]
 ```
 - [ ] **Step 2: Run** → ModuleNotFoundError.
-- [ ] **Step 3: Implement** `rl/tasks.py`:
+- [ ] **Step 3: Implement** `cua/rl/tasks.py`:
 ```python
 """Build / check / list the RL task suite from the site registries, keeping it disjoint from anything ever trained on."""
 import argparse
@@ -1360,9 +1360,9 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
-from repo_pipeline import app_secrets
-from repo_pipeline.public_capture import _norm_instruction
-from repo_pipeline.stage6_generate import _safe_task_id
+from cua.pipeline import app_secrets
+from cua.pipeline.public_capture import _norm_instruction
+from cua.pipeline.stage6_generate import _safe_task_id
 
 REPO = Path(__file__).resolve().parent.parent
 SUITE_PATH = Path(__file__).parent / "rl_tasks.json"
@@ -1525,23 +1525,23 @@ if __name__ == "__main__":
 Note: `_write` in the test passes `seen_config` as a `Path` to a file with the `{"sites":[{"name","tasks":[{"id","instruction"}]}]}` shape, which `_trained_keys` reads. Note also that `_MUTATING` classifies "sign up"/"register" as mutating: those tasks land in `eval_mutating`, never `train` — intended for the live lane (the burner-account registration flows are capture-only).
 
 - [ ] **Step 4: Run** → `3/3 passed`.
-- [ ] **Step 5: Build the real suite** — `$PY -m rl.tasks build --trajectories /Users/rmajor/unik/maga/dataset_gather/trajectories && $PY -m rl.tasks check --trajectories /Users/rmajor/unik/maga/dataset_gather/trajectories` → Expected: `problems 0`, a `train` count > 0 (login-free idempotent tasks), pre_session count 0 until burners exist. Paste the split counts into the report.
+- [ ] **Step 5: Build the real suite** — `$PY -m cua.rl.tasks build --trajectories /Users/rmajor/unik/maga/dataset_gather/trajectories && $PY -m cua.rl.tasks check --trajectories /Users/rmajor/unik/maga/dataset_gather/trajectories` → Expected: `problems 0`, a `train` count > 0 (login-free idempotent tasks), pre_session count 0 until burners exist. Paste the split counts into the report.
 - [ ] **Step 6: Report.**
 
 ---
 
-### Task 10: Backends + worker pool `rl/backends.py`
+### Task 10: Backends + worker pool `cua/rl/backends.py`
 
 **Files:**
-- Create: `rl/backends.py`, `rl/tests/test_backends.py`
+- Create: `cua/rl/backends.py`, `tests/test_backends.py`
 
 **Interfaces:**
 - Consumes: `DockerSandbox`, `safe_parallel_sandboxes`, `driver_session.install_driver/start_driver/DriverClient/DRIVER_PORT`, `app_secrets`.
 - Produces: `resolve_preconditions(task) -> dict | None`; `EnvBackend` (`open(sandbox)`, `start_url(task)`, `pre_episode(sandbox, task)`, `session_kwargs(task)`, `post_episode(sandbox, task, container_task_dir)`); `PublicSiteBackend`, `StaticPageBackend(html)`; `BACKENDS`; `RolloutWorker(worker_id, backend, drivers_per_sandbox)` with `.start() .stop() .recycle() .needs_recycle() .client(slot) .sandbox .live .lock`; `WorkerPool(backend, requested_workers, drivers_per_sandbox)` with `.start() .acquire(timeout) -> (worker, slot) .release(worker, slot) .stop() .slot_count`.
 
-- [ ] **Step 1: Failing tests** `rl/tests/test_backends.py` (pure logic only; Docker paths are covered by the smoke):
+- [ ] **Step 1: Failing tests** `tests/test_backends.py` (pure logic only; Docker paths are covered by the smoke):
 ```python
-from rl.backends import BACKENDS, StaticPageBackend, resolve_preconditions
+from cua.rl.backends import BACKENDS, StaticPageBackend, resolve_preconditions
 
 
 def test_no_session_needed_is_empty_kwargs():
@@ -1560,7 +1560,7 @@ def test_static_backend_serves_local_url_and_needs_no_auth():
     assert set(BACKENDS) == {"public_site", "static_page"}
 ```
 - [ ] **Step 2: Run** → ModuleNotFoundError.
-- [ ] **Step 3: Implement** `rl/backends.py`:
+- [ ] **Step 3: Implement** `cua/rl/backends.py`:
 ```python
 """Environment backends (registry) and the sandbox worker pool that hosts rollout browsers."""
 import logging
@@ -1568,9 +1568,9 @@ import os
 import queue
 import threading
 
-from repo_pipeline import app_secrets, driver_session
-from repo_pipeline.driver_session import DRIVER_PORT, DriverClient
-from repo_pipeline.sandbox import DockerSandbox, safe_parallel_sandboxes
+from cua.pipeline import app_secrets, driver_session
+from cua.pipeline.driver_session import DRIVER_PORT, DriverClient
+from cua.pipeline.sandbox import DockerSandbox, safe_parallel_sandboxes
 
 logger = logging.getLogger(__name__)
 RL_CONTAINER_TIMEOUT = int(os.environ.get("RL_CONTAINER_TIMEOUT", str(4 * 3600)))
@@ -1660,7 +1660,7 @@ class RolloutWorker:
 
     def start(self):
         self.sandbox = DockerSandbox(container_timeout=RL_CONTAINER_TIMEOUT)
-        self.sandbox.start(f"rl/worker-{self.worker_id}")
+        self.sandbox.start(f"cua/rl/worker-{self.worker_id}")
         self.backend.open(self.sandbox)
         driver_session.install_driver(self.sandbox)
         self.clients = []
@@ -1729,26 +1729,26 @@ class WorkerPool:
 
 ---
 
-### Task 11: Episode state machine `rl/episode.py`
+### Task 11: Episode state machine `cua/rl/episode.py`
 
 **Files:**
-- Create: `rl/episode.py`, `rl/tests/test_episode.py`
+- Create: `cua/rl/episode.py`, `tests/test_episode.py`
 
 **Interfaces:**
-- Consumes: Tasks 2, 4, 5, 6, 7, 8, 10; `repo_pipeline.instrumentation.RESULTS_DIR`; `repo_pipeline.stage6_generate._safe_task_id`; `train_qwen.history_entries_for_step`; `DriverError`.
+- Consumes: Tasks 2, 4, 5, 6, 7, 8, 10; `cua.pipeline.instrumentation.RESULTS_DIR`; `cua.pipeline.stage6_generate._safe_task_id`; `cua.sft.legacy_train_qwen.history_entries_for_step`; `DriverError`.
 - Produces: `EpisodeConfig(max_steps=30, max_consecutive_parse_failures=3, loop_guard_terminates=True, verifier_mode="fallback", type_mode="replace")`; `RunContext(run_id, out_root: Path, iteration=0, policy_tag="", reward_config=dict, bridge=None)`; `Episode(task, worker, slot, sample_k, run_ctx, cfg)` with `.reset() -> observation`, `.step(text) -> (observation|None, reward|None, done, info)`, `.close(reason="external") -> record`, `.record`, `.traj_dir`, `.episode_id`; `OUTCOME_BY_REASON`.
 - Record shape (normative, consumed by rollout/eval/service): `{episode_id, task_id, site, split, k, iter, traj_dir, terminal_reason, steps, ui_steps, turns:[{step_index, raw, errors, clean, executed}], success, success_source, reward_status, reward, breakdown, navigate_blocked, duration_s, check, info}`.
 
-- [ ] **Step 1: Failing tests** `rl/tests/test_episode.py` — drives `Episode` with a fake worker/client (no Docker):
+- [ ] **Step 1: Failing tests** `tests/test_episode.py` — drives `Episode` with a fake worker/client (no Docker):
 ```python
 import json
 import tempfile
 from pathlib import Path
 
-from rl.backends import EnvBackend
-from rl.episode import Episode, EpisodeConfig, RunContext
-from rl.rewards import load_reward_config
-from repo_pipeline.driver_session import DriverError
+from cua.rl.backends import EnvBackend
+from cua.rl.episode import Episode, EpisodeConfig, RunContext
+from cua.rl.rewards import load_reward_config
+from cua.pipeline.driver_session import DriverError
 
 
 class FakeSandbox:
@@ -1906,7 +1906,7 @@ def test_close_external_marks_abandoned():
         assert rec["terminal_reason"] == "abandoned" and ep.close() is rec
 ```
 - [ ] **Step 2: Run** → ModuleNotFoundError.
-- [ ] **Step 3: Implement** `rl/episode.py`:
+- [ ] **Step 3: Implement** `cua/rl/episode.py`:
 ```python
 """One rollout episode over a driver slot: observe → decode → execute → record → reward."""
 import json
@@ -1916,16 +1916,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
-from repo_pipeline.driver_session import DriverError
-from repo_pipeline.instrumentation import RESULTS_DIR
-from repo_pipeline.stage6_generate import _safe_task_id
-from rl import checks
-from rl.actions import decode_step
-from rl.executor import control_index, to_sequence_payload, validate_actions
-from rl.judge import judge_success
-from rl.observation import build_observation
-from rl.rewards import compute_reward
-from train_qwen import history_entries_for_step
+from cua.pipeline.driver_session import DriverError
+from cua.pipeline.instrumentation import RESULTS_DIR
+from cua.pipeline.stage6_generate import _safe_task_id
+from cua.rl import checks
+from cua.rl.actions import decode_step
+from cua.rl.executor import control_index, to_sequence_payload, validate_actions
+from cua.rl.judge import judge_success
+from cua.rl.observation import build_observation
+from cua.rl.rewards import compute_reward
+from cua.sft.legacy_train_qwen import history_entries_for_step
 
 logger = logging.getLogger(__name__)
 
@@ -2121,7 +2121,7 @@ class Episode:
                        "info": {"reward_status": status, "success": success, "success_source": source, "episode_dir": str(self.traj_dir)}})
         return record
 ```
-- [ ] **Step 4: Run** → `$PY -m rl.tests test_episode` → `6/6 passed`. Then `$PY -m rl.tests` → all green.
+- [ ] **Step 4: Run** → `$PY -m tests test_episode` → `6/6 passed`. Then `$PY -m tests` → all green.
 - [ ] **Step 5: Report.**
 
 ---
@@ -2129,19 +2129,19 @@ class Episode:
 ### Task 12: Policies + runner + rollout CLI
 
 **Files:**
-- Create: `rl/policies.py`, `rl/runner.py`, `rl/rollout.py`, `rl/tests/test_policies.py`
+- Create: `cua/rl/policies.py`, `cua/rl/runner.py`, `cua/rl/rollout.py`, `tests/test_policies.py`
 
 **Interfaces:**
 - Produces: `POLICIES = {"openai": OpenAICompatiblePolicy, "mock": MockReplayPolicy, "scripted": ScriptedPolicy}` each with `.act(observation) -> str`; `make_policy(spec: dict) -> policy` (spec = `{"kind": ..., **kwargs}`); `run_episode(policy, task, pool, sample_k, run_ctx, cfg) -> record`; `run_batch(policy_factory, tasks, k, pool, run_ctx, cfg, on_record=None) -> list[record]`; `make_run_context(run_id, out_root, iteration, policy_tag, bridge) -> RunContext`; `write_rollouts(records, path)`; `summarize(records) -> dict`.
 
-- [ ] **Step 1: Failing tests** `rl/tests/test_policies.py`:
+- [ ] **Step 1: Failing tests** `tests/test_policies.py`:
 ```python
 import json
 import tempfile
 from pathlib import Path
 
-from rl.policies import MockReplayPolicy, ScriptedPolicy, make_policy
-from rl.runner import summarize
+from cua.rl.policies import MockReplayPolicy, ScriptedPolicy, make_policy
+from cua.rl.runner import summarize
 
 
 def test_mock_replay_emits_recorded_steps_then_done():
@@ -2174,7 +2174,7 @@ def test_summarize_counts():
 - [ ] **Step 2: Run** → ModuleNotFoundError.
 - [ ] **Step 3: Implement**
 
-`rl/policies.py`:
+`cua/rl/policies.py`:
 ```python
 """Policies turn an observation into the student's response text (registry keyed by kind)."""
 import json
@@ -2182,8 +2182,8 @@ import os
 import urllib.request
 from pathlib import Path
 
-from rl.actions import encode_step
-from rl.observation import to_openai_messages
+from cua.rl.actions import encode_step
+from cua.rl.observation import to_openai_messages
 
 
 class OpenAICompatiblePolicy:
@@ -2242,7 +2242,7 @@ def make_policy(spec):
     return POLICIES[spec["kind"]](**{k: v for k, v in spec.items() if k != "kind"})
 ```
 
-`rl/runner.py`:
+`cua/rl/runner.py`:
 ```python
 """Run episodes in-process over a WorkerPool — shared by rollout, eval and smoke."""
 import json
@@ -2250,8 +2250,8 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from rl.episode import Episode, RunContext
-from rl.rewards import load_reward_config
+from cua.rl.episode import Episode, RunContext
+from cua.rl.rewards import load_reward_config
 
 logger = logging.getLogger(__name__)
 
@@ -2322,7 +2322,7 @@ def summarize(records):
     }
 ```
 
-`rl/rollout.py`:
+`cua/rl/rollout.py`:
 ```python
 """Rollout CLI: run k samples per task with any policy, write rl_runs/<run_id>/iter_NNN/rollouts.jsonl."""
 import argparse
@@ -2332,13 +2332,13 @@ import sys
 import time
 from pathlib import Path
 
-from repo_pipeline.sandbox import install_sigterm_handler
-from rl.backends import BACKENDS
-from rl.episode import EpisodeConfig
-from rl.judge import AsyncBridge
-from rl.policies import make_policy
-from rl.runner import make_run_context, run_batch, summarize, write_rollouts
-from rl.tasks import SUITE_PATH, load_suite, select_tasks
+from cua.pipeline.sandbox import install_sigterm_handler
+from cua.rl.backends import BACKENDS
+from cua.rl.episode import EpisodeConfig
+from cua.rl.judge import AsyncBridge
+from cua.rl.policies import make_policy
+from cua.rl.runner import make_run_context, run_batch, summarize, write_rollouts
+from cua.rl.tasks import SUITE_PATH, load_suite, select_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -2377,12 +2377,12 @@ def build_pool(args):
 
 
 def WorkerPoolFactory(backend, workers, drivers_per_sandbox):
-    from_pool = __import__("rl.backends", fromlist=["WorkerPool"]).WorkerPool
+    from_pool = __import__("cua.rl.backends", fromlist=["WorkerPool"]).WorkerPool
     return from_pool(backend, workers, drivers_per_sandbox)
 ```
 Replace the last two helpers above with a plain import — the rule is no nested imports:
 ```python
-from rl.backends import BACKENDS, WorkerPool
+from cua.rl.backends import BACKENDS, WorkerPool
 
 
 def build_pool(args):
@@ -2433,22 +2433,22 @@ if __name__ == "__main__":
 ```
 (Write the file with the plain-import version only; the `WorkerPoolFactory` sketch must not appear in the code.)
 
-- [ ] **Step 4: Run** → `$PY -m rl.tests test_policies` → `4/4 passed`; `$PY -m rl.rollout --help` prints usage.
+- [ ] **Step 4: Run** → `$PY -m tests test_policies` → `4/4 passed`; `$PY -m cua.rl.rollout --help` prints usage.
 - [ ] **Step 5: Report.**
 
 ---
 
-### Task 13: Eval CLI `rl/eval.py`
+### Task 13: Eval CLI `cua/rl/eval.py`
 
 **Files:**
-- Create: `rl/eval.py`, `rl/tests/test_eval.py`
+- Create: `cua/rl/eval.py`, `tests/test_eval.py`
 
 **Interfaces:**
-- Produces: `metrics_by_split(records) -> dict[split, dict]`; `per_domain(records) -> dict[site, {n, success_rate}]`; `render_report(header, metrics, domains, baseline=None) -> str`; CLI `python -m rl.eval --endpoint … [--split eval] [--baseline eval_runs/<id>/report.json] [--checkpoint-sha …] [--out eval_runs]`.
+- Produces: `metrics_by_split(records) -> dict[split, dict]`; `per_domain(records) -> dict[site, {n, success_rate}]`; `render_report(header, metrics, domains, baseline=None) -> str`; CLI `python -m cua.rl.eval --endpoint … [--split eval] [--baseline eval_runs/<id>/report.json] [--checkpoint-sha …] [--out eval_runs]`.
 
-- [ ] **Step 1: Failing tests** `rl/tests/test_eval.py`:
+- [ ] **Step 1: Failing tests** `tests/test_eval.py`:
 ```python
-from rl.eval import metrics_by_split, per_domain, render_report
+from cua.rl.eval import metrics_by_split, per_domain, render_report
 
 RECORDS = [
     {"split": "eval_unseen_site", "site": "a", "success": True, "terminal_reason": "done", "turns": [{"clean": True}, {"clean": True}], "steps": 2, "check": {"passed": True}, "reward_status": "final"},
@@ -2471,7 +2471,7 @@ def test_per_domain_and_report_with_baseline_delta():
     assert "| eval_unseen_site |" in report and "+0.25" in report and "run_id: r" in report
 ```
 - [ ] **Step 2: Run** → ModuleNotFoundError.
-- [ ] **Step 3: Implement** `rl/eval.py`:
+- [ ] **Step 3: Implement** `cua/rl/eval.py`:
 ```python
 """E3 eval: run the student on held-out tasks (temperature 0, k=1) and report per-split metrics with baseline deltas."""
 import argparse
@@ -2482,12 +2482,12 @@ import sys
 import time
 from pathlib import Path
 
-from repo_pipeline.sandbox import install_sigterm_handler
-from rl.episode import EpisodeConfig
-from rl.judge import AsyncBridge
-from rl.policies import make_policy
-from rl.rollout import add_common_args, build_pool, policy_spec, selected_tasks
-from rl.runner import make_run_context, run_batch, write_rollouts
+from cua.pipeline.sandbox import install_sigterm_handler
+from cua.rl.episode import EpisodeConfig
+from cua.rl.judge import AsyncBridge
+from cua.rl.policies import make_policy
+from cua.rl.rollout import add_common_args, build_pool, policy_spec, selected_tasks
+from cua.rl.runner import make_run_context, run_batch, write_rollouts
 
 logger = logging.getLogger(__name__)
 METRIC_KEYS = ("verified_success", "check_pass_rate", "parse_failure_rate", "parse_abort_rate", "done_rate", "mean_steps_success", "loop_guard_rate")
@@ -2587,21 +2587,21 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 ```
-- [ ] **Step 4: Run** → `2/2 passed`; `$PY -m rl.eval --help`.
+- [ ] **Step 4: Run** → `2/2 passed`; `$PY -m cua.rl.eval --help`.
 - [ ] **Step 5: Report.**
 
 ---
 
-### Task 14: Env service `rl/service.py`
+### Task 14: Env service `cua/rl/service.py`
 
 **Files:**
-- Create: `rl/service.py`, `rl/tests/test_service.py`
+- Create: `cua/rl/service.py`, `tests/test_service.py`
 
 **Interfaces:**
 - Produces: `EnvService(pool, tasks_by_id, run_ctx_factory, cfg)` with `.reset(body) .step(body) .close(body) .episode(eid) .health() .reap(max_idle_s)`; `make_handler(service, token) -> BaseHTTPRequestHandler subclass`; `serve(service, host, port, token) -> ThreadingHTTPServer`; HTTP contract from the spec (`X-RL-Token`, 503 `{retry_after}` when no slot).
 - `run_ctx_factory(run_id: str, iteration: int, policy_tag: str) -> RunContext`.
 
-- [ ] **Step 1: Failing tests** `rl/tests/test_service.py` (exercises the HTTP layer with a fake pool + fake episodes; no Docker):
+- [ ] **Step 1: Failing tests** `tests/test_service.py` (exercises the HTTP layer with a fake pool + fake episodes; no Docker):
 ```python
 import json
 import queue
@@ -2609,7 +2609,7 @@ import threading
 import urllib.error
 import urllib.request
 
-from rl.service import EnvService, serve
+from cua.rl.service import EnvService, serve
 
 
 class FakePool:
@@ -2684,7 +2684,7 @@ def test_http_round_trip_and_slot_exhaustion():
         server.shutdown()
 ```
 - [ ] **Step 2: Run** → ModuleNotFoundError.
-- [ ] **Step 3: Implement** `rl/service.py`:
+- [ ] **Step 3: Implement** `cua/rl/service.py`:
 ```python
 """HTTP env service for the GPU-side trainer plugin: reset/step/close over the worker pool (loopback, token-guarded)."""
 import argparse
@@ -2698,12 +2698,12 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from repo_pipeline.sandbox import install_sigterm_handler
-from rl.episode import Episode, EpisodeConfig
-from rl.judge import AsyncBridge
-from rl.rollout import build_pool
-from rl.runner import make_run_context
-from rl.tasks import SUITE_PATH, load_suite, select_tasks
+from cua.pipeline.sandbox import install_sigterm_handler
+from cua.rl.episode import Episode, EpisodeConfig
+from cua.rl.judge import AsyncBridge
+from cua.rl.rollout import build_pool
+from cua.rl.runner import make_run_context
+from cua.rl.tasks import SUITE_PATH, load_suite, select_tasks
 
 logger = logging.getLogger(__name__)
 RL_ENV_HOST = os.environ.get("RL_ENV_HOST", "127.0.0.1")
@@ -2886,20 +2886,20 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 ```
-`build_pool(args)` in `rl/rollout.py` reads `args.backend/workers/drivers_per_sandbox` — the service parser defines all three, so it is reusable as-is.
+`build_pool(args)` in `cua/rl/rollout.py` reads `args.backend/workers/drivers_per_sandbox` — the service parser defines all three, so it is reusable as-is.
 
-- [ ] **Step 4: Run** → `$PY -m rl.tests test_service` → `1/1 passed`; whole suite green.
+- [ ] **Step 4: Run** → `$PY -m tests test_service` → `1/1 passed`; whole suite green.
 - [ ] **Step 5: Report.**
 
 ---
 
-### Task 15: End-to-end smoke `rl/smoke.py` + wiring (Makefile, .gitignore, CLAUDE.md, `excluded_reason` fix)
+### Task 15: End-to-end smoke `cua/rl/smoke.py` + wiring (Makefile, .gitignore, CLAUDE.md, `excluded_reason` fix)
 
 **Files:**
-- Create: `rl/smoke.py`
-- Modify: `Makefile` (after `test-driver`), `.gitignore`, `CLAUDE.md` (new section after "Training"), `repo_pipeline/stage6_generate.py` (`_excluded`), `repo_pipeline/corpus_audit.py` (`is_trainable`), `train_qwen.py` (`convert_trajectories` exclusion read)
+- Create: `cua/rl/smoke.py`
+- Modify: `Makefile` (after `test-driver`), `.gitignore`, `CLAUDE.md` (new section after "Training"), `cua/pipeline/stage6_generate.py` (`_excluded`), `cua/pipeline/corpus_audit.py` (`is_trainable`), `cua/sft/legacy_train_qwen.py` (`convert_trajectories` exclusion read)
 
-- [ ] **Step 1: Write the smoke (the failing end-to-end test)** — `rl/smoke.py`:
+- [ ] **Step 1: Write the smoke (the failing end-to-end test)** — `cua/rl/smoke.py`:
 ```python
 """Docker-only end-to-end check of the RL harness: static page + scripted policy through Episode and the HTTP service, no LLM."""
 import base64
@@ -2912,15 +2912,15 @@ import threading
 import urllib.request
 from pathlib import Path
 
-from repo_pipeline.corpus_audit import audit_trajectory
-from repo_pipeline.driver_smoke import TEST_PAGE
-from repo_pipeline.instrumentation import RESULTS_DIR
-from rl.backends import StaticPageBackend, WorkerPool
-from rl.episode import Episode, EpisodeConfig
-from rl.policies import ScriptedPolicy
-from rl.runner import make_run_context, run_episode
-from rl.service import EnvService, serve
-from train_qwen import convert_trajectory_to_examples
+from cua.pipeline.corpus_audit import audit_trajectory
+from cua.pipeline.driver_smoke import TEST_PAGE
+from cua.pipeline.instrumentation import RESULTS_DIR
+from cua.rl.backends import StaticPageBackend, WorkerPool
+from cua.rl.episode import Episode, EpisodeConfig
+from cua.rl.policies import ScriptedPolicy
+from cua.rl.runner import make_run_context, run_episode
+from cua.rl.service import EnvService, serve
+from cua.sft.legacy_train_qwen import convert_trajectory_to_examples
 
 logger = logging.getLogger(__name__)
 
@@ -3040,56 +3040,56 @@ if __name__ == "__main__":
     sys.exit(0 if ok else 1)
 ```
 
-- [ ] **Step 2: Run** → `$PY -m rl.smoke` → Expected first failure: `discover_coords` needs `client.sandbox` (it exists on `DriverClient`) — expected PASS of the probe; the parity assertions are the real gate. If `audit_trajectory` reports `step N: empty thought` for the scripted steps, the scripted texts above all carry a `<think>`; investigate rather than relax.
+- [ ] **Step 2: Run** → `$PY -m cua.rl.smoke` → Expected first failure: `discover_coords` needs `client.sandbox` (it exists on `DriverClient`) — expected PASS of the probe; the parity assertions are the real gate. If `audit_trajectory` reports `step N: empty thought` for the scripted steps, the scripted texts above all carry a `<think>`; investigate rather than relax.
 
 - [ ] **Step 3: Wiring**
 
 Makefile (after `test-driver`):
 ```make
 test-rl-unit: ## Unit tests for the RL rollout harness (no Docker, no LLM)
-	python -m rl.tests
+	python -m tests
 
 test-rl: ## Docker-only end-to-end smoke of the RL harness (static page + scripted policy, no LLM)
-	python -m rl.smoke
+	python -m cua.rl.smoke
 
 rl-tasks: ## Build + check the RL task suite (disjoint from anything trained on)
-	python -m rl.tasks build $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR)) && python -m rl.tasks check $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR))
+	python -m cua.rl.tasks build $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR)) && python -m cua.rl.tasks check $(if $(RL_TRAJ_DIR),--trajectories $(RL_TRAJ_DIR))
 
 rl-serve: ## Start the RL env service for the GPU trainer (127.0.0.1:8900)
-	python -m rl.service --split $(or $(RL_SPLIT),train) --workers $(or $(RL_WORKERS),3) $(RL_ARGS)
+	python -m cua.rl.service --split $(or $(RL_SPLIT),train) --workers $(or $(RL_WORKERS),3) $(RL_ARGS)
 
 rl-rollout: ## Local rollouts against an OpenAI-compatible endpoint (RL_ENDPOINT, RL_MODEL, RL_K)
-	python -m rl.rollout --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) --k $(or $(RL_K),4) $(RL_ARGS)
+	python -m cua.rl.rollout --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) --k $(or $(RL_K),4) $(RL_ARGS)
 
 rl-eval: ## E3 student eval on held-out tasks (RL_ENDPOINT, RL_MODEL, RL_BASELINE=report.json)
-	python -m rl.eval --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) $(if $(RL_BASELINE),--baseline $(RL_BASELINE)) $(RL_ARGS)
+	python -m cua.rl.eval --endpoint $(or $(RL_ENDPOINT),http://127.0.0.1:8001/v1) --model $(or $(RL_MODEL),policy) $(if $(RL_BASELINE),--baseline $(RL_BASELINE)) $(RL_ARGS)
 
 eval: rl-eval ## Alias for rl-eval
 ```
 `.gitignore`: append `rl_runs/` and `eval_runs/`.
 
-`repo_pipeline/stage6_generate.py` `_excluded`: after writing capture_meta, add
+`cua/pipeline/stage6_generate.py` `_excluded`: after writing capture_meta, add
 ```python
     metadata_file = traj_dir / "metadata.json"
     metadata = json.loads(metadata_file.read_text()) if metadata_file.exists() else {}
     metadata["excluded_reason"] = reason
     metadata_file.write_text(json.dumps(metadata, indent=2))
 ```
-`repo_pipeline/corpus_audit.py` `is_trainable`: load `capture_meta = _load_json(traj_dir / "capture_meta.json")` and change the guard to `if metadata.get("excluded_reason") or capture_meta.get("excluded_reason"):`.
-`train_qwen.py` `convert_trajectories`: change `if metadata.get("excluded_reason"):` to `if metadata.get("excluded_reason") or capture_meta.get("excluded_reason"):` (capture_meta is loaded just above it).
+`cua/pipeline/corpus_audit.py` `is_trainable`: load `capture_meta = _load_json(traj_dir / "capture_meta.json")` and change the guard to `if metadata.get("excluded_reason") or capture_meta.get("excluded_reason"):`.
+`cua/sft/legacy_train_qwen.py` `convert_trajectories`: change `if metadata.get("excluded_reason"):` to `if metadata.get("excluded_reason") or capture_meta.get("excluded_reason"):` (capture_meta is loaded just above it).
 
 `CLAUDE.md`: add after the "## Training" section:
 ```markdown
-## RL rollout harness (`rl/`)
+## RL rollout harness (`cua/rl/`)
 
-Policy-agnostic rollouts of the student over the same sandboxed driver (`/observe` + `/act kind=sequence`): one recorded step per policy turn, observation PNG bytes == recorded screenshot, observation text built by `train_qwen.build_step_user_text` (SFT input == RL input). `rl.actions.decode_step` is the inverse of `format_action_for_training`. Rollouts land under `rl_runs/<run_id>/iter_NNN/<task>/kKK/task_*/` (never `trajectories/`; `metadata.excluded_reason=rl_rollout`). Reward: `success_check` from `rl/rl_tasks.json` → `verify_trajectory` fallback (`--verifier-mode`), weights in `rl/reward_config.json`. Commands: `make test-rl-unit`, `make test-rl` (Docker), `make rl-tasks`, `make rl-serve` (env service :8900 for the GPU trainer), `make rl-rollout`, `make rl-eval`.
+Policy-agnostic rollouts of the student over the same sandboxed driver (`/observe` + `/act kind=sequence`): one recorded step per policy turn, observation PNG bytes == recorded screenshot, observation text built by `cua.sft.legacy_train_qwen.build_step_user_text` (SFT input == RL input). `cua.rl.actions.decode_step` is the inverse of `format_action_for_training`. Rollouts land under `rl_runs/<run_id>/iter_NNN/<task>/kKK/task_*/` (never `trajectories/`; `metadata.excluded_reason=rl_rollout`). Reward: `success_check` from `cua/rl/rl_tasks.json` → `verify_trajectory` fallback (`--verifier-mode`), weights in `cua/rl/reward_config.json`. Commands: `make test-rl-unit`, `make test-rl` (Docker), `make rl-tasks`, `make rl-serve` (env service :8900 for the GPU trainer), `make rl-rollout`, `make rl-eval`.
 ```
 
 - [ ] **Step 4: Run everything**
 
-Run: `$PY -m rl.tests` → all passed. `$PY -m repo_pipeline.driver_smoke` → PASSED. `$PY -m rl.smoke` → `RL smoke PASSED`. `$PY -m rl.tasks check --trajectories /Users/rmajor/unik/maga/dataset_gather/trajectories` → `problems 0`. `$PY -m repo_pipeline.corpus_audit /Users/rmajor/unik/maga/dataset_gather/trajectories` still exits as before the change (record its exit code before and after).
+Run: `$PY -m tests` → all passed. `$PY -m cua.pipeline.driver_smoke` → PASSED. `$PY -m cua.rl.smoke` → `RL smoke PASSED`. `$PY -m cua.rl.tasks check --trajectories /Users/rmajor/unik/maga/dataset_gather/trajectories` → `problems 0`. `$PY -m cua.pipeline.corpus_audit /Users/rmajor/unik/maga/dataset_gather/trajectories` still exits as before the change (record its exit code before and after).
 
-- [ ] **Step 5: Report** — full `git status --short` (untracked `rl/`, `docs/superpowers/{specs,plans}/…`, modified tracked files) and the smoke log tail. Do not `git add`.
+- [ ] **Step 5: Report** — full `git status --short` (untracked `cua/rl/`, `docs/superpowers/{specs,plans}/…`, modified tracked files) and the smoke log tail. Do not `git add`.
 
 ---
 
