@@ -1,6 +1,6 @@
 """Mechanical quality gate over the TRAINABLE corpus.
 
-Checks every trajectory that `cua/sft/legacy_train_qwen.py convert` would train on (excluded/unverified/
+Checks every trajectory that `python -m cua.sft convert` would train on (excluded/unverified/
 replay-gated ones are reported but not gated) for recording defects that no LLM judge needs:
 
   * stuck loops — identical-action runs >= LOOP_RUN_LIMIT (the Booking.com failure class);
@@ -16,15 +16,16 @@ Exit code 1 when any trainable trajectory fails or a corpus_health.json gate is 
 export: `python -m cua.pipeline.corpus_audit trajectories/` (or `make audit-corpus`).
 """
 
-# Stdlib-only on purpose: remote_train ships this file alone, so verify_pattern_scan imports the predicates from here.
+# Stdlib-only on purpose, so verify_pattern_scan imports the predicates from here.
 import argparse
 import json
 import re
 import sys
 from pathlib import Path
 
+from cua.trajectory import VIEWPORT
+
 LOOP_RUN_LIMIT = 3
-VIEWPORT = (1280, 720)
 HEALTH_CONFIG_NAME = "corpus_health.json"
 QA_VERIFY_STYLE = "qa_verify"
 OUTCOME_RELABEL_SOURCE = "teacher_outcome"
@@ -298,7 +299,7 @@ def audit_trajectory(traj_dir: Path) -> list[str]:
 
 
 def is_trainable(traj_dir: Path) -> bool:
-    """Same gate as cua/sft/legacy_train_qwen.py convert (default, no --include-replay), via the shared `trainability`."""
+    """Same gate as `python -m cua.sft convert` (default, no --include-replay), via the shared `trainability`."""
     trajectory = _load_json(traj_dir / "trajectory.json")
     metadata = _load_json(traj_dir / "metadata.json")
     capture_meta = _load_json(traj_dir / "capture_meta.json")

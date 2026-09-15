@@ -11,13 +11,13 @@ from cua.pipeline.driver_session import DriverError
 from cua.pipeline.instrumentation import RESULTS_DIR
 from cua.pipeline.site_blocks import detect_block
 from cua.pipeline.stage6_generate import _safe_task_id
+from cua.prompt.format import history_entries_for_step
 from cua.rl import checks
 from cua.rl.actions import decode_step
 from cua.rl.executor import control_index, to_sequence_payload, validate_actions
 from cua.rl.judge import cached_verdict, judge_success
 from cua.rl.observation import build_observation
 from cua.rl.rewards import compute_reward
-from cua.sft.legacy_train_qwen import history_entries_for_step
 
 logger = logging.getLogger(__name__)
 

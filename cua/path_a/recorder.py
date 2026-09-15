@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import base64
 import hashlib
 import json
 import struct
@@ -12,10 +11,8 @@ from openai import OpenAI
 from playwright.async_api import async_playwright
 from tqdm import tqdm
 
-
-def parse_viewport(viewport_str):
-    width, height = viewport_str.lower().split("x")
-    return int(width), int(height)
+from cua.prompt.coords import parse_viewport
+from cua.prompt.format import png_b64
 
 
 def png_dims(b):
@@ -33,10 +30,6 @@ def safe_page_url(page):
         return page.url
     except Exception:
         return None
-
-
-def encode_screenshot_to_base64(screenshot_bytes):
-    return base64.b64encode(screenshot_bytes).decode("utf-8")
 
 
 def extract_computer_call(response):
@@ -294,7 +287,7 @@ async def record_single_task(client, task, output_dir, max_steps, viewport_width
                 screenshot_path = task_dir / f"step_{screenshot_counter:03d}_screenshot.png"
                 screenshot_path.write_bytes(screenshot_bytes)
                 screenshot_counter += 1
-                b64_screenshot = encode_screenshot_to_base64(screenshot_bytes)
+                b64_screenshot = png_b64(screenshot_bytes)
 
                 try:
                     response = send_screenshot(client, response, call_id, b64_screenshot)
@@ -354,7 +347,7 @@ async def record_single_task(client, task, output_dir, max_steps, viewport_width
             step_metas[-1]["caused_navigation"] = bool(ub and url_after and ub != url_after)
 
             screenshot_bytes = await page.screenshot(type="png")
-            b64_screenshot = encode_screenshot_to_base64(screenshot_bytes)
+            b64_screenshot = png_b64(screenshot_bytes)
 
             try:
                 response = send_screenshot(client, response, call_id, b64_screenshot)

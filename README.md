@@ -6,7 +6,7 @@ are distilled into Qwen 3.5-9B by step-level supervised fine-tuning (SFT). A GRP
 was dropped after three runs (`docs/decisions/grpo-v3-results.md`).
 
 Three trajectory **producers** write one trajectory format, and one converter/trainer
-(`cua/sft/legacy_train_qwen.py`) consumes all of them:
+(`cua/sft/`) consumes all of them:
 
 1. **Path A — GPT-5.4 CUA distillation** (`cua/path_a/recorder.py`): GPT-5.4's `computer` tool works through Mind2Web tasks in a Playwright browser (~$0.55/trajectory). Contributes a handful of trainable trajectories today.
 2. **Path B — QA repo funnel** (`cua/pipeline/orchestrator.py`, stages 1–7): finds bootable web-app repos on GitHub, boots them in Docker sandboxes, and has a Claude teacher pursue proposed user tasks through a coordinate-recording browser driver. Only a fraction of a percent of discovered repos yield trajectories, so this is a minority of the corpus.
@@ -761,7 +761,7 @@ Predictor backends are a registry (`PREDICTOR_BACKENDS`): `swift` (local `swift 
 `eval_models.yaml` with a repo id + `adapters` dir), `openai` (any OpenAI-compatible endpoint via
 `SCREENSPOT_ENDPOINT` / `SCREENSPOT_API_KEY`, specs in `eval_models_served.yaml` naming vLLM *served*
 models), `claude` (a frontier arm through the logged-in CLI, no GPU needed), `mock` (tests). The
-system prompt is imported from `cua/sft/legacy_train_qwen.py` so train and eval never drift.
+system prompt is imported from `cua/prompt/format.py` so train and eval never drift.
 
 ### Measured results
 
@@ -887,7 +887,7 @@ with `metadata.excluded_reason` set, so they never enter training.
 
 ## Training Configuration
 
-See `config.yaml` for the SFT recipe (`cua/sft/legacy_train_qwen.py train` maps its keys to `swift sft` flags):
+See `config.yaml` for the SFT recipe (`python -m cua.sft train` maps its keys to `swift sft` flags):
 - Model: Qwen/Qwen3.5-9B (post-trained checkpoint; the eval baseline is measured on it)
 - LoRA rank 64, alpha 128, all-linear
 - Learning rate 5e-5, **2 epochs** (sft-v2's eval loss bottomed at epoch 2 and rose at 3; sft-v3's epoch 2 was trained and rejected for the same reason), warmup 0.05

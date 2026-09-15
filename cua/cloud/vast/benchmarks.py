@@ -76,20 +76,18 @@ def _summarize_screenspot(results_dir: Path) -> str:
 BENCHMARKS: dict = {
     "screenspot": Benchmark(
         name="screenspot",
-        # cua.eval.screenspot imports SYSTEM_PROMPT from cua.sft.legacy_train_qwen (train/eval prompt parity), and
-        # cua.sft.legacy_train_qwen has a TOP-LEVEL `from cua.pipeline.corpus_audit import ...`, so that package
-        # must ship too or the eval dies on import. corpus_audit is stdlib-only and __init__ is
-        # empty, so this is two small files, not the whole pipeline.
-        # operator_pii is cua.sft.legacy_train_qwen's other top-level cua.pipeline import (stdlib-only as well).
+        # The whole train/eval prompt chain screenspot imports: Pillow-only, no cua.pipeline, no pydantic.
         files=(
             "cua/__init__.py",
             "cua/eval/__init__.py",
             "cua/eval/screenspot.py",
-            "cua/sft/__init__.py",
-            "cua/sft/legacy_train_qwen.py",
-            "cua/pipeline/__init__.py",
-            "cua/pipeline/corpus_audit.py",
-            "cua/pipeline/operator_pii.py",
+            "cua/prompt/__init__.py",
+            "cua/prompt/coords.py",
+            "cua/prompt/effects.py",
+            "cua/prompt/format.py",
+            "cua/settings.py",
+            "cua/trajectory/__init__.py",
+            "cua/trajectory/actions.py",
             "pyproject.toml",
             "README.md",
         ),
@@ -125,8 +123,8 @@ def materialize(benchmark: Benchmark, staging: Path) -> list:
     """[(local_path, remote_relpath)] for every harness file; missing ones fetched from `source_ref`.
 
     The remote path keeps the DECLARED relative path, not the basename — a harness that imports a
-    package (cua.eval.screenspot -> cua.sft.legacy_train_qwen -> cua.pipeline.corpus_audit) needs that package to land
-    at `cua/pipeline/corpus_audit.py` on the box, not flattened next to it.
+    package (cua.eval.screenspot -> cua.prompt.format -> cua.trajectory.actions) needs that package to land
+    at `cua/trajectory/actions.py` on the box, not flattened next to it.
     """
     staging.mkdir(parents=True, exist_ok=True)
     pairs = []

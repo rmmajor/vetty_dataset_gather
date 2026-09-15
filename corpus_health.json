@@ -1,5 +1,5 @@
 {
-  "_comment": "Hard release gates checked by cua.pipeline.corpus_audit.corpus_health_violations. `cua/sft/legacy_train_qwen.py convert` refuses to write the dataset on a violation (--skip-health-gate bypasses for experiments only); `python -m cua.pipeline.corpus_audit` exits 1 on the per-trajectory subset it computes (min_done_evidence_share, min_outcome_relabeled_share; the Modal lane's pre-train check). Each check runs only when its caller computed the stat. Null disables a check.",
+  "_comment": "Hard release gates checked by cua.pipeline.corpus_audit.corpus_health_violations. `python -m cua.sft convert` refuses to write the dataset on a violation (--skip-health-gate bypasses for experiments only); `python -m cua.pipeline.corpus_audit` exits 1 on the per-trajectory subset it computes (min_done_evidence_share, min_outcome_relabeled_share; the Modal lane's pre-train check). Each check runs only when its caller computed the stat. Null disables a check.",
   "min_trainable_trajectories": 500,
   "min_done_coverage": 0.95,
   "max_teacher_raw_trajectories": 0,

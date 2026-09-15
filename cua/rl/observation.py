@@ -1,6 +1,6 @@
 """The student's observation: the exact SFT user turn plus the PNG, and its OpenAI-message rendering."""
 
-from cua.sft.legacy_train_qwen import SYSTEM_PROMPT, build_step_user_text
+from cua.prompt.format import SYSTEM_PROMPT, build_step_user_text
 
 
 def build_observation(instruction, action_history, image_png_b64, step_index):

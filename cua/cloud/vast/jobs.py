@@ -5,7 +5,7 @@ five questions: what to check locally, what to upload, what command to run, what
 and how to summarize it. Adding a job type = a class + one line in `JOBS`; `lifecycle.py` and
 the teardown guarantees never change.
 
-  train — fine-tune: ship trajectories/ + code, run the UNCHANGED cua/sft/legacy_train_qwen.py convert+train.
+  train — fine-tune: ship trajectories/ + code, run the UNCHANGED `python -m cua.sft` convert+train.
   eval  — benchmark only (no training): ship a harness from `benchmarks.py` and run it.
   grpo  — RL: ship the SFT adapter + cua/rl/ code, run cua/rl/train.py against the Mac env service over a tunnel.
   serve — serve the student on serve_port through a tunnel (for cua.rl.eval / live harness smokes).
@@ -34,6 +34,7 @@ from cua.rl.train import (
     load_task_ids,
     make_dataset,
 )
+from cua.sft.recipe import convert_command, train_command
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,11 @@ class TrainJob(RemoteJob):
         return Path(cfg.resume_from.rstrip("/")).name
 
     def remote_command(self, cfg) -> str:
-        resume = f" --resume_from_checkpoint {self._resume_name(cfg)}" if cfg.resume_from else ""
+        resume = ("--resume_from_checkpoint", self._resume_name(cfg)) if cfg.resume_from else ()
+        convert = " ".join(convert_command("python", "trajectories/", "training_data/", cfg.val_split))
+        train = " ".join(
+            train_command("python", Path(cfg.train_config).name, "training_data/sft_dataset.jsonl", resume)
+        )
         return (
             # NOT ".[pipeline]": that is the whole pipeline (playwright, pandas, datasets…) and
             # installing it over the image clobbered torch, leaving transformers half-imported
@@ -121,10 +126,8 @@ class TrainJob(RemoteJob):
             '"datasets>=3.0" "qwen_vl_utils>=0.0.14" "peft>=0.14" "accelerate>=1.0" '
             "pyyaml Pillow tqdm && \\\n"
             "  pip install --no-cache-dir --no-deps -e . && \\\n"
-            f"  python -m cua.sft convert --input trajectories/ --output training_data/ "
-            f"--val-split {cfg.val_split} --exclude-waste-steps --meandering-mode subsample && \\\n"
-            f"  python -m cua.sft train --config {Path(cfg.train_config).name} "
-            f"--dataset training_data/sft_dataset.jsonl{resume}"
+            f"  {convert} && \\\n"
+            f"  {train}"
         )
 
     def collect(self, provider, instance, cfg) -> None:
@@ -205,7 +208,7 @@ class EvalJob(RemoteJob):
         return self.benchmark.summarize(Path(cfg.eval_results_dir))
 
 
-RL_CODE_ROOTS = ("cua/rl/train.py", "cua/sft/legacy_train_qwen.py", "cua/rl/trainer/swift_plugin.py")
+RL_CODE_ROOTS = ("cua/rl/train.py", "cua/sft/swift_launch.py", "cua/rl/trainer/swift_plugin.py")
 # What `pip install -e ".[rl]" -c constraints/rl-modal.txt` reads on the box; README.md is pyproject's declared readme.
 PACKAGE_FILES = ("pyproject.toml", "README.md", "constraints/rl-modal.txt", "corpus_health.json")
 

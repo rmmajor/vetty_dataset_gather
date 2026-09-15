@@ -8,34 +8,33 @@ from pathlib import Path
 
 from PIL import Image
 
-from cua.rl.actions import decode_step, encode_step
-from cua.rl.observation import build_observation, to_openai_messages
-from cua.sft.legacy_train_qwen import (
-    COORD_SPACE,
+from cua.prompt.coords import COORD_SPACE, to_model_action, to_model_coords, to_viewport_coords
+from cua.prompt.effects import (
     EFFECT_NO_CHANGE_MAX_FRACTION,
     EFFECT_PATH_MAX_CHARS,
+    downscale_prev,
+    effect_annotation,
+    screenshot_changed_fraction,
+    step_effects,
+    url_path_change,
+)
+from cua.prompt.format import (
     GROUNDING_SYSTEM_PROMPT,
     HISTORY_WINDOW,
     PREV_IMAGE_SIZE,
     PROMPT_FORMAT_VERSION,
     SYSTEM_PROMPT,
-    VIEWPORT,
     build_step_messages,
     build_step_observation,
     build_step_user_text,
-    convert_trajectory_to_examples,
-    downscale_prev,
-    effect_annotation,
     flatten_for_swift,
     history_entries_for_step,
-    screenshot_changed_fraction,
-    step_effects,
-    to_model_action,
-    to_model_coords,
     to_openai_content,
-    to_viewport_coords,
-    url_path_change,
 )
+from cua.rl.actions import decode_step, encode_step
+from cua.rl.observation import build_observation, to_openai_messages
+from cua.sft.convert import convert_trajectory_to_examples
+from cua.trajectory import VIEWPORT
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "prompt_golden.json"
 

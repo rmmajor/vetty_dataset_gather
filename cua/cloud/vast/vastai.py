@@ -2,7 +2,7 @@
 
 Implements the `ComputeProvider` contract via the official CLI, matching the repo's
 shell-out idiom (`subprocess.run` with capture/text/timeout + custom exception + audit
-logging, like `cua/pipeline/bootable_gate.py:probe_repo` and `cua/sft/legacy_train_qwen.py:train_model`).
+logging, like `cua/pipeline/bootable_gate.py:probe_repo` and `cua.sft.swift_launch.train_model`).
 File transfer and command execution go over the instance's `ssh_host:ssh_port` using the
 private key in `cfg.ssh_key_path` (its public half must be attached to the Vast.ai account).
 

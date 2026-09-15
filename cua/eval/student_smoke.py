@@ -42,15 +42,15 @@ from cua.eval.student import (
 )
 from cua.eval.task_sources import TASK_SOURCES, EvalTask
 from cua.pipeline.sandbox import ShellSandbox
-from cua.sft.legacy_train_qwen import (
+from cua.prompt.coords import to_viewport_coords
+from cua.prompt.format import (
     HISTORY_WINDOW,
     PREV_IMAGE_SIZE,
     PROMPT_FORMAT_VERSION,
     SYSTEM_PROMPT,
-    format_action_for_training,
     history_entries_for_step,
-    to_viewport_coords,
 )
+from cua.trajectory.actions import format_action_for_training
 
 logger = logging.getLogger(__name__)
 
@@ -461,7 +461,7 @@ def check_coordinate_scaling():
         "y": 697,
         "button": "left",
     }
-    # The eval scales with cua.sft.legacy_train_qwen's own mapping, and the EXECUTED pixel action reads back in model space.
+    # The eval scales with cua.prompt.coords' own mapping, and the EXECUTED pixel action reads back in model space.
     assert (452, 697) == to_viewport_coords(353, 968)
     executed = scale_action({"type": "click", "x": 353, "y": 968, "button": "left"}, "normalized_1000")
     assert history_entries_for_step({"actions": [executed]}) == ["click(353, 968)"]

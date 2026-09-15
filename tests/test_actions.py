@@ -1,4 +1,5 @@
-from cua.rl.actions import ACTION_DECODERS, decode_step, encode_step
+from cua.rl.actions import decode_step, encode_step
+from cua.trajectory.actions import ACTION_SPECS
 
 FIXTURES = [
     {"type": "click", "x": 10, "y": 20, "button": "left"},
@@ -33,7 +34,7 @@ def test_round_trip_every_action_shape():
 
 
 def test_every_decoder_is_covered_by_a_fixture():
-    assert set(ACTION_DECODERS) == {a["type"] for a in FIXTURES}
+    assert {n for n, spec in ACTION_SPECS.items() if spec.decode} == {a["type"] for a in FIXTURES}
 
 
 def test_multi_action_step_keeps_order():

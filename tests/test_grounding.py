@@ -1,4 +1,4 @@
-"""Grounding slice of `cua/sft/legacy_train_qwen.py convert`: element-description -> click examples mined from recorded click steps."""
+"""Grounding slice of `python -m cua.sft convert`: element-description -> click examples mined from recorded click steps."""
 
 import io
 import itertools
@@ -9,15 +9,13 @@ from pathlib import Path
 
 from PIL import Image
 
-from cua.sft.legacy_train_qwen import (
+from cua.prompt.format import GROUNDING_SYSTEM_PROMPT, build_grounding_observation, build_step_observation
+from cua.sft.convert import convert_trajectories
+from cua.sft.grounding import (
     GROUNDING_PER_GROUP_CAP,
     GROUNDING_ROLE_NOUNS,
     GROUNDING_SMALL_OVERSAMPLE,
-    GROUNDING_SYSTEM_PROMPT,
     GROUNDING_TEMPLATES,
-    build_grounding_observation,
-    build_step_observation,
-    convert_trajectories,
     grounding_description,
     grounding_example,
     grounding_targets,

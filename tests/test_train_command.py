@@ -1,6 +1,6 @@
 """Every config key reaches swift sft: mapped keys through the flag map, the rest forwarded verbatim."""
 
-from cua.sft.legacy_train_qwen import build_sft_command
+from cua.sft.swift_launch import build_sft_command
 
 
 def _pair(cmd, flag):

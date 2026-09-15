@@ -25,14 +25,10 @@ from cua.pipeline.agent_runner import run_agent
 from cua.pipeline.corpus_audit import is_trainable
 from cua.pipeline.llm_config import MODEL_FOR_GROUNDED_GENERATION
 from cua.pipeline.sdk_runner import UsageLimitReached
-from cua.sft.legacy_train_qwen import (
-    PREV_IMAGE_SIZE,
-    downscale_prev,
-    format_action_summary,
-    history_entries_for_step,
-    step_effects,
-    to_model_action,
-)
+from cua.prompt.coords import to_model_action
+from cua.prompt.effects import downscale_prev, step_effects
+from cua.prompt.format import PREV_IMAGE_SIZE, history_entries_for_step
+from cua.trajectory.actions import format_action_summary
 
 logger = logging.getLogger(__name__)
 

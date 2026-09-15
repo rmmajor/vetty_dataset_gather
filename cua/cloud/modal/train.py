@@ -1,10 +1,12 @@
-"""Run the unchanged cua/sft/legacy_train_qwen.py convert+train on a Modal GPU, leaving the adapter on a volume the serve app mounts."""
+"""Run the unchanged `python -m cua.sft` convert+train on a Modal GPU, leaving the adapter on a volume the serve app mounts."""
 
 # Variants are configs, not forks: `modal run cua/cloud/modal/train.py --config config_sft_v2_conservative.yaml --run-name sft-v2`.
 import os
 import pathlib
 
 import modal
+
+from cua.sft.recipe import convert_command, train_command
 
 APP_NAME = "cua-train"
 GPU = os.environ.get("CUA_TRAIN_GPU", "A100-80GB")
@@ -37,7 +39,7 @@ image = (
         "torch==2.6.0",
         # qwen_vl_utils imports torchvision; 0.21.0 is the release paired with torch 2.6.0.
         "torchvision==0.21.0",
-        # 4.x renamed train_type -> tuner_type; cua/sft/legacy_train_qwen.py's flag map targets that CLI.
+        # 4.x renamed train_type -> tuner_type; cua.sft.swift_launch's flag map targets that CLI.
         "ms-swift[llm]>=4.5,<5",
         # datasets<2.19 calls pa.PyExtensionType, which pyarrow>=16 removed; swift dies on import.
         "datasets>=3.0",
@@ -111,21 +113,7 @@ def train(
         print("+", " ".join(audit), flush=True)
         subprocess.run(audit, cwd=CODE_ROOT, check=True)
 
-    convert = [
-        sys.executable,
-        "-m",
-        "cua.sft",
-        "convert",
-        "--input",
-        str(traj_dir),
-        "--output",
-        str(dataset_dir),
-        "--val-split",
-        str(val_split),
-        "--exclude-waste-steps",
-        "--meandering-mode",
-        "subsample",
-    ] + (extra_convert_args or [])
+    convert = convert_command(sys.executable, traj_dir, dataset_dir, val_split, extra_convert_args or [])
     print("+", " ".join(convert), flush=True)
     subprocess.run(convert, cwd=CODE_ROOT, check=True)
 
@@ -145,16 +133,7 @@ def train(
     run_config = run_dir / "config.yaml"
     run_config.write_text(yaml.safe_dump(config, sort_keys=False))
 
-    train_cmd = [
-        sys.executable,
-        "-m",
-        "cua.sft",
-        "train",
-        "--config",
-        str(run_config),
-        "--dataset",
-        str(dataset_file),
-    ] + (extra_train_args or [])
+    train_cmd = train_command(sys.executable, run_config, dataset_file, extra_train_args or [])
     print("+", " ".join(train_cmd), flush=True)
 
     stop = threading.Event()
@@ -208,19 +187,26 @@ def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
     from swift.model import get_model_processor
     from swift.template import get_template
 
-    from cua.sft import legacy_train_qwen as tq
+    from cua.prompt.effects import downscale_prev
+    from cua.prompt.format import (
+        GROUNDING_SYSTEM_PROMPT,
+        SYSTEM_PROMPT,
+        build_grounding_observation,
+        build_step_messages,
+        build_step_observation,
+    )
 
     tmp = pathlib.Path("/tmp/encode_check")
     tmp.mkdir(exist_ok=True)
     cur, prev = tmp / "cur.png", tmp / "prev.png"
     Image.new("RGB", (1280, 720), (240, 240, 240)).save(cur)
-    prev.write_bytes(tq.downscale_prev(cur.read_bytes()))
+    prev.write_bytes(downscale_prev(cur.read_bytes()))
     history = [
         f"click({i * 10 + 5}, {i * 7 + 3}) [no change] -> /settings/notifications/preferences" for i in range(23)
     ]
-    step = tq.build_step_messages(
-        tq.SYSTEM_PROMPT,
-        tq.build_step_observation(
+    step = build_step_messages(
+        SYSTEM_PROMPT,
+        build_step_observation(
             "Toggling Email notifications persists after reload. Verify the box stays unchecked.",
             history,
             str(cur),
@@ -233,9 +219,7 @@ def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
             "content": "<think>Clicking Save worked: a banner is visible. I reload to confirm.</think>\naction: click(<ref>(500, 500)</ref>, button=left)",
         }
     )
-    grounding = tq.build_step_messages(
-        tq.GROUNDING_SYSTEM_PROMPT, tq.build_grounding_observation('the "Save" button', str(cur))
-    )
+    grounding = build_step_messages(GROUNDING_SYSTEM_PROMPT, build_grounding_observation('the "Save" button', str(cur)))
     grounding.append({"role": "assistant", "content": "action: click(<ref>(500, 500)</ref>, button=left)"})
     loaded = get_model_processor(model, load_model=False)
     processor = loaded[1] if isinstance(loaded, tuple) else loaded

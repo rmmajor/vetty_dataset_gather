@@ -1,6 +1,6 @@
 """Turn a decoded student step into the driver's `sequence` payload."""
 
-from cua.pipeline.corpus_audit import VIEWPORT
+from cua.trajectory import VIEWPORT
 
 MISSING_THOUGHT_PLACEHOLDER = "(no reasoning emitted)"
 CONTROL_TYPES = ("done", "handoff", "confirm")

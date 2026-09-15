@@ -1,7 +1,7 @@
 """Remote-training configuration: one dataclass plus a layered loader.
 
 Precedence, lowest to highest: dataclass defaults < remote_train.yaml < env vars < CLI
-flags. This mirrors `cua/sft/legacy_train_qwen.py:train_model`'s "load YAML, then apply non-None
+flags. This mirrors `cua.sft.swift_launch.train_model`'s "load YAML, then apply non-None
 overrides" pattern. Secrets are never read from the YAML — only from env
 (`VAST_API_KEY`, `HF_TOKEN`), like `GITHUB_TOKEN`/`OPENAI_API_KEY` elsewhere in the repo.
 """

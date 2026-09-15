@@ -1,7 +1,7 @@
 Traceback (most recent call last):
   File "<frozen runpy>", line 203, in _run_module_as_main
   File "<frozen runpy>", line 88, in _run_code
-  File "<repo>/cua/path_a/recorder.py", line 11, in <module>
+  File "<repo>/cua/path_a/recorder.py", line 10, in <module>
     from openai import OpenAI
 ModuleNotFoundError: No module named 'openai'
 [exit 1]

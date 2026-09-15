@@ -12,6 +12,8 @@ from pathlib import Path
 
 import yaml
 
+from cua.sft.swift_launch import yaml_to_cli_args
+
 ROLLOUT_FLAG_MAP = {
     "merged_model": "--model",
     "template": "--template",
@@ -105,18 +107,6 @@ def load_rl_config(path="rl_config.yaml"):
     return yaml.safe_load(Path(path).read_text())
 
 
-def _flag_value(value):
-    return str(value).lower() if isinstance(value, bool) else str(value)
-
-
-def _flags(cfg, flag_map):
-    argv = []
-    for key, flag in flag_map.items():
-        if key in cfg and cfg[key] is not None:
-            argv += [flag, _flag_value(cfg[key])]
-    return argv
-
-
 def build_merge_command(cfg):
     # --exist_ok: a merge killed mid-write leaves a dir without config.json, which our own guard lets
     # through and swift export then refuses — a failed attempt would poison every retry.
@@ -137,11 +127,11 @@ def build_merge_command(cfg):
 
 
 def build_rollout_command(cfg):
-    return ["swift", "rollout", *_flags(cfg, ROLLOUT_FLAG_MAP), *ROLLOUT_FIXED]
+    return ["swift", "rollout", *yaml_to_cli_args(ROLLOUT_FLAG_MAP, cfg), *ROLLOUT_FIXED]
 
 
 def build_rlhf_command(cfg):
-    argv = ["swift", "rlhf", *RLHF_FIXED, *_flags(cfg, RLHF_FLAG_MAP)]
+    argv = ["swift", "rlhf", *RLHF_FIXED, *yaml_to_cli_args(RLHF_FLAG_MAP, cfg)]
     if cfg.get("reward_weights"):
         argv += ["--reward_weights", *str(cfg["reward_weights"]).split()]
     return argv
@@ -151,7 +141,7 @@ def build_deploy_command(cfg, adapters=None):
     argv = [
         "swift",
         "deploy",
-        *_flags(cfg, DEPLOY_FLAG_MAP),
+        *yaml_to_cli_args(DEPLOY_FLAG_MAP, cfg),
         *DEPLOY_FIXED,
         "--port",
         str(cfg["compute"]["serve_port"]),
@@ -210,7 +200,7 @@ def build_env(cfg, run_dir, workdir=None):
     if cfg.get("env_token"):
         env["RL_ENV_TOKEN"] = str(cfg["env_token"])
     if workdir:
-        # swift loads --external_plugins as a top-level module, so the repo root must be importable for `rl.*` / cua.sft.legacy_train_qwen.
+        # swift loads --external_plugins as a top-level module, so the repo root must be importable for `rl.*` / cua.sft.swift_launch.
         env["PYTHONPATH"] = os.pathsep.join(p for p in (str(workdir), os.environ.get("PYTHONPATH", "")) if p)
     return env
 

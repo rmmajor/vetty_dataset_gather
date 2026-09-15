@@ -35,22 +35,21 @@ from cua.pipeline.site_blocks import (  # noqa: F401  re-exported
     BLOCK_SIGNATURES_VERSION,
     detect_block,
 )
-from cua.sft.legacy_train_qwen import (
+from cua.prompt.coords import MODEL_COORD_MAX, to_viewport_coords
+from cua.prompt.effects import downscale_prev, screenshot_changed_fraction, url_path_change
+from cua.prompt.format import (
     HISTORY_WINDOW,
-    MODEL_COORD_MAX,
     PREV_IMAGE_SIZE,
     PROMPT_FORMAT_VERSION,
     SYSTEM_PROMPT,
     build_step_messages,
     build_step_observation,
-    downscale_prev,
-    format_action_for_training,
     history_entries_for_step,
-    screenshot_changed_fraction,
+    png_b64,
     to_openai_content,
-    to_viewport_coords,
-    url_path_change,
 )
+from cua.trajectory import VIEWPORT
+from cua.trajectory.actions import format_action_for_training
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +70,12 @@ class StudentError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Prompt construction — cua.sft.legacy_train_qwen's own observation builders, with PNG bytes inlined as data URLs.
+# Prompt construction — cua.prompt.format's own observation builders, with PNG bytes inlined as data URLs.
 # ---------------------------------------------------------------------------
 
 
 def observed_effect(prev_png: bytes, cur_png: bytes, prev_url: str, cur_url: str) -> dict:
-    """What the next screenshot/url showed the last step's actions did, in the shape cua.sft.legacy_train_qwen annotates with."""
+    """What the next screenshot/url showed the last step's actions did, in the shape cua.prompt.effects annotates with."""
     return {"changed": screenshot_changed_fraction(prev_png, cur_png), "path": url_path_change(prev_url, cur_url)}
 
 
@@ -102,7 +101,7 @@ def build_student_messages(
     if prev_png is not None:
         images["prev"] = downscale_prev(prev_png)
     turn = build_step_observation(instruction, action_history, "cur", "prev" if prev_png is not None else None)
-    content = to_openai_content(turn["content"], lambda ref: base64.b64encode(images[ref]).decode())
+    content = to_openai_content(turn["content"], lambda ref: png_b64(images[ref]))
     return build_step_messages(SYSTEM_PROMPT, {**turn, "content": content})
 
 
@@ -624,8 +623,7 @@ def parse_student_output(text: str, tolerant_grammar: bool = True) -> ParsedStep
 # PER-MODEL and never auto-detected (stock Qwen and sft3 answer in normalized_1000, sft-v1/v2 in viewport_abs); scoring one in the other's space yields a confident wrong number, not an error.
 # ---------------------------------------------------------------------------
 
-VIEWPORT_W = 1280
-VIEWPORT_H = 720
+VIEWPORT_W, VIEWPORT_H = VIEWPORT
 
 COORD_SPACES: dict = {
     "viewport_abs": lambda x, y: (round(x), round(y)),

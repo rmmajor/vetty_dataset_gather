@@ -6,7 +6,7 @@ bounding box. Built to compare a model before and after SFT, and reusable for
 arbitrary models via a coordinate-space registry, a configurable output parser,
 a pluggable inference backend, and a configurable dataset/bbox adapter.
 
-An sft3 checkpoint answers in normalized 0-1000 coordinates (cua.sft.legacy_train_qwen.COORD_SPACE),
+An sft3 checkpoint answers in normalized 0-1000 coordinates (cua.prompt.coords.COORD_SPACE),
 as a stock Qwen does; the sft-v1/v2 checkpoints answered in absolute pixels of the
 fixed 1280x720 training viewport, which the `viewport_abs` coordinate space reproduces.
 Native-resolution absolute is selectable for other models.
@@ -19,7 +19,6 @@ samples, requiring no model, GPU, or network.
 
 import argparse
 import asyncio
-import base64
 import concurrent.futures
 import io
 import json
@@ -35,11 +34,13 @@ from pathlib import Path
 
 import yaml
 
-from cua.sft.legacy_train_qwen import (
+from cua.prompt.coords import parse_viewport
+from cua.prompt.format import (
     GROUNDING_SYSTEM_PROMPT,
     PROMPT_FORMAT_VERSION,
     build_grounding_observation,
     build_step_messages,
+    png_b64,
     to_claude_content,
     to_openai_content,
 )
@@ -302,7 +303,7 @@ def load_screenspot(cfg):
 
 # ----------------------------------------------------------------------------
 # Predictor registry. `swift` shells out to the `swift infer` CLI (mirroring how
-# cua/sft/legacy_train_qwen.py shells out to `swift sft`), so it needs no in-process model
+# cua.sft.swift_launch shells out to `swift sft`), so it needs no in-process model
 # imports. `mock` returns canned text for testing and debugging.
 # ----------------------------------------------------------------------------
 
@@ -418,7 +419,7 @@ class OpenAIPredictor(Predictor):
     def _encode(self, image):
         buf = io.BytesIO()
         image.convert("RGB").save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
+        return png_b64(buf.getvalue())
 
     def _one(self, sample, coord_space):
         image = prepare_sample_image(sample.image)
@@ -477,7 +478,7 @@ class ClaudePredictor(Predictor):
     def _encode(self, image):
         buf = io.BytesIO()
         image.convert("RGB").save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
+        return png_b64(buf.getvalue())
 
     def _one(self, sample, coord_space):
         from claude_agent_sdk import ClaudeAgentOptions
@@ -837,11 +838,6 @@ def run_smoke_test(cfg):
 # ----------------------------------------------------------------------------
 # CLI.
 # ----------------------------------------------------------------------------
-
-
-def parse_viewport(value):
-    width, height = value.lower().split("x")
-    return int(width), int(height)
 
 
 def config_from_args(args):

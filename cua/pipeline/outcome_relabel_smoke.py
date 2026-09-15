@@ -13,7 +13,7 @@ from PIL import Image
 
 from cua.pipeline import outcome_relabel
 from cua.pipeline.sdk_runner import UsageLimitReached
-from cua.sft.legacy_train_qwen import effect_annotation, step_effects
+from cua.prompt.effects import effect_annotation, step_effects
 
 logger = logging.getLogger(__name__)
 

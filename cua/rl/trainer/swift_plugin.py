@@ -12,6 +12,7 @@ from swift.rewards.orm import ORM, orms
 from swift.rollout.gym_env import Env, envs
 from swift.rollout.multi_turn import GYMScheduler, multi_turns
 
+from cua.prompt.format import SYSTEM_PROMPT
 from cua.rl.observation import build_observation
 from cua.rl.trainer.core import (
     EpisodeRecorder,
@@ -22,7 +23,6 @@ from cua.rl.trainer.core import (
     observation_to_user_message,
     require_reward,
 )
-from cua.sft.legacy_train_qwen import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 

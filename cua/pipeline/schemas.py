@@ -1,8 +1,14 @@
 import os
-from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
+
+# The recorded-trajectory contract moved to cua.trajectory.schema; re-exported so pipeline callers keep one import site.
+from cua.trajectory.schema import CaptureMeta as CaptureMeta
+from cua.trajectory.schema import StepCaptureMeta as StepCaptureMeta
+from cua.trajectory.schema import Trajectory as Trajectory
+from cua.trajectory.schema import TrajectoryMetadata as TrajectoryMetadata
+from cua.trajectory.schema import TrajectoryStep as TrajectoryStep
 
 
 class RepoStatus(str, Enum):
@@ -220,104 +226,3 @@ class TrialResults(BaseModel):
             + min(self.trajectory_count_estimate / 50.0, 1.0) * 0.15
             + (1.0 - self.setup_complexity_score) * 0.10
         )
-
-
-class TrajectoryStep(BaseModel):
-    step: int
-    screenshot: str
-    thought: str = ""
-    actions: list[dict] = Field(default_factory=list)
-    # Inline, high-value capture fields (additive; cua/sft/legacy_train_qwen.py convert ignores unknown
-    # step keys). The full diagnostic record lives in the sibling capture_meta.json.
-    bbox: dict | None = None
-    role: str | None = None
-    name: str | None = None
-    # Watchdog verdict recorded after a `confirm` step (login-gated capture). An observation,
-    # not an action the student emits: a step carrying `event` has empty `actions`, is excluded
-    # from SFT targets, and is threaded into the next steps' action_history so the student learns
-    # to execute only after approval. Shape: {kind:"approval", decision:"approve"|"deny",
-    # rationale:str, by:"watchdog"}.
-    event: dict | None = None
-
-
-class Trajectory(BaseModel):
-    task_id: str
-    instruction: str
-    start_url: str
-    steps: list[TrajectoryStep] = Field(default_factory=list)
-    total_steps: int = 0
-    success: bool = True
-
-
-class TrajectoryMetadata(BaseModel):
-    task_id: str
-    instruction: str
-    start_url: str
-    domain: str = ""
-    website: str = ""
-    total_steps: int = 0
-    success: bool = True
-    viewport: dict = Field(default_factory=lambda: {"width": 1280, "height": 720})
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
-    source_repo: str = ""
-    # Aggregate / provenance fields, derived after capture (stage 6 for Path B). All optional
-    # so trajectories recorded before this existed still validate.
-    framework: str = ""
-    framework_language: str = ""
-    source_query: str = ""
-    repo_stars: int = 0
-    action_type_histogram: dict = Field(default_factory=dict)
-    element_role_histogram: dict = Field(default_factory=dict)
-    length_bucket: str = ""
-    n_navigations: int = 0
-    valid_bbox_ratio: float = 0.0
-    n_console_errors: int = 0
-    instruction_source: str = ""
-    thought_source: str = ""
-    dedup_hash: str = ""
-    task_type: str = ""
-    # Login-gated lane (additive; absent on every pre-existing trajectory). `autonomy` is the
-    # learned-behavior policy the trajectory was captured under; `auth_mode` how the session was
-    # provisioned; `risk_category` the terminal risk class (if any); `preconditions` the replay
-    # manifest an eval/deploy harness reads to reconstruct the conditions (the SFT converter
-    # ignores it). See docs/superpowers/specs/2026-06-28-login-gated-trajectories-design.md.
-    autonomy: str = "autonomous"  # "guarded" | "autonomous"
-    auth_mode: str = "none"  # "pre_session" | "handoff_login" | "none"
-    risk_category: str = ""
-    preconditions: dict = Field(default_factory=dict)
-
-
-class StepCaptureMeta(BaseModel):
-    """Full per-step diagnostic record. Written to capture_meta.json, keyed by step number.
-    Element fields are best-effort and default gracefully when the DOM probe is unavailable
-    (Path A, screenshot-only) or fails."""
-
-    selector: str = ""
-    tag: str | None = None
-    role: str | None = None
-    name: str | None = None
-    attrs: dict = Field(default_factory=dict)
-    bbox: dict | None = None
-    is_visible: bool | None = None
-    is_enabled: bool | None = None
-    in_viewport: bool | None = None
-    url_before: str | None = None
-    url_after: str | None = None
-    caused_navigation: bool = False
-    dom_changed: bool | None = None
-    error: str | None = None
-    console_errors: int = 0
-    screenshot_sha: str = ""
-    screenshot_width: int = 0
-    screenshot_height: int = 0
-    scroll_position: dict = Field(default_factory=lambda: {"x": 0, "y": 0})
-    dt_ms: int = 0
-    wait_state: str | None = None
-
-
-class CaptureMeta(BaseModel):
-    schema_version: int = 1
-    task_id: str = ""
-    framework: str = ""
-    framework_language: str = ""
-    steps: dict[str, StepCaptureMeta] = Field(default_factory=dict)

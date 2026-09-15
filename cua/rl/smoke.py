@@ -18,7 +18,7 @@ from cua.rl.episode import EpisodeConfig
 from cua.rl.policies import ScriptedPolicy
 from cua.rl.runner import make_run_context, run_episode
 from cua.rl.service import EnvService, serve
-from cua.sft.legacy_train_qwen import convert_trajectory_to_examples
+from cua.sft.convert import convert_trajectory_to_examples
 
 logger = logging.getLogger(__name__)
 

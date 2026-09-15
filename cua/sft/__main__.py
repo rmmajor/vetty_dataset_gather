@@ -1,4 +1,4 @@
-from cua.sft.legacy_train_qwen import main
+from cua.sft.cli import main
 
 if __name__ == "__main__":
     main()

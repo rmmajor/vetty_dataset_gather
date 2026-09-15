@@ -23,7 +23,8 @@ from cua.eval.task_sources import TASK_SOURCES
 from cua.pipeline import schemas
 from cua.pipeline.registry import RepoRegistry
 from cua.rl.actions import decode_step
-from cua.sft.legacy_train_qwen import VIEWPORT, format_action_for_training, format_action_summary
+from cua.trajectory import VIEWPORT
+from cua.trajectory.actions import format_action_for_training, format_action_summary
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 # Owned by the prompt contract, not by this generator: never written, never diffed here.

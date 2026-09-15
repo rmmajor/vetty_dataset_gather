@@ -68,7 +68,7 @@ dev = [
 ]
 
 [project.scripts]
-cua-sft = "cua.sft.legacy_train_qwen:main"
+cua-sft = "cua.sft.cli:main"
 cua-screenspot = "cua.eval.screenspot:main"
 cua-student-eval = "cua.eval.student:main"
 cua-pipeline = "cua.pipeline.orchestrator:main"
