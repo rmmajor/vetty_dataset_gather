@@ -5,7 +5,6 @@ from pathlib import Path
 
 from cua.trajectory.io import TrajectoryDir, iter_trajectory_dirs, load_json, write_json
 from cua.trajectory.schema import metadata_from
-from tests.regression_fixtures import write_synthetic_corpus
 
 # The key set cua.pipeline.lanes.capture_lane.verify_and_finalize writes for every site_* capture.
 SITE_CAPTURE_KEYS = [
@@ -35,21 +34,37 @@ SITE_CAPTURE_KEYS = [
 ]
 
 
+# The three directory layouts the corpus carries: a public-site lane, the repo funnel and Path A.
+CORPUS_LAYOUTS = (
+    "site_synth/task_0001_search",
+    "site_synth/task_0002_settings",
+    "repo_synth_app/task_0001_board",
+    "repo_synth_app/task_0002_login",
+    "task_mind2web_0001",
+)
+
+
+def write_corpus(root: Path) -> Path:
+    """One trajectory directory per layout, each carrying the single file the walk keys on."""
+    for relative in CORPUS_LAYOUTS:
+        directory = root / relative
+        directory.mkdir(parents=True)
+        write_json(directory / "trajectory.json", {"task_id": directory.name, "steps": []})
+    return root
+
+
 def test_walk_finds_every_layout_and_skips_dirs_without_a_trajectory():
     with tempfile.TemporaryDirectory(prefix="traj_io_walk_") as tmp:
-        root = write_synthetic_corpus(Path(tmp) / "trajectories")
+        root = write_corpus(Path(tmp) / "trajectories")
         (root / "site_synth" / "task_9999_empty").mkdir(parents=True)
         (root / "repo_synth_app" / "not_a_task").mkdir(parents=True)
         found = list(iter_trajectory_dirs(root))
 
         assert found == sorted(found), found
         relative = {str(d.relative_to(root)) for d in found}
-        assert "site_synth/task_0001_search" in relative
-        assert "repo_synth_app/task_0001_board" in relative
-        assert "task_mind2web_0001" in relative
+        assert relative == set(CORPUS_LAYOUTS), relative
         assert "site_synth/task_9999_empty" not in relative
         assert not any(d.name == "not_a_task" for d in found)
-        assert len(found) == 10, relative
 
 
 def test_load_json_on_missing_invalid_and_non_object():

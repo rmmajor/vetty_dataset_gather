@@ -66,7 +66,7 @@ class TrajectoryDir:
         return self.path / step.get("screenshot", "")
 
     def is_trainable(self) -> bool:
-        # lazy: corpus.audit imports this module for the walk, so its gate is only reachable at call time.
+        # corpus.audit imports this module for the walk, so its gate is only reachable at call time.
         from cua.pipeline.corpus.audit import trainability
 
         return trainability(self.trajectory, self.metadata, self.capture_meta, self.path.name) is None

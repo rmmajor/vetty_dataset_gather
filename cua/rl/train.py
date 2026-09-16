@@ -192,7 +192,7 @@ def build_vllm_serve_command(cfg, adapters=None):
 
 def build_env(cfg, run_dir, workdir=None):
     env = {
-        **os.environ,  # env-read: the trainer subprocess inherits this process's environment
+        **os.environ,  # The trainer subprocess inherits this process's environment
         "MAX_PIXELS": str(cfg["max_pixels"]),
         "RL_ENV_URL": cfg["env_url"],
         "RL_RUN_DIR": str(run_dir),
@@ -202,7 +202,7 @@ def build_env(cfg, run_dir, workdir=None):
     if cfg.get("env_token"):
         env["RL_ENV_TOKEN"] = str(cfg["env_token"])
     if workdir:
-        # env-read: prepends the repo root, since swift loads --external_plugins as a top-level module
+        # Prepends the repo root, since swift loads --external_plugins as a top-level module
         env["PYTHONPATH"] = os.pathsep.join(p for p in (str(workdir), os.environ.get("PYTHONPATH", "")) if p)
     return env
 

@@ -340,7 +340,7 @@ def install_sigterm_handler():
 
 def build_sandbox_mcp_server(sandbox: DockerSandbox, server_name: str = "sandbox"):
     """An in-process MCP server whose tools run inside `sandbox`, as (server, allowed_tool_names)."""
-    # lazy: keeps the SDK out of the import graph of the callers that never build a server
+    # Keeps the SDK out of the import graph of the callers that never build a server
     from claude_agent_sdk import create_sdk_mcp_server, tool
 
     # docker-py blocks, so every tool hops to an executor and leaves the event loop free for concurrent workers.

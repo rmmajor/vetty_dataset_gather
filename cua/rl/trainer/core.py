@@ -118,7 +118,7 @@ class MockEnvClient:
 
     def __init__(self, steps=3, image_size=(1280, 720), **_):
         self.steps, self.png = steps, blank_png_b64(image_size)
-        # env-read: the GRPO smoke toggles this to simulate a verdictless service the run must refuse
+        # The GRPO smoke toggles this to simulate a verdictless service the run must refuse
         self.no_reward = os.environ.get("RL_MOCK_NO_REWARD") == "1"
         self.episodes = {}
 

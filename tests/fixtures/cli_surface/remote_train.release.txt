@@ -1,4 +1,0 @@
-options:
-  -h, --help           show this help message and exit
-  --instance INSTANCE  Instance id as recorded in the state file.
-  --verbose            Debug logging

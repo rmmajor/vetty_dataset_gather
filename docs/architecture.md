@@ -99,8 +99,7 @@ the pre-schema write-through and names the offending field rather than losing th
 | `cua/eval/` | `screenspot/` (grounding), `student/` (browser episodes), `task_sources.py` (the eval task registry), `blocks.py` (what counts as a site blocking automation) |
 | `cua/rl/` | the GRPO rollout harness and its trainer plugin (frozen, see below) |
 | `cua/cloud/` | `modal/` and `vast/`, which orchestrate rented GPUs and hold no training logic |
-| `tests/` | the test runner (`python -m tests`: no Docker, LLM or GPU, but it needs the `pipeline` extra) plus the behaviour-regression fixtures |
-| `scripts/` | the repo's own convention checks (comments, nested imports, environment reads) |
+| `tests/` | the test runner (`python -m tests`: no Docker, LLM or GPU, but it needs the `pipeline` extra) |
 
 `docker/` holds the sandbox images, `experiments/` the measurement registry, `eval_archive/` the
 committed raw evaluation artefacts, and `constraints/` the resolved GPU dependency column.
@@ -505,8 +504,9 @@ teacher plus the coordinate-only `move_xy` / `type_text` / `scroll_xy` a student
 Replay mode writes trajectories from three injected StepRecorders — `pw_python_conftest.py`
 (pytest-playwright), `pw_ts_fixture.ts` (`@playwright/test`) and `selenium_python_conftest.py` —
 each writing `trajectory.json`, `capture_meta.json` and `metadata.json`. Those three files run
-inside the repository under test, where the `cua` package is not importable, which is why they keep
-their own marked environment reads instead of going through `cua/settings.py`.
+inside the repository under test, where the `cua` package is not importable, which is why they read
+the environment directly, each read carrying a one-line reason, instead of going through
+`cua/settings.py`.
 
 Injection is driven entirely by the resolved `FrameworkProfile` and is shared by stages 5 and 6.
 The TypeScript fixture re-exports the whole `@playwright/test` module as a drop-in superset and
@@ -1024,9 +1024,8 @@ as `--key value` in config order, so a recipe can reach a `swift` flag the map h
 Every environment variable the package reads is resolved once, at import of `cua/settings.py`,
 into frozen section objects (`SANDBOX`, `PIPELINE`, `CAPTURE`, `SDK`, `PROMPT`, `CORPUS`,
 `GROUNDING`, `EVAL`, `CLOUD`, `RL`, `NOTIFY`, `GITHUB`). `docs/conventions.md` lists every name,
-default and consumer, generated from the field metadata by `python -m cua.settings --table`. The
-knobs whose *values* were chosen for a reason are explained below; the modules themselves now carry
-only the reference, not the argument.
+default and consumer. The knobs whose *values* were chosen for a reason are explained below; the
+modules themselves carry only the reference, not the argument.
 
 ### Sandbox resource caps
 
@@ -1171,9 +1170,10 @@ module, so Modal mounts only that single file
 (`modal/_utils/function_utils.py:get_entrypoint_mount`, `FunctionInfoType.FILE`) and the container
 re-imports it with no `cua` package on the path. `train.py` and `grpo.py` are importable there only
 because their images mount `cua/` at `/workspace` with `PYTHONPATH` set; the vLLM serve image and
-the merge image do not, so those two read their configuration from the environment (each read is
-marked) and keep their own volume handles. That is also why every env value they resolve at deploy
-time is baked into the image: the container re-import would otherwise resolve it differently.
+the merge image do not, so those two read their configuration from the environment (each read
+carrying a one-line reason) and keep their own volume handles. That is also why every env value they
+resolve at deploy time is baked into the image: the container re-import would otherwise resolve it
+differently.
 
 The CUDA and torch pins differ per lane on purpose: `train.py` is CUDA 12.4.1 + torch 2.6.0
 (the stack ms-swift 4.x was proven on, with torchvision 0.21.0 as its paired release), `grpo.py` is
@@ -1275,8 +1275,8 @@ path, so an imported package lands on the box as a package rather than as loose 
 adds two guards learned from paid runs: `preflight` asks the env service for the task it is about to
 train on, because a task the service does not serve 404s on reset and the trainer plugin turns that
 into a fabricated reward of 0.0 — better caught before renting — and `on_poll` pulls checkpoints
-from `rl_output/` rather than `latest/`, since `latest` only appears after swift exits, so every
-mid-run checkpoint used to die with the box.
+from `rl_output/` rather than `latest/`, since `latest` only appears after swift exits: pulling
+`rl_output/` on every poll is what carries a mid-run checkpoint off the box before it is destroyed.
 
 `lifecycle.SMOKE_CASES` is that self-test: each case is one `_smoke_*` function taking the shared
 scratch environment, and adding one is a function plus a registry entry. Its central assertions are
@@ -1386,9 +1386,9 @@ is ranked in `docs/open-items.md`.
 ## What was deliberately left alone
 
 - **The three replay StepRecorders** (`instrumentation/pw_python_conftest.py`, `pw_ts_fixture.ts`,
-  `selenium_python_conftest.py`) are untouched by the package refactor. They execute inside the
-  repository under test, where the `cua` package is not importable, so they keep their own
-  environment reads behind a marker and their own copies of what they need.
+  `selenium_python_conftest.py`) stand outside the package. They run inside the repository under
+  test, where the `cua` package is not importable, so they keep their own environment reads, each
+  with a one-line reason, and their own copies of what they need.
 - **The RL lane** is frozen as described above rather than being brought forward to the two-image
   observation.
 - **Dated records under `docs/decisions/`** keep the module paths that were true when they were

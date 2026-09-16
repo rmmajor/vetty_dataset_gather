@@ -74,7 +74,7 @@ def grpo(
     no_reward_smoke: bool = False,
 ):
     if no_reward_smoke:
-        # env-read: inherited by cua.rl.train's subprocesses, so a verdictless close kills the run
+        # Inherited by cua.rl.train's subprocesses, so a verdictless close kills the run
         os.environ["RL_MOCK_NO_REWARD"] = "1"
 
     adapter_src = Path(OUT_MOUNT) / sft_adapter

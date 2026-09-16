@@ -1,9 +1,0 @@
-Measures how much of the corpus demonstrates act -> persist -> re-check, and
-whether done() follows evidence.
-
-positional arguments:
-  corpus
-
-options:
-  -h, --help  show this help message and exit
-  --json

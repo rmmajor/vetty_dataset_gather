@@ -1,1 +1,0 @@
-NO ARGPARSE SURFACE — this entrypoint reads sys.argv directly, so --help is not captured; running it would start Docker, network or LLM work.

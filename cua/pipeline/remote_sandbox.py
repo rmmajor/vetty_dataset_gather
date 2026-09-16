@@ -119,7 +119,7 @@ class VastResidentialSandbox(RemoteSandbox):
         self.egress = {}
 
     def start(self, name: str) -> str:
-        # lazy: keeps the Vast rental stack out of the import graph of every capture lane that never rents
+        # Keeps the Vast rental stack out of the import graph of every capture lane that never rents
         from cua.cloud.vast.base import Offer
         from cua.cloud.vast.config import RemoteTrainConfig
         from cua.cloud.vast.vastai import VastAIProvider

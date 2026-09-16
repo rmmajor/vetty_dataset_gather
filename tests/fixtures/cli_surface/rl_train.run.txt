@@ -1,6 +1,0 @@
-options:
-  -h, --help            show this help message and exit
-  --config CONFIG
-  --run-dir RUN_DIR
-  --workdir WORKDIR
-  --mode {swift,fallback}

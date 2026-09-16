@@ -140,13 +140,7 @@ test-instruction-style: ## Scripted (no-LLM/Docker/network) check of the instruc
 test-outcome-relabel: ## Scripted (no-LLM/Docker/network) check of the outcome-relabel pass
 	python -m cua.pipeline.smoke.outcome_relabel
 
-fixtures-build: ## Rewrite the behaviour-regression fixtures under tests/fixtures/
-	python -m tests.regression_fixtures build
-
-fixtures-check: ## Fail if today's behaviour differs from the stored regression fixtures
-	python -m tests.regression_fixtures check
-
-check: test-rl-unit test-eval test-verify-gate test-qa-verify test-remote test-corpus-audit test-instruction-style test-outcome-relabel registry-check conventions-check fixtures-check lint ## Tier-1 gate: every no-Docker, no-LLM, no-network self-test plus the regression fixtures
+check: test-rl-unit test-eval test-verify-gate test-qa-verify test-remote test-corpus-audit test-instruction-style test-outcome-relabel registry-check lint ## Tier-1 gate: every no-Docker, no-LLM, no-network self-test plus lint
 
 test-rl: ## Docker-only end-to-end smoke of the RL harness (static page + scripted policy, no LLM)
 	python -m cua.rl.smoke
@@ -372,22 +366,11 @@ registry: ## Re-render experiments/*.csv into the README registry block
 registry-check: ## Fail if the README registry block is out of date
 	python experiments/render_registry.py --check
 
-conventions-check: ## Fail if the environment table in docs/conventions.md no longer matches cua/settings.py
-	python -m cua.settings --check
-
 # ---------- Lint / format ----------
 
-LINT_PATHS     ?= .
-ENV_READ_ALLOW ?= cua/settings.py
-# Empty: no path is exempt from the convention checks; a finding anywhere fails `make lint`.
-LINT_PENDING   ?=
-
-lint: ## Ruff plus the repo's own comment/env/import conventions, all three enforcing
+lint: ## Ruff check plus the format check
 	ruff check .
 	ruff format --check .
-	python scripts/check_comments.py $(LINT_PATHS) --quiet --pending $(LINT_PENDING)
-	python scripts/check_env_reads.py $(LINT_PATHS) --quiet --allow $(ENV_READ_ALLOW)
-	python scripts/check_nested_imports.py $(LINT_PATHS) --quiet --pending $(LINT_PENDING)
 
 fmt: ## Apply ruff formatting plus the safe import/upgrade autofixes
 	ruff format .

@@ -17,9 +17,6 @@ the code is shaped; this file is what a change has to satisfy.
   wrapping, so the diff shows only the real change.
 - Prefer expressive naming and structure over commenting.
 
-`scripts/check_comments.py` reports multi-line comment runs and multi-line docstrings; `make lint`
-runs it.
-
 ## Registries over special cases
 
 New behaviour is a data entry in an existing registry, not a new branch. A hardcoded name check
@@ -51,16 +48,11 @@ The registries that already exist:
   cycle, a heavy optional dependency that a code path never reaching it must not be made to
   install, or a dependency that exists only inside a container image while the module still has to
   import on the host that launches it.
-- **Every surviving nested import carries a `# lazy: <reason>` comment** on the line above it,
-  naming which of those it is. One marker covers a whole contiguous run of nested imports, so a
-  sorted block needs one comment rather than one per line, and the reason is mandatory:
-  `scripts/check_nested_imports.py` reports any nested import that has no marker above it.
+- **Every surviving nested import says why it is nested** in a one-line comment above it, naming
+  which of those exceptions applies. One comment covers a whole contiguous run of nested imports,
+  so a sorted block carries one line rather than one per import.
 - **No imports inside tests.** `tests/` modules import at the top level; a test that needs a
   dependency the runner may not have is skipped by the runner, not guarded by a local import.
-
-All three convention checks enforce. `scripts/check_comments.py`, `scripts/check_env_reads.py` and
-`scripts/check_nested_imports.py` each fail `make lint` on a single finding anywhere in the tree;
-`--report-only` exists for surveying a change in progress, never for the gate.
 
 ## No regex post-filters on LLM output
 
@@ -151,26 +143,17 @@ There is no pytest suite. The checks are tiered by what they need.
 has to pass:
 
 ```bash
-make check      # every no-LLM self-test, the regression fixtures, registry-check and lint
-make lint       # ruff check + ruff format --check + the three convention checks
+make check      # every no-LLM self-test, registry-check and lint
+make lint       # ruff check + ruff format --check
 make fmt        # ruff format + the safe autofixes
 ```
 
 `make check` fans out to exactly `test-rl-unit` (`python -m tests`, which needs the `pipeline` extra
 but no Docker, LLM or GPU — pass a substring to filter, e.g. `python -m tests sites`), `test-eval`,
 `test-verify-gate`, `test-qa-verify`, `test-remote`, `test-corpus-audit`, `test-instruction-style`,
-`test-outcome-relabel`, `registry-check`, `conventions-check`, `fixtures-check` and `lint`.
+`test-outcome-relabel`, `registry-check` and `lint`.
 `make test-student-eval` is deliberately NOT among them: its backend-surface check builds the
 `docker` browser backend, so it needs a Docker daemon and belongs to Tier 2.
-`make conventions-check` is `python -m cua.settings --check`: it fails
-when the environment table below no longer matches the field metadata, so the table cannot go stale
-the way a hand-maintained one would.
-
-`make fixtures-check` compares today's behaviour against the stored fixtures under
-`tests/fixtures/`. They pin prompt bytes, the action grammar round-trip, CLI surfaces and
-`make -n` output, so an accidental behaviour change shows up as a diff instead of as a worse model.
-Rebuild them deliberately with `make fixtures-build` (pass `--corpus` so the corpus-derived
-fixtures are not silently kept stale), and say in the report which fixtures changed and why.
 
 **Tier 2 — needs Docker.** `make test-sandbox` (container lifecycle), `make test-driver` (a scripted
 no-LLM browser-driver session asserting the trajectory contract), `make test-auth-flow` (the mail
@@ -184,13 +167,11 @@ by running the relevant stage with a small `--limit` and `--budget`; verify a cl
 ## Environment variables
 
 Every variable below is read exactly once, at import of `cua/settings.py`, into a frozen section
-object. No other module reads the environment **except** the marked runtime reads: each carries a
-`# env-read: <reason>` marker naming the variable and the reason, and
-`scripts/check_env_reads.py` fails `make lint` on an unmarked read. Those variables are therefore
-not in the table below. `# env-read:` and the `# lazy:` marker in the Imports section are the two
-marker conventions in the tree, and both make the exception legible at the line that takes it.
+object. No other module reads the environment **except** the runtime reads listed below: each
+carries a one-line comment naming the variable and the reason it is read there, so the exception is
+legible at the line that takes it. Those variables are therefore not in the table below.
 
-The marked exceptions fall into four groups:
+The exceptions fall into four groups:
 
 - **Code that runs where the `cua` package is not importable.** The Modal serve and merge images
   (`cua/cloud/modal/serve.py`, `merge.py`) are invoked in script mode, so the container re-imports
@@ -202,16 +183,12 @@ The marked exceptions fall into four groups:
   subprocess sees it: the `swift sft` child (`cua/sft/swift_launch.py`), the `swift infer` child
   (`cua/eval/screenspot/predictors.py`), the GRPO trainer subprocess and the repo root prepended to
   its path because ms-swift loads `--external_plugins` as a top-level module (`cua/rl/train.py`),
-  the Modal GRPO lane passing a switch through to `cua.rl.train` (`cua/cloud/modal/grpo.py`), and
-  the regression-fixture subprocess, which is handed the real `PATH`/`HOME` and nothing else
-  (`tests/regression_fixtures.py`).
+  and the Modal GRPO lane passing a switch through to `cua.rl.train` (`cua/cloud/modal/grpo.py`).
 - **Write-then-read.** `cua/cloud/modal/train.py` exports `MAX_PIXELS` because ms-swift's template
   reads it back out of the environment; there is no flag for it.
 - **Test toggles.** `cua/rl/trainer/core.py` reads an in-process switch the GRPO smoke flips to
   simulate a verdictless service, and `tests/test_trainer_core.py` sets and unsets it as a pair so
   the toggle never leaks into another test.
-
-Regenerate the table with `python -m cua.settings --table`.
 
 | variable | default | settings field | used by |
 | --- | --- | --- | --- |

@@ -1,8 +1,0 @@
-ScreenSpot grounding evaluation.
-
-positional arguments:
-  {run}
-    run       Run the evaluation.
-
-options:
-  -h, --help  show this help message and exit

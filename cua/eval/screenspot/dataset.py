@@ -39,7 +39,7 @@ def normalize_bbox(raw_bbox, bbox_format, normalized, width, height):
 
 
 def load_screenspot(cfg):
-    # lazy: `datasets` and Pillow are the only heavy deps here, and the mock/smoke path needs neither installed.
+    # `datasets` and Pillow are the only heavy deps here, and the mock/smoke path needs neither installed.
     from datasets import load_dataset
 
     dataset = load_dataset(cfg.dataset, split=cfg.split)

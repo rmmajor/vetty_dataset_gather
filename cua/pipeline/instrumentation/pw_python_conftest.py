@@ -12,7 +12,7 @@ import pytest
 
 TEST_SOURCE_MAX_CHARS = 2000
 
-TRAJECTORY_DIR = os.environ.get("TRAJECTORY_DIR", "/workspace/results")  # env-read: runs in the repo under test
+TRAJECTORY_DIR = os.environ.get("TRAJECTORY_DIR", "/workspace/results")  # Runs in the repo under test
 VIEWPORT_WIDTH = 1280
 VIEWPORT_HEIGHT = 720
 
@@ -86,7 +86,7 @@ class StepRecorder:
     def set_test(self, test_name: str):
         self.test_name = test_name
         safe_name = test_name.replace("/", "_").replace("::", "_").replace(" ", "_")
-        prefix = os.environ.get("TEST_NAME_PREFIX", "repo")  # env-read: runs in the repo under test
+        prefix = os.environ.get("TEST_NAME_PREFIX", "repo")  # Runs in the repo under test
         self.output_dir = Path(TRAJECTORY_DIR) / f"task_{prefix}_{safe_name}"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.steps = []
@@ -177,8 +177,8 @@ class StepRecorder:
         capture_meta = {
             "schema_version": 1,
             "task_id": self.test_name or "unknown",
-            "framework": os.environ.get("FRAMEWORK", ""),  # env-read: runs in the repo under test
-            "framework_language": os.environ.get("FRAMEWORK_LANGUAGE", ""),  # env-read: runs in the repo under test
+            "framework": os.environ.get("FRAMEWORK", ""),  # Runs in the repo under test
+            "framework_language": os.environ.get("FRAMEWORK_LANGUAGE", ""),  # Runs in the repo under test
             "steps": {str(step["step"]): self.meta_by_step.get(step["step"], {}) for step in self.steps},
         }
         with open(self.output_dir / "capture_meta.json", "w") as f:
@@ -193,9 +193,9 @@ class StepRecorder:
             "total_steps": len(clean_steps),
             "success": success,
             "viewport": {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT},
-            "source_repo": os.environ.get("SOURCE_REPO", ""),  # env-read: runs in the repo under test
-            "framework": os.environ.get("FRAMEWORK", ""),  # env-read: runs in the repo under test
-            "framework_language": os.environ.get("FRAMEWORK_LANGUAGE", ""),  # env-read: runs in the repo under test
+            "source_repo": os.environ.get("SOURCE_REPO", ""),  # Runs in the repo under test
+            "framework": os.environ.get("FRAMEWORK", ""),  # Runs in the repo under test
+            "framework_language": os.environ.get("FRAMEWORK_LANGUAGE", ""),  # Runs in the repo under test
         }
         with open(self.output_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
@@ -415,7 +415,7 @@ def _safe_query(page, selector):
 
 def _patch_locator_sync(page):
     """Patch the Locator class so locator.click(), locator.fill(), etc. are instrumented."""
-    # lazy: the conftest is importable in a repo whose Playwright install is still missing
+    # The conftest is importable in a repo whose Playwright install is still missing
     from playwright.sync_api import Locator
 
     def make(method_name, action_type):

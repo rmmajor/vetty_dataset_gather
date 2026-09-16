@@ -169,9 +169,9 @@ def train(
 )
 def encode_check(model: str = "Qwen/Qwen3.5-9B") -> dict:
     """CPU-only: tokenize one two-image step and one grounding example, and report their image-pad and label counts."""
-    # env-read: ms-swift's template reads MAX_PIXELS from the env, so it is written here and read back
+    # ms-swift's template reads MAX_PIXELS from the env, so it is written here and read back
     max_pixels = os.environ.setdefault("MAX_PIXELS", str(MAX_PIXELS_DEFAULT))
-    # lazy: ms-swift is installed only in the image, and reads MAX_PIXELS as the line above sets it
+    # ms-swift is installed only in the image, and reads MAX_PIXELS as the line above sets it
     from swift.model import get_model_processor
     from swift.template import get_template
 

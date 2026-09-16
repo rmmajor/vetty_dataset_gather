@@ -1,6 +1,0 @@
-Load Mind2Web tasks and convert to recording format
-
-options:
-  -h, --help       show this help message and exit
-  --output OUTPUT  Output JSONL file path
-  --limit LIMIT    Limit number of tasks (for testing)

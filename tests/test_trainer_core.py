@@ -151,7 +151,7 @@ def test_require_reward_refuses_none_and_keeps_zero():
 
 
 def test_mock_env_no_reward_knob_simulates_verdictless_service():
-    # env-read: this test sets the mock-env switch MockEnvClient reads at construction
+    # This test sets the mock-env switch MockEnvClient reads at construction
     os.environ["RL_MOCK_NO_REWARD"] = "1"
     try:
         client = MockEnvClient(steps=1)
@@ -160,5 +160,5 @@ def test_mock_env_no_reward_knob_simulates_verdictless_service():
         assert result["done"] and result["reward"] is None
         assert client.close(episode)["reward"] is None
     finally:
-        # env-read: paired with the set above so the toggle never leaks into another test
+        # Paired with the set above so the toggle never leaks into another test
         del os.environ["RL_MOCK_NO_REWARD"]

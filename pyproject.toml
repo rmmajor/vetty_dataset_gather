@@ -83,7 +83,7 @@ cua = ["**/*.json", "**/*.js", "**/*.ts", "**/*.sql", "**/*.md"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-# *.md: ruff 0.16 formats Python blocks inside Markdown, which would put README.md and the eval_compare.md fixture under the format gate.
+# *.md: ruff 0.16 formats Python blocks inside Markdown, which would put README.md and every doc under the format gate.
 extend-exclude = ["eval_archive", "experiments", "docs", "*.md"]
 
 [tool.ruff.lint]

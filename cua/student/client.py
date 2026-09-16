@@ -67,7 +67,7 @@ def urllib_transport(opener=None) -> Callable:
 
 def requests_transport(url, payload, headers, timeout_s) -> ChatResponse:
     """The `requests` round trip; a failed call becomes a TransportError, so no policy needs a requests import."""
-    # lazy: requests is an optional extra, resolved at call time — preserved from the pre-split module.
+    # requests is an optional extra, resolved at call time — preserved from the pre-split module.
     import requests
 
     try:

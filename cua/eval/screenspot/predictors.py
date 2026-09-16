@@ -144,7 +144,7 @@ class SwiftPredictor(Predictor):
             result_path = tmp_dir / "result.jsonl"
             cmd = self._command(self._write_batch(samples, tmp_dir), result_path, cfg)
 
-            env = os.environ.copy()  # env-read: the `swift infer` child inherits this process's environment
+            env = os.environ.copy()  # The `swift infer` child inherits this process's environment
             if cfg.max_pixels:
                 env["MAX_PIXELS"] = str(cfg.max_pixels)
 
@@ -194,13 +194,13 @@ class ClaudePredictor(Predictor):
         self.cfg = cfg
 
     def _one(self, sample, coord_space):
-        # lazy: claude_agent_sdk ships only in the pipeline extra, absent from the `.[eval]` box.
+        # claude_agent_sdk ships only in the pipeline extra, absent from the `.[eval]` box.
         from claude_agent_sdk import ClaudeAgentOptions
 
-        # lazy: cua.pipeline is not shipped to the eval box, so this arm's deps load only when it runs.
+        # cua.pipeline is not shipped to the eval box, so this arm's deps load only when it runs.
         from cua.pipeline.agent_runner import run_agent
 
-        # lazy: same, for the centrally configured model id.
+        # Same, for the centrally configured model id.
         from cua.pipeline.llm_config import MODEL_FOR_REASONING
 
         content = build_claude_content(sample.instruction, encode_png(prepare_sample_image(sample.image)))

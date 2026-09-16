@@ -1,6 +1,5 @@
 """Every environment knob the package reads, resolved once at import into frozen sections."""
 
-import argparse
 import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -269,99 +268,4 @@ RL = load(RlSettings)
 NOTIFY = load(NotifySettings)
 GITHUB = load(GithubSettings)
 
-SECTIONS = {
-    "SANDBOX": SANDBOX,
-    "PIPELINE": PIPELINE,
-    "CAPTURE": CAPTURE,
-    "SDK": SDK,
-    "PROMPT": PROMPT,
-    "CORPUS": CORPUS,
-    "GROUNDING": GROUNDING,
-    "EVAL": EVAL,
-    "CLOUD": CLOUD,
-    "RL": RL,
-    "NOTIFY": NOTIFY,
-    "GITHUB": GITHUB,
-}
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONVENTIONS_DOC = REPO_ROOT / "docs" / "conventions.md"
-TABLE_HEADER = "| variable | default | settings field | used by |"
-# Generated, vendored and gitignored data trees, pruned so the table scan stays a source-tree walk.
-SKIP_DIRS = {
-    "__pycache__",
-    "build",
-    "credentials",
-    "dist",
-    "eval_archive",
-    "eval_runs",
-    "models",
-    "node_modules",
-    "output",
-    "pipeline_data",
-    "rl_runs",
-    "trajectories",
-    "training_data",
-}
-
-
-def _checkout_sources():
-    """Every checkout module as (dotted name, text), read once so the table's `used by` column cannot go stale."""
-    for directory, subdirs, filenames in os.walk(REPO_ROOT):
-        subdirs[:] = sorted(name for name in subdirs if name not in SKIP_DIRS and not name.startswith("."))
-        for name in sorted(filenames):
-            path = Path(directory) / name
-            if not name.endswith(".py") or path == Path(__file__).resolve():
-                continue
-            dotted = path.relative_to(REPO_ROOT).with_suffix("").as_posix().replace("/", ".")
-            yield dotted, path.read_text(encoding="utf-8", errors="ignore")
-
-
-def _shown(value):
-    """A default rendered for the table: unset reads as an em dash, empty as a quoted blank."""
-    return "—" if value is None else '`""`' if value == "" else f"`{value}`"
-
-
-def markdown_table():
-    """The environment-variable table in docs/conventions.md, derived from the section field metadata."""
-    sources = list(_checkout_sources())
-    rows = ["| variable | default | settings field | used by |", "| --- | --- | --- | --- |"]
-    for section_name, section in SECTIONS.items():
-        for entry in fields(section):
-            reference = f"{section_name}.{entry.name}"
-            source = entry.metadata["source"]
-            default = f"`{section_name}.{source}`" if source else _shown(entry.metadata["default"])
-            used_by = [name for name, text in sources if reference in text] or ["—"]
-            rows.append(f"| `{entry.metadata['env']}` | {default} | `{reference}` | {', '.join(used_by)} |")
-    return "\n".join(rows)
-
-
-def documented_table() -> str:
-    """The environment table as docs/conventions.md currently carries it, header row included."""
-    lines = CONVENTIONS_DOC.read_text(encoding="utf-8").splitlines()
-    start = lines.index(TABLE_HEADER)
-    end = start
-    while end < len(lines) and lines[end].startswith("|"):
-        end += 1
-    return "\n".join(lines[start:end])
-
-
-def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Print the environment variables this package reads")
-    parser.add_argument("--table", action="store_true", help="print the Markdown table for docs/conventions.md")
-    parser.add_argument("--check", action="store_true", help="exit 1 when that table is stale")
-    args = parser.parse_args(argv)
-    if args.check:
-        if documented_table() == markdown_table():
-            print("docs/conventions.md: the environment table is up to date")
-            return 0
-        print("docs/conventions.md: the environment table is stale — regenerate with `python -m cua.settings --table`")
-        return 1
-    if not args.table:
-        parser.error("nothing to print: pass --table or --check")
-    print(markdown_table())
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -500,7 +500,7 @@ def build_driver_mcp_server(
     client: DriverClient, state: dict, server_name: str = "browser", autonomy: str = "autonomous"
 ):
     """In-process MCP server exposing the driver to the teacher, over the per-task record `state`."""
-    # lazy: the server factory and the @tool wrapper are needed only once a server is actually built.
+    # The server factory and the @tool wrapper are needed only once a server is actually built.
     from claude_agent_sdk import create_sdk_mcp_server, tool
 
     ctx = ToolContext(client, state)

@@ -1,9 +1,0 @@
-HTTP capturability pre-filter (mark WAF-blocked sites needs_human)
-
-options:
-  -h, --help            show this help message and exit
-  --provisioning PROVISIONING
-                        Comma-separated provisioning classes to probe
-  --config CONFIG
-  --workers WORKERS
-  --dry-run             Report only; do not write needs_human marks

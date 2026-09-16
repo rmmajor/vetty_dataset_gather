@@ -1,8 +1,0 @@
-positional arguments:
-  run_dir
-
-options:
-  -h, --help            show this help message and exit
-  --judge-mid-screenshots JUDGE_MID_SCREENSHOTS
-                        mid-run frames per verdict on top of the final one;
-                        the main cost dial
