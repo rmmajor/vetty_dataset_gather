@@ -6,8 +6,7 @@ import sys
 import traceback
 
 import tests
-
-FIRST_PARTY = ("cua", "tests")
+from tests import FIRST_PARTY
 
 
 def load(name):

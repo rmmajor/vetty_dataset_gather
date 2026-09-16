@@ -121,7 +121,7 @@ python -m cua.eval.student run --endpoint <url>/v1 --model <served-name> --label
 python -m cua.eval.student judge <run_dir>        # score a --no-judge run afterwards, no GPU
 python -m cua.eval.student compare <run_a> <run_b>
 python -m cua.eval.student sources                # list the registered task sources
-make test-student-eval                            # parser round-trip + mock episode + judge + backend surface
+make test-student-eval                            # parser round-trip + mock episode + judge + backend surface (Docker)
 ```
 
 ### Module map

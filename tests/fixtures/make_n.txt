@@ -144,8 +144,6 @@ ruff format --check .
 python scripts/check_comments.py . --quiet --pending 
 python scripts/check_env_reads.py . --quiet --allow cua/settings.py
 python scripts/check_nested_imports.py . --quiet --pending 
-<make> test-student-eval EVAL_ARGS=--no-judge
-python -m cua.eval.student_smoke --no-judge
 
 ===== test-rl =====
 python -m cua.rl.smoke

@@ -146,8 +146,7 @@ fixtures-build: ## Rewrite the behaviour-regression fixtures under tests/fixture
 fixtures-check: ## Fail if today's behaviour differs from the stored regression fixtures
 	python -m tests.regression_fixtures check
 
-check: test-rl-unit test-eval test-verify-gate test-qa-verify test-remote test-corpus-audit test-instruction-style test-outcome-relabel registry-check conventions-check fixtures-check lint ## Tier-1 gate: every no-LLM, no-network self-test plus the regression fixtures
-	$(MAKE) test-student-eval EVAL_ARGS=--no-judge
+check: test-rl-unit test-eval test-verify-gate test-qa-verify test-remote test-corpus-audit test-instruction-style test-outcome-relabel registry-check conventions-check fixtures-check lint ## Tier-1 gate: every no-Docker, no-LLM, no-network self-test plus the regression fixtures
 
 test-rl: ## Docker-only end-to-end smoke of the RL harness (static page + scripted policy, no LLM)
 	python -m cua.rl.smoke
@@ -281,7 +280,7 @@ eval-compare: ## Before/after table from two or more runs (EVAL_RUNS="eval_runs/
 eval-sources: ## List the registered eval task sources
 	python -m cua.eval.student sources
 
-test-student-eval: ## Self-test the eval harness (parser round-trip + mock replay episode + judge)
+test-student-eval: ## Self-test the eval harness (parser round-trip + mock replay episode + judge); the backend check needs Docker
 	python -m cua.eval.student_smoke $(EVAL_ARGS)
 
 # ---------- Evaluation (ScreenSpot grounding) ----------

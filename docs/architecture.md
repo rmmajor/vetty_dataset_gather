@@ -13,6 +13,10 @@ This document explains how the code is shaped and why. Commands live in `README.
 process rules live in `docs/conventions.md`; the two evaluation harnesses live in
 `docs/evaluation.md`. Dated records under `docs/decisions/` were written before the package
 refactor and still name the pre-refactor module layout; their reasoning stands, their paths do not.
+Read them through the rename map: `repo_pipeline/` → `cua/pipeline/`, `rl/` → `cua/rl/`,
+`remote_train/` → `cua/cloud/vast/`, `train_qwen.py` → `cua/sft/` plus `cua/prompt/` and
+`cua/trajectory/`, `eval_screenspot.py` → `cua/eval/screenspot/`, and
+`repo_pipeline/student_eval.py` → `cua/eval/student/`.
 
 ## The three trajectory producers
 
@@ -199,7 +203,7 @@ because asyncio runs them on one thread and no counter update awaits mid-update.
 
 | stage | module | what it does |
 | --- | --- | --- |
-| 1 discover | `stage1_discover.py` | GitHub API across the ~50 queries in `github_queries.json`, down to `--star-floor`. No LLM. |
+| 1 discover | `stage1_discover.py` | GitHub API across the 280 queries in `github_queries.json` (153 Playwright + 127 Selenium), down to `--star-floor`. No LLM. |
 | 2 filter | `stage2_filter.py` | size/recency filters, fork and duplicate-description dedup, then the no-LLM bootable-app gate |
 | 3 shallow score | `stage3_shallow_score.py` | fetches repository metadata via `gh`; Claude scores 7 dimensions (`ShallowScores`), gated at `SCORE_THRESHOLD` |
 | 4 deep analyze | `stage4_deep_analyze.py` | static analysis inside a `DockerSandbox`; bootability dominates the score |

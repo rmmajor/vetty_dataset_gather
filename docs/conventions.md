@@ -156,11 +156,13 @@ make lint       # ruff check + ruff format --check + the three convention checks
 make fmt        # ruff format + the safe autofixes
 ```
 
-`make check` fans out to `test-rl-unit` (`python -m tests`, which needs the `pipeline` extra but no
-Docker, LLM or GPU — pass a substring to filter, e.g. `python -m tests sites`), `test-eval`,
+`make check` fans out to exactly `test-rl-unit` (`python -m tests`, which needs the `pipeline` extra
+but no Docker, LLM or GPU — pass a substring to filter, e.g. `python -m tests sites`), `test-eval`,
 `test-verify-gate`, `test-qa-verify`, `test-remote`, `test-corpus-audit`, `test-instruction-style`,
-`test-outcome-relabel`, `test-student-eval`, `registry-check`, `conventions-check`,
-`fixtures-check` and `lint`. `make conventions-check` is `python -m cua.settings --check`: it fails
+`test-outcome-relabel`, `registry-check`, `conventions-check`, `fixtures-check` and `lint`.
+`make test-student-eval` is deliberately NOT among them: its backend-surface check builds the
+`docker` browser backend, so it needs a Docker daemon and belongs to Tier 2.
+`make conventions-check` is `python -m cua.settings --check`: it fails
 when the environment table below no longer matches the field metadata, so the table cannot go stale
 the way a hand-maintained one would.
 
@@ -172,7 +174,8 @@ fixtures are not silently kept stale), and say in the report which fixtures chan
 
 **Tier 2 — needs Docker.** `make test-sandbox` (container lifecycle), `make test-driver` (a scripted
 no-LLM browser-driver session asserting the trajectory contract), `make test-auth-flow` (the mail
-stack and masked-secret wiring), `make test-rl` (the end-to-end RL smoke).
+stack and masked-secret wiring), `make test-student-eval` (parser round-trip, mock episode, judge
+and the browser-backend surface), `make test-rl` (the end-to-end RL smoke).
 
 **Tier 3 — needs an LLM, a GPU or money.** Nothing here is part of a gate. Verify a pipeline change
 by running the relevant stage with a small `--limit` and `--budget`; verify a cloud change with

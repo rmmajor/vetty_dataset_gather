@@ -8,8 +8,7 @@ dist/
 /rl_tasks.jsonl
 trajectories/
 training_data/
-# Root-only: the Path A task dump. Pinned eval subsets under eval_archive/ MUST be tracked, or a
-# before/after cannot be reproduced against the same tasks.
+# Root-only: the Path A task dump; eval_archive/'s pinned subsets MUST stay tracked or no before/after reproduces.
 /tasks*.jsonl
 .env
 pipeline_data/

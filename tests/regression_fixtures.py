@@ -25,6 +25,7 @@ from cua.pipeline.registry import RepoRegistry
 from cua.rl.actions import decode_step
 from cua.trajectory import VIEWPORT
 from cua.trajectory.actions import format_action_for_training, format_action_summary
+from tests import FIRST_PARTY
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 # Owned by the prompt contract, not by this generator: never written, never diffed here.
@@ -104,6 +105,30 @@ _USAGE_BLOCK_RE = re.compile(r"\Ausage:.*?(?:\n[ \t]*\n|\Z)", re.DOTALL)
 def strip_usage(text: str) -> str:
     """Drop argparse's whole usage block: it spells the program name and indents continuations by its width."""
     return _USAGE_BLOCK_RE.sub("", text, count=1).lstrip("\n")
+
+
+# An optional extra present or absent is not behaviour: store this note, and accept it against a clean capture.
+DEPENDENCY_NOTE_PREFIX = "DEPENDENCY NOT INSTALLED — "
+_MISSING_MODULE_RE = re.compile(r"^ModuleNotFoundError: No module named '([\w.]+)'", re.MULTILINE)
+_EXIT_STATUS_RE = re.compile(r"^\[exit \d+\]$", re.MULTILINE)
+
+
+def dependency_note(text: str) -> str | None:
+    """A stable note when a capture died on a missing THIRD-PARTY import; a missing first-party one is a real break."""
+    match = _MISSING_MODULE_RE.search(text)
+    if match is None or match.group(1).split(".")[0] in FIRST_PARTY:
+        return None
+    return f"{DEPENDENCY_NOTE_PREFIX}{match.group(1)}\n"
+
+
+def fixture_matches(stored: str, fresh: str) -> bool:
+    """Equal, or a dependency note on one side and a clean (zero-exit) capture on the other."""
+    if stored == fresh:
+        return True
+    notes = [text.startswith(DEPENDENCY_NOTE_PREFIX) for text in (stored, fresh)]
+    if sum(notes) != 1:
+        return False
+    return not _EXIT_STATUS_RE.search(fresh if notes[0] else stored)
 
 
 def sha256_text(text: str) -> str:
@@ -976,7 +1001,7 @@ def build_cli_surface(root: Path, corpus: Path | None) -> dict:
             files[f"cli_surface/{name}.txt"] = NO_ARGPARSE_NOTE
             continue
         text = run_capture([sys.executable, *argv, "--help"], root)
-        files[f"cli_surface/{name}.txt"] = strip_usage(normalise(text, root))
+        files[f"cli_surface/{name}.txt"] = dependency_note(text) or strip_usage(normalise(text, root))
     return files
 
 
@@ -1110,7 +1135,7 @@ def command_check(args) -> int:
         if relative not in stored:
             failures.append((relative, "no stored fixture — run `make fixtures-build`"))
             continue
-        if stored[relative] != fresh[relative]:
+        if not fixture_matches(stored[relative], fresh[relative]):
             diff = difflib.unified_diff(
                 stored[relative].splitlines(),
                 fresh[relative].splitlines(),
@@ -1120,7 +1145,8 @@ def command_check(args) -> int:
             )
             failures.append((relative, "\n".join(list(diff)[: args.diff_lines])))
         else:
-            print(f"ok    {relative}")
+            tolerated = "" if stored[relative] == fresh[relative] else "  (optional dependency differs)"
+            print(f"ok    {relative}{tolerated}")
     for relative, detail in failures:
         print(f"FAIL  {relative}\n{detail}")
     print(f"{len(fresh) - len(failures)}/{len(fresh)} fixtures match")
