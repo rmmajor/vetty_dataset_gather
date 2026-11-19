@@ -1,15 +1,14 @@
 # QA Repo Trajectory Generation Pipeline — overnight cron job
-# Runs stages 3-6 on all pending repos at 1 AM daily
+# Runs stages 3-7 on all pending repos at 1 AM daily
 # Budget capped at $30 per night
 
 # Required environment variables (set in your shell profile or use env -i with explicit vars):
 #   GITHUB_TOKEN        — GitHub personal access token (for API calls)
-#   ANTHROPIC_API_KEY   — Claude API key (for Agent SDK)
 #   TELEGRAM_BOT_TOKEN  — Telegram bot token (for notifications)
 #   TELEGRAM_CHAT_ID    — Telegram chat ID (for notifications)
 
-0 1 * * * cd /Users/rmajor/unik/maga/dataset_gather && python -m repo_pipeline.orchestrator --overnight --budget 30 >> pipeline_data/run_logs/$(date +\%Y\%m\%d).log 2>&1
+0 1 * * * cd /path/to/dataset_gather && python -m cua.pipeline.orchestrator --overnight --budget 30 >> pipeline_data/run_logs/$(date +\%Y\%m\%d).log 2>&1
 
 # Alternative: keep draining the funnel until 75% of the Claude subscription usage limit is
 # consumed (or the budget / pending repos run out), instead of a single overnight pass:
-# 0 1 * * * cd /Users/rmajor/unik/maga/dataset_gather && python -m repo_pipeline.orchestrator --until-limit 75 --budget 30 >> pipeline_data/run_logs/$(date +\%Y\%m\%d).log 2>&1
+# 0 1 * * * cd /path/to/dataset_gather && python -m cua.pipeline.orchestrator --until-limit 75 --budget 30 >> pipeline_data/run_logs/$(date +\%Y\%m\%d).log 2>&1

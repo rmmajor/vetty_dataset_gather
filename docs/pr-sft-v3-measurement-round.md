@@ -191,7 +191,7 @@ economic claim rests on the QA bench rather than on grounding alone.
 
 ## What was wrong, and what it cost
 
-**A token cap that scored the cap.** `eval_screenspot.OpenAIPredictor` hard-coded `max_tokens: 512`
+**A token cap that scored the cap.** `cua.eval.screenspot.predictors.OpenAIPredictor` hard-coded `max_tokens: 512`
 and ignored the configured value. The base model reasons before answering, so it was cut off
 mid-thought and its click never arrived: 462 of 1272 samples failed to parse, every one a
 truncation, putting it at 54.1%. The fine-tuned checkpoints answer tersely and were untouched, so
@@ -235,7 +235,7 @@ Wilson intervals were too narrow: sft-v2 read [4.9, 16.1] and is [3.1, 23.6]. On
 local arm separates from another on DDR.
 
 **A judge reading the operator's config.** The verdict call did not set `setting_sources=[]`, so
-every judgement loaded the local CLAUDE.md, skills and plugins. That is contamination of the
+every judgement loaded the operator's local agent configuration, skills and plugins. That is contamination of the
 measurement instrument, not merely cost. The dataset_gather side was already clean — every
 `ClaudeAgentOptions` there reaches `harden_options`.
 
@@ -322,5 +322,3 @@ single-turn number answers what offloading costs; the scaffolded one answers a d
 can be added as its own row.
 
 Everything measurable on the three lanes is now here, grpo-v3's Online-Mind2Web arm included.
-
-https://claude.ai/code/session_01Dkkp5S3mHoQ3GZcfkNFwkX

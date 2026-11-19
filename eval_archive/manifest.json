@@ -1,6 +1,6 @@
 {
-  "generated_for": "SFT v1 (Qwen/Qwen3.5-9B + LoRA r64/a128, 3 epochs, 5477 train examples)",
-  "adapter": "cua-outputs:/sft-v1/adapter (Modal); local copy models/cua-sft-v1/",
+  "generated_for": "the archived eval artefacts behind the figures in the root README",
+  "headline_round": "SFT v1 (Qwen/Qwen3.5-9B + LoRA r64/a128, 3 epochs, 5477 train examples); adapter on the cua-outputs volume at sft-v1/adapter",
   "screenspot": {
     "dataset": "rootsautomation/ScreenSpot",
     "split": "test",
@@ -37,29 +37,39 @@
   "not_archived_here": "per-episode screenshots (~166 MB); see eval_archive/README.md",
   "files": [
     {
-      "path": "screenspot_sft_v1/before.json",
-      "bytes": 274569,
-      "sha256": "5e4cf1b748105a43d48dcb7f0b1de0c0a5d20d13446379d2529410a00b504644"
+      "path": "README.md",
+      "bytes": 4113,
+      "sha256": "3a815a64b02a4a67656aacccfdd45fae51e6d70b7e803a7cbdedb07faf89dc41"
     },
     {
-      "path": "screenspot_sft_v1/after.json",
-      "bytes": 171641,
-      "sha256": "c6dbb9ebc9131b86cc5999d376849475a20903116f988bf5a2b0cb3c1130791d"
+      "path": "online_mind2web/README.md",
+      "bytes": 2170,
+      "sha256": "6cc256d15644d0dacf8e6027a17c878f9a02dd9afa4e37d5592a92c0a086a255"
     },
     {
-      "path": "screenspot_sft_v1/comparison.json",
-      "bytes": 1426,
-      "sha256": "40ea12c35d7d092965dc40fd868e52daf00e2074bfd6521d8d8e47237126eb3e"
+      "path": "online_mind2web/after/report.md",
+      "bytes": 16338,
+      "sha256": "aa23263e6ec5a9bdb7dd4d1eb2c9d91587f638f62b06c3043da1d6dcbe588646"
     },
     {
-      "path": "online_mind2web/baseline/results.json",
-      "bytes": 134779,
-      "sha256": "bbe11cd0479146df65e65aa020837da942b4fa7ee686067dcca2fbac5ae01e8e"
+      "path": "online_mind2web/after/results.json",
+      "bytes": 98318,
+      "sha256": "4c29dea39f23cc75e9766989e80654eec36e75cdfa544dfa92fe02f535ad1255"
+    },
+    {
+      "path": "online_mind2web/after/run.log",
+      "bytes": 31413,
+      "sha256": "0eb84e9f2952b1735cb1b15a09fbad57304dbee953f81096ffd1505a701d75dd"
     },
     {
       "path": "online_mind2web/baseline/report.md",
-      "bytes": 16238,
-      "sha256": "1335e6ef8d5297ca991cd4fc22577f4c4b32c744d11c306ca62141c21d0bec8e"
+      "bytes": 16241,
+      "sha256": "bd8cd67e13ea6414b50a2fb67cdf48e79ff8860ffa56fd23446c3df649c28dbc"
+    },
+    {
+      "path": "online_mind2web/baseline/results.json",
+      "bytes": 134782,
+      "sha256": "a4be7b48a1b367d086f209499655118bb3490d098595a3b95f944e7b26c42d0d"
     },
     {
       "path": "online_mind2web/baseline/run.log",
@@ -67,19 +77,84 @@
       "sha256": "53282f765c2d12b0a135ba412e4de5314c51513f2c274d2ea7039a7dc96eb91c"
     },
     {
-      "path": "online_mind2web/after/results.json",
-      "bytes": 98315,
-      "sha256": "f8a6657fd64f587b7a988ebede037508b83545547c8aedc5fa2a40f3d96380c3"
+      "path": "online_mind2web/grpo-v2-judge2/report.md",
+      "bytes": 16035,
+      "sha256": "6b882cedf706a2eecf76b244f79e418beb131f08c180e5ed3e274a5d7e2d4e46"
     },
     {
-      "path": "online_mind2web/after/report.md",
-      "bytes": 16335,
-      "sha256": "ffc7839e8df6c23083fddcdab11d83b7e7c4f404fe1fe31f3ecf2b4777811b73"
+      "path": "online_mind2web/grpo-v2-judge2/results.json",
+      "bytes": 95508,
+      "sha256": "d0eed81e4e9b704a87ba10d36c1e4da09ed427a4ef55a5089bd979feb43fb6db"
     },
     {
-      "path": "online_mind2web/after/run.log",
-      "bytes": 31413,
-      "sha256": "0eb84e9f2952b1735cb1b15a09fbad57304dbee953f81096ffd1505a701d75dd"
+      "path": "online_mind2web/qwen-base-judge2/report.md",
+      "bytes": 16190,
+      "sha256": "0a7ac65cad00ed49e922afbca29d9e6838de83462c7f31c48a80a79ceab80bae"
+    },
+    {
+      "path": "online_mind2web/qwen-base-judge2/results.json",
+      "bytes": 125095,
+      "sha256": "151bd2696acfb16fc689a16bc8dc12e775c2fd21a43ef6bd65055eadc9851fdc"
+    },
+    {
+      "path": "online_mind2web/sft-v1-judge2/report.md",
+      "bytes": 16070,
+      "sha256": "05cfd0ce88cb2b4d50d5bc7a9977235413e25791d47ed06763cc0c31e2f0d9aa"
+    },
+    {
+      "path": "online_mind2web/sft-v1-judge2/results.json",
+      "bytes": 94690,
+      "sha256": "92675918feee5945562f3ece301e09d980a11f014186251a02bffcf5e60c434f"
+    },
+    {
+      "path": "online_mind2web/tasks_pinned_50.jsonl",
+      "bytes": 15364,
+      "sha256": "885abd9239d61e46e1403bba2f7c9149c579cd5a356cf7512869b7319bd85f14"
+    },
+    {
+      "path": "online_mind2web/tasks_pinned_v2.jsonl",
+      "bytes": 70159,
+      "sha256": "b59d2274f7b9c673d93d30ed9383b5ccbc31880ad353fce5b83d904a9c1f6ece"
+    },
+    {
+      "path": "online_mind2web/tasks_reachable_us_174.jsonl",
+      "bytes": 42681,
+      "sha256": "524212362ab4b8c42759683717cf8b7669430f29106b256799994ddd0a716ed3"
+    },
+    {
+      "path": "screenspot_grpo_v2/grpo-v2-served.json",
+      "bytes": 171257,
+      "sha256": "997b20095286d8c1948c15a12dbdd77ad8e17e194d1588fdb015b153a8d8bd85"
+    },
+    {
+      "path": "screenspot_grpo_v2/qwen-base-served.json",
+      "bytes": 271819,
+      "sha256": "5d023e88194c5f11dd355af85e7d4bc0767ec5ac88d1cd192679b2d3eef3a4bd"
+    },
+    {
+      "path": "screenspot_grpo_v2/sft-v1-lora-served.json",
+      "bytes": 171619,
+      "sha256": "24802909111fcc18abbda428eead35cc42c1c843c946087f507a1d078cf2ebcd"
+    },
+    {
+      "path": "screenspot_grpo_v2/sft-v1-served.json",
+      "bytes": 171845,
+      "sha256": "840d747f4b2974d3dbec1710194b8593155658d98a61d7ac304c1b654803bf73"
+    },
+    {
+      "path": "screenspot_sft_v1/after.json",
+      "bytes": 171641,
+      "sha256": "c6dbb9ebc9131b86cc5999d376849475a20903116f988bf5a2b0cb3c1130791d"
+    },
+    {
+      "path": "screenspot_sft_v1/before.json",
+      "bytes": 274569,
+      "sha256": "5e4cf1b748105a43d48dcb7f0b1de0c0a5d20d13446379d2529410a00b504644"
+    },
+    {
+      "path": "screenspot_sft_v1/comparison.json",
+      "bytes": 1426,
+      "sha256": "40ea12c35d7d092965dc40fd868e52daf00e2074bfd6521d8d8e47237126eb3e"
     }
   ]
 }

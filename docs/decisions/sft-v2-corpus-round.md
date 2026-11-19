@@ -175,8 +175,8 @@ remotely with `--keep-on-signal` so a swept supervisor cannot take the work with
 
 Operational note: Modal's `modal run` creates an app tied to the client. Something outside these
 sessions terminated every local background task twice in ~70 minutes (03:11:10 and ~04:20, across
-two unrelated Claude Code sessions, with no OOM, sleep, crash report, or resource pressure — filed
-as a Claude Code bug). Training therefore runs with `modal run --detach`, which survives the client
+two unrelated agent CLI sessions, with no OOM, sleep, crash report, or resource pressure — filed
+upstream as a CLI bug). Training therefore runs with `modal run --detach`, which survives the client
 dying; local jobs (capture, eval) do not and must simply be restarted.
 
 ## Deviations from the gaps doc's prescriptions

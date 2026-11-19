@@ -1,4 +1,5 @@
 """Render experiments/*.csv into the README between registry markers, and fill Wilson intervals."""
+
 import argparse
 import csv
 import math
@@ -39,7 +40,7 @@ PROPORTION_METRICS = {
 
 MODEL_COLUMNS = ["model_id", "kind", "base_model", "dataset_version", "method", "status", "notes"]
 SOURCE_COLUMNS = ["claim", "value", "n", "venue", "year", "reference", "used_on"]
-RESULT_COLUMNS = ["model_id", "subset", "metric", "value", "n", "status", "notes"]
+RESULT_COLUMNS = ["model_id", "subset", "metric", "value", "n", "artifacts_availability", "status", "notes"]
 STATUS_ORDER = {"done": 0, "pending": 1, "running": 2, "planned": 3, "failed": 4, "superseded": 5}
 
 
@@ -59,8 +60,13 @@ def write_csv(path, rows, fieldnames):
 def wilson(successes_fraction, sample_size, z=Z_95):
     denominator = 1 + z * z / sample_size
     centre = (successes_fraction + z * z / (2 * sample_size)) / denominator
-    margin = z * math.sqrt(successes_fraction * (1 - successes_fraction) / sample_size
-                           + z * z / (4 * sample_size * sample_size)) / denominator
+    margin = (
+        z
+        * math.sqrt(
+            successes_fraction * (1 - successes_fraction) / sample_size + z * z / (4 * sample_size * sample_size)
+        )
+        / denominator
+    )
     return max(0.0, centre - margin), min(1.0, centre + margin)
 
 
@@ -131,8 +137,14 @@ def render(models, results, sources):
     counts = {}
     for row in results:
         counts[row["status"]] = counts.get(row["status"], 0) + 1
-    tally = ", ".join(f"{count} {status}" for status, count in sorted(counts.items(), key=lambda kv: STATUS_ORDER.get(kv[0], 9)))
-    lines += [f"_{len(results)} registry rows: {tally}. Percentages carry a 95 % Wilson interval where n is known._", "", END]
+    tally = ", ".join(
+        f"{count} {status}" for status, count in sorted(counts.items(), key=lambda kv: STATUS_ORDER.get(kv[0], 9))
+    )
+    lines += [
+        f"_{len(results)} registry rows: {tally}. Percentages carry a 95 % Wilson interval where n is known._",
+        "",
+        END,
+    ]
     return "\n".join(lines)
 
 
@@ -146,7 +158,9 @@ def splice(readme_text, block):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fill-ci", action="store_true", help="compute missing Wilson intervals and rewrite results.csv")
+    parser.add_argument(
+        "--fill-ci", action="store_true", help="compute missing Wilson intervals and rewrite results.csv"
+    )
     parser.add_argument("--check", action="store_true", help="exit 1 if the README block is stale")
     args = parser.parse_args()
 

@@ -1,4 +1,4 @@
-# Remote-training config for `python -m remote_train` (Vast.ai by default).
+# Remote-training config for `python -m cua.cloud.vast` (Vast.ai by default).
 # Precedence: these values < env vars < CLI flags. Secrets live in env only:
 #   VAST_API_KEY (required), HF_TOKEN (optional, for --push-hf).
 
@@ -16,7 +16,8 @@ min_reliability: 0.90     # Vast host uptime score; a dead host mid-run wastes t
 exclude_countries: [RU, CN]   # never rent here (also via REMOTE_TRAIN_EXCLUDE_COUNTRIES)
 
 # ----- Instance -----
-instance_label: roman.maior   # every instance is tagged with this; powers orphan cleanup
+# override with REMOTE_TRAIN_INSTANCE_LABEL
+instance_label: cua-remote-train   # every instance is tagged with this; powers orphan cleanup
 # 2.6.0 matches the torch the Modal lane trains on; 2.4 is too old for current transformers.
 image: "pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel"
 disk_gb: 80
@@ -35,6 +36,6 @@ output_dir: output
 val_split: 0.1
 
 # ----- Optional post-train steps (default off) -----
-run_eval: false           # run eval_screenspot.py before/after on the box (needs that file)
-push_hf_repo: ""          # e.g. "rmmajor/qwen-cua-lora"; needs HF_TOKEN
+run_eval: false           # run cua/eval/screenspot/ before/after on the box (needs that package)
+push_hf_repo: ""          # e.g. "your-hf-handle/qwen-cua-lora"; needs HF_TOKEN
 notify: false             # Telegram ping on completion (needs TELEGRAM_BOT_TOKEN/CHAT_ID)

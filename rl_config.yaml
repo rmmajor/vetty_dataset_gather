@@ -1,4 +1,4 @@
-# GRPO run config for `python rl_train.py` (box) and `python -m remote_train grpo` (Mac). Mirrors config.yaml's style.
+# GRPO run config for `python -m cua.rl.train` (box) and `python -m cua.cloud.vast grpo` (Mac). Mirrors config.yaml's style.
 base_model: Qwen/Qwen3.5-9B            # the SFT base (config.yaml); the SFT LoRA is merged into it before RL (spec D1)
 sft_adapter: output                     # Mac path of the SFT adapter to ship
 sft_adapter_remote: /workspace/sft_adapter
@@ -54,13 +54,13 @@ log_completions: true
 report_to: tensorboard
 output_dir: /workspace/rl_output
 # plugin / env
-external_plugins: rl/trainer/swift_plugin.py
+external_plugins: cua/rl/trainer/swift_plugin.py
 gym_env: browser_env
 multi_turn_scheduler: browser_scheduler
 # Gym reward only: the trainer requires identical rewards across a request's per-turn records, which a per-turn ORM violates; format validity is already inside the episode reward.
 env_url: http://127.0.0.1:8900
 env_retry_s: 180
-# eval phases (swift deploy on serve_port; the Mac runs rl.eval through the tunnel and acks)
+# eval phases (swift deploy on serve_port; the Mac runs cua.rl.eval through the tunnel and acks)
 eval_before: true
 eval_after: true
 eval_wait_s: 7200

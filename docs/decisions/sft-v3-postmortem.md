@@ -10,11 +10,11 @@ results), `docs/decisions/grpo-v3-results.md` (why RL was dropped).
 
 | what | where |
 | --- | --- |
-| sft-v3 episodes, v3 harness | `/Users/rmajor/fun/cc_test/.claude/worktrees/cua-observation-v3/results/econ-sft-v3` |
+| sft-v3 episodes, v3 harness | `.../cua-observation-v3/results/econ-sft-v3` |
 | sft-v2 re-recorded, v3 harness | `.../cua-observation-v3/results/matched-sft-v2` |
 | base Qwen3.5-9B, v3 harness | `.../cua-observation-v3/results/matched-base` |
-| sft-v2 / sft-v1 / base, original harness | `/Users/rmajor/fun/cc_test/.claude/worktrees/valiant-kindling-rivest/results/econ-sft2`, `econ-sft1`, `econ-base` |
-| training corpus | `trajectories/` (symlink to `/Users/rmajor/unik/maga/dataset_gather/trajectories`) — 1,398 task dirs, 784 trainable, 774 outcome-relabeled with `trajectory_pre_outcome.json` originals |
+| sft-v2 / sft-v1 / base, original harness | `.../valiant-kindling-rivest/results/econ-sft2`, `econ-sft1`, `econ-base` |
+| training corpus | `trajectories/` (a symlink to the canonical corpus) — 1,398 task dirs, 784 trainable, 774 outcome-relabeled with `trajectory_pre_outcome.json` originals |
 | the dataset actually trained | `training_data/sft_dataset.jsonl` 11,308 rows (9,061 agent + 2,247 grounding) + `sft_val.jsonl` 1,278 |
 | adapter | `models/cua-sft-v3` (`adapter_config.json`: r64, α128, base `Qwen/Qwen3.5-9B`; `args.json`: 2 epochs, lr 5e-5, cosine, bf16) |
 | the relabel prompt under suspicion | `repo_pipeline/outcome_relabel.py:46-84` |

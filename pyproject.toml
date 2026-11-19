@@ -1,0 +1,100 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cua"
+version = "0.1.0"
+description = "Trajectory capture, SFT and evaluation pipeline for a web computer-use student model"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "Pillow",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+# Pillow and pyyaml stay out of every extra: they are core dependencies and are always installed.
+pipeline = [
+    "claude-agent-sdk>=0.2.87,<0.3",
+    "pydantic>=2.0",
+    "PyGithub",
+    "playwright",
+    "tqdm",
+    "python-telegram-bot>=20.0",
+    "docker",
+    "requests",
+    # cua/rl/analysis.py imports numpy at import time, so the pipeline extra carries it even without the dashboard.
+    "numpy>=1.26",
+]
+dashboard = [
+    "streamlit>=1.35",
+    "plotly>=5.20",
+    "pandas>=2.2",
+    "numpy>=1.26",
+]
+path_a = [
+    "openai>=1.60.0",
+    "playwright",
+    "tqdm",
+    "datasets",
+]
+eval = [
+    "torch",
+    "transformers",
+    "qwen-vl-utils",
+    "ms-swift[llm]",
+    "datasets",
+]
+# Unpinned by design: the resolved GPU column lives in constraints/rl-modal.txt.
+rl = [
+    "torch",
+    "vllm",
+    "transformers",
+    "ms-swift",
+    "peft",
+    "trl",
+    "qwen-vl-utils",
+    "flash-linear-attention",
+    "datasets",
+    "requests",
+]
+cloud = [
+    "modal",
+    "vastai",
+]
+dev = [
+    "ruff",
+]
+
+[project.scripts]
+cua-sft = "cua.sft.cli:main"
+cua-screenspot = "cua.eval.screenspot:main"
+cua-student-eval = "cua.eval.student.cli:main"
+cua-pipeline = "cua.pipeline.orchestrator:main"
+cua-remote = "cua.cloud.vast.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["cua*"]
+
+[tool.setuptools.package-data]
+cua = ["**/*.json", "**/*.js", "**/*.ts", "**/*.sql", "**/*.md"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+# *.md: ruff 0.16 formats Python blocks inside Markdown, which would put README.md and every doc under the format gate.
+extend-exclude = ["eval_archive", "experiments", "docs", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ISC"]
+# UP042 stays because a StrEnum renders registry values differently; E501 and B904 are clean tree-wide.
+ignore = ["UP042"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cua", "tests"]
+# The repository's own `docker/` directory would otherwise make isort read the Docker SDK as first-party.
+known-third-party = ["docker"]
+
+# Empty on purpose: the formatter runs at its defaults, so its style is the repo style.
+[tool.ruff.format]

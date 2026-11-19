@@ -1,0 +1,138 @@
+"""The recorded-trajectory contract every producer writes and every consumer reads."""
+
+import logging
+import re
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field, ValidationError
+
+logger = logging.getLogger(__name__)
+
+
+def safe_task_id(task_id: str) -> str:
+    """Mirror of the driver's task-id sanitization, so host code can predict task dir names."""
+    return re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(task_id))[:120]
+
+
+def norm_instruction(text: str) -> str:
+    """An instruction reduced to its comparison form, so the same goal written twice dedups."""
+    return " ".join((text or "").lower().split())
+
+
+class TrajectoryStep(BaseModel):
+    step: int
+    screenshot: str
+    thought: str = ""
+    actions: list[dict] = Field(default_factory=list)
+    # Inline capture fields, additive: convert ignores unknown step keys, capture_meta.json holds the full record.
+    bbox: dict | None = None
+    role: str | None = None
+    name: str | None = None
+    # A watchdog verdict is an observation step: empty actions, never an SFT target, threaded into later history.
+    event: dict | None = None
+
+
+class Trajectory(BaseModel):
+    task_id: str
+    instruction: str
+    start_url: str
+    steps: list[TrajectoryStep] = Field(default_factory=list)
+    total_steps: int = 0
+    success: bool = True
+
+
+class TrajectoryMetadata(BaseModel):
+    task_id: str
+    instruction: str
+    start_url: str
+    domain: str = ""
+    website: str = ""
+    total_steps: int = 0
+    success: bool = True
+    viewport: dict = Field(default_factory=lambda: {"width": 1280, "height": 720})
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    source_repo: str = ""
+    # Derived after capture (stage 6 for Path B); optional so pre-existing trajectories still validate.
+    framework: str = ""
+    framework_language: str = ""
+    source_query: str = ""
+    repo_stars: int = 0
+    action_type_histogram: dict = Field(default_factory=dict)
+    element_role_histogram: dict = Field(default_factory=dict)
+    length_bucket: str = ""
+    n_navigations: int = 0
+    valid_bbox_ratio: float = 0.0
+    n_console_errors: int = 0
+    instruction_source: str = ""
+    thought_source: str = ""
+    dedup_hash: str = ""
+    task_type: str = ""
+    # Capture provenance and the verifier's grade; efficiency stays None until a verdict exists.
+    capture_source: str = ""
+    # Untyped on purpose: both come from unvalidated LLM JSON, and capture records what it got rather than rejecting.
+    difficulty: Any = ""
+    efficiency: Any = None
+    efficiency_ratio: float | None = None
+    relabeled: bool = False
+    task_style: str = ""
+    # Login-gated lane, additive: capture policy, session provenance, terminal risk class, replay manifest.
+    autonomy: str = "autonomous"  # "guarded" | "autonomous"
+    auth_mode: str = "none"  # "pre_session" | "handoff_login" | "none"
+    risk_category: str = ""
+    preconditions: dict = Field(default_factory=dict)
+
+
+# TrajectoryMetadata requires these three, so placeholders let a partial update carrying none of them validate.
+_IDENTITY_PLACEHOLDERS = {"task_id": "", "instruction": "", "start_url": ""}
+
+
+def metadata_from(**fields) -> dict:
+    """A metadata.json body validated through TrajectoryMetadata, carrying exactly the fields passed, in order."""
+    unknown = [key for key in fields if key not in TrajectoryMetadata.model_fields]
+    if unknown:
+        raise ValueError(
+            f"metadata_from: {', '.join(unknown)} not declared on TrajectoryMetadata — add the field there"
+        )
+    try:
+        validated = TrajectoryMetadata(**{**_IDENTITY_PLACEHOLDERS, **fields}).model_dump()
+    except ValidationError as exc:
+        # A capture must never die on one odd generated value: degrade to the pre-schema write and name the field.
+        offending = sorted({str(error["loc"][0]) for error in exc.errors() if error.get("loc")})
+        logger.warning(f"metadata.json written unvalidated — field(s) failed the contract: {', '.join(offending)}")
+        return dict(fields)
+    return {key: validated[key] for key in fields}
+
+
+class StepCaptureMeta(BaseModel):
+    """Per-step diagnostics; element fields default gracefully when the DOM probe is absent or fails."""
+
+    selector: str = ""
+    tag: str | None = None
+    role: str | None = None
+    name: str | None = None
+    attrs: dict = Field(default_factory=dict)
+    bbox: dict | None = None
+    is_visible: bool | None = None
+    is_enabled: bool | None = None
+    in_viewport: bool | None = None
+    url_before: str | None = None
+    url_after: str | None = None
+    caused_navigation: bool = False
+    dom_changed: bool | None = None
+    error: str | None = None
+    console_errors: int = 0
+    screenshot_sha: str = ""
+    screenshot_width: int = 0
+    screenshot_height: int = 0
+    scroll_position: dict = Field(default_factory=lambda: {"x": 0, "y": 0})
+    dt_ms: int = 0
+    wait_state: str | None = None
+
+
+class CaptureMeta(BaseModel):
+    schema_version: int = 1
+    task_id: str = ""
+    framework: str = ""
+    framework_language: str = ""
+    steps: dict[str, StepCaptureMeta] = Field(default_factory=dict)
